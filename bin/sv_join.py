@@ -489,7 +489,7 @@ def build_parser():
                          "retail stations broadcast every Pia packet (sv11), and a broadcast needs "
                          "no ARP resolution of the peer")
     ap.add_argument("--verbose-rtt", action="store_true", help="print the RTT traffic too")
-    ap.add_argument("--verbose", action="store_true",
+    ap.add_argument("--verbose-circle", action="store_true",
                     help="with --union-circle: print each circle message we send and each step of "
                          "the area search too; the --capture file keeps the steps either way")
     ap.add_argument("--capture", default=None, help="write every datagram here as JSON lines")
@@ -567,6 +567,8 @@ def crafted_spawn(ap, args):
         if args.spawn_ivs is not None:
             args.spawn_crafted["ivs"] = spawn_ivs(args.spawn_ivs)
         species, level = args.spawn or (0, 1)
+        if args.spawn and not (species > 0 and 1 <= level <= 100):
+            raise ValueError("a spawn is a species from 1 at a level from 1 to 100")
         circle.spawn_record(0, (0.0, 0.0, 0.0), species=species, level=level,
                             shiny=args.spawn_shiny, tera=args.spawn_tera,
                             **{k: v for k, v in args.spawn_crafted.items() if v is not None})
@@ -614,6 +616,8 @@ def main(argv=None):
         raid_guest(ap, args)
     if args.union_circle:
         circle_guest(ap, args)
+    elif args.circle_task or args.spawn or args.follow_host or args.spawn_legal:
+        ap.error("--circle-task, --spawn, --spawn-legal and --follow-host need --union-circle")
     if args.trade_offer:
         args.trade_offer = [pokemon_service.prepare_file("sv", p, fresh=args.fresh_pid,
             transform=lambda raw: trade.load_offer(raw, args.offer_set)) for p in args.trade_offer]
@@ -1184,13 +1188,13 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         if member is not None:
             for label, flags, payload in member.tick(now):
                 raid_out.append((flags, payload))
-                if label and args.verbose:
+                if label and args.verbose_circle:
                     print(f"[sv] -> {host_ip}: circle {label}")
             for note in member.notes:
                 print(f"[sv] circle: {note}")
                 record(rec="circle_note", note=note, t=now)
             for note in member.details:
-                if args.verbose:
+                if args.verbose_circle:
                     print(f"[sv] circle: {note}")
                 record(rec="circle_note", note=note, t=now)
             member.notes, member.details = [], []
@@ -1206,7 +1210,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     circled = True
             for label, flags, payload in member.objects():
                 seq = send_channel(0, payload, "circle object", flags=flags)
-                if args.verbose:
+                if args.verbose_circle:
                     print(f"[sv] -> {host_ip}: circle {label}, our sequence {seq}")
             for frame in member.frames_due(now):
                 if not frames_followed and args.follow_host:
@@ -1590,8 +1594,11 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                         join_key = port2.announce_key(body) or 0
                         send_channel(2, port2.build_join(join_key), "channel port 2 join")
                         print(f"[sv] -> {host_ip}: the type-3 join on 0x7c port 2, key {join_key}")
+                    # A fragment of a longer message (the host's 111) is not a message of its own.
+                    whole = reliable5.FLAG_MESSAGE_START | reliable5.FLAG_MESSAGE_END
                     if (member is not None and msg.protocol == PROTO_BROADCAST_RELIABLE
-                            and msg.port == 0 and rm["sequence_id"] not in stream_got.get(key, ())):
+                            and msg.port == 0 and rm["flags"] & whole == whole
+                            and rm["sequence_id"] not in stream_got.get(key, ())):
                         member.on_lua(body, time.time(), host=addr[0] == host_ip)
                         snacks = member.snacks if args.circle_task == "snacksworth" else None
                         if snacks is not None and snacks != snacks_shown:

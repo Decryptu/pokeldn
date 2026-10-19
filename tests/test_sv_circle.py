@@ -114,7 +114,7 @@ def test_a_circle_guest_puts_its_player_on_the_host_s_field(monkeypatch):
 def test_a_circle_guest_prints_its_object_traffic_only_when_verbose(monkeypatch, capsys):
     run_guest(monkeypatch, CircleHostConsole(Clock()), 12)
     assert "circle declares object" not in capsys.readouterr().out
-    run_guest(monkeypatch, CircleHostConsole(Clock()), 12, "--verbose")
+    run_guest(monkeypatch, CircleHostConsole(Clock()), 12, "--verbose-circle")
     assert "circle declares object 0x0001, type 0" in capsys.readouterr().out
 
 
@@ -330,6 +330,19 @@ def test_a_snacksworth_run_tops_up_a_team_clear_the_host_did_not_count():
     assert [v[1][0][4] for _, v in snacks_sent(member, 1.0)] == [circle.TEAM]
     member.on_lua(host_status(130, 12, 2))
     assert member.finished and snacks_sent(member, 2.0) == []
+
+
+def test_a_snacksworth_run_stops_once_the_host_s_totals_ignore_its_sends():
+    member = snacking(128, 12)
+    sends = [snacks_sent(member, float(n)) for n in range(circle.STALL_SENDS - 1)]
+    assert all(sends) and not member.finished
+    member.on_lua(host_status(129, 12, 2))          # the host counted one: the count starts again
+    for n in range(circle.STALL_SENDS - 1):
+        snacks_sent(member, 100.0 + n)
+    assert not member.finished
+    snacks_sent(member, 200.0)
+    assert member.finished and member.notes[-1].endswith("with 1 solo and 0 Team still to go")
+    assert snacks_sent(member, 201.0) == []
 
 
 def test_a_snacksworth_run_waits_for_the_host_s_totals_and_sends_nothing_past_them():
@@ -779,12 +792,14 @@ def test_the_app_s_union_circle_entry_runs_a_task_per_choice():
 
 
 @pytest.mark.parametrize("argv, why", [
-    (["--circle-task", "bp"], "needs the BP to give"),
-    (["--circle-task", "bp", "--bbq-clear", "10000000"], "1 to 9999999 BP"),
-    (["--bbq-clear", "0"], "1 to 9999999 BP")])
+    (["--union-circle", "--circle-task", "bp"], "needs the BP to give"),
+    (["--union-circle", "--circle-task", "bp", "--bbq-clear", "10000000"], "1 to 9999999 BP"),
+    (["--union-circle", "--bbq-clear", "0"], "1 to 9999999 BP"),
+    (["--circle-task", "snacksworth"], "need --union-circle"),
+    (["--spawn", "25:11"], "need --union-circle")])
 def test_a_circle_task_refuses_bp_a_player_cannot_hold(argv, why, capsys):
     with pytest.raises(SystemExit):
-        sv_join.main(["--union-circle", *argv])
+        sv_join.main(argv)
     assert why in capsys.readouterr().err
 
 

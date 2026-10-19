@@ -3,8 +3,7 @@ import flet as ft
 
 def icon(name: str, size: int = 18, color: str = "#ECEDEF", **kwargs) -> ft.Image:
     """Pixelarticons 2.4.1, bundled from the free MIT set without changing paths, and on its grid the
-    app's own jumbo-mark, mini-mark (the games' size marks) and union-circle (a ring for Scarlet and
-    Violet's Union Circle)."""
+    app's own jumbo-mark and mini-mark (the games' size marks)."""
     if size not in (12, 18, 24, 48, 72, 96):
         raise ValueError("Unsupported UI icon size")
     return ft.Image(src=f"icons/{name}.svg", width=size, height=size, color=color,

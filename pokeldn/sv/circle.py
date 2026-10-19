@@ -153,6 +153,7 @@ TEAM_QUESTS = ((15, 500, 33), (15, 550, 36), (15, 600, 36), (14, 500, 70), (14, 
 # clears and its 12 Team-route ones at every Team clear (docs/sv_union_circle.md, Snacksworth).
 SOLO_GOAL, TEAM_GOAL = 130, 12
 SNACK_SPACING = 1.0         # seconds between a Snacksworth run's clears and reports
+STALL_SENDS = 20            # a Snacksworth run's sends in a row the host's totals ignore before it stops
 BP_MAX = 9_999_999          # the most BP a player holds: the host clamps its total to it
 # An empty quest row: as a retail clear fills its unused ones.
 EMPTY_ROW = (0, 0, 0, 32767, 0, 0, 0, 0, 0, 0.0)
@@ -657,6 +658,8 @@ class Member:
         self.snack_due = None
         self.host_bbq = None        # the host's latest BbqStatus
         self.next_slot = 0          # the host's slot our next progress report goes to
+        self.unmoved = 0            # Snacksworth sends since the host's totals last rose
+        self.stalled = False        # the host's totals stopped rising: the run gives up
         self.spawner = spawner
         self.host_at = None         # where the host's player (or its ride) last stood, or its estimate
         self.host_seen = None       # when the host's console last showed where its player stands
@@ -935,6 +938,9 @@ class Member:
         except (ValueError, IndexError, TypeError):
             return
         if status is not None:
+            if self.host_bbq is not None and (status.solo, status.team) != (self.host_bbq.solo,
+                                                                          self.host_bbq.team):
+                self.unmoved = 0
             self.host_bbq = status
             if self.host_start is None:
                 self.host_start = status.solo, status.team
@@ -980,12 +986,12 @@ class Member:
     @property
     def finished(self):
         """-> whether the `bp` clear has gone out and, with `snacksworth`, the host's totals have
-        reached SOLO_GOAL and TEAM_GOAL."""
+        reached SOLO_GOAL and TEAM_GOAL or ignored STALL_SENDS sends in a row."""
         if self.bp is not None:
             return False
-        return not self.snacksworth or (self.host_bbq is not None
-                                        and self.host_bbq.solo >= SOLO_GOAL
-                                        and self.host_bbq.team >= TEAM_GOAL)
+        return not self.snacksworth or self.stalled or (self.host_bbq is not None
+                                                        and self.host_bbq.solo >= SOLO_GOAL
+                                                        and self.host_bbq.team >= TEAM_GOAL)
 
     def _send_clear(self, grade, bp, row=None):
         quest = row[1] if row else CLEAR_QUEST
@@ -1060,6 +1066,14 @@ class Member:
             if now >= self.snack_due and not self.finished:
                 self._send_snack()
                 self.snack_due += SNACK_SPACING
+                self.unmoved += 1
+                if self.unmoved >= STALL_SENDS:
+                    self.stalled = True
+                    bbq = self.host_bbq
+                    self.notes.append(
+                        f"the host's totals did not rise over {STALL_SENDS} clears and reports; "
+                        f"stopping with {max(0, SOLO_GOAL - bbq.solo)} solo and "
+                        f"{max(0, TEAM_GOAL - bbq.team)} Team still to go")
         self._estimate(now)
         if self.locator is not None:
             self.spawner.active = self.locator.found
