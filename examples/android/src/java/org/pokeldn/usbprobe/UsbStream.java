@@ -1,17 +1,22 @@
 package org.pokeldn.usbprobe;
 
 import android.hardware.usb.*;
+import com.hoho.android.usbserial.driver.UsbSerialDriver;
+import com.hoho.android.usbserial.driver.UsbSerialPort;
+import com.hoho.android.usbserial.driver.UsbSerialProber;
 import java.io.IOException;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 public final class UsbStream implements AutoCloseable {
-    private final UsbDeviceConnection connection;
-    private final UsbInterface control, data;
-    private final UsbEndpoint input, output;
+    private UsbDeviceConnection connection;
+    private UsbInterface control, data;
+    private UsbEndpoint input, output;
+    private UsbSerialPort serialPort;
     private volatile boolean closed;
     private volatile IOException readFailure;
     private final ArrayBlockingQueue<byte[]> incoming = new ArrayBlockingQueue<>(256);
@@ -25,6 +30,14 @@ public final class UsbStream implements AutoCloseable {
     private byte[] remainder = new byte[0];
 
     public UsbStream(UsbManager manager, UsbDevice device) throws IOException {
+        if (Setup.backend(device.getVendorId(), device.getProductId()) == Setup.Backend.USB_SERIAL) {
+            openSerial(manager, device);
+            reader = new Thread(this::receiveSerialLoop, "android-usb-reader");
+            reader.start();
+            writer = new Thread(this::writeLoop, "android-usb-writer");
+            writer.start();
+            return;
+        }
         UsbInterface ctl = null, dat = null;
         for (int i = 0; i < device.getInterfaceCount(); i++) {
             UsbInterface iface = device.getInterface(i);
@@ -59,6 +72,28 @@ public final class UsbStream implements AutoCloseable {
         writer.start();
     }
 
+    private void openSerial(UsbManager manager, UsbDevice device) throws IOException {
+        UsbSerialDriver driver = UsbSerialProber.getDefaultProber().probeDevice(device);
+        if (driver == null || driver.getPorts().isEmpty()) throw new IOException("Missing USB serial driver");
+        UsbDeviceConnection opened = manager.openDevice(device);
+        if (opened == null) throw new IOException("USB open failed");
+        UsbSerialPort port = driver.getPorts().get(0);
+        try {
+            port.open(opened);
+            port.setParameters(115200, UsbSerialPort.DATABITS_8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE);
+            port.setFlowControl(UsbSerialPort.FlowControl.NONE);
+            EnumSet<UsbSerialPort.ControlLine> lines = port.getSupportedControlLines();
+            if (lines.contains(UsbSerialPort.ControlLine.DTR)) port.setDTR(false);
+            if (lines.contains(UsbSerialPort.ControlLine.RTS)) port.setRTS(false);
+            connection = opened;
+            serialPort = port;
+        } catch (Exception error) {
+            try { if (port.isOpen()) port.close(); } catch (Exception ignored) { }
+            opened.close();
+            throw error instanceof IOException ? (IOException)error : new IOException(error);
+        }
+    }
+
     private void receiveLoop() {
         UsbRequest request = new UsbRequest();
         try {
@@ -79,6 +114,19 @@ public final class UsbStream implements AutoCloseable {
         } catch (Exception error) {
             if (!closed) readFailure = new IOException("USB reader: " + error, error);
         } finally { request.cancel(); request.close(); }
+    }
+
+    private void receiveSerialLoop() {
+        byte[] buffer = new byte[16384];
+        try {
+            while (!closed) {
+                int count = serialPort.read(buffer, 100);
+                if (count > 0 && !incoming.offer(Arrays.copyOf(buffer, count)))
+                    throw new IOException("Android USB receive queue overflow");
+            }
+        } catch (Exception error) {
+            if (!closed) readFailure = new IOException("USB reader: " + error, error);
+        }
     }
 
     public synchronized byte[] read(int size) throws IOException {
@@ -106,12 +154,22 @@ public final class UsbStream implements AutoCloseable {
     /** CDC SET_CONTROL_LINE_STATE: bit 0 DTR, bit 1 RTS. The native USB peripheral resets the chip on
      *  the sequence esptool sends (ESP-IDF, USB Serial/JTAG controller). */
     public void setLines(boolean dtr, boolean rts) throws IOException {
+        if (serialPort != null) {
+            EnumSet<UsbSerialPort.ControlLine> lines = serialPort.getSupportedControlLines();
+            if (lines.contains(UsbSerialPort.ControlLine.DTR)) serialPort.setDTR(dtr);
+            if (lines.contains(UsbSerialPort.ControlLine.RTS)) serialPort.setRTS(rts);
+            return;
+        }
         int value = (dtr ? 1 : 0) | (rts ? 2 : 0);
         if (connection.controlTransfer(0x21, 0x22, value, control.getId(), null, 0, 1000) < 0)
             throw new IOException("CDC line state failed");
     }
 
     public void setBaud(int baud) throws IOException {
+        if (serialPort != null) {
+            serialPort.setParameters(baud, UsbSerialPort.DATABITS_8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE);
+            return;
+        }
         byte[] coding = {(byte)baud, (byte)(baud >> 8), (byte)(baud >> 16), (byte)(baud >> 24), 0, 0, 8};
         if (connection.controlTransfer(0x21, 0x20, 0, control.getId(), coding, 7, 1000) != 7)
             throw new IOException("CDC line coding failed");
@@ -178,6 +236,10 @@ public final class UsbStream implements AutoCloseable {
 
     private int writeNow(byte[] bytes) throws IOException {
         if (closed) throw new IOException("USB stream closed");
+        if (serialPort != null) {
+            serialPort.write(bytes, 1000);
+            return bytes.length;
+        }
         int at = 0;
         while (at < bytes.length) {
             int count = connection.bulkTransfer(output, bytes, at, bytes.length - at, 1000);
@@ -191,8 +253,12 @@ public final class UsbStream implements AutoCloseable {
         if (closed) return;
         closed = true;
         if (writer != null) writer.interrupt();
-        connection.releaseInterface(data);
-        connection.releaseInterface(control);
+        if (serialPort != null) {
+            try { serialPort.close(); } catch (IOException ignored) { }
+        } else {
+            connection.releaseInterface(data);
+            connection.releaseInterface(control);
+        }
         connection.close();
     }
 }

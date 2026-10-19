@@ -15,9 +15,14 @@ public class SetupTest {
         assertEquals(Setup.State.READY, Setup.decide(true, false, true, true, ""));
     }
 
-    @Test public void onlyNativeUsbIsTheBoard() {
+    @Test public void supportedBoardsUseTheRightBackend() {
         assertTrue(Setup.isBoard(0x303a, 0x1001));
+        assertEquals(Setup.Backend.NATIVE_CDC, Setup.backend(0x303a, 0x1001));
+        assertTrue(Setup.isBoard(0x10c4, 0xea60));
+        assertEquals(Setup.Backend.USB_SERIAL, Setup.backend(0x10c4, 0xea60));
         assertFalse(Setup.isBoard(0x303a, 0x0002));
+        assertFalse(Setup.isBoard(0x10c4, 0xea61));
+        assertEquals(Setup.Backend.NONE, Setup.backend(0x1234, 0x5678));
         assertTrue(Setup.isBridge(0x1a86));
         assertFalse(Setup.isBridge(0x303a));
     }

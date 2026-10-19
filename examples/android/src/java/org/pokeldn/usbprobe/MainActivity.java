@@ -78,8 +78,8 @@ public class MainActivity extends Activity {
         if (busy.get()) return;
         device = null;
         for (UsbDevice candidate : manager.getDeviceList().values())
-            if (candidate.getVendorId() == 0x303a && candidate.getProductId() == 0x1001) { device = candidate; break; }
-        if (device == null) { report("No C6 attached. Check OTG and cable."); return; }
+            if (Setup.isBoard(candidate.getVendorId(), candidate.getProductId())) { device = candidate; break; }
+        if (device == null) { report("No board attached. Check OTG and cable."); return; }
         if (manager.hasPermission(device)) startProbe();
         else {
             report("Please accept Android's USB access prompt.");

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Espressif native USB Serial/JTAG: ESP32-S3, C3, C6 (Setup.ESPRESSIF_VID / ESPRESSIF_PID). -->
+<!-- Boards supported by Setup.isBoard. -->
 <resources>
     <usb-device vendor-id="12346" product-id="4097" />
+    <usb-device vendor-id="4292" product-id="60000" />
 </resources>
