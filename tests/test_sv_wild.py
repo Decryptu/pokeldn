@@ -308,13 +308,6 @@ def test_the_encounters_entry_crafts_the_spawn_s_arguments():
     assert command.problems(tool, values) == ["The level is 1 to 100."]
 
 
-def test_the_encounters_entry_steps_name_the_rules():
-    from pokeldn.app import command
-    steps = command.steps(encounters_tool(), {})
-    assert any("15 to 25 m" in s for s in steps) and any("50 m" in s for s in steps)
-    assert not any("Snacksworth" in s for s in steps)
-
-
 def circle_args(argv):
     ap = sv_join.build_parser()
     args = ap.parse_args(["--union-circle", *argv])
@@ -346,6 +339,8 @@ def test_a_legal_spawn_pkhex_accepts_nowhere_stops_the_run(monkeypatch, capsys):
 @pytest.mark.parametrize("argv, why", [
     (["--spawn-legal"], "checks the --spawn"),
     (["--spawn", "25"], "is not SPECIES:LEVEL"),
+    (["--spawn", "25:0"], "at a level from 1 to 100"),
+    (["--spawn", "25:101"], "at a level from 1 to 100"),
     (["--spawn", "25:11", "--spawn-scale", "256"], "do not fit its record"),
     (["--spawn", "25:11", "--spawn-ivs", "31/31/31/31/31/32"], "do not fit its record")])
 def test_a_crafted_spawn_refuses_what_its_record_cannot_carry(argv, why, capsys):

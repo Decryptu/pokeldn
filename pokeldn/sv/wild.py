@@ -13,8 +13,6 @@ GAME, SPAWNS, LOST = "game", "spawns", "lost"    # Locator.source: where the hos
 ESTIMATE_ERROR = 50     # metres: 9 in 10 estimates from the host's spawns fell this near its player in
                         # the captures where both were known (circle.ESTIMATE_SPAWNS)
 IV_MAX = 31
-TYPES = ("Normal", "Fighting", "Flying", "Poison", "Ground", "Rock", "Bug", "Ghost", "Steel", "Fire",
-         "Water", "Grass", "Electric", "Psychic", "Ice", "Dragon", "Dark", "Fairy")
 
 
 @dataclass(frozen=True)
@@ -47,6 +45,7 @@ class Area:
 @dataclass(frozen=True)
 class Table:
     areas: tuple[Area, ...]
+    types: tuple[str, ...] = ()     # the Tera Types' names, Normal to Fairy
 
     def where(self, species, form, level=None):
         """-> the areas a wild `species` in `form` (at `level`) appears in."""
@@ -65,7 +64,7 @@ class Table:
 def table(reply):
     """-> the Table of PKHeX's `wild_areas` reply."""
     return Table(tuple(Area(a["location"], a["name"], tuple(Slot(*slot) for slot in a["slots"]))
-                       for a in reply["areas"]))
+                       for a in reply["areas"]), tuple(reply.get("types", ())))
 
 
 def areas(service):

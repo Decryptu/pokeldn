@@ -18,11 +18,12 @@ static class Wild
         (EncounterArea9[])typeof(PK9).Assembly.GetType("PKHeX.Core.Encounters9")!
             .GetField("Slots", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
 
-    static string LocationName(ushort location) => GameInfo.GetLocationName(false, location, 9, 9, GameVersion.SL);
+    static string LocationName(GameStrings strings, ushort location) =>
+        strings.GetLocationName(false, location, 9, 9, GameVersion.SL);
 
-    // -> {"areas": [{"location", "name", "slots": [[species, form or -1, lowest level, highest]]}]}, each location
-    // once, its slots merged.
-    public static JsonObject AreasReply()
+    // -> {"areas": [{"location", "name", "slots": [[species, form or -1, lowest level, highest]]}], "types": the Tera
+    // Types' names}, each location once, its slots merged; names in `strings`' language.
+    public static JsonObject AreasReply(GameStrings strings)
     {
         var byLocation = new SortedDictionary<ushort, HashSet<(int, int, int, int)>>();
         foreach (var area in Areas())
@@ -41,17 +42,19 @@ static class Wild
             var list = new JsonArray();
             foreach (var (s, f, lo, hi) in slots.OrderBy(x => x))
                 list.Add(new JsonArray(s, f, lo, hi));
-            areas.Add(new JsonObject { ["location"] = location, ["name"] = LocationName(location), ["slots"] = list });
+            areas.Add(new JsonObject { ["location"] = location, ["name"] = LocationName(strings, location), ["slots"] = list });
         }
-        return new JsonObject { ["areas"] = areas };
+        var types = new JsonArray();
+        for (var t = 0; t < TeraTypes; t++)
+            types.Add(strings.types[t]);
+        return new JsonObject { ["areas"] = areas, ["types"] = types };
     }
 
     // -> what a crafted spawn of "species" (National) in "form" can hold: {"forms": [{"id", "name"}], "types",
     // "abilities": [{"slot", "name"}] (slot 2 the hidden one), "gender" ratio (0 male only, 254 female only,
-    // 255 genderless), "natures": [{"id", "name"}]}.
-    public static JsonObject SpeciesReply(JsonObject request)
+    // 255 genderless), "natures": [{"id", "name"}]}, names in `strings`' language.
+    public static JsonObject SpeciesReply(JsonObject request, GameStrings strings)
     {
-        var strings = GameInfo.Strings;
         var species = checked((ushort)(int)request["species"]!);
         var form = checked((byte)((int?)request["form"] ?? 0));
         var table = PersonalTable.SV;
@@ -84,8 +87,8 @@ static class Wild
     // -> {"locations": [{"location", "name", "teras", "problems"}]}: each location with a wild slot for the spawn
     // `request` describes ("species" National, "form", "level", "tera", "shiny", "nature", "gender", "scale", "ivs"
     // HP Atk Def Spe SpA SpD, "ability" slot 0 1 or 2 hidden, "item"), the Tera Types PKHeX accepts it caught there
-    // with, and PKHeX's problems with its own "tera" there, none when it is legal.
-    public static JsonObject LegalReply(JsonObject request)
+    // with, and PKHeX's problems with its own "tera" there as `plain` words them, none when it is legal.
+    public static JsonObject LegalReply(JsonObject request, GameStrings strings, Func<LegalityAnalysis, string> plain)
     {
         var species = checked((ushort)(int)request["species"]!);
         var form = checked((byte)((int?)request["form"] ?? 0));
@@ -107,18 +110,12 @@ static class Wild
                 if (la.Valid)
                     teras.Add(t);
                 else if (t == tera)
-                    foreach (var raw in la.Report().Split('\n'))
-                    {
-                        var line = raw.Trim();
-                        if (line.StartsWith("Invalid: "))
-                            line = line["Invalid: ".Length..];
-                        if (line.Length > 0 && !problems.Any(p => (string?)p == line))
-                            problems.Add(line);
-                    }
+                    foreach (var line in plain(la).Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                        problems.Add(line);
             }
             locations.Add(new JsonObject
             {
-                ["location"] = area.Key, ["name"] = LocationName(area.Key), ["teras"] = teras, ["problems"] = problems,
+                ["location"] = area.Key, ["name"] = LocationName(strings, area.Key), ["teras"] = teras, ["problems"] = problems,
             });
         }
         return new JsonObject { ["locations"] = locations };

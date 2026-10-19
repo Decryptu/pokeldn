@@ -7,15 +7,14 @@ import threading
 import flet as ft
 
 from gui import theme as t
-from gui.views.pokemon import NamePicker, pokemon_header
+from gui.localization import SERVICE, error_message
+from gui.views.pokemon import STATS, NamePicker, pokemon_header
 from gui.views.sprites import Sprite
 from gui.views.widgets import PixelActivity
-from pokeldn import pokemon as builder
 from pokeldn.app.i18n import t as tr
 from pokeldn.sv import wild
 
 RANDOM = "-"
-IV_LABELS = ("HP", "Atk", "Def", "SpA", "SpD", "Spe")
 MALE, FEMALE = 0, 1
 MALE_ONLY, FEMALE_ONLY, GENDERLESS = 0, 254, 255
 
@@ -54,10 +53,9 @@ class EncounterPicker:
         self.control = ft.Column([
             ft.Row([t.text(tr('encounter.legal_encounters_only_6d37c0', 'Legal encounters only'), 13, expand=True), self.legal],
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            t.text(tr('encounter.pkhex_s_wild_slots_set_the_species_levels_and_tera_type_e5c160',
-                      "PKHeX's wild slots set the species, levels and Tera Types, and pokeldn spawns only while "
-                      "the host stands where PKHeX accepts the Pokemon caught, found from the wild Pokemon the "
-                      "host's game shares."), 12, t.MUTED),
+            t.text(tr('encounter.offers_only_what_the_game_s_own_wild_pokemon_can_be_and_456583',
+                      "Offers only what the game's own wild Pokemon can be, and spawns it only while you stand "
+                      "where PKHeX finds it legal once caught."), 12, t.MUTED),
             pokemon_header(self.sprite.control, [top, self.details]),
             self.places,
         ], spacing=10)
@@ -110,17 +108,17 @@ class EncounterPicker:
             found = sorted({tera for place in self.scanned for tera in place["teras"]})
             if found:
                 return found
-        return list(range(len(wild.TYPES)))
+        return list(range(len(self.table.types))) if self.table else []
 
     # Loading
 
     def _load(self) -> None:
         try:
-            self.table = wild.areas(builder.SERVICE)
-            self.species_names = builder.SERVICE.species("sv")
+            self.table = wild.areas(SERVICE)
+            self.species_names = SERVICE.species("sv")
             error = ""
         except Exception as exc:
-            error = str(exc)
+            error = error_message(exc)
 
         def show():
             self.species.trailing_icon = t.pixel_icon("chevron-down", color=t.MUTED)
@@ -154,9 +152,9 @@ class EncounterPicker:
 
         def work():
             try:
-                info, error = wild.species(builder.SERVICE, species, form), ""
+                info, error = wild.species(SERVICE, species, form), ""
             except Exception as exc:
-                info, error = None, str(exc)
+                info, error = None, error_message(exc)
 
             def show():
                 if (species, form) != (self._number("species"), self._number("form")):
@@ -192,9 +190,9 @@ class EncounterPicker:
 
         def work():
             try:
-                found, error = wild.scan(builder.SERVICE, spawn), ""
+                found, error = wild.scan(SERVICE, spawn), ""
             except Exception as exc:
-                found, error = None, str(exc)
+                found, error = None, error_message(exc)
 
             def show():
                 if token != self.check_token:
@@ -249,7 +247,7 @@ class EncounterPicker:
         else:
             first.append(self._entry(tr('encounter.level_170930', 'Level'), "level", 1, 100, width=90))
         teras = self.teras()
-        first.append(self._choice(tr('encounter.tera_type_f65f71', 'Tera Type'), "tera", [(str(n), wild.TYPES[n]) for n in teras]))
+        first.append(self._choice(tr('encounter.tera_type_f65f71', 'Tera Type'), "tera", [(str(n), self.table.types[n]) for n in teras]))
         second = [self._choice(tr('encounter.nature_c71ce8', 'Nature'), "nature",
                                [(str(n["id"]), n["name"]) for n in info["natures"]], random=True)]
         if len(genders(info["gender"])) > 1:
@@ -315,7 +313,7 @@ class EncounterPicker:
             self.value["ivs"] = "/".join(parts) if whole else None
             self._save(redraw=False)
             self._check()
-        for at, name in enumerate(IV_LABELS):
+        for at, (_, name) in enumerate(STATS):
             boxes.append(t.labeled_control(name, t.field(value=parts[at], hint="-", mono=True, digits=True, limit=2,
                                                          on_change=lambda e, at=at: changed(e, at)), expand=True))
         return ft.Column([t.text(tr('encounter.ivs_all_six_or_empty_227216', 'IVs (all six, or empty)'), 12, t.MUTED),

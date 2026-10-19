@@ -84,9 +84,9 @@ static partial class Program
                     "move" => Move(game, request),
                     "destinations" => Destinations(game, request),
                     "raid_scan" => RaidScan.Run(request),
-                    "wild_areas" => Wild.AreasReply(),
-                    "wild_legal" => Wild.LegalReply(request),
-                    "wild_species" => Wild.SpeciesReply(request),
+                    "wild_areas" => Wild.AreasReply(strings),
+                    "wild_legal" => Wild.LegalReply(request, strings, Plain),
+                    "wild_species" => Wild.SpeciesReply(request, strings),
                     var other => throw new ArgumentException($"unknown command {other}"),
                 };
                 reply["ok"] = true;

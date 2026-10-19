@@ -34,8 +34,6 @@ from gui.views.widgets import CodeBlock, DigitCode, Log, PathField, open_folder
 from gui.localization import SERVICE, summary as pokemon_summary, summary_lines, summary_text, translate
 from pokeldn.app.i18n import help_text, t as tr
 
-TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift", "Tera Raid": "diamond-gem",
-              "Union Circle": "union-circle"}
 EMPTY = "-"   # a dropdown option cannot carry an empty key
 # The Tera Raid host's event fields (pokeldn/app/catalog.py) and the context fields an event narrows.
 RAID_EVENT, RAID_DEN, RAID_CATCH = "--raid-event", "--raid-event-group", "--raid-catch-normal"
@@ -51,7 +49,7 @@ def tool_icon(tool: Tool):
     if tool.key.endswith("-online"):
         return "globe"
     if "circle" in tool.key:
-        return "union-circle"
+        return "users"
     # "Trade (Host)" and "Mystery Gift - Simulated" take their kind's icon.
     return "gift" if "gift" in tool.key else "diamond-gem" if "raid" in tool.key else "arrows-horizontal"
 
@@ -80,6 +78,14 @@ def forget_unremembered(tool_values: dict, catalog: list[Game]) -> None:
         for field in tool.fields:
             if not field.remembered:
                 tool_values.get(tool.key, {}).get("values", {}).pop(field.key, None)
+
+
+def translated_card(card: dict) -> dict:
+    """A built-in run's English `[panel]` card in the selected pack's words."""
+    return {**card, "title": translate(card["title"]),
+            "chips": [(translate(label), value) for label, value in card["chips"]],
+            "lines": [[translate(part) for part in line] if isinstance(line, list) else translate(line)
+                      for line in card["lines"]]}
 
 
 class GamesView:
@@ -345,7 +351,7 @@ class GamesView:
         session = self.session
         running = bool(self.app.process and self.app.process.running)
         cards = session.run_cards if running and self.tool is session.running_tool else {}
-        self.run_panel.controls = [card_control(c) for c in cards.values()]
+        self.run_panel.controls = [card_control(translated_card(c)) for c in cards.values()]
         self.run_panel.visible = bool(cards)
         if update:
             try:
