@@ -162,16 +162,16 @@ A raid message is a game message on 0x80 port 0: a u16 handler key, a kind byte,
 |---|---|---|
 | 0x3380 | 0x2c | the raid's descriptor: species (DevID), form, stars, Tera type, gender, the encounter's record number |
 | 0x3380 | 0x2d | a participant's state: 0x00 not ready, 0x01 ready, 0x0c the host's start, 0x0d a guest's answer to it, 0x18 entering the lobby, 0x1e the host refusing a late station (`0.30822`) |
-
-A retail guest sends 0x18 and its Pokemon on entering the lobby and 0x01 when its player presses
-Ready: in seven retail raids four guests sent 0x01, 1.9 to 3.6 s after their Pokemon, and three sent
-none before the host's start at 5.39 s; all seven answered the start with 0x0d and fought.
 | 0x3380 | 0x2e | a participant's Pokemon, its encrypted 344-byte party record |
 | 0x3380 | 0x2f | the battle bootstrap |
 | 0x3380 | 0x30 | the lobby timer, in seconds left (0x91 downwards) |
 | 0x0132 | 0x6e, 0x73 | a console loading the battle, then loaded |
 | 0x3480 | 0x93 | the battle begins |
 | 0x007b | 0x13 | the battle-start messages a host sends after 0x3480 |
+
+A retail guest sends 0x18 and its Pokemon on entering the lobby and 0x01 when its player presses
+Ready: in seven retail raids four guests sent 0x01, 1.9 to 3.6 s after their Pokemon, and three sent
+none before the host's start at 5.39 s; all seven answered the start with 0x0d and fought.
 
 The header is message object `+0x40..+0x4f`. The receive path `0x18bec54` copies the id, the
 counter and the object id back into the object and compares none of them; it does not check the LZ4

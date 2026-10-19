@@ -43,7 +43,9 @@ compact = False
 
 
 def app_theme() -> ft.Theme:
+    from pokeldn.app.i18n import font_family
     return ft.Theme(
+        font_family=font_family(),
         text_theme=ft.TextTheme(**{f.name: ft.TextStyle(font_family_fallback=[CJK_FONT])
                                    for f in fields(ft.TextTheme)}),
         color_scheme_seed=BLUE,

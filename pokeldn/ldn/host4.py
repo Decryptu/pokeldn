@@ -23,6 +23,7 @@ CLONE_CLOCK = 0x77                # 18 bytes in; 01, bytes 1..9 echoed, the clon
 UPDATE_SESSION_PERIOD = 0.1       # the console's own rebroadcast rate until acked
 UPDATE_MESH_PERIOD = 2.0
 RTT_PERIOD = 0.4
+DESTROY_PERIOD = 0.33             # START_HOST_MIGRATION, `0x12d` ms (docs/swsh_session.md, Leaving)
 WINDOW_ACK_PERIOD = 1.0           # the host acks both 0x80 ports once a second, data or not
 RETRANSMIT_AFTER = 0.3
 STATION_FLAGS = 0x01              # message flags on 0x14, 0x18, 0x58 and 0x7C
@@ -97,7 +98,7 @@ class Pia4Host:
 
     def __init__(self, network_id_le, session_key, our_ip, our_mac, send, log=print,
                  on_data=None, on_other=None, name="POKELDN", account=None, token=None,
-                 session=None, capture=None, on_broadcast=None):
+                 session=None, capture=None, on_broadcast=None, max_stations=2):
         self.network_id_le = bytes(network_id_le)
         self.session_key = bytes(session_key)
         self.our_ip, self.our_mac = our_ip, bytes(our_mac)
@@ -115,6 +116,7 @@ class Pia4Host:
         self.on_broadcast = on_broadcast
         self.name, self.account, self.token, self.session = name, account, token, session
         self.capture = capture
+        self.max_stations = max_stations  # the join response's active maximum: 2 in a trade
         self.stations = {}            # ip -> Station
         self.sequence = 1             # the update session's
         self.last_update = 0.0
@@ -122,6 +124,8 @@ class Pia4Host:
         self.ack_counter = struct.unpack(">I", os.urandom(4))[0] & 0x7FFFFFFF
         self.rtt_seen = 0
         self.t0 = time.time()
+        self.migrating = None         # when we started handing the session over, or None
+        self.last_destroy = 0.0
 
     def record(self, **row):
         if self.capture is not None:
@@ -172,14 +176,33 @@ class Pia4Host:
                 out.append((st.location, st.index))
         return out
 
+    def leave_with_migration(self, now=None):
+        """Hand the session to station 1 and destroy the network as a hosting Sword leaves:
+        MIGRATION_START on mesh port 1, the update session with its host-migration byte set, then
+        START_HOST_MIGRATION every 0.33 s (docs/swsh_session.md, Leaving)."""
+        if self.migrating is not None:
+            return
+        self.migrating = time.time() if now is None else now
+        self.sequence += 1
+        for st in self.stations.values():
+            self.send_data(st.ip, mesh.PROTOCOL, mesh.PORT_RELIABLE,
+                           bytes([mesh.MIGRATION_START, 0, 1]))
+        self.log("[pia4] -> MIGRATION_START, host 0 hands over to 1")
+
     def tick(self, now=None):
         now = time.time() if now is None else now
-        broadcast = self.broadcast_ip()
+        if self.migrating is not None and now - self.last_destroy >= DESTROY_PERIOD:
+            for broadcast in self.broadcast_ips():
+                self.send_message(broadcast, bytes([1, lp.START_HOST_MIGRATION]) + bytes(14),
+                                  lp.PROTOCOL, flags=0x09)
+            self.last_destroy = now
         if (any(st.update_acked < self.sequence for st in self.stations.values())
                 or not self.stations) and now - self.last_update >= UPDATE_SESSION_PERIOD:
             upd = lp.build_update_session(self.sequence, self.local_network_id, self.variable,
-                                          self.service_variable, self.constant, self.nodes())
-            self.send_message(broadcast, upd, lp.PROTOCOL, flags=0x09)
+                                          self.service_variable, self.constant, self.nodes(),
+                                          host_migration_state=int(self.migrating is not None))
+            for broadcast in self.broadcast_ips():
+                self.send_message(broadcast, upd, lp.PROTOCOL, flags=0x09)
             self.last_update = now
         for st in list(self.stations.values()):
             if st.state != "joined":
@@ -206,12 +229,12 @@ class Pia4Host:
                                           flags=STATION_FLAGS, destination=st.bitmap)
                         entry[1] = now
 
-    def broadcast_ip(self):
+    def broadcast_ips(self):
+        # Loopback has no broadcast: each emulated station gets its own copy.
         parts = self.our_ip.split(".")
         if parts[0] == "127":
-            peers = [st.ip for st in self.stations.values()]
-            return peers[0] if peers else self.our_ip
-        return ".".join(parts[:3] + ["255"])
+            return [st.ip for st in self.stations.values()] or [self.our_ip]
+        return [".".join(parts[:3] + ["255"])]
 
     def send_window_ack(self, st, protocol, port, w):
         ack_id = (w.through + 1) if w.through is not None else reliable4.FIRST_SEQUENCE
@@ -397,7 +420,8 @@ class Pia4Host:
         first = st.state != "joined"
         st.state = "joined"
         resp = mesh.build_join_response_v4(0, st.index, self.mesh_entries(), self.next_ack_id(),
-                                           update_counter=self.mesh_counter)
+                                           update_counter=self.mesh_counter,
+                                           max_active=self.max_stations)
         self.send_message(st.ip, resp, mesh.PROTOCOL)
         if first:
             self.mesh_counter += 1

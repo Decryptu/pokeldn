@@ -20,7 +20,9 @@ LANGUAGES = (("2", tr("settings.language_english", "English")),
              ("4", tr("settings.language_italian", "Italian")),
              ("7", tr("settings.language_spanish", "Spanish")),
              ("1", tr("settings.language_japanese", "Japanese")),
-             ("8", tr("settings.language_korean", "Korean")))
+             ("8", tr("settings.language_korean", "Korean")),
+             ("9", tr("settings.language_simplified_chinese", "Simplified Chinese")),
+             ("10", tr("settings.language_traditional_chinese", "Traditional Chinese")))
 
 LINKS = ((tr('settings.documentation_c20592', 'Documentation'), "https://decryptu.github.io/pokeldn/"),
          (tr('settings.github_f911e4', 'GitHub'), "https://github.com/Decryptu/pokeldn"),
@@ -195,9 +197,9 @@ class SettingsView:
         release, state = self.app.update, self.app.update_state
         self.update_state.value = {
             "checking": tr('settings.checking_2e5f79', 'Checking...'),
-            "current": f"You have the latest version ({__version__}).",
+            "current": tr('settings.latest_version', 'You have the latest version ({value0}).', value0=__version__),
             "offline": tr('settings.github_did_not_answer_check_your_connection_c1e29b', 'GitHub did not answer. Check your connection.'),
-            "available": f"pokeldn {release.version} is available." if release else "",
+            "available": tr('settings.version_available', 'pokeldn {value0} is available.', value0=release.version) if release else "",
         }.get(state, "")
         self.update_state.color = t.GREEN if state == "available" else t.MUTED
 

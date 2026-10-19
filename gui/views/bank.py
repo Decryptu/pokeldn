@@ -10,6 +10,7 @@ from gui import drop, theme as t
 from gui.views.games import tool_role
 from gui.views.sprites import MINI, SIZE, Sprite
 from gui.views.widgets import open_folder
+from gui.localization import SERVICE, date_time, summary_lines, summary_text, translate
 from pokeldn import pokemon
 from pokeldn.app import bank
 from pokeldn.app.settings import GEN3
@@ -135,7 +136,7 @@ class BankView:
             ft.Container(game_icon(entry.game, 16), right=0, bottom=0),
             ft.Container(t.pixel_icon("arrows-horizontal", size=12, color=t.BLUE), left=2, top=2,
                          visible=queued),
-        ]), padding=4, border_radius=14, tooltip=entry.summary,
+        ]), padding=4, border_radius=14, tooltip=summary_text(entry.summary),
             border=ft.Border.all(2, t.BLUE if active else ft.Colors.TRANSPARENT),
             on_click=lambda e, i=entry.id: self.select(i))
 
@@ -157,7 +158,7 @@ class BankView:
     def _find_routes(self, entry: bank.Entry) -> None:
         trainer = self.app.settings.trainer(entry.game)
         try:
-            routes = bank.destinations(entry, trainer)
+            routes = bank.destinations(entry, trainer, service=SERVICE)
         except (OSError, pokemon.BuilderError) as error:
             routes = {key: {"ok": key == entry.game, "reason": str(error)} for key in NAMES}
 
@@ -173,16 +174,15 @@ class BankView:
         if entry is None:
             self.detail.controls = [t.text(tr('bank.pick_a_pokemon_to_see_where_it_can_go_3b278b', 'Pick a Pokemon to see where it can go.'), 13, t.MUTED)]
             return
-        parts = entry.summary.split(" · ")
-        head = 3 if len(parts) > 2 and parts[2] == "shiny" else 2
+        head, rest = summary_lines(entry.summary)
         about = ft.Column([
-            t.text(" · ".join(parts[:head]), 15, weight=ft.FontWeight.W_600),
-            t.text(" · ".join(parts[head:]), 12, t.MUTED),
+            t.text(head, 15, weight=ft.FontWeight.W_600),
+            t.text(rest, 12, t.MUTED),
             ft.Row([game_icon(entry.game), t.text(tr('bank.in_bb2233', 'In {value0}', value0=NAMES[entry.game]), 12, t.SOFT)], spacing=6),
-            t.text(tr('bank.banked_faf7b7', 'Banked {value0}', value0=entry.when), 12, t.FAINT),
+            t.text(tr('bank.banked_faf7b7', 'Banked {value0}', value0=date_time(entry.created)), 12, t.FAINT),
             t.badge(tr('bank.legal_4787ea', 'Legal'), t.GREEN, "checkbox-on") if entry.legal else
             t.badge(tr('bank.pkhex_finds_it_not_legal_58cc49', 'PKHeX finds it not legal'), t.AMBER, "warning-diamond"),
-            *([t.badge(warning, t.AMBER, "warning-diamond")]
+            *([t.badge(translate(warning), t.AMBER, "warning-diamond")]
               if (warning := pokemon.HOME_TRACKER_WARNINGS.get(entry.home_tracker)) else []),
         ], spacing=4, expand=True)
         controls = [ft.Row([Sprite(self.app, entry.species_id, entry.shiny, size=SIZE).control, about],
@@ -213,10 +213,10 @@ class BankView:
         for key in NAMES:
             route = routes.get(key, {"ok": False, "reason": ""})
             ok, chosen = route["ok"], key == self.target
-            lines = route["reason"].split("\n")
+            lines = translate(route["reason"]).split("\n")
             warning = pokemon.HOME_TRACKER_WARNINGS.get(route.get("home_tracker", "")) if ok else None
             why = lines[0] + (tr('bank.more_86f3b0', ' (+{value0} more)', value0=len(lines) - 1) if len(lines) > 1 else "") if not ok else (
-                tr('bank.its_own_game_6e5aee', 'Its own game') if key == entry.game else warning or tr('bank.moves_as_home_would_move_it_5731e1', 'Moves as HOME would move it'))
+                tr('bank.its_own_game_6e5aee', 'Its own game') if key == entry.game else translate(warning) if warning else tr('bank.moves_as_home_would_move_it_5731e1', 'Moves as HOME would move it'))
             rows.append(ft.Container(ft.Row([
                 game_icon(key, 24),
                 ft.Column([t.text(NAMES[key], 13, t.TEXT if ok else t.FAINT, weight=ft.FontWeight.W_600),
@@ -281,9 +281,9 @@ class BankView:
 
         def work():
             try:
-                info = pokemon.SERVICE.check_bytes(entry.game, bank.data(entry))
-                moves = pokemon.SERVICE.names(entry.game, "moves")
-                items = pokemon.SERVICE.names(entry.game, "items")
+                info = SERVICE.check_bytes(entry.game, bank.data(entry))
+                moves = SERVICE.names(entry.game, "moves")
+                items = SERVICE.names(entry.game, "items")
                 problem = ""
             except (OSError, pokemon.BuilderError) as error:
                 info, moves, items, problem = {}, [], [], str(error)
@@ -412,13 +412,14 @@ class ImportDialog:
 
     def _pokemon(self, found: bank.ImportedPokemon) -> ft.Control:
         label, icon, color = self.STATES[found.state]
-        about = [t.text(found.species or tr('bank.unknown_pokemon_40e13e', 'Unknown Pokemon'), 13, t.TEXT if found.state != "refused" else t.SOFT,
+        about = [t.text(translate(found.species) or tr('bank.unknown_pokemon_40e13e', 'Unknown Pokemon'), 13, t.TEXT if found.state != "refused" else t.SOFT,
                         weight=ft.FontWeight.W_600)]
         if found.where:
-            about.append(t.text(found.where, 11, t.FAINT))
+            about.append(t.text(translate(found.where), 11, t.FAINT))
         if found.detail:
-            about.append(t.text(found.detail, 11, t.AMBER if found.state == "refused" else t.MUTED,
-                                max_lines=2, overflow=ft.TextOverflow.ELLIPSIS, tooltip=found.detail))
+            detail = " · ".join(translate(part) for part in found.detail.split(" · "))
+            about.append(t.text(detail, 11, t.AMBER if found.state == "refused" else t.MUTED,
+                                max_lines=2, overflow=ft.TextOverflow.ELLIPSIS, tooltip=detail))
         status = [ft.Container(game_icon(found.game, 18), tooltip=tr('bank.kept_as_a_pokemon_8c187f', 'Kept as a {value0} Pokemon', value0=NAMES[found.game]))
                   ] if found.game and found.state != "refused" else []
         status.append(t.chip(label, icon, color))

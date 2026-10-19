@@ -150,7 +150,8 @@ def test_a_plugin_in_the_data_folder_loads_only_once_enabled(isolated):
 
 @pytest.mark.parametrize("source, api, error", [
     (TOOL_PLUGIN, 2, "needs plugin API 2.0"),
-    (TOOL_PLUGIN, '"1.9"', "needs plugin API 1.9"),
+    (TOOL_PLUGIN, f'"{plugins.API_VERSION}.{plugins.API_LEVEL + 1}"',
+     f"needs plugin API {plugins.API_VERSION}.{plugins.API_LEVEL + 1}"),
     (TOOL_PLUGIN.replace('"example-echo"', '"frlg-trade-host"'), 1, "already taken"),
     (TOOL_PLUGIN.replace('add_tool("frlg"', 'add_tool("snes"'), 1, "no game 'snes'"),
     (RADIO_PLUGIN.replace('"fake"', '"esp32"'), 1, "already taken"),

@@ -42,7 +42,7 @@ Legends Arceus, in Scarlet and Violet and in Legends Z-A.
 | [Reverse-engineering a Switch title](switch_re.md) | Reading a retail game's own code: NCA/RomFS extraction in place, IL2CPP metadata, C++ RTTI. General method. |
 | [FireRed and LeafGreen](frlg.md) | The GBA link, Mystery Gift, code execution on the console, the RNG, the two cartridges. |
 | [Brilliant Diamond and Shining Pearl](bdsp.md) | Pia 5.27-5.45, the Union Room, and the trade flow. |
-| [Sword and Shield](swsh.md) | Pia 4, the sync framework, trading, Max Raid Battles in both roles, and the Mystery Gift local branch. |
+| [Sword and Shield](swsh.md) | Pia 4, the sync framework, trading, Max Raid Battles in both roles, Dynamax Adventures, and the Mystery Gift local branch. |
 | [Let's Go Pikachu and Eevee](lgpe.md) | Pia 3, the link code, and the trade flow. |
 | [Legends Arceus](pla.md) | Pia header version 11, the trade flow, and the record a host composes. |
 | [Scarlet and Violet](sv.md) | Pia header version 11, the reliable streams, the trade a host runs, and Tera Raids in both roles. |
@@ -52,6 +52,7 @@ Legends Arceus, in Scarlet and Violet and in Legends Z-A.
 | [Desktop app](gui.md) | Setup, Bank, controller, updates and builds; the same app on Android and iOS. |
 | [Code organization](architecture.md) | Shared modules, Pokémon preparation and verification. |
 | [Hardware and setup](hardware.md) | The ESP32 radio, Switch keys, and legacy Linux Wi-Fi cards. |
+| [Code signing policy](code_signing.md) | What the Windows release signs, the team roles, and the privacy policy. |
 
 ## Credits
 

@@ -82,6 +82,10 @@ jobs:
 
   app:
     needs: [firmware, pad]
+    # actions: SignPath reads the job and its artifact; the unsigned upload is deleted after signing.
+    permissions:
+      contents: read
+      actions: write
     strategy:
       fail-fast: false
       matrix:
@@ -201,6 +205,39 @@ jobs:
       - name: Verify the frozen app (Windows)
         if: runner.os == 'Windows'
         run: python scripts/check_app.py dist/pokeldn/pokeldn.exe
+      # SignPath Foundation signs pokeldn.exe, the PKHeX helper and Unicorn (.github/signpath/artifact-configuration.xml);
+      # a fork without SIGNPATH_API_TOKEN ships unsigned. vars.SIGNPATH_POLICY switches to release-signing.
+      - name: Upload for signing (Windows)
+        id: unsigned
+        if: runner.os == 'Windows' && env.SIGNPATH == 'true'
+        env:
+          SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: pokeldn-windows-unsigned
+          path: dist/pokeldn
+          retention-days: 1
+      - name: Sign (Windows)
+        if: steps.unsigned.outcome == 'success'
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: 4b87571e-2d2a-468b-96f7-3b29ba9ff1a5
+          project-slug: pokeldn
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY || 'test-signing' }}
+          artifact-configuration-slug: pokeldn-windows
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+      - name: Replace with the signed files (Windows)
+        if: steps.unsigned.outcome == 'success'
+        run: |
+          Remove-Item -Recurse -Force dist/pokeldn
+          Move-Item signed dist/pokeldn
+          python scripts/check_app.py dist/pokeldn/pokeldn.exe
+          gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/${{ steps.unsigned.outputs.artifact-id }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Archive (macOS)
         if: runner.os == 'macOS'
         run: ditto -c -k --keepParent dist/pokeldn.app "${{ matrix.asset }}"

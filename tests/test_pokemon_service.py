@@ -17,6 +17,53 @@ TRAINER = {"ot": "POKELDN", "tid": 12345, "sid": 54321, "language": 2, "gender":
 FORMATS = {"frlg": "PK3", "lgpe": "PB7", "swsh": "PK8", "bdsp": "PB8", "pla": "PA8", "sv": "PK9", "za": "PA9"}
 
 
+@pytest.fixture
+def display(service, monkeypatch):
+    """gui.localization's display service in a chosen pack locale, over the shared PKHeX process."""
+    from gui.localization import DisplayService
+    from pokeldn.app import i18n
+
+    def make(language):
+        monkeypatch.setattr(i18n, "locale", lambda: language)
+        return DisplayService()
+    return make
+
+
+@pytest.mark.parametrize("language,game,kind,names", [
+    ("zh-Hans", "frlg", "species", {25: "皮卡丘", 252: "木守宫"}),
+    ("zh-Hans", "frlg", "species3", {25: "皮卡丘", 277: "木守宫"}),          # Treecko: national 252, cartridge 277
+    ("zh-Hans", "frlg", "items", {42: "黑色玻璃哨", 68: "神奇糖果", 374: "蓝宝石"}),   # Gen 3 item ids
+    ("fr-FR", "sv", "species", {7: "Carapuce"}),
+    ("de", "sv", "species", {4: "Glumanda"}),
+    ("unknown-XX", "sv", "species", {4: "Charmander"}),
+])
+def test_a_display_language_names_the_same_ids(service, display, language, game, kind, names):
+    shown = {n["id"]: n["name"] for n in display(language).names(game, kind)}
+    english = service.names(game, kind)
+    assert {n: shown[n] for n in names} == names
+    assert set(shown) == {n["id"] for n in english}
+
+
+@pytest.mark.parametrize("mode", ["empty", "made"])
+def test_a_display_language_builds_the_same_record_with_english_names_kept(service, display, mode):
+    service.home_tracker = mode
+    try:
+        shown = display("zh-Hans")
+        found = shown.paste("sv", "Pikachu @ Light Ball\nAbility: Static\nTimid Nature\n- Thunderbolt", TRAINER)[0]
+        assert not found["errors"] and found["species"] == "皮卡丘" and found["moves"] == ["十万伏特"]
+        assert (found["options"]["held_item"], found["options"]["ability"]) == (236, 9)
+        built = shown.make("swsh", 809, TRAINER)
+        assert built["species"] == "美录梅塔" and built["legal"] and built["home_tracker"] == mode
+        assert (built["tracker"] != "0") == (mode == "made")
+        info = shown.make("sv", 25, TRAINER)
+        assert info["canonical"]["species"] == "Pikachu" and info["is_nicknamed"] is False
+        assert pokemon.summary(info).startswith("Pikachu · level ") and "'" not in pokemon.summary(info)
+        assert Path(info["file"]).name.startswith("Pikachu-")
+        assert service.check_bytes("sv", base64.b64decode(info["data"]))["legal"]
+    finally:
+        service.home_tracker = "empty"
+
+
 @pytest.mark.parametrize("failure, error, requests", [
     ("interrupted", None, 2),
     ("persistent", "could not complete its legality analysis after restarting", 2),

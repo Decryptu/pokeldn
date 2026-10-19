@@ -9,7 +9,6 @@ import flet as ft
 
 from gui import board
 from gui.app import keys_found
-from pokeldn import pokemon as builder
 from pokeldn import panel, progress
 from pokeldn.app import bank, command, panels, events_gallery, gift_builder, online, received, runner
 from pokeldn.swsh import raid_event as swsh_raid_event
@@ -25,19 +24,22 @@ from gui.views.raid_event import FOLDED, RaidEventPicker
 from gui.views.encounter import EncounterPicker
 from gui.views.raid_partners import RaidPartnersPicker
 from gui.views.raid_seed import RaidSeedPicker
+from gui.views.lair_seed import LairSeedPicker
 from gui.views.rewards import RewardPicker
 from gui.views.gifts import GiftBuilder
 from gui.views.library import LibraryCard
 from gui.views.panels import StatusCards, card_control
 from gui.views.sprites import MINI, Sprite
 from gui.views.widgets import CodeBlock, DigitCode, Log, PathField, open_folder
-from pokeldn.app.i18n import t as tr
+from gui.localization import SERVICE, summary as pokemon_summary, summary_lines, summary_text, translate
+from pokeldn.app.i18n import help_text, t as tr
 
 TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift", "Tera Raid": "diamond-gem",
               "Union Circle": "union-circle"}
 EMPTY = "-"   # a dropdown option cannot carry an empty key
 # The Tera Raid host's event fields (pokeldn/app/catalog.py) and the context fields an event narrows.
 RAID_EVENT, RAID_DEN, RAID_CATCH = "--raid-event", "--raid-event-group", "--raid-catch-normal"
+REWARD_DEN_KEYS = ("--raid-boss", "--raid-gigantamax")   # a Max Raid's den follows its boss
 RAID_CONTEXT = {"--raid-version": ("version", "violet"), "--raid-map": ("map_name", "paldea"),
                 "--raid-progress": ("progress", "4star"), "--raid-content": ("content", "standard")}
 ADVANCED_NOTE = (tr('games.the_tested_defaults_work_for_most_players_change_these__1815f2', 'The tested defaults work for most players. Change these only when a guide or a bug report asks you to. A value set here overrides the Basic tab.'))
@@ -160,6 +162,12 @@ class GamesView:
     def set_value(self, field: Field, value, rebuild: bool = False) -> None:
         self.values[field.key] = value
         self.app.settings.save()
+        picker = getattr(self, "reward_picker", None)
+        if picker is not None and picker.den_of is not None and field.key in REWARD_DEN_KEYS and not rebuild:
+            try:
+                picker.follow()
+            except RuntimeError:   # the card was redrawn away
+                pass
         if rebuild:
             self.render_body()
             self.cards.update()
@@ -346,7 +354,7 @@ class GamesView:
                 pass
 
     def render_body(self) -> None:
-        self.raid_partners = None
+        self.raid_partners = self.reward_picker = None
         self.show_run_cards(update=False)
         if self.tool.unavailable:
             self.tabs.visible = False
@@ -460,7 +468,7 @@ class GamesView:
         selected = command.value_of(field, self.values)
         detail = dict(field.choice_help).get(selected, "") if field.kind == "choice" else ""
         why = command.locked(field, self.tool, self.values) if field.your_ot else ""
-        return " ".join(part for part in (field.help, detail, why) if part)
+        return " ".join(part for part in (field.help, detail, translate(why)) if part)
 
     def offer_queue(self, field: Field) -> OfferQueue:
         return OfferQueue(self.app, self.game.key, command.value_of(field, self.values), field.queue,
@@ -497,7 +505,7 @@ class GamesView:
         if field.kind == "raidden":
             event, context = self.raid_event(), self.raid_context()
             dens = raid_events.dens(event, context["version"]) if event is not None else []
-            control = t.dropdown([(str(d.group), d.label) for d in dens], str(context.get("group", "")),
+            control = t.dropdown([(str(d.group), translate(d.label)) for d in dens], str(context.get("group", "")),
                                  on_select=lambda e: self.set_value(field, e.control.value, rebuild=True))
             control.disabled = len(dens) == 1
             return control
@@ -528,11 +536,14 @@ class GamesView:
                                  lambda v: self.set_value(field, v),
                                  version=str(self.values.get("--version", ""))).control
         if field.kind == "rewards":
-            return RewardPicker(self.app, self.game.key, value,
-                                lambda v: self.set_value(field, v)).control
+            den = (lambda: command.reward_den(self.tool, self.values)) if self.tool.key == "swsh-raid-host" else None
+            self.reward_picker = RewardPicker(self.app, self.game.key, value, lambda v: self.set_value(field, v), den=den)
+            return self.reward_picker.control
         if field.kind == "raidseed":
             return RaidSeedPicker(self.app, value, lambda v: self.set_value(field, v),
                                   context=self.raid_context, on_context_change=self.set_raid_context).control
+        if field.kind == "lairseed":
+            return LairSeedPicker(self.app, value, lambda v: self.set_value(field, v)).control
         if field.kind == "linkcode":
             return LinkCodePicker(self.app, value, lambda v: self.set_value(field, v)).control
         if field.kind == "code":
@@ -590,7 +601,8 @@ class GamesView:
         # The settings kept off the Basic tab come first.
         for flag in sorted(flags, key=lambda f: f.option not in hidden):
             field = hidden.get(flag.option)
-            text = " ".join((flag.option, flag.help, field.label, field.help) if field else (flag.option, flag.help))
+            localized = help_text(self.tool.key, flag.option, flag.help)
+            text = " ".join((flag.option, flag.help, localized, field.label, field.help) if field else (flag.option, flag.help, localized))
             if query and query not in text.lower():
                 continue
             rows.append(self.flag_row(flag))
@@ -619,7 +631,7 @@ class GamesView:
         if flag.kind == "switch":
             control = t.switch(bool(value), lambda e: store(e.control.value))
         elif flag.kind == "choice":
-            control = ft.Container(t.dropdown([(EMPTY, "default")] + [(c, c) for c in flag.choices],
+            control = ft.Container(t.dropdown([(EMPTY, tr("games.default_choice", "default"))] + [(c, translate(c)) for c in flag.choices],
                                               value or EMPTY,
                                               on_select=lambda e: store("" if e.control.value == EMPTY else e.control.value)),
                                    width=220)
@@ -632,8 +644,7 @@ class GamesView:
             if field.flag == flag.option and field.choice_help:
                 detail = dict(field.choice_help).get(value or flag.default, "")
                 break
-        lines = ([bound.help] if bound and bound.help else
-                 [" ".join(line.split()) for line in flag.help.splitlines()])
+        lines = ([bound.help] if bound and bound.help else [help_text(self.tool.key, flag.option, flag.help)])
         if detail:
             lines.append(detail)
         help_ = t.text("\n".join(l for l in lines if l) or tr('games.no_description_06a694', 'No description.'), 12, t.MUTED, max_lines=4,
@@ -657,12 +668,10 @@ class GamesView:
 
 def pokemon_row(app, species: int, shiny: bool, summary: str, tip: str = "", form: int = 0) -> ft.Control:
     """A small sprite, then pokeldn.pokemon.summary on two lines: species, level and shininess, then the rest."""
-    parts = summary.split(" · ")
-    head = 3 if len(parts) > 2 and parts[2] == "shiny" else 2
-    lines = [t.text(" · ".join(parts[:head]), 13, weight=ft.FontWeight.W_600, max_lines=1,
-                    overflow=ft.TextOverflow.ELLIPSIS)]
-    if parts[head:]:
-        lines.append(t.text(" · ".join(parts[head:]), 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS))
+    head, rest = summary_lines(summary)
+    lines = [t.text(head, 13, weight=ft.FontWeight.W_600, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)]
+    if rest:
+        lines.append(t.text(rest, 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS))
     return ft.Container(ft.Row([Sprite(app, species, shiny, size=MINI, form=form).control,
                                 ft.Column(lines, spacing=0, expand=True)],
                                spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
@@ -809,10 +818,10 @@ class SessionPanel:
             board_state = ("ok" if status.ready else "wait" if status.state == "checking" else
                            "block" if status.state in ("missing", "choose", "controller") else "warn")
             items.append((board_state, status.title, "" if status.ready else status.detail, "board"))
-        if missing := command.missing_offer(self.tool, self.games.values):
+        if missing := translate(command.missing_offer(self.tool, self.games.values)):
             hint = tr('games.pick_a_species_then_press_build_e1b97f', ' Pick a species, then press Build.') if missing.startswith(tr('games.build_bdd254', 'Build')) else ""
             items.append(("block", tr('games.pokemon_to_offer_585ae1', 'Pokemon to offer'), missing + hint, ""))
-        items += [("block", tr('games.check_the_options_c715a0', 'Check the options'), problem, "") for problem in
+        items += [("block", tr('games.check_the_options_c715a0', 'Check the options'), translate(problem), "") for problem in
                   command.problems(self.tool, self.games.values)]
         return items
 
@@ -891,7 +900,7 @@ class SessionPanel:
             for n, (species, shiny, summary, form) in enumerate(shown, start=1):
                 sprite = Sprite(self.app, species, shiny, size=MINI, form=form)
                 traded = n <= self.traded
-                sprite.frame.tooltip = tr('games.trade_f2b1e2', 'Trade {value0}{value1}: {value2}', value0=n, value1=tr('games.done_28c78e', ' (done)') if traded else '', value2=summary)
+                sprite.frame.tooltip = tr('games.trade_f2b1e2', 'Trade {value0}{value1}: {value2}', value0=n, value1=tr('games.done_28c78e', ' (done)') if traded else '', value2=summary_text(summary))
                 tiles.append(ft.Stack([sprite.control, ft.Container(
                     t.pixel_icon("checkbox-on", color=t.GREEN), right=0, bottom=0, visible=traded)]))
             progress = (tr('games.of_traded_639878', '{value0} of {value1} traded', value0=min(self.traded, len(shown)), value1=len(shown)) if self.traded
@@ -900,7 +909,7 @@ class SessionPanel:
                                               trailing=t.text(progress, 12, t.GREEN if self.traded else t.MUTED))
 
     def show_transfer(self, what: str, done: int, total: int) -> None:
-        unit = tr('games.kb_59281a', 'KB') if what == "backup" else "parts"
+        unit = tr('games.kb_59281a', 'KB') if what == "backup" else tr('games.parts', 'parts')
         title = tr('games.backing_up_the_save_caed94', 'Backing up the save') if what == "backup" else tr('games.putting_the_save_on_the_console_1871fd', 'Putting the save on the console')
         self.show_bar(title, done, total, tr('games.of_keep_the_switch_near_the_board_2c1cac', '{value0} of {value1} {value2}. Keep the Switch near the board.', value0=done, value1=total, value2=unit))
 
@@ -978,7 +987,7 @@ class SessionPanel:
             if path in self.seen and self.seen[path][:2] == (size, mtime):
                 continue
             try:
-                info = builder.SERVICE.check(game, path)
+                info = SERVICE.check(game, path)
             except Exception:
                 info = None
             if self.run is not run:
@@ -1003,7 +1012,7 @@ class SessionPanel:
                 rows.append(pokemon_row(self.app, 0, False, tr('games.not_read_by_pkhex_ba6380', 'Not read by PKHeX · {value0}', value0=name), path))
             else:
                 rows.append(pokemon_row(self.app, int(info.get("species_id") or 0), bool(info.get("shiny")),
-                                        builder.summary(info), path))
+                                        pokemon_summary(info), path))
         self.received.visible = True
         self.received.content = t.section(tr('games.received_49f19b', 'Received'), ft.Column(rows, spacing=8),
                                        trailing=t.icon_button("folder", self._open_received,

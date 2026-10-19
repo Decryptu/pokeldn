@@ -500,10 +500,55 @@ Copy the template into a separate plugin repository and translate its values; om
 maintenance. The partial pseudo-locale in `examples/plugins/pseudo` brackets selected strings and
 leaves others to exercise fallback. Examples are excluded from desktop packages.
 
-The lookup covers desktop controls, dialogs, local errors and catalog labels, help and console
-instructions. Reference Markdown, game data supplied by PKHeX and game modules, third-party plugin
-copy and upstream exception messages retain their source language. Session logs, radio script
-output and `[done]` protocol lines retain their existing text.
+### Additional resources (1.9)
+
+A pack at API 1.9 can name these optional files and folder beside `plugin.toml`. A 1.5 pack stays
+valid. Installation, signatures and updates cover them as they cover `strings.toml`, and none may name
+a path outside the plugin folder.
+
+```toml
+api = "1.9"
+messages = "messages.toml"
+templates = "templates.toml"
+terms = "terms.toml"
+help = "help.toml"
+documents = "docs"
+font_family = "Noto Sans CJK SC"
+```
+
+| entry | key | value |
+|---|---|---|
+| `messages` | a module's English text, verbatim, braces literal | its translation |
+| `templates` | an English message with named fields, `"Could not open {path}: {reason}"` | the translation with the same fields |
+| `terms` | a game term (1 to 200 characters, at most 10000 terms), `"Squirtle"` | its translation |
+| `help` | `"TOOL-KEY:--option"`, one tool's flag | that flag's description on the Advanced tab |
+| `documents` | a folder holding `guide.md` and the pages of `docs/` under their names | |
+| `font_family` | a bundled or installed font, at most 100 characters | the app's text font; the CJK fallback stays |
+
+`strings.toml` still carries the app's own controls through `t(key, English)`. The other tables
+translate English text that game modules, PKHeX and plugins produce, where a control shows it:
+labels, summaries, errors, gift and raid descriptions. A message is looked up whole in `messages`,
+then against `templates`, then sentence by sentence, then with each `terms` entry replaced at word
+boundaries. A missing entry shows the English.
+
+A template's source keeps 1 to 8 plain named fields in at most 2048 characters, each followed by
+literal text before the next field; it holds no conversion, format specification or attribute access.
+Matching is literal, without regular expressions, longest source first, on messages of at most 4096
+characters. A captured value is shown as it is, unless its field name starts with `term` (translated
+as game terms and as a message) or `message` (translated as a message), to a depth of 4.
+
+PKHeX names species, moves, items, abilities, natures and balls in the pack's locale when it has that
+language (`ja`, `fr`, `it`, `de`, `es`, `ko`, `zh-Hans`, `zh-Hant`; `zh` with `TW`, `HK` or `MO` reads
+`zh-Hant`), and gives legality reports in it. Flet's own dialogs and file pickers follow the locale.
+
+The documents reader and its search read a pack's page where the pack has one and the English page
+otherwise. A translated page keeps the English page's heading anchors when it has as many headings;
+an `<a id="NAME"></a>` line before a heading sets its anchor otherwise. A front-matter `title`
+renames the page in the sidebar; the tree itself is the English one.
+
+What a record, a file or another app reads stays English: file names, bank and queue summaries, GTS
+listings, settings, the session log (its `[app]` lines are shown translated), radio script output and
+`[done]` lines. Trainer language, in Settings, still sets the language of the Pokemon the app builds.
 
 ## The Plugin Test Kit
 
@@ -543,6 +588,7 @@ or a downgrade.
 | 1.6 | `add_battle_server` |
 | 1.7 | `pokeldn.ldn.network`, `pokeldn.ldn.radio_lost`, `library` and `api.library`, `pokeldn.popup.choose`, `pokeldn.progress`, the `{keys}` token |
 | 1.8 | `pokeldn.panel`, `library_sort` |
+| 1.9 | language-pack messages, templates, terms, tool help, documents and font preference |
 
 ## The API, version 1
 
