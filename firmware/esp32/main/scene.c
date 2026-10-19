@@ -296,7 +296,7 @@ static void raid_scene(uint8_t *fb)
     char stars[8] = "*******";
     char text[16];
     stars[s.raid_stars] = '\0';
-    header(fb, "tera raid", NULL);
+    header(fb, s.now.title[0] ? s.now.title : "Tera Raid", NULL);
     if (!sprite_draw(fb, SLOT_OURS, 29, 54)) poke_ball(fb, 29, 32, 12);
     fb_text(fb, 63, 16, stars, 1);
     snprintf(text, sizeof(text), "%u/%u joined", (unsigned)s.raid_occupied,
@@ -589,13 +589,18 @@ bool scene_command(const uint8_t *p, size_t n, uint32_t now)
         return true;
     }
     if (p[0] == DISPLAY_OP_RAID) {
-        if (n != 4 || p[1] < 1 || p[1] > 7 || p[2] > 3 || p[3] < 1 || p[3] > 3)
+        if (n < 4 || p[1] < 1 || p[1] > 7 || p[2] > 3 || p[3] < 1 || p[3] > 3)
             return false;
         s.raid_stars = p[1];
         s.raid_occupied = p[2];
         s.raid_players = p[3];
+        show_t show = {.show = SHOW_RAID};
+        if (n > 4) {
+            const char *text = (const char *)p + 4, *end = (const char *)p + n;
+            copy_text(show.title, &text, end);
+        }
         s.has_next = false;
-        start(&(show_t){.show = SHOW_RAID}, now);
+        start(&show, now);
         return true;
     }
     if (p[0] == DISPLAY_OP_RAID_LOBBY) {

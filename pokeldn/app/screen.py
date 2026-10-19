@@ -185,13 +185,13 @@ def delivered(line: str = "") -> bool:
     return _submit(lambda: _send(esp32.display_show_payload("gifted", GIFTED_HOLD_S, "", ascii_text(line))))
 
 
-def show_raid(species: int, stars: int, occupied: int, target: int) -> bool:
+def show_raid(species: int, stars: int, occupied: int, target: int, title: str = "Tera Raid") -> bool:
     """Show a raid boss and lobby size on the board, using its monochrome sprite cache."""
     def job():
         from pokeldn.ldn import esp32
         bits = sprite_bits(species, 40) if species else None
         _send(esp32.display_sprite_payload("ours", bits or []))
-        _send(esp32.display_raid_payload(stars, occupied, target))
+        _send(esp32.display_raid_payload(stars, occupied, target, ascii_text(title)))
     return _submit(job)
 
 

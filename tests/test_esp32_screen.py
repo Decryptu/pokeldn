@@ -96,6 +96,8 @@ def test_the_72x40_panel_draws_inside_its_window_whenever_the_full_one_draws(sma
 
 def test_raid_payloads_and_sprite_rows_are_validated():
     assert esp32.display_raid_payload(5, 2, 3) == bytes([2, 5, 2, 3])
+    assert esp32.display_raid_payload(5, 0, 3, "Dyna Raid") == bytes([2, 5, 0, 3]) + b"Dyna Raid" + bytes([0])
+    assert esp32.display_raid_payload(5, 0, 3) == bytes([2, 5, 0, 3]) + b"Tera Raid" + bytes([0])
     assert esp32.display_raid_lobby_payload(1, 2) == bytes([3, 1, 2])
     for args in ((0, 0, 1), (8, 0, 1), (5, 4, 3), (5, 0, 0), (5, 0, 4)):
         with pytest.raises(ValueError):

@@ -76,11 +76,11 @@ def display_sprite_payload(slot: str, rows: list[list[bool]]) -> bytes:
     return struct.pack("<BBBB", 1, DISPLAY_SLOTS.index(slot), width, height) + bytes(bits)
 
 
-def display_raid_payload(stars: int, occupied: int, target: int) -> bytes:
+def display_raid_payload(stars: int, occupied: int, target: int, title: str = "Tera Raid") -> bytes:
     """RAID: stars and current/target lobby size, after sending the boss as the ours sprite."""
     if not 1 <= stars <= 7 or not 0 <= occupied <= 3 or not 1 <= target <= 3:
         raise ValueError("raid stars must be 1..7, occupied 0..3, and target 1..3")
-    return struct.pack("<BBBB", 2, stars, occupied, target)
+    return struct.pack("<BBBB", 2, stars, occupied, target) + title.encode("ascii", "replace")[:21] + b"\0"
 
 
 def display_raid_lobby_payload(occupied: int, target: int) -> bytes:

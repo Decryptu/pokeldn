@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from pokeldn import gen8
-from pokeldn.app import events_gallery as gallery
+from pokeldn.app import events_gallery as gallery, screen
 from pokeldn.swsh import beacon, raid, raid_event
 
 import swsh_host
@@ -191,6 +191,31 @@ def test_the_host_picks_an_event_boss_and_refuses_what_does_not_name_one(tmp_pat
     assert rewards[:3] == [(1127, 2), (1128, 1), (1129, 2)]
     assert swsh_host.main(["--ip-host", "--raid-stars", "5"]) == 1
     assert "pass --raid-event" in capsys.readouterr().out
+
+
+def test_swsh_raid_screen_lifecycle_uses_dynamax_advert_and_resets(monkeypatch):
+    calls = []
+    monkeypatch.setattr(screen, "show_raid", lambda *args, **kwargs: calls.append(("show", args, kwargs)))
+    monkeypatch.setattr(screen, "raid_lobby", lambda *args: calls.append(("lobby", args)))
+    monkeypatch.setattr(screen, "reset", lambda: calls.append(("reset",)))
+    monkeypatch.setattr(screen, "drain", lambda: calls.append(("drain",)))
+    ads = json.loads((DATA / "swsh_raid_adverts.json").read_text())
+    advert = raid.den_advert(bytes.fromhex(ads["advert_pidove"]),
+                             bytes.fromhex(ads["boss_hoothoot"]), rank=4)
+
+    display = swsh_host.RaidScreen(advert)
+    display.start()
+    display.update(0)
+    display.update(1)
+    display.update(1)
+    display.update(3)
+    display.update(9)
+    display.close()
+
+    species = gen8.read(gen8.decrypt(bytes.fromhex(ads["boss_hoothoot"])))['species']
+    assert calls == [("show", (species, 5, 0, 3), {"title": "Dyna Raid"}),
+                     ("lobby", (1, 3)), ("lobby", (3, 3)),
+                     ("reset",), ("drain",)]
 
 
 def test_every_boss_the_app_offers_is_the_one_the_host_picks_and_shows_in_a_den(event, tmp_path):

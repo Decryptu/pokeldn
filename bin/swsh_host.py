@@ -336,6 +336,29 @@ def raid_rewards(args, app_data, event_rewards):
     return rewards
 
 
+class RaidScreen:
+    """The optional ESP32 display for one Sword/Shield Max Raid lobby."""
+
+    def __init__(self, app_data):
+        self.species = struct.unpack_from("<H", app_data, raid.ADVERT_SHOWN)[0] & 0x3FF
+        self.stars = (app_data[raid.ADVERT_RANK] >> 4) + 1
+        self.guests = None
+
+    def start(self):
+        self.guests = 0
+        screen.show_raid(self.species, self.stars, 0, RAID_PARTICIPANTS - 1, title="Dyna Raid")
+
+    def update(self, guests):
+        guests = min(max(guests, 0), RAID_PARTICIPANTS - 1)
+        if guests != self.guests:
+            self.guests = guests
+            screen.raid_lobby(guests, RAID_PARTICIPANTS - 1)
+
+    def close(self):
+        screen.reset()
+        screen.drain()
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
     if args.online and args.offer_file:
@@ -573,6 +596,9 @@ def main(argv=None):
                           max_stations=RAID_PARTICIPANTS if boss_pk8 or lairing else 2)
     if boss_pk8 is not None:
         party[0] = raid_host.RaidParty(host.constant, args.raid_console_serves)
+    raid_screen = RaidScreen(app_data) if boss_pk8 is not None else None
+    if raid_screen is not None:
+        raid_screen.start()
     print(f"[sw] up at {transport.our_ip}; waiting for a console")
     deadline = time.time() + args.seconds
     try:
@@ -589,6 +615,8 @@ def main(argv=None):
                     gone = trades.pop(ip, None)
                     if party[0] is not None:
                         party[0].remove(gone)
+            if raid_screen is not None:
+                raid_screen.update(len(present))
             if left_after_trade(present):
                 print("[sw] the console left after the trade; closing")
                 break
@@ -623,6 +651,8 @@ def main(argv=None):
             partner.close()
         if cap:
             cap.close()
+        if raid_screen is not None:
+            raid_screen.close()
     return 0
 
 
