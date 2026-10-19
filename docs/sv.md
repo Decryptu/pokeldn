@@ -14,6 +14,8 @@ network advertises Scarlet's id too (`0x0100a3d008c5c000`, application version 2
 
 Both launchers also run a local Tera Raid in either role ([Tera Raids](sv_raid.md)), and the host
 trades an official gift Pokemon to a console ([Simulated Mystery Gifts](gift_simulated.md)).
+[Union Circle](sv_union_circle.md) joins a console's circle as a guest, reports Blueberry Quest
+clears to its host, and spawns wild Pokemon of the user's making around the host's player.
 
 Addresses are offsets into the decompressed `main` of update 4.0.0 (`tools/switch/nso_read.py`):
 text `0x0..0x343fc90`, rodata from `0x3440000`, data from `0x4383000`.

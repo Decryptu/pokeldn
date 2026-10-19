@@ -36,7 +36,8 @@ those protocols and write parts of the code.
 FRLG: FireRed/LeafGreen · LGPE: Let's Go Pikachu/Eevee · SwSh: Sword/Shield ·
 BDSP: Brilliant Diamond/Shining Pearl · PLA: Legends Arceus · SV: Scarlet/Violet · PLZA: Legends Z-A
 
-Scarlet/Violet also supports [local Tera Raids](docs/sv_raid.md), and Sword/Shield
+Scarlet/Violet also supports [local Tera Raids](docs/sv_raid.md) and the
+[Union Circle](docs/sv_union_circle.md) as a guest, and Sword/Shield
 [Max Raid Battles and Dynamax Adventures](docs/swsh_raid.md) with a chosen boss or legendary. Event Pokemon arrive through Mystery
 Gift on FRLG and SwSh, and on the other titles as a fresh legal copy of an official gift traded by the
 game's trade host ([Simulated Mystery Gifts](docs/gift_simulated.md)).
@@ -107,8 +108,10 @@ Contributors to this repository (GitHub does not list contributors on a fork):
   filter, its full seed search, its ranking by rewards and its size mark filter, and the Tera Raid
   NPC partners: their draw from the RaidPoint and the host's choice of them; Simulated Mystery Gifts
   made for the receiving save, pop-ups for programs, Pokemon HOME's gifts among Sword/Shield's
-  official events, a Tera Raid boss's scripted actions, Legends Arceus's trainer gender, and the
-  ESP32 credit for a frame still being written, near doubling USB upload speed
+  official events, a Tera Raid boss's scripted actions, Legends Arceus's trainer gender, the
+  ESP32 credit for a frame still being written, near doubling USB upload speed, and the
+  Scarlet/Violet Union Circle guest: Blueberry Quest clears, Snacksworth's legendaries and
+  crafted wild encounters
 - [elsardine6k7](https://github.com/elsardine6k7): friendship in the Pokemon builder, Showdown sets and
   the Simulated Mystery Gift queue
 - [junkmailkeep](https://github.com/junkmailkeep): Mystery Gift sprites and form previews in the gift

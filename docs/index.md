@@ -45,7 +45,7 @@ Legends Arceus, in Scarlet and Violet and in Legends Z-A.
 | [Sword and Shield](swsh.md) | Pia 4, the sync framework, trading, Max Raid Battles in both roles, Dynamax Adventures, and the Mystery Gift local branch. |
 | [Let's Go Pikachu and Eevee](lgpe.md) | Pia 3, the link code, and the trade flow. |
 | [Legends Arceus](pla.md) | Pia header version 11, the trade flow, and the record a host composes. |
-| [Scarlet and Violet](sv.md) | Pia header version 11, the reliable streams, the trade a host runs, and Tera Raids in both roles. |
+| [Scarlet and Violet](sv.md) | Pia header version 11, the reliable streams, the trade a host runs, Tera Raids in both roles, and the Union Circle as a guest. |
 | [Legends Z-A](za.md) | Pia header version 16, the game's twenty trade messages, and the trade in both roles. |
 | [Simulated Mystery Gifts](gift_simulated.md) | Official gift Pokemon traded by the host to the five titles with no local Mystery Gift, made for the receiving save. |
 | [Command-line usage](usage.md) | Source setup and commands for each game. |

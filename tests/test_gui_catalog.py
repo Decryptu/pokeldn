@@ -262,12 +262,14 @@ def test_the_other_switch_games_simulate_their_mystery_gifts_through_their_trade
 
 
 def test_every_game_lists_its_tools_in_one_order():
-    """Trade (Host), Trade (Join), Trade (Online), Mystery Gift, then raids, host before join."""
+    """Trade (Host), Trade (Join), Trade (Online), Mystery Gift, then raids, host before join, then the
+    Union Circle."""
     def rank(key):
         kind = key.split("-", 1)[1]
-        for part in ("raid-host", "raid-join", "online", "join", "gift", "host"):
+        for part in ("circle", "raid-host", "raid-join", "online", "join", "gift", "host"):
             if part in kind:
-                return {"host": 0, "join": 1, "online": 2, "gift": 3, "raid-host": 4, "raid-join": 5}[part]
+                return {"host": 0, "join": 1, "online": 2, "gift": 3, "raid-host": 4, "raid-join": 5,
+                        "circle": 6}[part]
         raise AssertionError(key)
     for game in GAMES:
         ranks = [rank(t.key) for t in game.tools if t.key.startswith(game.key + "-")]

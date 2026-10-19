@@ -24,6 +24,19 @@ def value_of(field: Field, values: dict):
     return values.get(field.key, field.default)
 
 
+def steps(tool: Tool, values: dict) -> list[str]:
+    """The tool's console steps as its fields stand: a (step, (flag, value)) only while that field
+    has that value."""
+    shown = []
+    for step in tool.steps:
+        if isinstance(step, tuple):
+            step, (flag, wanted) = step
+            if str(value_of(next(f for f in tool.fields if f.key == flag), values)) != wanted:
+                continue
+        shown.append(step)
+    return shown
+
+
 def raid_consoles(tool: Tool, values: dict) -> int:
     """-> the consoles a Tera Raid host waits for, by its Consoles joining field; 1 without one."""
     field = next((f for f in tool.fields if f.key == "--raid-players"), None)
@@ -113,6 +126,8 @@ def _args(field: Field, value, tool: Tool) -> list[str]:
     if field.kind == "raideventboss":   # version:stars:number:area, one value per flag
         parts = str(value or "").split(":", 3)
         return [a for flag, v in zip(flags, parts) for a in (flag, v)] if len(parts) == 4 else []
+    if field.kind == "encounter":
+        return encounter_args(value)
     if field.kind == "raidpartners":  # {"progress": a stage or "", "picks": trainers in slot order}
         value = value if isinstance(value, dict) else {}
         progress = [flags[1], value["progress"]] if value.get("progress") else []
@@ -124,6 +139,35 @@ def _args(field: Field, value, tool: Tool) -> list[str]:
     if not field.flag:
         return items
     return [a for item in items for flag in flags for a in (flag, item)]
+
+
+ENCOUNTER_FLAGS = (("form", "--spawn-form"), ("tera", "--spawn-tera"), ("nature", "--spawn-nature"),
+                   ("gender", "--spawn-gender"), ("ability", "--spawn-ability"), ("scale", "--spawn-scale"),
+                   ("item", "--spawn-item"), ("ivs", "--spawn-ivs"))
+
+
+def encounter_args(value) -> list[str]:
+    """bin/sv_join.py's crafted spawn of an encounter field's value: {"legal", "species" (National),
+    "level", "shiny", and any of form, tera, nature, gender, ability, scale, item and ivs (HP/ATK/DEF/SPA/SPD/SPE),
+    None or absent for one drawn at random} (gui/views/encounter.py)."""
+    value = value if isinstance(value, dict) else {}
+    if not value.get("species"):
+        return []
+    out = ["--spawn", f"{gen9.internal_index(int(value['species']))}:{int(value.get('level') or 1)}"]
+    for key, flag in ENCOUNTER_FLAGS:
+        if value.get(key) not in (None, "") and not (key == "item" and not value[key]):
+            out += [flag, str(value[key])]
+    return out + (["--spawn-shiny"] if value.get("shiny") else []) + (["--spawn-legal"] if value.get("legal") else [])
+
+
+def encounter_error(value) -> str:
+    """Why an encounter field's value cannot go out, or ""."""
+    value = value if isinstance(value, dict) else {}
+    if not value.get("species"):
+        return "Pick the Pokemon to spawn."
+    if not 1 <= int(value.get("level") or 0) <= 100:
+        return "The level is 1 to 100."
+    return ""
 
 
 def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = None) -> list[str]:
@@ -251,14 +295,17 @@ def prepare(tool: Tool, values: dict) -> None:
 
 
 def code_error(field: Field, value, game: str = "sv") -> str:
-    """A console code is eight digits, or empty where the field allows none; a Let's Go link code must
-    name three picker Pokemon. Either partial one would host under another code. A raid seed is eight
+    """A console code is all its digits, or empty where the field allows none; a Let's Go link code
+    must name three picker Pokemon. Either partial one would host under another code. A bounded
+    number lies within its bounds. A raid seed is eight
     hex digits; a raid reward row names an item and a quantity from 1 to 999; a raid event is in the
     app's event gallery."""
     if field.kind == "raidseed":
         return "" if re.fullmatch(r"[0-9A-Fa-f]{8}", str(value or "")) else "Enter eight hexadecimal digits."
     if field.kind == "lairseed":
         return "" if re.fullmatch(r"[0-9A-Fa-f]{0,16}", str(value or "")) else "Enter up to sixteen hexadecimal digits."
+    if field.kind == "encounter":
+        return encounter_error(value)
     if field.kind == "raidpartners":
         value = value if isinstance(value, dict) else {}
         picks = list(value.get("picks", ()))
@@ -292,9 +339,18 @@ def code_error(field: Field, value, game: str = "sv") -> str:
         return ""
     if field.kind == "code":
         value = str(value or "")
-        if (value == "" and not field.default) or (len(value) == 8 and value.isdigit()):
+        if ((value == "" and not field.default and not field.required)
+                or (len(value) == field.length and value.isdigit())):
             return ""
-        return f"{field.label}: all eight digits" + ("." if field.default else ", or none.")
+        digits = {4: "four", 8: "eight"}.get(field.length, field.length)
+        return (f"{field.label}: all {digits} digits"
+                + ("." if field.default or field.required else ", or none."))
+    if field.kind == "number" and field.bounds:
+        low, high = field.bounds
+        value = str(value if value is not None else "").strip()
+        if value.isascii() and value.isdigit() and low <= int(value) <= high:
+            return ""
+        return f"{field.label}: a whole number from {low:,} to {high:,}."
     if field.kind != "linkcode":
         return ""
     try:

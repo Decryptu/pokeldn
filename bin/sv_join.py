@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Join a searching Scarlet / Violet console's network and trade with it (docs/sv.md), or join the
-Tera Raid it hosts with one of our Pokemon (`--raid-pokemon`, docs/sv_raid.md).
+Tera Raid it hosts with one of our Pokemon (`--raid-pokemon`, docs/sv_raid.md), or take a seat in the
+Union Circle it hosts (`--union-circle`, docs/sv_union_circle.md).
 
 The searching console alternates a few seconds hosting with scanning; this scans until it hosts.
 
@@ -33,9 +34,9 @@ from pokeldn.ldn import api as ldn, radios
 
 from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
-from pokeldn import sv
+from pokeldn import gen9, panel, progress, sv
 from pokeldn.ldn import ldn_mitm, pia6, pia_connect, reliable5
-from pokeldn.sv import pokemon, port2, raid, reference, streams, trade
+from pokeldn.sv import circle, pokemon, port2, raid, reference, streams, trade, wild
 from pokeldn.ldn import channel_table, game_channel
 from pokeldn.ldn.transport import board_radio, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
@@ -44,13 +45,15 @@ from pokeldn.app import screen
 
 PROTO_NET = 0x2C
 PROTO_RTT = 0x58
+PROTO_UNRELIABLE = 0x68
 PROTO_CLONE_CLOCK = 0x77
 PROTO_RELIABLE = 0x7C
 PROTO_BROADCAST_RELIABLE = 0x80
 PROTO_STREAM_BROADCAST_RELIABLE = 0x81
 PROTO_SESSION = 0x98
 RELIABLE_PROTOCOLS = (PROTO_BROADCAST_RELIABLE, PROTO_STREAM_BROADCAST_RELIABLE)
-MESH_ADDRESSED = (PROTO_RTT, PROTO_BROADCAST_RELIABLE, PROTO_STREAM_BROADCAST_RELIABLE)
+MESH_ADDRESSED = (PROTO_RTT, PROTO_UNRELIABLE, PROTO_BROADCAST_RELIABLE,
+                  PROTO_STREAM_BROADCAST_RELIABLE)
 MESH_DESTINATION = 0x0001
 NET_CONN_STATUS = 0x11
 NET_CONN_STATUS_ACK = 0x12
@@ -79,8 +82,12 @@ RAID_KEYS_DELAY = 0.79
 RAID_LOBBY_DELAY = 0.27           # after the identity
 RAID_NET_FLAGS = 0x11             # Net 0x12 and 0x51 wake the host's Net job under 0x11
 LEAVE_SENDS, LEAVE_REPEAT = 4, 0.5  # a leaving station's type 3 (docs/sv.md, Leaving)
+CIRCLE_LEAVE_GRACE = 5.0    # seconds a --circle-task stays once done, for the host's acks
 HOST_BITMAP = 0x01                # the destination mask a joiner writes: the host, station 0
 ACK_ENTRIES = 4  # a retail station's bulk ack carries four
+# A mirrored channel table update keeps the framing and compression it came with.
+MIRRORED_FLAGS = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
+                  | reliable5.FLAG_MESSAGE_END | reliable5.FLAG_ZLIB)
 
 PROTOCOL_NAMES = {
     0x2C: "net", 0x58: "rtt", 0x68: "unreliable", 0x74: "clone atomic", 0x77: "clone clock",
@@ -271,6 +278,46 @@ def build_parser():
                          "the battle begins, its Pokemon fighting on for the console")
     ap.add_argument("--raid-ready-delay", type=float, default=2.0,
                     help="seconds in the raid lobby before our player readies")
+    ap.add_argument("--union-circle", action="store_true",
+                    help="join the Union Circle a console hosts, as a raid guest joins a raid: take "
+                         "the seat, send our identity, open the game's channel, answer the host's "
+                         "start, put our player on the field where the host's stands and hold it "
+                         "for --hold (docs/sv_union_circle.md)")
+    ap.add_argument("--circle-task", choices=("snacksworth", "bp"),
+                    help="with --union-circle, a task after which our player leaves the circle and "
+                         "the run ends: snacksworth gives the host every Team and solo clear it "
+                         "lacks for all of Snacksworth's legendaries, one a second from the start "
+                         "demo's end; bp a clear paying the host the --bbq-clear BP")
+    ap.add_argument("--bbq-clear", type=int, default=None, metavar="BP",
+                    help=f"the BP, 1 to {circle.BP_MAX}, --circle-task bp gives")
+    ap.add_argument("--follow-host", action="store_true",
+                    help="with --union-circle: our player copies the host's as it moves, its "
+                         f"animations and its ride, keeping {circle.FOLLOW_DISTANCE:g} m from it "
+                         "and facing it")
+    ap.add_argument("--spawn", type=species_level, default=None, metavar="SPECIES:LEVEL",
+                    help=f"with --union-circle: {circle.SPAWN_DELAY:g} s after the circle's start "
+                         f"demo has ended, keep {circle.SPAWN_COPIES} wild Pokemon of this species (dev number) out "
+                         f"{circle.SPAWN_RING[0]:g} to {circle.SPAWN_RING[1]:g} m from the host's "
+                         "player, as a console shares its own: one the host battles, removes or "
+                         f"goes more than {circle.SPAWN_CULL:g} m from comes again near it")
+    ap.add_argument("--spawn-shiny", action="store_true")
+    ap.add_argument("--spawn-tera", type=int, default=0, metavar="TYPE",
+                    help="Tera Type, 0 Normal to 17 Fairy in type order (default %(default)s)")
+    ap.add_argument("--spawn-form", type=int, default=None)
+    ap.add_argument("--spawn-item", type=int, default=None, help="held item id")
+    ap.add_argument("--spawn-scale", type=int, default=None, help="0 to 255 (default random)")
+    ap.add_argument("--spawn-gender", type=int, choices=(0, 1), default=None,
+                    help="1 female (default 0)")
+    ap.add_argument("--spawn-nature", type=int, default=None, help="0 to 24 (default random)")
+    ap.add_argument("--spawn-ivs", default=None, metavar="HP/ATK/DEF/SPA/SPD/SPE",
+                    help="six IVs 0 to 31 (default each random, as a wild one's)")
+    ap.add_argument("--spawn-ability", type=int, choices=(0, 1, 2), default=None,
+                    help="ability slot, 2 the hidden ability (default 0 or 1 at random, as a wild "
+                         "one's)")
+    ap.add_argument("--spawn-legal", action="store_true",
+                    help="with --spawn: spawn only while the host stands in an area where "
+                         "PKHeX accepts that spawn caught, found from the wild Pokemon the host's "
+                         "console shares (it shares them once our player is near: --follow-host)")
     ap.add_argument("--scan-only", action="store_true",
                     help="report what the console advertises and join nothing")
     ap.add_argument("--session-join", action="store_true",
@@ -442,6 +489,9 @@ def build_parser():
                          "retail stations broadcast every Pia packet (sv11), and a broadcast needs "
                          "no ARP resolution of the peer")
     ap.add_argument("--verbose-rtt", action="store_true", help="print the RTT traffic too")
+    ap.add_argument("--verbose-circle", action="store_true",
+                    help="with --union-circle: print each circle message we send and each step of "
+                         "the area search too; the --capture file keeps the steps either way")
     ap.add_argument("--capture", default=None, help="write every datagram here as JSON lines")
     return ap
 
@@ -482,11 +532,94 @@ def raid_guest(ap, args):
           f"{pokemon.describe(pokemon.load(Path(args.raid_pokemon).read_bytes()))}")
 
 
+def circle_guest(ap, args):
+    """The settings a Union Circle guest runs under: a raid guest's join and identity, no lobby, and
+    no taking the host role when the console leaves."""
+    if args.raid_pokemon or args.trade_offer:
+        ap.error("a Union Circle guest brings no raid Pokemon and offers no trade")
+    if args.circle_task == "bp" and args.bbq_clear is None:
+        ap.error("--circle-task bp needs the BP to give in --bbq-clear")
+    if args.bbq_clear is not None and not 1 <= args.bbq_clear <= circle.BP_MAX:
+        ap.error(f"a clear pays 1 to {circle.BP_MAX} BP, the most a player holds")
+    args.scene_id = circle.SCENE if args.scene_id is None else args.scene_id
+    if args.hold == ap.get_default("hold"):     # the circle's seat is the whole run
+        args.hold = args.seconds
+    args.session_join = args.game_channel = args.net_ack = True
+    args.no_identity, args.port2_now, args.take_host = True, False, False
+    args.join_repeat, args.open_delay, args.record_delay = 0, 0.02, 0.44
+    args.join_player_name = args.trainer_name
+    args.record_set = args.record_set or reference.RECORDS
+    crafted_spawn(ap, args)
+
+
+def spawn_ivs(text):
+    """-> the record's IVs (HP Atk Def Spe SpA SpD) of HP/ATK/DEF/SPA/SPD/SPE text."""
+    hp, atk, defense, spa, spd, spe = (int(part) for part in text.split("/"))
+    return hp, atk, defense, spe, spa, spd
+
+
+def crafted_spawn(ap, args):
+    """Checks the crafted spawn's values; with --spawn-legal, `args.spawn_wanted` is where PKHeX
+    accepts it caught and `args.spawn_table` PKHeX's wild areas."""
+    args.spawn_crafted = {"form": args.spawn_form, "item": args.spawn_item,
+                          "scale": args.spawn_scale, "sex": args.spawn_gender,
+                          "nature": args.spawn_nature, "ability": args.spawn_ability,
+                          "ivs": None}
+    try:
+        if args.spawn_ivs is not None:
+            args.spawn_crafted["ivs"] = spawn_ivs(args.spawn_ivs)
+        species, level = args.spawn or (0, 1)
+        if args.spawn and not (species > 0 and 1 <= level <= 100):
+            raise ValueError("a spawn is a species from 1 at a level from 1 to 100")
+        circle.spawn_record(0, (0.0, 0.0, 0.0), species=species, level=level,
+                            shiny=args.spawn_shiny, tera=args.spawn_tera,
+                            **{k: v for k, v in args.spawn_crafted.items() if v is not None})
+    except ValueError as exc:
+        ap.error(f"the spawn's values do not fit its record: {exc}")
+    args.spawn_wanted = args.spawn_table = None
+    if not args.spawn_legal:
+        return
+    if not args.spawn:
+        ap.error("--spawn-legal checks the --spawn")
+    crafted = args.spawn_crafted
+    spawn = {"species": gen9.national(species), "form": crafted["form"] or 0, "level": level,
+             "tera": args.spawn_tera, "shiny": args.spawn_shiny, "nature": crafted["nature"],
+             "gender": crafted["sex"], "scale": crafted["scale"], "ability": crafted["ability"],
+             "item": crafted["item"],
+             "ivs": None if crafted["ivs"] is None else list(crafted["ivs"])}  # PKHeX's order too
+    try:
+        args.spawn_table = wild.areas(pokemon_service.SERVICE)
+        legal, refused = wild.legal_at(pokemon_service.SERVICE, spawn)
+    except pokemon_service.BuilderError as exc:
+        ap.error(f"PKHeX could not check the spawn: {exc}")
+    if not legal:
+        why = "; ".join(f"{args.spawn_table.name(loc)}: {' '.join(problems)}"
+                        for loc, problems in refused.items())
+        ap.error("PKHeX accepts this spawn caught nowhere"
+                 + (f" ({why})" if why else ": no wild slot has its species, form and level"))
+    args.spawn_wanted = legal
+    print(f"[sv] PKHeX accepts the spawn caught at {len(legal)} location(s): "
+          + ", ".join(args.spawn_table.name(loc) for loc in legal))
+
+
+def species_level(text):
+    """-> (species, level) of --spawn's SPECIES:LEVEL."""
+    try:
+        species, level = (int(part) for part in text.split(":"))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not SPECIES:LEVEL") from None
+    return species, level
+
+
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
     if args.raid_pokemon:
         raid_guest(ap, args)
+    if args.union_circle:
+        circle_guest(ap, args)
+    elif args.circle_task or args.spawn or args.follow_host or args.spawn_legal:
+        ap.error("--circle-task, --spawn, --spawn-legal and --follow-host need --union-circle")
     if args.trade_offer:
         args.trade_offer = [pokemon_service.prepare_file("sv", p, fresh=args.fresh_pid,
             transform=lambda raw: trade.load_offer(raw, args.offer_set)) for p in args.trade_offer]
@@ -625,6 +758,9 @@ def main(argv=None):
             if trades_done():
                 print("[sv] the seat ended after a trade; closing")
                 break
+            if outcome.get("circled"):
+                print("[sv] the circle task is done; closing")
+                break
             if outcome.get("raided"):
                 print("[sv] our Pokemon is in the battle; closing")
                 break
@@ -750,10 +886,26 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     pending_update = None       # a type-5 update that arrived before the join response
     raiding = bool(args.raid_pokemon)
     guest = raid.RaidGuest(Path(args.raid_pokemon).read_bytes(), args.raid_ready_delay) if raiding else None
+    member = (circle.Member(station_id=port2.station_id(our_const),
+                            bp=args.bbq_clear if args.circle_task == "bp" else None,
+                            snacksworth=args.circle_task == "snacksworth",
+                            follow=circle.FOLLOW_DISTANCE if args.follow_host else None,
+                            spawner=None if not args.spawn else circle.Spawner(
+                                *args.spawn, args.spawn_shiny, tera=args.spawn_tera,
+                                crafted=args.spawn_crafted),
+                            locator=None if not args.spawn_wanted else wild.Locator(
+                                args.spawn_table, args.spawn_wanted))
+              if args.union_circle else None)
+    frames_followed = 0
     first_update_at = None      # a raid guest leaves the first station list unanswered
     raid_lobby_sent = raided = False
     leaving = None              # a raid guest's type-3 leave: {"sends", "next", "answered"}
+    task_done_at = None         # when the --circle-task's last clear went out and its goal held
+    snacks_shown = None
+    zone_shown = None           # the zone search's status card last shown
+    circled = False
     channel_acks = {}           # (port, ack id) -> when a raid guest's delayed 0x7C ack is due
+    channel_got = set()         # (port, sequence) of the host's 0x7C messages already taken
     migration_sent = 0
     migration_at = None
     handed = False
@@ -929,9 +1081,10 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         # most (`0x6db590`, `0x6db7b0`; docs/sv.md, Leaving).
         if leaving is not None:
             if leaving["answered"] or (leaving["sends"] >= LEAVE_SENDS and now >= leaving["next"]):
-                print("[sv] our player has left the raid"
+                print("[sv] our player has left the " + ("circle" if circled else "raid")
                       + ("" if leaving["answered"] else "; the host never answered our leave"))
-                record(rec="left_at_battle", answered=leaving["answered"], t=time.time())
+                record(rec="left_circle" if circled else "left_at_battle",
+                       answered=leaving["answered"], t=time.time())
                 break
             if now >= leaving["next"] and leaving["sends"] < LEAVE_SENDS:
                 send(out(pia_connect.build_session_leave_v11(our_const, ours["var"], our_ip,
@@ -1034,6 +1187,40 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             print(f"[sv] -> {host_ip}: our lobby state and Pokemon on 0x80:0")
         else:
             raid_out = guest.tick(now) if raiding else []
+        if member is not None:
+            for label, flags, payload in member.tick(now):
+                raid_out.append((flags, payload))
+                if label and args.verbose_circle:
+                    print(f"[sv] -> {host_ip}: circle {label}")
+            for note in member.notes:
+                print(f"[sv] circle: {note}")
+                record(rec="circle_note", note=note, t=now)
+            for note in member.details:
+                if args.verbose_circle:
+                    print(f"[sv] circle: {note}")
+                record(rec="circle_note", note=note, t=now)
+            member.notes, member.details = [], []
+            zone = wild.card(member.locator) if member.locator is not None else None
+            if zone is not None and zone != zone_shown:
+                zone_shown = zone
+                panel.show("zone", zone["title"], zone["lines"], chips=zone["chips"], tone=zone["tone"])
+            if args.circle_task and leaving is None and member.overworld and member.finished:
+                task_done_at = task_done_at or now
+                if now - task_done_at >= CIRCLE_LEAVE_GRACE:
+                    print("[sv] the circle task is done; our player leaves the circle")
+                    leaving = {"sends": 0, "next": now, "answered": False}
+                    circled = True
+            for label, flags, payload in member.objects():
+                seq = send_channel(0, payload, "circle object", flags=flags)
+                if args.verbose_circle:
+                    print(f"[sv] -> {host_ip}: circle {label}, our sequence {seq}")
+            for frame in member.frames_due(now):
+                if not frames_followed and args.follow_host:
+                    print(f"[sv] circle: our player follows the host's, {circle.FOLLOW_DISTANCE:g} m "
+                          "away")
+                frames_followed += 1
+                send(out(frame, host_var or 0, protocol=PROTO_UNRELIABLE), "circle frame",
+                     protocol=PROTO_UNRELIABLE)
         for flags, payload in raid_out:
             key = (PROTO_BROADCAST_RELIABLE, 0)
             seq = next_seq(*key)
@@ -1082,7 +1269,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         # Wait in trio, never in select(): a blocking wait starves the board's frames
         # (docs/hardware_esp32.md).
         ready = False
-        with trio.move_on_after(0.05):
+        frame_wait = member.frame_wait(time.time()) if member is not None else None
+        with trio.move_on_after(0.05 if frame_wait is None else min(0.05, frame_wait)):
             await trio.lowlevel.wait_readable(sock)
             ready = True
         if not ready:
@@ -1131,6 +1319,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             record(rec="msg", src=addr[0], protocol=msg.protocol, port=msg.port,
                    flags=msg.message_flags, src_var=header.src_var, dst_var=header.dst_var,
                    payload=msg.payload.hex(), t=time.time())
+            if member is not None and msg.protocol == PROTO_UNRELIABLE:
+                member.on_frame(msg.payload, time.time())
             if msg.protocol not in (PROTO_RTT,) or args.verbose_rtt:
                 if args.print_packets:
                     print(f"[sv] <- {addr[0]} {_describe_msg(msg)}  {msg.payload.hex()[:160]}")
@@ -1284,16 +1474,28 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                             and msg.port == 1 and channel["table"] is None:
                         # Held until the opening has gone: a pair's joiner never announces its table
                         # before it.
-                        channel["table"] = cm["payload"]
+                        channel["table"] = (streams.decompress(cm["payload"])
+                                            if cm["flags"] & reliable5.FLAG_ZLIB else cm["payload"])
                         if raiding:
                             channel["table"], channel["keys"] = split_raid_table(cm)
                     elif args.game_channel and msg.port == 1 and channel["opened"] \
                             and stage is None \
                             and not (cm["flags"] & reliable5.FLAG_IS_INITIALIZED):
-                        # With a trade stage, the stage answers port 1 instead of this mirror.
-                        seq = send_channel(1, cm["payload"], "channel table update")
+                        # With a trade stage, the stage answers port 1 instead of this mirror,
+                        # compressed as it came.
+                        seq = send_channel(1, cm["payload"], "channel table update",
+                                           flags=cm["flags"] & MIRRORED_FLAGS)
                         print(f"[sv] -> {host_ip}: mirrored the channel table update "
                               f"({len(cm['payload'])} bytes), our sequence {seq}")
+                        if member is not None:
+                            member.on_table(streams.decompress(cm["payload"])
+                                            if cm["flags"] & reliable5.FLAG_ZLIB else cm["payload"])
+                    whole = reliable5.FLAG_MESSAGE_START | reliable5.FLAG_MESSAGE_END
+                    if (member is not None and msg.port == 0 and cm["flags"] & whole == whole
+                            and (msg.port, cm["sequence_id"]) not in channel_got):
+                        channel_got.add((msg.port, cm["sequence_id"]))
+                        member.on_object(streams.decompress(cm["payload"])
+                                         if cm["flags"] & reliable5.FLAG_ZLIB else cm["payload"])
                     if raiding and not args.no_channel_ack:
                         channel_acks.setdefault((msg.port, cm["sequence_id"] + 1),
                                                 time.time() + RAID_CHANNEL_ACK_DELAY)
@@ -1394,6 +1596,24 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                         join_key = port2.announce_key(body) or 0
                         send_channel(2, port2.build_join(join_key), "channel port 2 join")
                         print(f"[sv] -> {host_ip}: the type-3 join on 0x7c port 2, key {join_key}")
+                    # A fragment of a longer message (the host's 111) is not a message of its own.
+                    whole = reliable5.FLAG_MESSAGE_START | reliable5.FLAG_MESSAGE_END
+                    if (member is not None and msg.protocol == PROTO_BROADCAST_RELIABLE
+                            and msg.port == 0 and rm["flags"] & whole == whole
+                            and rm["sequence_id"] not in stream_got.get(key, ())):
+                        member.on_lua(body, time.time(), host=addr[0] == host_ip)
+                        snacks = member.snacks if args.circle_task == "snacksworth" else None
+                        if snacks is not None and snacks != snacks_shown:
+                            if snacks_shown is None:
+                                solo, team = member.host_start
+                                print(f"[sv] the host has {solo} solo and {team} Team clears: "
+                                      f"{max(0, circle.SOLO_GOAL - solo)} solo and "
+                                      f"{max(0, circle.TEAM_GOAL - team)} Team to go for every "
+                                      f"Snacksworth legendary")
+                            snacks_shown = snacks
+                            if snacks[1]:
+                                progress.show(*snacks, "Giving the host Snacksworth's quests",
+                                              unit="items")
                     if (args.mirror_records and joined and msg.protocol == streams.PROTOCOL_STREAM
                             and msg.port == streams.HOST_INDEX and rm["sequence_id"] not in mirrored):
                         mirrored.add(rm["sequence_id"])
@@ -1444,7 +1664,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     sock.close()
     print(f"[sv] seat over: {seen} datagram(s) in, {authed} authenticated. messages by protocol: "
           + " ".join(f"0x{p:02x}={n}" for p, n in sorted(counts.items())))
-    return {"handed": handed, "raided": raided}
+    return {"handed": handed, "raided": raided, "circled": circled}
 
 
 if __name__ == "__main__":
