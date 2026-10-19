@@ -148,3 +148,23 @@ def test_a_scripted_joiner_is_seated_and_heard():
     assert not {p for p, _port, _b in replies(ports=True)} & {mesh.PROTOCOL, 0x58}
     from_joiner(bytes.fromhex("03"), s4.PROTOCOL)
     assert replies() == [(s4.PROTOCOL, bytes.fromhex("04"))]
+
+
+def test_a_loopback_host_tells_every_station_and_a_raid_joiner_of_four_seats():
+    """Loopback has no broadcast address: the session update goes to each emulated station, or the
+    second never asks to join. A raid's join response offers four active seats; with two, the
+    first guest refused the second guest's connection (result 1)."""
+    to, rows = [], []
+    host = host4.Pia4Host(bytes(4), bytes(16), "127.0.0.2", bytes.fromhex("02007f000002"),
+                          lambda packet, ip: to.append(ip), log=lambda *a: None,
+                          capture=rows.append, max_stations=4)
+    host.seat("127.0.0.3", bytes.fromhex("02007f000003"), 1)
+    host.seat("127.0.0.4", bytes.fromhex("02007f000004"), 2)
+    host.tick(100.0)
+    assert sorted(to) == ["127.0.0.3", "127.0.0.4"]
+    st = host.stations["127.0.0.4"]
+    st.location = joiner_location()
+    host._join(st, bytes([mesh.JOIN_REQUEST]) + bytes(15))
+    response = [bytes.fromhex(r["payload"]) for r in rows
+                if r.get("protocol") == mesh.PROTOCOL and r["payload"][:2] == "02"]
+    assert response[0][3] == 2 and response[0][8] == 4

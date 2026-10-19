@@ -423,6 +423,7 @@ def main(argv=None):
 
     partner = online.partner("swsh", args, code=args.code, name=args.trainer_name)
     trades = {}
+    party = [None]      # the raid lobby every joined console shares
     completed = [0]     # trades that reached the end of the ladder, every session
     seen = {}           # HostTrade -> trades counted from it
 
@@ -494,7 +495,7 @@ def main(argv=None):
                 send_mesh, rewards=rewards, seed=seed, name=args.player_name,
                 ready_after=args.raid_ready, record=on_record,
                 snapshot_builder=(lambda peer: build_snapshot(peer, n)) if snapshot is None else None,
-                on_battle=on_battle, console_serves=args.raid_console_serves)
+                on_battle=on_battle, console_serves=args.raid_console_serves, party=party[0])
             print(f"[raid] {st.ip}: lobby opens, seed {seed:#018x}")
             return
         trades[st.ip] = host_trade.HostTrade(host.constant, st.constant, snapshot, offer, send,
@@ -516,7 +517,10 @@ def main(argv=None):
     host = host4.Pia4Host(keys.network_id_le, keys.session_key, transport.our_ip,
                           transport.our_mac, transport.send, on_data=on_data,
                           on_other=on_other, on_broadcast=on_broadcast,
-                          name=args.player_name, capture=record)
+                          name=args.player_name, capture=record,
+                          max_stations=RAID_PARTICIPANTS if boss_pk8 else 2)
+    if boss_pk8 is not None:
+        party[0] = raid_host.RaidParty(host.constant, args.raid_console_serves)
     print(f"[sw] up at {transport.our_ip}; waiting for a console")
     deadline = time.time() + args.seconds
     try:
@@ -530,7 +534,9 @@ def main(argv=None):
             for ip in list(host.stations):
                 if ip not in present:
                     host.unseat(ip)
-                    trades.pop(ip, None)
+                    gone = trades.pop(ip, None)
+                    if party[0] is not None:
+                        party[0].remove(gone)
             if left_after_trade(present):
                 print("[sw] the console left after the trade; closing")
                 break

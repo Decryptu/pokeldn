@@ -106,7 +106,8 @@ request bytes 1 to 9 and the clone clock in ms.
 
 The application layer, after the [ping handshake](swsh_session.md) both ways:
 
-    0x84  each side's snapshot, the joiner's on port 1 and the host's on port 0; `host_trade.py`
+    0x84  each side's snapshot on the port of its station index, the joiner's on port 1 and the
+          host's on port 0, each acked on the same port; `host_trade.py`
           builds its own from the joiner's and sends it second, a retail host sends first
     110   the joiner pings first once its trade screen is up; the host answers with its own ping
           and the reply (a host ping before that screen is acked and dropped)

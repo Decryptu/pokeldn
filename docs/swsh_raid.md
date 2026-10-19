@@ -230,6 +230,24 @@ With `--raid-console-serves` the joined console serves the battle and the host a
 An emulated Shield guest and a retail Sword each served a whole raid this way, won it and received
 the host's Rewards, then sent the mesh leave request.
 
+### Several consoles
+
+Up to three consoles share one hosted lobby (`raid_host.RaidParty`). The host starts the battle once
+every joined console has pressed ready; BattleStart lists the consoles in join order, then the host.
+The first console serves. The host publishes framework object k as console k's ServerVersion record
+and its own record last, and steps the base-20000 barrier once every console mirrors its body.
+
+| layer | what a second console needs from the Pia host |
+|---|---|
+| Local Protocol | the session update reaches it; on loopback each station gets its own copy |
+| mesh join response | byte 8, the active station maximum, above the stations already seated: with 2, the first guest answered the second's connection request with result 1 and the second showed error 2618-0502 |
+| 0x84 | an ack on the port of the sender's stream; a station's stream is on the port of its station index (host 0, the first joiner 1, the second 2), and an unacked stream repeats without end |
+
+The guests connect to each other directly: station connection requests, each other's snapshots on
+0x84 and lobby messages on 0x80 addressed to the host and the other guest together. Two emulated
+Shield guests joined one hosted lobby, readied and fought a raid served by the first to its
+ten-turn end (command 0x1e), then both sent the mesh leave request.
+
 ## Event raids
 
 A Wild Area Event is a BCAT delivery of den encounter and reward tables, one numbered index per
@@ -315,6 +333,7 @@ A guest that does not leave holds the host's player frozen in the overworld unti
 
 - Whether a console that is not the Pia host would publish framework objects 0 to 7; in every
   recording and hosted raid the Pia host published them.
+- Several consoles in one hosted lobby on retail hardware; measured on emulated Shields only.
 
 - The meaning of PlayerInfo's u32 and final bytes.
 - The action's other ten entries, Dynamax, and the target codes beyond 8 and 2. Replayed unchanged, a

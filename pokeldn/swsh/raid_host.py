@@ -14,6 +14,54 @@ TIME_LIMIT_PERIOD = 1 / 3             # the host sends the time limit three time
 COMPRESSED = (raid.PLAYER_INFO, raid.BATTLE_START, raid.REWARDS)
 
 
+class RaidParty:
+    """The consoles of one hosted lobby, up to three: they ready, start and fight together. The
+    battle's client sends through the member whose console a message is for."""
+
+    def __init__(self, our_id, console_serves=False, log=print):
+        self.our_id, self.console_serves, self.log = our_id, console_serves, log
+        self.members = []                 # RaidHost, in join order
+        self.battle = None
+
+    def add(self, member):
+        self.members.append(member)
+
+    def remove(self, member):
+        if member in self.members:
+            self.members.remove(member)
+
+    def lobby(self):
+        return [m for m in self.members if m.stage != "snapshot"]
+
+    def ready(self):
+        # A console still in its snapshot exchange holds the start back.
+        return bool(self.members) and all(m.stage != "snapshot" and m.guest["ready"]
+                                          for m in self.members)
+
+    def started(self):
+        return all(m.guest["started"] for m in self.lobby())
+
+    def order(self):
+        consoles = [m.peer_id for m in self.lobby()]
+        return consoles + [self.our_id] if self.console_serves else [self.our_id] + consoles
+
+    def send(self, port, payload, dst):
+        for m in self.lobby():
+            if dst is None or m.peer_id == dst:
+                m._send_lobby(reliable4.PROTOCOL, port, payload, False)
+
+    def start_battle(self, clock, action):
+        consoles = [m.peer_id for m in self.lobby()]
+        self.battle = raid_battle.Master(self.our_id, consoles, clock=clock, log=self.log,
+                                         action=action)
+        for port, msg, dst in self.battle.start():
+            self.send(port, msg, dst)
+
+    def on_battle_data(self, src, port, payload):
+        for port_out, msg, dst in self.battle.receive(port, payload, src):
+            self.send(port_out, msg, dst)
+
+
 class RaidHost(HostTrade):
     """The lobby a hosting Sword runs for one joined guest, up to the battle on 0x7C.
     `send(protocol, port, payload, compress)`; `on_battle(self)` is called once both sides have
@@ -23,7 +71,8 @@ class RaidHost(HostTrade):
 
     def __init__(self, self_id, peer_id, snapshot, our_pk8, boss_pk8, send, send_broadcast,
                  send_mesh, rewards=(), seed=0, name="POKELDN", ready_after=1.0, log=print,
-                 record=None, snapshot_builder=None, on_battle=None, console_serves=False):
+                 record=None, snapshot_builder=None, on_battle=None, console_serves=False,
+                 party=None):
         super().__init__(self_id, peer_id, snapshot, our_pk8,
                          lambda protocol, port, payload: send(protocol, port, payload, False),
                          send_broadcast, send_mesh, log=log, record=record,
@@ -39,16 +88,16 @@ class RaidHost(HostTrade):
         self.guest = {"info": None, "pk8": None, "ready": False, "started": False}
         # The console first in BattleStart and in framework object 0, so it serves the battle and we
         # answer as client 1 (docs/swsh_raid.md, Which station serves).
-        self.console_serves = console_serves
-        self.battle = None
+        self.party = party or RaidParty(self_id, console_serves, log)
+        self.party.console_serves = console_serves
+        self.party.add(self)
 
     def lobby(self, which, payload):
         self._send_lobby(reliable4.BROADCAST_PROTOCOL, 0, payload, which in COMPRESSED)
 
     def on_data(self, protocol, port, payload, now=None):
-        if protocol == reliable4.PROTOCOL and self.battle is not None:
-            for port_out, msg in self.battle.receive(port, bytes(payload)):
-                self._send_lobby(reliable4.PROTOCOL, port_out, msg, False)
+        if protocol == reliable4.PROTOCOL and self.party.battle is not None:
+            self.party.on_battle_data(self.peer_id, port, bytes(payload))
             return
         got = raid.parse(bytes(payload)) if protocol == reliable4.BROADCAST_PROTOCOL else None
         if got is None:
@@ -90,14 +139,15 @@ class RaidHost(HostTrade):
             self.ready_sent = True
             self.lobby(raid.BATTLE_READY, raid.battle_ready(True))
             self.log("[raid] -> ready")
-        if self.ready_sent and self.guest["ready"]:
-            self.goto("start")
+        if self.ready_sent and self.party.ready():
+            for member in self.party.lobby():
+                if member.stage == "lobby":
+                    member.goto("start")
 
     def _stage_start(self, now):
         if not self.start_sent:
             self.start_sent = True
-            order = [self.peer_id, self.self_id] if self.console_serves else [self.self_id, self.peer_id]
-            self.lobby(raid.BATTLE_START, raid.battle_start(order))
+            self.lobby(raid.BATTLE_START, raid.battle_start(self.party.order()))
             self.lobby(raid.SELECT_POKEMON, raid.select_pokemon(self.offer_pk8))
             self.lobby(raid.BOSS_POKEMON, raid.boss_pokemon(self.boss_pk8))
             self.lobby(raid.REWARDS, raid.rewards(self.rewards))
@@ -108,14 +158,11 @@ class RaidHost(HostTrade):
         if self.guest["started"]:
             self.goto("battle")
             self.on_battle(self)
-            if self.console_serves:
+            if (self.party.console_serves and self.party.battle is None and self.party.started()
+                    and all(m.stage == "battle" for m in self.party.lobby())):
                 # Our Pokemon's first move; the recorded action named Water Gun for any Pokemon.
                 move = next((m for m in pokemon.read(self.offer_pk8)["moves"] if m), 55)
-                self.battle = raid_battle.Master(self.self_id, self.peer_id, slot=1, console_slot=0,
-                                                 clock=self.clock, log=self.log,
-                                                 action=raid_battle.action(move))
-                for port_out, msg in self.battle.start():
-                    self._send_lobby(reliable4.PROTOCOL, port_out, msg, False)
+                self.party.start_battle(self.clock, raid_battle.action(move))
 
     def _stage_battle(self, now):
         pass

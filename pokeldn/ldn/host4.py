@@ -97,7 +97,7 @@ class Pia4Host:
 
     def __init__(self, network_id_le, session_key, our_ip, our_mac, send, log=print,
                  on_data=None, on_other=None, name="POKELDN", account=None, token=None,
-                 session=None, capture=None, on_broadcast=None):
+                 session=None, capture=None, on_broadcast=None, max_stations=2):
         self.network_id_le = bytes(network_id_le)
         self.session_key = bytes(session_key)
         self.our_ip, self.our_mac = our_ip, bytes(our_mac)
@@ -115,6 +115,7 @@ class Pia4Host:
         self.on_broadcast = on_broadcast
         self.name, self.account, self.token, self.session = name, account, token, session
         self.capture = capture
+        self.max_stations = max_stations  # the join response's active maximum: 2 in a trade
         self.stations = {}            # ip -> Station
         self.sequence = 1             # the update session's
         self.last_update = 0.0
@@ -174,12 +175,12 @@ class Pia4Host:
 
     def tick(self, now=None):
         now = time.time() if now is None else now
-        broadcast = self.broadcast_ip()
         if (any(st.update_acked < self.sequence for st in self.stations.values())
                 or not self.stations) and now - self.last_update >= UPDATE_SESSION_PERIOD:
             upd = lp.build_update_session(self.sequence, self.local_network_id, self.variable,
                                           self.service_variable, self.constant, self.nodes())
-            self.send_message(broadcast, upd, lp.PROTOCOL, flags=0x09)
+            for broadcast in self.broadcast_ips():
+                self.send_message(broadcast, upd, lp.PROTOCOL, flags=0x09)
             self.last_update = now
         for st in list(self.stations.values()):
             if st.state != "joined":
@@ -206,12 +207,12 @@ class Pia4Host:
                                           flags=STATION_FLAGS, destination=st.bitmap)
                         entry[1] = now
 
-    def broadcast_ip(self):
+    def broadcast_ips(self):
+        # Loopback has no broadcast: each emulated station gets its own copy.
         parts = self.our_ip.split(".")
         if parts[0] == "127":
-            peers = [st.ip for st in self.stations.values()]
-            return peers[0] if peers else self.our_ip
-        return ".".join(parts[:3] + ["255"])
+            return [st.ip for st in self.stations.values()] or [self.our_ip]
+        return [".".join(parts[:3] + ["255"])]
 
     def send_window_ack(self, st, protocol, port, w):
         ack_id = (w.through + 1) if w.through is not None else reliable4.FIRST_SEQUENCE
@@ -397,7 +398,8 @@ class Pia4Host:
         first = st.state != "joined"
         st.state = "joined"
         resp = mesh.build_join_response_v4(0, st.index, self.mesh_entries(), self.next_ack_id(),
-                                           update_counter=self.mesh_counter)
+                                           update_counter=self.mesh_counter,
+                                           max_active=self.max_stations)
         self.send_message(st.ip, resp, mesh.PROTOCOL)
         if first:
             self.mesh_counter += 1
