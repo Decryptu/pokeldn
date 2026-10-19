@@ -301,7 +301,7 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           Field("--offer-file", tr('catalog.our_pokemon_14a66b', 'Our Pokemon'), "pokemon", required=True,
                 help=tr('catalog.the_pokemon_our_player_brings_pkhex_checks_it_is_legal_abc1cf', 'The Pokemon our player brings. PKHeX checks it is legal.')),
           Field("--raid-reward", tr('catalog.rewards_59afe4', 'Rewards'), "rewards",
-                help=tr('catalog.leave_empty_for_a_den_s_own_rewards_or_list_up_to_value_4c9d02', "Leave empty for a den's own rewards, or list up to {value0} items.", value0=SWSH_REWARD_ROWS)),
+                help=tr('catalog.leave_empty_for_the_den_s_own_rewards_or_choose_up_to_va_91e2d4', "Leave empty for the den's own rewards, or choose up to {value0} of the rewards the boss's den gives.", value0=SWSH_REWARD_ROWS)),
           Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="6", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
           host_seconds("900")),
          fixed=("--raid-console-serves", "--player-name", "{ot}", "--trainer-name", "{ot}",

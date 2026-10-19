@@ -136,3 +136,75 @@ def test_the_activity_only_swallows_the_unmounted_control_race(monkeypatch):
     activity.update = broken
     with pytest.raises(RuntimeError, match="unexpected update failure"):
         asyncio.run(activity._animate())
+
+
+def swsh_raid(tmp_path, name, boss):
+    """The Max Raid (Host) form with `boss` (an encrypted party PK8) as its boss."""
+    path = tmp_path / f"{name}.pk8"
+    path.write_bytes(boss)
+    tool = next(t for game in GAMES for t in game.tools if t.key == "swsh-raid-host")
+    return tool, {"--raid-boss": {"file": str(path)}, "--offer-file": {"file": str(path)}}
+
+
+def hoothoot():
+    import json
+    from pathlib import Path
+    ads = json.loads((Path(__file__).parent / "data" / "swsh_raid_adverts.json").read_text())
+    return bytes.fromhex(ads["boss_hoothoot"])
+
+
+def test_a_den_s_rewards_are_what_the_picker_offers_and_what_the_host_sends(picker, tmp_path):
+    """An emulated Shield host's Hoothoot sat in table 30, slot 1. The picker offers that slot's items
+    only, every one at its bonus count or the chosen quantity, the host sends them unchanged, and each
+    passes the guest's check (0x01032570)."""
+    from pokeldn.app.command import reward_den
+    from pokeldn.swsh import raid as swsh_raid_records
+    import swsh_host
+    tool, values = swsh_raid(tmp_path, "hoothoot", hoothoot())
+    view = rewards.RewardPicker(None, "swsh", [], picker.saved.append, den=lambda: reward_den(tool, values))
+    select(view, "den")
+    quantity(view, "7")
+    values["--raid-reward"] = picker.saved[-1]
+    assert not problems(tool, values)
+    args = swsh_host.build_parser().parse_args(build(tool, values, {}, Settings()))
+    advert = swsh_host.raid_advert(swsh_host.build_advert(swsh_host.load_advert(str(swsh_raid_records.DEN_ADVERT))),
+                                   swsh_raid_records.boss_record(hoothoot()))
+    row, rank = swsh_raid_records.den_of(advert)
+    assert row[:2] == [30, 1]
+    sent = swsh_host.raid_rewards(args, advert, list(swsh_raid_records.DEN_REWARDS))
+    den = swsh_raid_records.reward_choices(row, rank)
+    assert sent == [(item, 7 if count is None else count) for item, count in den.items()]
+    assert swsh_raid_records.fitting_rewards(row, rank, sent)[1] == []
+    assert any(count is None for count in den.values()) and any(count not in (None, 7) for count in den.values())
+
+
+def test_rewards_outside_the_den_are_refused_by_the_form_and_the_host(picker, tmp_path):
+    from pokeldn.app.command import reward_den
+    from pokeldn.swsh import pokemon as swsh_pokemon, raid as swsh_raid_records
+    from pokeldn import gen8
+    import swsh_host
+    tool, values = swsh_raid(tmp_path, "hoothoot", hoothoot())
+    den = dict(reward_den(tool, values))
+    bonus = next(item for item, count in den.items() if count is not None)
+    advert = swsh_host.raid_advert(swsh_host.build_advert(swsh_host.load_advert(str(swsh_raid_records.DEN_ADVERT))),
+                                   swsh_raid_records.boss_record(hoothoot()))
+    for rows, error in (([{"item_id": "1", "quantity": "1"}], "Reward 1 is not one this den gives."),
+                        ([{"item_id": str(bonus), "quantity": str(den[bonus] + 1)}],
+                         f"Reward 1: this den gives it {den[bonus]} at a time.")):
+        values["--raid-reward"] = rows
+        assert error in problems(tool, values)
+        args = swsh_host.build_parser().parse_args(build(tool, values, {}, Settings()))
+        assert swsh_host.raid_rewards(args, advert, []).startswith("not rewards of this den")
+    # A boss no den holds: the picker offers nothing and the form says why.
+    plain = bytearray(gen8.decrypt(hoothoot()))
+    plain[gen8.OFF_SPECIES:gen8.OFF_SPECIES + 2] = (151).to_bytes(2, "little")
+    mew = tmp_path / "mew.pk8"
+    mew.write_bytes(swsh_pokemon.encrypt(bytes(plain)))
+    values["--raid-reward"] = [{"item_id": str(bonus), "quantity": str(den[bonus])}]
+    view = rewards.RewardPicker(None, "swsh", values["--raid-reward"], picker.saved.append,
+                                den=lambda: reward_den(tool, values))
+    assert view.problem.value == "" and not view.add.disabled
+    values["--raid-boss"] = {"file": str(mew)}
+    view.follow()
+    assert view.add.disabled and view.problem.visible
+    assert "Choose a boss a den holds before choosing rewards." in problems(tool, values)

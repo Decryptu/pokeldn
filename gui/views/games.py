@@ -36,6 +36,7 @@ TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift", "Tera Raid":
 EMPTY = "-"   # a dropdown option cannot carry an empty key
 # The Tera Raid host's event fields (pokeldn/app/catalog.py) and the context fields an event narrows.
 RAID_EVENT, RAID_DEN, RAID_CATCH = "--raid-event", "--raid-event-group", "--raid-catch-normal"
+REWARD_DEN_KEYS = ("--raid-boss", "--raid-gigantamax")   # a Max Raid's den follows its boss
 RAID_CONTEXT = {"--raid-version": ("version", "violet"), "--raid-map": ("map_name", "paldea"),
                 "--raid-progress": ("progress", "4star"), "--raid-content": ("content", "standard")}
 ADVANCED_NOTE = (tr('games.the_tested_defaults_work_for_most_players_change_these__1815f2', 'The tested defaults work for most players. Change these only when a guide or a bug report asks you to. A value set here overrides the Basic tab.'))
@@ -146,6 +147,12 @@ class GamesView:
     def set_value(self, field: Field, value, rebuild: bool = False) -> None:
         self.values[field.key] = value
         self.app.settings.save()
+        picker = getattr(self, "reward_picker", None)
+        if picker is not None and picker.den_of is not None and field.key in REWARD_DEN_KEYS and not rebuild:
+            try:
+                picker.follow()
+            except RuntimeError:   # the card was redrawn away
+                pass
         if rebuild:
             self.render_body()
             self.cards.update()
@@ -318,7 +325,7 @@ class GamesView:
         self.tree.controls = rows
 
     def render_body(self) -> None:
-        self.raid_partners = None
+        self.raid_partners = self.reward_picker = None
         if self.tool.unavailable:
             self.tabs.visible = False
             self.cards.controls = [t.card(tr('games.not_available_yet_787406', 'Not available yet'), None, self.tool.unavailable)]
@@ -497,8 +504,9 @@ class GamesView:
                                  lambda v: self.set_value(field, v),
                                  version=str(self.values.get("--version", ""))).control
         if field.kind == "rewards":
-            return RewardPicker(self.app, self.game.key, value,
-                                lambda v: self.set_value(field, v)).control
+            den = (lambda: command.reward_den(self.tool, self.values)) if self.tool.key == "swsh-raid-host" else None
+            self.reward_picker = RewardPicker(self.app, self.game.key, value, lambda v: self.set_value(field, v), den=den)
+            return self.reward_picker.control
         if field.kind == "raidseed":
             return RaidSeedPicker(self.app, value, lambda v: self.set_value(field, v),
                                   context=self.raid_context, on_context_change=self.set_raid_context).control

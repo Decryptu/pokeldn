@@ -176,8 +176,9 @@ Level, moves, IVs, PID, ability, shininess and trainer fields are not compared. 
 names kind 0, table 0, slot 0 (Tyrogue). Base dens hold no legendary or mythical Pokemon, so a hosted
 boss is one of the species, forms and Gigantamax states `nest_slots.json` lists; `raid.den_advert`
 switches the advertised version when only the other one holds the boss, and an event boss is shown as
-the base den slot holding its species, form and Gigantamax state. `raid.den_rewards` and
-`raid.fitting_rewards` keep the rewards to what the slot allows.
+the base den slot holding its species, form and Gigantamax state. `raid.reward_choices` lists what
+the slot allows at a rank (each bonus item at its count, each drop at any count); `raid.den_rewards`
+builds the slot's own rows from it.
 
 A retail Sword guest left with 2-ALZAA-0016 on BossPokemon when the boss was a traded record (a
 trainer, version, met data and ball), when its party Dynamax type (`+0x156`) was 0, and when the
@@ -201,10 +202,14 @@ den host's, renamed and with no account ids (`pokeldn/swsh/data/raid_advert.bin`
 fresh station profile, the board's name, the boss and a den record for it
 ([The den record](#the-den-record)); `--raid-boss` takes any PK8 and sends it through
 `raid.boss_record`. The snapshot goes out before the guest's. `--raid-reward ITEM:COUNT` fills Rewards and `--raid-seed` BattleSeed.
+The host refuses a `--raid-reward` row the advertised den slot does not give at its rank, and prints
+what the slot gives; an event's rows that do not fit are left out.
 
 The app's Max Raid (Host) tool runs these flags with a boss (or a Wild Area Event and one of its
 bosses a base den holds, `raid_event.hostable`), our Pokemon and up to 15 reward rows; without rows the
-host gives the den slot's own rewards.
+host gives the den slot's own rewards. Its reward editor offers only the items of the den slot the
+chosen boss is advertised from (`raid.boss_den`, `pokeldn.app.raid_rewards.swsh_den`), fixes a bonus
+item's count, and follows the boss when it changes; a boss no base den holds leaves it empty.
 
 With `--raid-console-serves` the joined console serves the battle and the host answers as client 1
 (`raid_battle.Master`):

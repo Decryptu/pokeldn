@@ -284,6 +284,35 @@ def event_raid(args, app_data):
     return raid_event.boss_pk8(boss), rank, rewards
 
 
+def raid_rewards(args, app_data, event_rewards):
+    """-> the Rewards rows the advertised den's guest accepts, or an error to print. A guest leaves
+    unless every row fits its den slot's tables at the rank (0x01032570): chosen rows that do not are
+    refused, an event's are left out, and without either the den's own go."""
+    rewards = [tuple(int(x, 0) for x in r.split(":")) for r in args.raid_reward] or event_rewards
+    if len(rewards) > raid.REWARD_SLOTS:
+        return f"a Max Raid gives at most {raid.REWARD_SLOTS} rewards"
+    if any(not 1 <= count <= 999 for _, count in rewards):
+        return "a reward's count is 1 to 999"
+    row, den_rank = raid.den_of(app_data)
+    if row is None:
+        return rewards
+    if args.raid_reward:
+        refused = raid.fitting_rewards(row, den_rank, rewards)[1]
+        if refused:
+            choices = raid.reward_choices(row, den_rank)
+            return (f"not rewards of this den: {refused}; it gives "
+                    + ", ".join(f"{item} x{'any' if n is None else n}" for item, n in choices.items()))
+    elif args.raid_event:
+        rewards, refused = raid.fitting_rewards(row, den_rank, rewards)
+        if refused:
+            print(f"[raid] left out, not in this den's rewards: {refused}")
+        rewards = rewards or raid.den_rewards(row, den_rank)[:raid.REWARD_SLOTS]
+    else:
+        rewards = raid.den_rewards(row, den_rank)[:raid.REWARD_SLOTS]
+    print(f"[raid] rewards {rewards}")
+    return rewards
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
     if args.online and args.offer_file:
@@ -341,30 +370,16 @@ def main(argv=None):
             print("[raid] no den of this version holds the boss: a retail console lists the raid and "
                   "leaves at Ready (docs/swsh_raid.md, The boss record)")
         args.scene_id = RAID_SCENE_ID
-        rewards = [tuple(int(x, 0) for x in r.split(":")) for r in args.raid_reward] or event_rewards
-        if len(rewards) > raid.REWARD_SLOTS:
-            print(f"[raid] a Max Raid gives at most {raid.REWARD_SLOTS} rewards")
-            return 1
-        if any(not 1 <= count <= 999 for _, count in rewards):
-            print("[raid] a reward's count is 1 to 999")
-            return 1
         if args.raid_reward:
             bag = {entry["id"] for entry in pokemon_service.SERVICE.names("swsh", "bag")}
-            unknown = sorted({item for item, _ in rewards} - bag)
+            unknown = sorted({int(r.split(":")[0], 0) for r in args.raid_reward} - bag)
             if unknown:
                 print(f"[raid] items {unknown} cannot go in a Sword/Shield bag")
                 return 1
-        # A guest leaves unless every reward fits its den slot's tables at the rank (0x01032570).
-        row, den_rank = raid.den_of(app_data)
-        if row is not None:
-            if args.raid_reward or args.raid_event:
-                rewards, refused = raid.fitting_rewards(row, den_rank, rewards)
-                if refused:
-                    print(f"[raid] left out, not in this den's rewards: {refused}")
-                rewards = rewards or raid.den_rewards(row, den_rank)[:raid.REWARD_SLOTS]
-            else:
-                rewards = raid.den_rewards(row, den_rank)[:raid.REWARD_SLOTS]
-            print(f"[raid] rewards {rewards}")
+        rewards = raid_rewards(args, app_data, event_rewards)
+        if isinstance(rewards, str):
+            print(f"[raid] {rewards}")
+            return 1
         seed = args.raid_seed if args.raid_seed is not None else struct.unpack("<Q", os.urandom(8))[0]
     if not 1 <= args.offer_slot <= swsh_pokemon.PARTY_SLOTS:
         raise ValueError(f"offer slot must be 1..{swsh_pokemon.PARTY_SLOTS}")

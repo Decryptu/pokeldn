@@ -140,13 +140,26 @@ def den_rewards(row, rank):
     return bonus + drops
 
 
+def reward_choices(row, rank):
+    """-> {item: count}: what a guest accepts for this den slot at `rank` (0x01032570), a bonus row's
+    item at its exact count, a drop's item at None (any count). No item is in both tables of a slot."""
+    tables = json.loads(NEST_REWARDS.read_text())
+    out = {item: values[rank] for item, *values in tables["bonus"].get(row[6], []) if values[rank]}
+    out.update({item: None for item, *values in tables["drop"].get(row[5], []) if values[rank]})
+    return out
+
+
 def fitting_rewards(row, rank, wanted):
     """-> (kept, refused): the wanted pairs a guest accepts for this den slot, and the others."""
-    tables = json.loads(NEST_REWARDS.read_text())
-    bonus = {(item, values[rank]) for item, *values in tables["bonus"].get(row[6], []) if values[rank]}
-    drops = {item for item, *values in tables["drop"].get(row[5], []) if values[rank]}
-    kept = [(item, n) for item, n in wanted if (item, n) in bonus or item in drops]
+    choices = reward_choices(row, rank)
+    kept = [(item, n) for item, n in wanted if item in choices and choices[item] in (None, n)]
     return kept, [pair for pair in wanted if pair not in kept]
+
+
+def boss_den(boss_pk8, rank=None):
+    """-> (den slot row, rank) a hosted raid of `boss_pk8` advertises from the shipped den host's
+    advertisement, or (None, rank) for a boss no base den holds."""
+    return den_of(den_advert(DEN_ADVERT.read_bytes(), boss_pk8, rank))
 
 
 def _boss_record(old, species, form, gigantamax, ec):

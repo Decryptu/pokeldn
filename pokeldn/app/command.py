@@ -180,12 +180,57 @@ def limit_error(field: Field, value) -> str:
     return ""
 
 
+def reward_den(tool: Tool, values: dict):
+    """-> raid_rewards.swsh_den for the boss a Max Raid (Host) form names: {item: count or None}, or
+    None; also None for every other tool."""
+    if tool.key != "swsh-raid-host":
+        return None
+    event = values.get("--raid-event") or ""
+    boss = "" if event else next((v.get("file", "") for v in offers(values.get("--raid-boss"))), "")
+    try:
+        stamp = os.stat(os.path.expanduser(boss)).st_mtime_ns if boss else 0
+    except OSError:
+        return None
+    return _reward_den(boss, stamp, not event and bool(values.get("--raid-gigantamax")), event,
+                       str(values.get("--raid-version") or "") if event else "")
+
+
+@cache
+def _reward_den(boss, _stamp, gigantamax, event, event_boss):
+    try:
+        loaded = events_gallery.load(event, game="swsh") if event else None
+    except (OSError, ValueError):
+        return None
+    choices = raid_rewards.swsh_den(boss, gigantamax, loaded, event_boss)
+    return None if choices is None else tuple(choices.items())
+
+
+def reward_problem(tool: Tool, values: dict, rows) -> str:
+    """A Sword/Shield guest refuses a raid whose rewards are not its den's (docs/swsh_raid.md)."""
+    if tool.key != "swsh-raid-host" or not rows:
+        return ""
+    den = reward_den(tool, values)
+    if den is None:
+        return "Choose a boss a den holds before choosing rewards."
+    den = dict(den)
+    for n, row in enumerate(rows, 1):
+        item, quantity = str(row.get("item_id", "")), str(row.get("quantity", ""))
+        if not item.isdigit() or int(item) not in den:
+            return f"Reward {n} is not one this den gives."
+        if den[int(item)] is not None and quantity != str(den[int(item)]):
+            return f"Reward {n}: this den gives it {den[int(item)]} at a time."
+    return ""
+
+
 def problems(tool: Tool, values: dict) -> list[str]:
     errors = [error for f in tool.fields if applies(f, tool, values)
             if (error := limit_error(f, value_of(f, values)) if f.limits
                 else code_error(f, value_of(f, values), tool.key.split("-")[0]))]
     for field in tool.fields:
         if field.kind == "builder" and (error := gift_builder.problem(tool, value_of(field, values))):
+            errors.append(error)
+        if field.kind == "rewards" and not code_error(field, value_of(field, values), tool.key.split("-")[0]) \
+                and (error := reward_problem(tool, values, value_of(field, values))):
             errors.append(error)
         if field.kind == "raidpartners" and applies(field, tool, values):
             value = value_of(field, values)
