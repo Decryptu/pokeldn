@@ -9,7 +9,7 @@ import flet as ft
 
 from gui import theme as t
 from gui.views.widgets import PixelActivity
-from pokeldn import pokemon as builder
+from gui.localization import SERVICE, error_message
 from pokeldn.sv import raid_search
 from pokeldn.sv.raid import REWARD_ROWS
 
@@ -17,7 +17,7 @@ from pokeldn.sv.raid import REWARD_ROWS
 def item_names() -> dict[int, str]:
     """-> the bag's item names by id, from PKHeX; empty when it cannot say."""
     try:
-        return {int(n["id"]): n["name"] for n in builder.SERVICE.names("sv", "bag")}
+        return {int(n["id"]): n["name"] for n in SERVICE.names("sv", "bag")}
     except Exception:
         return {}
 
@@ -92,7 +92,7 @@ class RewardFilter:
                 scope, narrow = self.scope()
                 choices, error = raid_search.reward_choices(scope, **narrow), ""
             except ValueError as exc:
-                choices, error = {}, str(exc)
+                choices, error = {}, error_message(exc)
             names = self.names or item_names()
 
             def show():
@@ -135,7 +135,7 @@ class RewardFilter:
         self._render()
 
     def _name(self, item: int) -> str:
-        return self.names.get(item, f"Item {item}")
+        return self.names.get(item, tr("presentation.item_number", "Item {number}", number=item))
 
     def _render(self, update: bool = True) -> None:
         count = len(self.rows)

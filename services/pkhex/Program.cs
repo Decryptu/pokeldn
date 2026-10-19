@@ -11,9 +11,22 @@ static partial class Program
 {
     static void Main() => Serve();
 
+    // A language pack's BCP 47 tag -> PKHeX's text language; a TW, HK or MO region is Traditional Chinese.
+    static string DisplayLanguage(string? tag)
+    {
+        var parts = (tag ?? "en").ToLowerInvariant().Split('-');
+        return parts[0] switch
+        {
+            "zh" => parts.Skip(1).Any(p => p is "hant" or "tw" or "hk" or "mo") ? "zh-Hant" : "zh-Hans",
+            "ja" or "fr" or "it" or "de" or "es" or "ko" => parts[0],
+            _ => "en",
+        };
+    }
+
     internal static void Serve()
     {
         var strings = GameInfo.GetStrings("en");
+        var displayLanguage = "en";
         // Cut, Fly, Surf, Strength, Waterfall, Flash, Rock Smash, Dive
         var hiddenMoves = new HashSet<ushort> { 15, 19, 57, 70, 127, 148, 249, 291 };
         // Diamond to SoulSilver: Cut, Fly, Surf, Strength, Waterfall, Rock Smash, Whirlpool, Rock Climb, Defog
@@ -43,6 +56,9 @@ static partial class Program
             try
             {
                 var request = JsonNode.Parse(line)!.AsObject();
+                // A reply's names; the record's own language and the Showdown parser stay as requested.
+                displayLanguage = DisplayLanguage((string?)request["display_language"]);
+                strings = GameInfo.GetStrings(displayLanguage);
                 emptyTracker = (string?)request["home_tracker"] != "made";
                 madeTrackers.Clear();
                 var game = games[(string)request["game"]!];
@@ -110,6 +126,13 @@ static partial class Program
         {
             if (list == "species")
                 return new JsonObject { ["names"] = Species(game)["species"]!.DeepClone() };
+            if (list == "species3")
+            {
+                var species = new JsonArray();
+                for (ushort id = 1; id <= 386; id++)
+                    species.Add(new JsonObject { ["id"] = SpeciesConverter.GetInternal3(id), ["name"] = strings.specieslist[id] });
+                return new JsonObject { ["names"] = species };
+            }
             var blank = game.Blank();
             var names = new JsonArray();
             void Add(int id, string name)
@@ -352,7 +375,7 @@ static partial class Program
                         if (Accepted(pk, la) && unmet is null)
                             return Describe(game, pk, la);
                         if (unmet is null)
-                            firstProblem ??= la.Report();
+                            firstProblem ??= la.Report(displayLanguage);
                         else
                             firstUnmet ??= unmet;
                     }
@@ -523,16 +546,19 @@ static partial class Program
         }
 
         // PKHeX's report as a player reads it: the per-move lines folded into one, each problem once.
-        static string Plain(LegalityAnalysis la)
+        string Plain(LegalityAnalysis la)
         {
             var lines = new List<string>();
             var moves = la.Info.Moves.Count(m => !m.Valid);
             if (moves > 0)
                 lines.Add(moves == 1 ? "One of its moves is not legal." : $"{moves} of its moves are not legal.");
-            foreach (var raw in la.Report().Split('\n'))
+            var original = la.Report().Split('\n');
+            var translated = la.Report(displayLanguage).Split('\n');
+            for (var i = 0; i < original.Length; i++)
             {
-                var line = raw.Trim();
-                if (line.Length == 0 || Regex.IsMatch(line, @"^Invalid (Relearn )?Move \d+:"))
+                var raw = original[i];
+                var line = (i < translated.Length ? translated[i] : raw).Trim();
+                if (line.Length == 0 || Regex.IsMatch(raw.Trim(), @"^Invalid (Relearn )?Move \d+:"))
                     continue;
                 if (line.StartsWith("Invalid: "))
                     line = line["Invalid: ".Length..];
@@ -882,7 +908,7 @@ static partial class Program
             var sets = new JsonArray();
             var blank = game.Blank();
             var dummied = MoveInfo.GetDummiedMovesHashSet(game.Context);
-            var errorText = BattleTemplateParseErrorLocalization.Get();
+            var errorText = BattleTemplateParseErrorLocalization.Get(displayLanguage);
             // A set is a run of lines between blank ones, as PKHeX's parser splits them.
             var blocks = new List<List<string>> { new() };
             foreach (var line in lines)
@@ -1050,7 +1076,7 @@ static partial class Program
                     break;
             }
             if (!la.Valid)
-                throw new InvalidDataException($"PKHeX made an illegal {name}: {la.Report()}");
+                throw new InvalidDataException($"PKHeX made an illegal {name}: {la.Report(displayLanguage)}");
             return new JsonObject
             {
                 ["data"] = Convert.ToBase64String(game.Write(pk)),
@@ -1503,7 +1529,7 @@ static partial class Program
             foreach (var move in pk.Moves)
                 if (move != 0)
                     moves.Add(strings.movelist[move]);
-            return new JsonObject
+            var result = new JsonObject
             {
                 ["data"] = Convert.ToBase64String(game.Write(pk)),
                 ["format"] = pk.GetType().Name,
@@ -1514,6 +1540,7 @@ static partial class Program
                 ["level"] = pk.CurrentLevel,
                 ["shiny"] = pk.IsShiny,
                 ["nickname"] = pk.Nickname,
+                ["is_nicknamed"] = pk.IsNicknamed,
                 ["ot"] = pk.OriginalTrainerName,
                 ["ot_gender"] = pk.OriginalTrainerGender,
                 ["trainer_id"] = pk.DisplayTID,
@@ -1532,9 +1559,26 @@ static partial class Program
                 ["parsed"] = la.Parsed,
                 ["home_tracker"] = TrackerState(pk, la),
                 ["legal"] = accepted,
-                ["report"] = la.Report(),
+                ["report"] = la.Report(displayLanguage),
                 ["problems"] = accepted ? "" : Plain(la),
             };
+            if (displayLanguage != "en")
+            {
+                // Persisted summaries and peer metadata retain the same English names as before.
+                var english = GameInfo.GetStrings("en");
+                result["canonical"] = new JsonObject
+                {
+                    ["species"] = english.specieslist[pk.Species],
+                    ["form"] = pk.Form == 0 ? "" : ShowdownParsing.GetStringFromForm(pk.Form, english, pk.Species, pk.Context),
+                    ["nature"] = english.natures[(int)pk.StatAlignment],
+                    ["ball"] = english.balllist[pk.Ball],
+                    ["ability"] = game.Context == EntityContext.Gen9a ? "" : english.abilitylist[pk.Ability],
+                    ["held_item"] = pk.HeldItem == 0 ? "" : english.GetItemStrings(game.Context, game.Versions[0])[pk.HeldItem],
+                    ["moves"] = new JsonArray(pk.Moves.Where(m => m != 0).Select(m => (JsonNode?)english.movelist[m]).ToArray()),
+                    ["encounter"] = la.EncounterOriginal.LongName,
+                };
+            }
+            return result;
         }
 
         // "made" for a tracker this request filled, "empty" for one PKHeX wants and the record lacks.

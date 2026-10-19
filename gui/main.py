@@ -35,6 +35,7 @@ import flet as ft  # noqa: E402
 
 from gui import drop, flet_client, screen, theme as t  # noqa: E402
 from gui.app import App  # noqa: E402
+from gui.localization import flet_locale  # noqa: E402
 from gui.views.widgets import page_key  # noqa: E402
 from pokeldn import __version__, popup  # noqa: E402
 from pokeldn.app import update  # noqa: E402
@@ -64,6 +65,7 @@ def main(page: ft.Page) -> None:
     page.title = "pokeldn"
     page.theme_mode = ft.ThemeMode.DARK
     page.theme = page.dark_theme = t.app_theme()
+    page.locale_configuration = flet_locale()
     page.bgcolor = t.BG
     page.padding = 0
     # 1440 x 900 overflows a 13-inch MacBook Air (1440 x 932 points less the menu bar): fit, then center.

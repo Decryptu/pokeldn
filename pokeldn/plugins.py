@@ -27,7 +27,7 @@ def __getattr__(name):
 
 # docs/plugins.md, Versions: a removal or a change of meaning raises the major, an addition the level.
 API_VERSION = 1                    # the major this pokeldn serves
-API_LEVEL = 8                      # 1.8 status cards, library notes and sorting; docs/plugins.md, Versions
+API_LEVEL = 9                      # 1.9 language-pack resources; docs/plugins.md, Versions
 API_OLDEST = 1                     # an older major is refused
 DEPRECATED: dict[int, str] = {}    # a served major due for removal -> the release that drops it
 ENTRY_POINT_GROUP = "pokeldn.plugins"
@@ -48,6 +48,7 @@ class Plugin:
     module: str = "plugin"
     locale: str = ""
     translations: dict = field(default_factory=dict)
+    resources: dict = field(default_factory=dict)
     library: str = ""                     # a folder the player sees, named in plugin.toml (1.7)
     library_sort: str = ""                # its order until the player picks one (1.8)
     entry_point: object = None
@@ -278,9 +279,15 @@ def _read_folder(path: Path) -> Plugin:
         else:
             plugin.error = f"plugin.toml's library_sort is one of {', '.join(SORTS)}"
     if "locale" in meta or "strings" in meta:
-        from pokeldn.app.i18n import read_pack
+        from pokeldn.app.i18n import read_pack, read_resources
+        def read_resource(name):
+            resource = (path / name).resolve()
+            if not resource.is_relative_to(path.resolve()):
+                raise ValueError("Language pack resources must remain inside the plugin folder.")
+            return resource.read_bytes()
         try:
-            plugin.translations = read_pack(meta, lambda name: (path / name).read_bytes())
+            plugin.translations = read_pack(meta, read_resource)
+            plugin.resources = read_resources(meta, read_resource)
             plugin.locale = meta["locale"]
         except ValueError as error:
             plugin.error = str(error)
