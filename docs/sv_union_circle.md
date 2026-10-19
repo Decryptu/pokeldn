@@ -7,10 +7,11 @@ nav_order: 2
 # Union Circle
 
 A Union Circle is a Scarlet/Violet session of up to four players who share the field. Its code calls
-it the team circle (`TeamCircle`), and a Blueberry Quest is a `bbmission`. The goal here is for
-pokeldn to join a console's local Union Circle as a guest and report BBQs cleared, so that the host
-is paid their BP and Snacksworth's snacks. Along the way it maps the field the members share and
-the wild Pokemon each console spawns for the others ([Overworld encounters](#overworld-encounters)).
+it the team circle (`TeamCircle`), and a Blueberry Quest (BBQ) is a `bbmission`. pokeldn joins a
+console's local Union Circle as a guest, reports BBQ clears that pay the host BP and release
+Snacksworth's legendaries, and spawns wild Pokemon around the host's player
+([Overworld encounters](#overworld-encounters)). The app's two Union Circle tools are in
+[the app guide](gui.md#union-circle).
 
 The Lua below is chunk `be21e65463b9a98f` of Scarlet 4.0.0 (`main.blua`, SHA-256
 `c1a4f4e2625912cf0b739a642a79ba3357df0557a544b92da22a6cb139de2815`, the chunk of
@@ -40,7 +41,7 @@ the same way.
 
 | id | handled by | what |
 |---|---|---|
-| 100–104, 106–109, 111 | `TeamCircleUI` (`C93F9A3AD3A3226ED`) | the circle's menus and member state; 103 goes to the UI only when its first field is 1 or 2 |
+| 100 to 104, 106 to 109, 111 | `TeamCircleUI` (`C93F9A3AD3A3226ED`) | the circle's menus and member state; 103 goes to the UI only when its first field is 1 or 2 |
 | 105 | the receiver | clock and weather: `gameTime`, `realTime`, elapsed real and game seconds into the game-time manager, then a weather seed and its lottery (pairs of {type, duration}, current and next) into `WeatherManager.Sync` |
 | 110 | the receiver (`0.15872`) | a member's current field, kept per station index in `SDD109BA7EC57B7E8` |
 | 112, 113, 114 | `CBB172410B8487694` | synchro Pokemon |
@@ -125,12 +126,12 @@ The addresses below are in Scarlet 4.0.0's `main`.
 
 A native module's name and its functions' names are plain strings in `main`'s read-only data, for
 example `c4D400AC0` and `f5770F782`; they are not computed at run time. Each module has a
-`luaL_Reg`-style table in `.data`: pairs of {name, function} pointers, filled by `R_AARCH64_RELATIVE`
-relocations and ended by a null pair. `c4D400AC0`'s table is at `0x442e500` (22 functions) and
-`c5137FC87`'s is at `0x4420630` (45). A clear event reaches Lua as userdata whose methods are in the
-table at `0x441dc50`: `fBCA6AEB8` returns the BP (the s32 at `+0x10`) and `f0C278E84` the grade
-(the s8 at `+0xd`). The event is built by `0x29dd878`: quest id (u16 at `+0x0`), the u32 at `+0x4`,
-the grade and the BP all come from the quest's row.
+`luaL_Reg`-style table in `.data`: pairs of {name, function} pointers, filled by
+`R_AARCH64_RELATIVE` relocations and ended by a null pair. `c4D400AC0`'s table is at `0x442e500` (22
+functions) and `c5137FC87`'s is at `0x4420630` (45). A clear event reaches Lua as userdata whose
+methods are in the table at `0x441dc50`: `fBCA6AEB8` returns the BP (the s32 at `+0x10`) and
+`f0C278E84` the grade (the s8 at `+0xd`). The event is built by `0x29dd878`: quest id (u16 at
+`+0x0`), the u32 at `+0x4`, the grade and the BP all come from the quest's row.
 
 `c4D400AC0`'s functions work on one circle object, a lazily built singleton at `0x4739410`:
 
@@ -189,11 +190,11 @@ and the host sends another after each member's clear. The record is a tuple of 1
 
 A slot (`0xa0fa18`) is 0x4c bytes, of which the record carries four: the quest's id (u16, 0 for an
 empty slot), its progress (a float), its text variant (the `MissionSettings` variation: which type,
-biome or flavor the quest names, 0 for a quest without; a retail member's photo-in-a-biome quest held
-3, the Canyon Biome), and the row's `mission_id` (the BBQ list matches a slot to its row by id and
-`mission_id`, `0x29e17ec`). When a member gets the
-host's record and the host's fifth slot (element 6) names another quest than its own, it takes the
-host's as its own (`0xa14290`, into `0x29e1ea0`).
+biome or flavor the quest names, 0 for a quest without; a retail member's photo-in-a-biome quest
+held 3, the Canyon Biome), and the row's `mission_id` (the BBQ list matches a slot to its row by id
+and `mission_id`, `0x29e17ec`). When a member gets the host's record and the host's fifth slot
+(element 6) names another quest than its own, it takes the host's as its own (`0xa14290`, into
+`0x29e1ea0`).
 
 `circle.bbq_record` reads the record that ends a message 1, 2 or 3.
 
@@ -208,16 +209,16 @@ clear from pokeldn, as [Snacksworth](#snacksworth) has it.
 A member finishes one of the host's quests by reporting progress on it, not by clearing it. In a
 two-console capture a retail Violet member did the deed of the Scarlet host's quest 9 (surprise a
 wild Pokemon from behind), which was not one of its own quests. Violet sent only message 2 (kind 2)
-on 0x80 port 0: the quest (9), two values (-1, -1), the count (1.0), its message sequence (3) and its
-own status record. A tenth of a second later the host sent its record with quest 9 at progress 1,
-then its own message 3: the clear of quest 9 crediting Violet's station id (field 6), 20 BP, the
+on 0x80 port 0: the quest (9), two values (-1, -1), the count (1.0), its message sequence (3) and
+its own status record. A tenth of a second later the host sent its record with quest 9 at progress
+1, then its own message 3: the clear of quest 9 crediting Violet's station id (field 6), 20 BP, the
 slot (1) and quest 23 taking it. The host's solo total went from 5 to 6.
 
 Message 2 carries what the Lua's progress report (`c5137FC87.f4246D9CA`) passes: the quest, its two
 values and the count. The host's receive handler hands the four, with a member flag and the sender,
-to the same native progress dispatcher (`0x29dc838`) its own reports reach (`0x29dc6b0`). So the host
-counts a member's progress as its own, finishes the quest and clears it itself, and the clear counts
-toward its solo total like any of its own.
+to the same native progress dispatcher (`0x29dc838`) its own reports reach (`0x29dc6b0`). So the
+host counts a member's progress as its own, finishes the quest and clears it itself, and the clear
+counts toward its solo total like any of its own.
 
 `circle.progress_message` builds message 2. A Snacksworth run ([Joining](#joining)) sends each to
 the next of the host's three slots as its latest record shows them, with a count of 500 (the largest
@@ -266,12 +267,13 @@ The BBQ manager keeps two running totals, read by `c5137FC87.f6ED7C9B6` (`+0x1c8
 
 Snacksworth is event `s2_sub_012`, and his 25 legendaries are events `s2_sub_013` to `s2_sub_037`,
 each with its state in `WEVT_S2_SUB_0NN_STATE`. The event's class in `main_dynamic` (prototypes
-`0.1995`–`0.2032`) reads the solo total through `0.2019` and the Team total through `0.2020`. When
-the player talks to him, `0.2002` releases the next solo-route legendary once the solo total, less
-`missionReleaseCount` for each one already released on a solo route, reaches
+`0.1995` to `0.2032`) reads the solo total through `0.2019` and the Team total through `0.2020`.
+When the player talks to him, `0.2002` releases the next solo-route legendary once the solo total,
+less `missionReleaseCount` for each one already released on a solo route, reaches
 `missionReleaseCount`; `0.2003` does the same for the Team routes with the Team total and
-`teamMissionReleaseCount`. Both counts come from the event's config table (`s2_sub_012.ReleaseConfigTable`,
-in `arc/worlddataeventcommandcommand_data_rootcommand_data_root.bin.trpak`). The pack's only table of
+`teamMissionReleaseCount`. Both counts come from the event's config table
+(`s2_sub_012.ReleaseConfigTable`, in
+`arc/worlddataeventcommandcommand_data_rootcommand_data_root.bin.trpak`). The pack's only table of
 that shape holds 10 and 1.
 
 `s2_sub_012.ReleasePokeTable` in the same pack puts each legendary on two of four routes, two solo
@@ -284,29 +286,31 @@ that shape holds 10 and 1.
 | one of each | the other 18 |
 
 The script asks `CA4C5F9FA83D2AF80.SDF0C255E6E08D740` which pair of routes the player is on, the A
-routes or the B routes. Scarlet is on the A routes: a Team clear on Scarlet released Zekrom, which only
-`TeamMissionA` holds. Each pair splits the 25 legendaries with none shared: 13 on the solo route and
-12 on the Team route. A talk releases at most one snack, trying the Team route first. Each route picks
-at random among its legendaries not yet released (`0.2007`). A route's next release needs its total
-to reach its count times one more than the legendaries on it already released. So all 25 need a solo
-total of 130 and a Team total of 12, and 25 talks.
+routes or the B routes. Scarlet is on the A routes: a Team clear on Scarlet released Zekrom, which
+only `TeamMissionA` holds. Each pair splits the 25 legendaries with none shared: 13 on the solo
+route and 12 on the Team route. A talk releases at most one snack, trying the Team route first. Each
+route picks at random among its legendaries not yet released (`0.2007`). A route's next release
+needs its total to reach its count times one more than the legendaries on it already released. So
+all 25 need a solo total of 130 and a Team total of 12, and 25 talks.
 
 So no message names a snack. Snacksworth's script on the host compares the host's own totals with
 the config. Each message 3 carrying a Team clear adds one to the host's Team total, and each of the
-host's own quests a member finishes ([A member's progress on the host's quests](#a-members-progress-on-the-hosts-quests))
-adds one to its solo total. The host does not check that the quest is a Team quest it has, and the
-sequence does not stop a repeat. With a `teamMissionReleaseCount` of 1, each one is one Team-route
-snack, collected by talking to Snacksworth. That covers the 12 on the host's Team route; the 13 on
-its solo route need solo clears, which a member makes for the host by finishing its quests.
+host's own quests a member finishes ([A member's progress on the host's
+quests](#a-members-progress-on-the-hosts-quests)) adds one to its solo total. The host does not
+check that the quest is a Team quest it has, and the sequence does not stop a repeat. With a
+`teamMissionReleaseCount` of 1, each one is one Team-route snack, collected by talking to
+Snacksworth. That covers the 12 on the host's Team route; the 13 on its solo route need solo clears,
+which a member makes for the host by finishing its quests.
 
 ## Joining
 
 `bin/sv_join.py --union-circle` joins a circle a console hosts the way a raid guest joins a raid
-(`pokeldn.sv.circle`). It takes the seat, sends our identity records, mirrors the host's channel
+(`pokeldn.sv.circle`). It takes the seat, sends its identity records, mirrors the host's channel
 table on 0x7C port 1, and holds the seat for `--hold`. It sends no lobby message and does not take
-the host role when the console leaves. When the host's field is up it puts our player on it
-(`circle.Member`, [The field](#the-field)). It prints what a user follows; `--verbose` adds each
-circle message it sends and each step of the area search, which the `--capture` file keeps anyway.
+the host role when the console leaves. When the host's field is up it puts its player on it
+(`circle.Member`, [The field](#the-field)). It prints what a user follows; `--verbose-circle` adds
+each circle message it sends and each step of the area search, which the `--capture` file keeps
+anyway.
 
     ./.venv/bin/python bin/sv_join.py --union-circle --code 3707 --hold 540 --capture circle.jsonl
 
@@ -324,11 +328,11 @@ On the start the host sends Net 0x50 with its advertisement counting the members
 announcement on 0x80 port 2 (and a type 9 accepting each member), and its circle messages on 0x80
 port 0.
 
-The circle messages are the Lua's net messages. Each is a game message (handler key, kind, step, then
-the serializer header; [Tera Raids](sv_raid.md#the-lobby)) under key 0x0132, and its kind is the Lua
-message id. The raid's "loading" and "loaded" (0x0132, kinds 0x6E and 0x73) are messages 110 and 115
-of the same receiver. Some payloads are FlatBuffer tables, the others fixed structures; 104 and 106
-are LZ4-compressed (serializer compression 2).
+The circle messages are the Lua's net messages. Each is a game message (handler key, kind, step,
+then the serializer header; [Tera Raids](sv_raid.md#the-lobby)) under key 0x0132, and its kind is
+the Lua message id. The raid's "loading" and "loaded" (0x0132, kinds 0x6E and 0x73) are messages 110
+and 115 of the same receiver. Some payloads are FlatBuffer tables, the others fixed structures; 104
+and 106 are LZ4-compressed (serializer compression 2).
 
 | message | from | payload | handled by `TeamCircleUI` |
 |---|---|---|---|
@@ -393,57 +397,58 @@ with flags ([Overworld encounters](#overworld-encounters)).
 
 Key 0x0048, the BBQ module's ([Native modules](#native-modules)), is in the host's first channel
 table. Around its port-2 announcement the host sends kind 1 step 1, a bodiless kind 4 (`480004`),
-and kind 1 step 2, both steps carrying its status record ([The BBQ status record](#the-bbq-status-record)).
+and kind 1 step 2, both steps carrying its status record ([The BBQ status
+record](#the-bbq-status-record)).
 
 `circle.Member` does the following:
-- It answers the host's 100 with a copy of the host's own 101, so our player stands where the host
-  does.
+- It answers the host's 100 with a copy of the host's own 101, so the guest's player stands where
+  the host's does.
 - It echoes every 103 the host sends.
 - It answers the host's 106 with 300 empty slots, LZ4-compressed: a world without crystals.
 - It sends a copy of each 110 and 115 the host sends as its own, following the host's field.
 - Once `sv_join` has sent the field keys back, it declares station 1's four objects and asks for
   each of the host's. It answers each of the host's asks with the state of the host's own object of
-  that type under our id, so our player stands as the host's does.
+  that type under the guest's id, so the guest's player stands as the host's does.
 
-With `--follow-host`, our player also moves with the host's. Each of the host's frames on 0x68 and
-object messages on key 0x001E goes out under our object in the same place in the declarations, and
-a ride's attachment (kind 6) names our own ride. The host's transforms reach us about 27 times a
-second with gaps of up to 0.3 s, where a retail console sends about 60, so ours go out on our own
-60 Hz clock: the host as it stood 0.3 s before, between the two of its frames around that moment.
-Our player stays where it stood while the host is within 5 m, is pulled to 5 m from it beyond that,
-and always faces it. The host's animations (kind 5) go out with the frames of their moment, their
-move blend (numbers 1 and 2; 1 is the speed, 0 standing to 1.5 running) scaled by our pace against
-the host's, so our player stands while the host runs about within the leash.
+With `--follow-host`, the guest's player also moves with the host's. Each of the host's frames on
+0x68 and object messages on key 0x001E goes out under the guest's object in the same place in the
+declarations, and a ride's attachment (kind 6) names the guest's own ride. The host's transforms
+reach the guest about 27 times a second with gaps of up to 0.3 s, where a retail console sends about
+60, so the guest's go out on its own 60 Hz clock: the host as it stood 0.3 s before, between the two
+of its frames around that moment. The guest's player stays where it stood while the host is within 5
+m, is pulled to 5 m from it beyond that, and always faces it. The host's animations (kind 5) go out
+with the frames of their moment, their move blend (numbers 1 and 2; 1 is the speed, 0 standing to
+1.5 running) scaled by the guest's pace against the host's, so the guest's player stands while the
+host runs about within the leash.
 
-With `--circle-task`, our player leaves the circle once the task is done, and the run ends:
+With `--circle-task`, the guest's player leaves the circle once the task is done, and the run ends:
 - `snacksworth` reads the host's solo and Team totals from its first status record. From the start
-  demo's end (its 103 with id 2) it sends, one a second, the Team clears its Team total lacks for 12,
-  then reports finishing the host's quests until its solo total is 130
-  ([A member's progress on the host's quests](#a-members-progress-on-the-hosts-quests)), then a Team
-  clear more while its Team total still lacks any ([Snacksworth](#snacksworth)). Each Team clear is
-  of a Team quest drawn as the game draws them (`circle.TEAM_QUESTS`, each quest and BP with its
-  odds) and pays that quest's BP. It prints its progress as the host's totals rise.
+  demo's end (its 103 with id 2) it sends, one a second, the Team clears its Team total lacks for
+  12, then reports finishing the host's quests until its solo total is 130 ([A member's progress on
+  the host's quests](#a-members-progress-on-the-hosts-quests)), then a Team clear more while its
+  Team total still lacks any ([Snacksworth](#snacksworth)). Each Team clear is of a Team quest drawn
+  as the game draws them (`circle.TEAM_QUESTS`, each quest and BP with its odds) and pays that
+  quest's BP. It prints its progress as the host's totals rise, and stops when
+  they have not risen over 20 sends in a row.
 - `bp` sends, a second after the start demo's end, one Normal clear of quest 29 paying the
   `--bbq-clear` BP, 1 to 9,999,999.
 
-Each clear is a message 3 with its BP, our station id and our status record.
+Each clear is a message 3 with its BP, the guest's station id and the guest's status record.
 
-The app's Scarlet & Violet entry Union Circle - BBQs/BP runs these two tasks. It takes the circle's
-four-digit Link Code and a choice between unlocking every remaining Snacksworth legendary and giving
-an amount of BP.
-
-A retail host paid every clear sent this way, Normal or Team, with no message 1 from us before
-them; the notices and BP show once the host's player has closed the BP side bar. A single Team clear,
-even of a quest that is not a Team quest, was enough for Snacksworth to release the next Team-route
-legendary ([Snacksworth](#snacksworth)), also with the host outside the Blueberry Academy.
+A retail host paid every clear sent this way, Normal or Team, with no message 1 from the guest
+before them; the notices and BP show once the host's player has closed the BP side bar. A single
+Team clear, even of a quest that is not a Team quest, was enough for Snacksworth to release the next
+Team-route legendary ([Snacksworth](#snacksworth)), also with the host outside the Blueberry
+Academy.
 
 ## Overworld encounters
 
 Every console in a circle spawns the wild Pokemon around its own player from its own game version,
 and broadcasts each one to the others. A Scarlet host and a Violet member, both in Area Zero, each
-spawned their own version's Paradox Pokemon: the host a Scarlet-only species (dev id 982), the member
-a Violet-only one (992). A member catches the other version's exclusives because the other console
-spawned them and shares them. No version is exchanged, and the host has no special role here.
+spawned their own version's Paradox Pokemon: the host a Scarlet-only species (dev id 982), the
+member a Violet-only one (992). A member catches the other version's exclusives because the other
+console spawned them and shares them. No version is exchanged, and the host has no special role
+here.
 
 The shared Pokemon travel on 0x80 port 0 and the unreliable protocol, broadcast by their owner;
 only the ask for one and its refusal go to a single station, on 0x7c port 0:
@@ -461,7 +466,7 @@ only the ask for one and its refusal go to a single station, on 0x7c port 0:
 An entity's object id is station + 4n, the u16 that opens its record: the host's (0, 37) is 0x94
 and the member's (1, 159) is 0x27D. Removals came in bursts, and each console kept spawning new
 entities as its player moved. A console shares its entities only with a member whose player stands
-near its own: the host sent our guest none until our player followed the host's. Every id is a
+near its own: the host sent pokeldn's guest none until its player followed the host's. Every id is a
 pair of unsigned integers: the dispatcher (`0x1dbd4b0`, jump table `0x3c5b9a0`) reads no signed
 tag.
 
@@ -507,7 +512,7 @@ The other bytes are 0, except that retail records hold stale memory in the gaps 
 0x54. Before its record the owner sends the entity's frames on 0x68: kind 6 with no parent
 (`00000000 00000000 0000003f 0000003f 00000000 0000003f 0000003f`) and kind 7 with scale 1.0.
 `circle.Spawner` (`sv_join --spawn SPECIES:LEVEL`, with `--spawn-shiny`, `--spawn-tera` and the
-other `--spawn-*` fields) sends our own spawns the same way, around the host's player, and
+other `--spawn-*` fields) sends the guest's own spawns the same way, around the host's player, and
 hands each to the console that asks to battle it; a retail host battled and caught them (Crafted
 encounters, below).
 
@@ -568,52 +573,49 @@ later it answers about half with 0. The host never asks a member.
 
 ## Crafted encounters
 
-`sv_join --spawn SPECIES:LEVEL` joins the circle as a member and keeps three spawns of a Pokemon
-the user crafts around the host's player; with `--follow-host` our player follows the host's. The
-`--spawn-*` flags set what a record carries: form, shiny, Tera Type, nature, gender, ability slot,
-size, held item and IVs. One left out is drawn as the host's own wild ones were: the size, the
-nature and each IV at random, the ability slot 0 or 1, no held item. Each spawn comes 15 to 25 m from the host's player. One the host battles (its ask, handed over), removes (a kind 2 naming it) or walks more than
-50 m from is let go and another comes near the host. In the captures the host never sent a kind 2
-for a member's spawn: only its asks to battle one.
+`sv_join --spawn SPECIES:LEVEL` joins the circle as a member and keeps three spawns of a Pokemon the
+user crafts around the host's player; with `--follow-host` the guest's player follows the host's.
+The `--spawn-*` flags set what a record carries: form, shiny, Tera Type, nature, gender, ability
+slot, size, held item and IVs. One left out is drawn as the host's own wild ones were: the size, the
+nature and each IV at random, the ability slot 0 or 1, no held item. Each spawn comes 15 to 25 m
+from the host's player. One the host battles (its ask, handed over), removes (a kind 2 naming it) or
+walks more than 50 m from is let go and another comes near the host. In the captures the host never
+sent a kind 2 for a member's spawn: only its asks to battle one.
 
-The app's Scarlet & Violet entry Union Circle - Encounters runs it with `--follow-host`. Its card
-sets what a record carries, the species and level too; the nature, ability slot, size and IVs are
-drawn unless set. With its Legal encounters only switch (`--spawn-legal`), the card offers only the
-species, forms and levels some wild slot gives and the Tera Types PKHeX accepts somewhere, and lists
-every location where PKHeX accepts the spawn as chosen.
-
-With `--spawn-legal`, PKHeX decides. Its Scarlet / Violet wild slots name
-the location a catch there gets; the `wild_areas` command of the PKHeX helper lists them by location,
-with a slot's drawn form (Scatterbug's pattern) as any form. The `wild_legal` command builds the
-crafted spawn caught from a slot at each location with its species, form and level, once per Tera
-Type, and runs PKHeX's legality analysis on each. The record's one sex bit counts only for a species
-with two genders; the others take the gender their species has. A spawn PKHeX accepts at no location stops the
-run. Where a species' own types are all a slot gives in Paldea, PKHeX can accept any Tera Type
-elsewhere (Pikachu in Kitakami, from its outbreaks there), so the analysis, not the species, decides
-the Tera Type.
+With `--spawn-legal`, PKHeX decides. Its Scarlet / Violet wild slots name the location a catch there
+gets; the `wild_areas` command of the PKHeX helper lists them by location, with a slot's drawn form
+(Scatterbug's pattern) as any form. The `wild_legal` command builds the crafted spawn caught from a
+slot at each location with its species, form and level, once per Tera Type, and runs PKHeX's
+legality analysis on each. The record's one sex bit counts only for a species with two genders; the
+others take the gender their species has. A spawn PKHeX accepts at no location stops the run. Where
+a species' own types are all a slot gives in Paldea, PKHeX can accept any Tera Type elsewhere
+(Pikachu in Kitakami, from its outbreaks there), so the analysis, not the species, decides the Tera
+Type.
 
 The spawns then wait for the host's area (`wild.Locator`). Each wild Pokemon the host's console
-shares (key 0x0026 kind 1, once our player is near) narrows the locations to those with a slot for
-its species, form and level. The area counts as found once every location left is one where PKHeX
-accepts the spawn; it need not be one. Then the spawns come, and they all go when the host walks more
-than 50 m from where it stood when the area was found; finding starts over. Before that, finding
-also starts over when the host is more than 100 m from a spawn it weighed, and from a spawn no
-location left holds. A spawn no wild slot holds (a raid's, an event's) is left out.
+shares (key 0x0026 kind 1, once the guest's player is near) narrows the locations to those with a
+slot for its species, form and level. The area counts as found once every location left is one where
+PKHeX accepts the spawn; it need not be one. Then the spawns come, and they all go when the host
+walks more than 50 m from where it stood when the area was found; finding starts over. Before that,
+finding also starts over when the host is more than 100 m from a spawn it weighed, and from a spawn
+no location left holds. A spawn no wild slot holds (a raid's, an event's) is left out.
 
-In Area Zero (and on the flight down to its gate) the host's console sends no transform of its player:
-its last one read (0, 0, -2). It still shares the wild Pokemon it spawns around its player, which
-outside stood 8 to 46 m from it. With no transform for 2 s, the host is placed at the middle of its
-six newest spawns of the last 30 s; outside, 9 such estimates in 10 fell within 50 m of the host's
-player. The spawns come and hold around that estimate. With no spawn in that time, where the host stands is unknown and no new spawn comes until
-one does. A transform within 10 m of the origin (riding, or set down) never places the host.
+In Area Zero (and on the flight down to its gate) the host's console sends no transform of its
+player: its last one read (0, 0, -2). It still shares the wild Pokemon it spawns around its player,
+which outside stood 8 to 46 m from it. With no transform for 2 s, the host is placed at the middle
+of its six newest spawns of the last 30 s; outside, 9 such estimates in 10 fell within 50 m of the
+host's player. The spawns come and hold around that estimate. With no spawn in that time, where the
+host stands is unknown and no new spawn comes until one does. A transform within 10 m of the origin
+(riding, or set down) never places the host.
 
 While it runs, it prints the search as a status card (a `[panel]` line with id `zone`, printed when
 it changes), which the app shows above the tool's options: the areas still possible, how many allow
-the spawn and how many wild Pokemon were weighed. When no area left allows it, the card names the areas to go to; after the host
-walks too far, it says why the search started over; once found, it shows how far the host is from
-where the area was found. It says when the host's position is estimated from its spawns, or unknown.
-Until the area is found it suggests a picnic where one can be started: packing it up
-spawns the wild Pokemon around the player afresh, which narrows the areas faster.
+the spawn and how many wild Pokemon were weighed. When no area left allows it, the card names the
+areas to go to; after the host walks too far, it says why the search started over; once found, it
+shows how far the host is from where the area was found. It says when the host's position is
+estimated from its spawns, or unknown. Until the area is found it suggests a picnic where one can be
+started: packing it up spawns the wild Pokemon around the player afresh, which narrows the areas
+faster.
 
 ## Unresolved
 
