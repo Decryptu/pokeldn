@@ -7,6 +7,8 @@ from pokeldn.app.i18n import t as tr
 from dataclasses import dataclass, replace
 
 from pokeldn.sv.raid import REWARD_ROWS
+from pokeldn.swsh.raid import REWARD_SLOTS as SWSH_REWARD_ROWS
+from pokeldn.swsh import lair as swsh_lair
 
 
 @dataclass(frozen=True)
@@ -15,7 +17,8 @@ class Field:
                                   # raidpartners's tuple is its picks' flag then its progress's
     label: str
     kind: str = "text"            # text number choice switch pokemon file builder multi linkcode code
-                                  # (eight digits) raidseed rewards raidevent raidden raidpartners, or a
+                                  # (eight digits) raidseed lairseed rewards raidevent raidden raidpartners
+                                  # raideventboss (one value per flag, colon-separated), or a
                                   # PKHeX name list: species move item ball
     help: str = ""
     default: str | bool = ""
@@ -78,6 +81,16 @@ VERSIONS = (("firered", tr('catalog.firered_7d9d1b', 'FireRed')), ("leafgreen", 
 LANGUAGES = (("english", tr('catalog.english_ba118b', 'English')), ("french", tr('catalog.french_745819', 'French')), ("german", tr('catalog.german_a659b6', 'German')),
              ("italian", tr('catalog.italian_fe1d9c', 'Italian')), ("spanish", tr('catalog.spanish_341105', 'Spanish')), ("japanese", tr('catalog.japanese_be4ee9', 'Japanese')))
 CHANNELS = (("1", "1"), ("6", "6"), ("11", "11"))
+
+
+def _swsh_lair_legendaries():
+    import json
+    from pathlib import Path
+    names = json.loads((Path(swsh_lair.__file__).with_name("data") / "species.json").read_text())["species_names"]
+    return tuple((str(n), names.get(str(n), f"#{n}")) for n in swsh_lair.legendaries())
+
+
+SWSH_LAIR_LEGENDARIES = _swsh_lair_legendaries()
 FRESH_PID = Field("--fresh-pid", tr('catalog.new_pid_each_run_a6f96e', 'New PID each run'), "switch", default=True, hidden=True,
                   help=tr('catalog.offer_the_pokemon_under_a_new_pid_and_encryption_consta_4e58db', 'Offer the Pokemon under a new PID and encryption constant, so a save that already received it takes it again. Turn it off for a file whose PID must stay, such as an event Pokemon.'))
 FOR_RECEIVER = Field("--for-receiver", tr('catalog.made_for_the_receiving_player_1dfdde', 'Made for the receiving player'), "switch", default=True, hidden=True,
@@ -280,6 +293,47 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           Field("--seconds", tr('catalog.time_limit_seconds_cf9965', 'Time limit (seconds)'), "number", default="300", hidden=True,
                 help=tr('catalog.how_long_the_card_is_advertised_after_start_0dba41', 'How long the card is advertised after Start.'))),
          doc="swsh_gift.md"),
+    Tool("swsh-raid-host", tr('catalog.max_raid_host_5d0e1a', 'Max Raid (Host)'), "bin/swsh_host.py",
+         tr('catalog.host_a_max_raid_the_console_joins_you_choose_the_boss_i_7c2f41', 'Host a Max Raid the console joins: you choose the boss, its rewards and the Pokemon we bring.'),
+         (tr('catalog.choose_the_boss_the_pokemon_our_player_brings_and_if_yo_3b8e90', 'Choose the boss, the Pokemon our player brings and, if you like, the rewards.'),
+          tr('catalog.start_the_host_9b26a9', 'Start the host.'),
+          tr('catalog.y_comm_in_local_wireless_mode_join_pokeldn_s_raid_from__a91d47', "Y-Comm in local wireless mode: join POKELDN's raid from the list."),
+          tr('catalog.press_ready_the_console_runs_the_battle_and_our_pokemon_6f02b3', 'Press Ready: the console runs the battle and our Pokemon fights at your side.'),
+          tr('catalog.win_the_raid_to_receive_the_rewards_dcd72e', 'Win the raid to receive the rewards.')),
+         (Field("--raid-event", tr('catalog.raid_event_d4b4e5', 'Raid event'), "raidevent",
+                help=tr('catalog.a_boss_from_a_past_wild_area_event_from_project_pokemon_3e1f70', "A boss from a past Wild Area Event, from Project Pokemon's EventsGallery. Leave it empty, or fold this card, to host the boss you build.")),
+          Field(("--raid-version", "--raid-stars", "--raid-event-boss", "--raid-area"), tr('catalog.event_boss_6b2a9d', 'Event boss'),
+                "raideventboss", requires="--raid-event",
+                help=tr('catalog.the_event_s_bosses_a_den_can_show_with_their_stars_leve_0c58e2', "The event's bosses a den can show, with their stars, level and game; the event's rewards that fit the den go with it.")),
+          Field("--raid-boss", tr('catalog.boss_8f6c1d', 'Boss'), "pokemon", required=True, unless="--raid-event",
+                help=tr('catalog.the_raid_s_boss_a_boss_a_den_can_hold_shows_in_every_co_e2a7b9', "The raid's boss. A boss a den can hold shows in every console's list; its level sets the stars.")),
+          Field("--raid-gigantamax", tr('catalog.gigantamax_boss_0a7e52', 'Gigantamax boss'), "switch", unless="--raid-event",
+                help=tr('catalog.for_a_pokemon_a_den_holds_as_gigantamax_charizard_snorl_6b1d40', 'For a Pokemon a den holds as Gigantamax: Charizard, Snorlax, Toxtricity and the other Gigantamax Pokemon.')),
+          Field("--offer-file", tr('catalog.our_pokemon_14a66b', 'Our Pokemon'), "pokemon", required=True,
+                help=tr('catalog.the_pokemon_our_player_brings_pkhex_checks_it_is_legal_abc1cf', 'The Pokemon our player brings. PKHeX checks it is legal.')),
+          Field("--raid-reward", tr('catalog.rewards_59afe4', 'Rewards'), "rewards",
+                help=tr('catalog.leave_empty_for_the_den_s_own_rewards_or_choose_up_to_va_91e2d4', "Leave empty for the den's own rewards, or choose up to {value0} of the rewards the boss's den gives.", value0=SWSH_REWARD_ROWS)),
+          Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="6", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
+          host_seconds("900")),
+         fixed=("--raid-console-serves", "--player-name", "{ot}", "--trainer-name", "{ot}",
+                "--trainer-tid", "{tid}", "--trainer-sid", "{sid}"), doc="swsh_raid.md"),
+    Tool("swsh-lair-raid-host", tr('catalog.dynamax_adventure_host_4c81e2', 'Dynamax Adventure (Host)'), "bin/swsh_host.py",
+         tr('catalog.host_a_dynamax_adventure_the_console_joins_you_choose_t_9a3f17', 'Host a Dynamax Adventure the console joins: you choose the legendary at the end of the Max Lair.'),
+         (tr('catalog.choose_the_legendary_then_start_the_host_5be0c4', 'Choose the legendary, then start the host.'),
+          tr('catalog.at_the_max_lair_talk_to_the_receptionist_press_to_set_t_8d4b19', 'At the Max Lair, talk to the receptionist, press + to set the same Link Code if you chose one, then choose Invite Others.'),
+          tr('catalog.press_ready_once_pokeldn_is_in_the_lobby_80d6b3', 'Press Ready once POKELDN is in the lobby.'),
+          tr('catalog.pokeldn_leaves_once_the_adventure_starts_a_computer_par_2c7f05', 'POKELDN leaves once the adventure starts: a computer partner takes its seat and the adventure goes on.')),
+         (Field("--lair-legendary", tr('catalog.legendary_6e94a1', 'Legendary'), "choice", default="150",
+                choices=SWSH_LAIR_LEGENDARIES,
+                help=tr('catalog.the_legendary_pokemon_waiting_at_the_end_of_the_max_lai_b0d3e8', 'The legendary Pokemon waiting at the end of the Max Lair.')),
+          Field("--code", tr('catalog.link_code_cc04a1', 'Link Code'), "code",
+                help=tr('catalog.eight_digits_the_console_sets_with_at_the_receptionist__5a8e30', 'Eight digits, set on the console with + at the receptionist. Empty for none.')),
+          Field("--lair-seed", tr('catalog.adventure_seed_1f7c55', 'Adventure seed'), "lairseed", template="0x{}",
+                help=tr('catalog.sets_the_rental_pokemon_and_the_pokemon_met_on_the_way_e4b8d2', 'Sets the rental Pokemon and the Pokemon met on the way. Leave empty for a random one.')),
+          Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="6", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
+          host_seconds("600")),
+         fixed=("--player-name", "{ot}", "--trainer-name", "{ot}",
+                "--trainer-tid", "{tid}", "--trainer-sid", "{sid}"), doc="swsh_raid.md"),
 ))
 
 BDSP_ROOM = tr('catalog.pokemon_center_2f_left_attendant_plain_yes_no_password__35cfcc', 'Pokemon Center 2F, left attendant, plain Yes (no password, not the group option).')

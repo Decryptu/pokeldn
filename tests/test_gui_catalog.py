@@ -259,3 +259,16 @@ def test_the_other_switch_games_simulate_their_mystery_gifts_through_their_trade
     assert "--for-receiver" not in off
     assert "--gift-event" not in build(host, {offer: {"file": "/tmp/mon.bin"}}, {}, Settings(), stamp="fixed")
     assert missing_offer(gift, {}) == "Choose the Mystery Gift Pokemon first."
+
+
+def test_every_game_lists_its_tools_in_one_order():
+    """Trade (Host), Trade (Join), Trade (Online), Mystery Gift, then raids, host before join."""
+    def rank(key):
+        kind = key.split("-", 1)[1]
+        for part in ("raid-host", "raid-join", "online", "join", "gift", "host"):
+            if part in kind:
+                return {"host": 0, "join": 1, "online": 2, "gift": 3, "raid-host": 4, "raid-join": 5}[part]
+        raise AssertionError(key)
+    for game in GAMES:
+        ranks = [rank(t.key) for t in game.tools if t.key.startswith(game.key + "-")]
+        assert ranks == sorted(ranks), (game.key, [t.key for t in game.tools])

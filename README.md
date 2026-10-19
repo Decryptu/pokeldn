@@ -36,7 +36,8 @@ those protocols and write parts of the code.
 FRLG: FireRed/LeafGreen · LGPE: Let's Go Pikachu/Eevee · SwSh: Sword/Shield ·
 BDSP: Brilliant Diamond/Shining Pearl · PLA: Legends Arceus · SV: Scarlet/Violet · PLZA: Legends Z-A
 
-Scarlet/Violet also supports [local Tera Raids](docs/sv_raid.md). Event Pokemon arrive through Mystery
+Scarlet/Violet also supports [local Tera Raids](docs/sv_raid.md), and Sword/Shield
+[Max Raid Battles and Dynamax Adventures](docs/swsh_raid.md) with a chosen boss or legendary. Event Pokemon arrive through Mystery
 Gift on FRLG and SwSh, and on the other titles as a fresh legal copy of an official gift traded by the
 game's trade host ([Simulated Mystery Gifts](docs/gift_simulated.md)).
 See each game's docs for setup, features and verification coverage.
@@ -127,6 +128,12 @@ Contributors to this repository (GitHub does not list contributors on a fork):
 - [Project Pokemon](https://github.com/projectpokemon): the [EventsGallery](https://github.com/projectpokemon/EventsGallery)
   of Scarlet/Violet raid event deliveries the app downloads, with pkNX's text of each
 - [Matcore962](https://github.com/Matcore962): importing Pokemon files and game saves into the Bank
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+What is signed, the team roles and the privacy policy are on the
+[Code signing policy](https://decryptu.github.io/pokeldn/code_signing.html) page.
 
 ## License
 

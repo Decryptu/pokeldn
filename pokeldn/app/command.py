@@ -10,7 +10,7 @@ from pokeldn.app.catalog import Field, Tool
 from pokeldn.app.introspect import flags_of
 from pokeldn.lgpe.session import code_picks
 from pokeldn.sv import raid_partners
-from pokeldn.sv.raid import REWARD_ROWS
+from pokeldn.app import raid_rewards
 
 
 @cache
@@ -109,7 +109,10 @@ def _args(field: Field, value, tool: Tool) -> list[str]:
         return [part for row in (value or ())
                 for part in (flags[0], f"{row.get('item_id', '')}:{row.get('quantity', '')}")]
     if field.kind == "raidevent":     # the event's folder in the app's gallery
-        return [flags[0], events_gallery.event_path(value)] if value else []
+        return [flags[0], events_gallery.event_path(value, game=tool.key.split("-")[0])] if value else []
+    if field.kind == "raideventboss":   # version:stars:number:area, one value per flag
+        parts = str(value or "").split(":", 3)
+        return [a for flag, v in zip(flags, parts) for a in (flag, v)] if len(parts) == 4 else []
     if field.kind == "raidpartners":  # {"progress": a stage or "", "picks": trainers in slot order}
         value = value if isinstance(value, dict) else {}
         progress = [flags[1], value["progress"]] if value.get("progress") else []
@@ -177,11 +180,57 @@ def limit_error(field: Field, value) -> str:
     return ""
 
 
+def reward_den(tool: Tool, values: dict):
+    """-> raid_rewards.swsh_den for the boss a Max Raid (Host) form names: {item: count or None}, or
+    None; also None for every other tool."""
+    if tool.key != "swsh-raid-host":
+        return None
+    event = values.get("--raid-event") or ""
+    boss = "" if event else next((v.get("file", "") for v in offers(values.get("--raid-boss"))), "")
+    try:
+        stamp = os.stat(os.path.expanduser(boss)).st_mtime_ns if boss else 0
+    except OSError:
+        return None
+    return _reward_den(boss, stamp, not event and bool(values.get("--raid-gigantamax")), event,
+                       str(values.get("--raid-version") or "") if event else "")
+
+
+@cache
+def _reward_den(boss, _stamp, gigantamax, event, event_boss):
+    try:
+        loaded = events_gallery.load(event, game="swsh") if event else None
+    except (OSError, ValueError):
+        return None
+    choices = raid_rewards.swsh_den(boss, gigantamax, loaded, event_boss)
+    return None if choices is None else tuple(choices.items())
+
+
+def reward_problem(tool: Tool, values: dict, rows) -> str:
+    """A Sword/Shield guest refuses a raid whose rewards are not its den's (docs/swsh_raid.md)."""
+    if tool.key != "swsh-raid-host" or not rows:
+        return ""
+    den = reward_den(tool, values)
+    if den is None:
+        return "Choose a boss a den holds before choosing rewards."
+    den = dict(den)
+    for n, row in enumerate(rows, 1):
+        item, quantity = str(row.get("item_id", "")), str(row.get("quantity", ""))
+        if not item.isdigit() or int(item) not in den:
+            return f"Reward {n} is not one this den gives."
+        if den[int(item)] is not None and quantity != str(den[int(item)]):
+            return f"Reward {n}: this den gives it {den[int(item)]} at a time."
+    return ""
+
+
 def problems(tool: Tool, values: dict) -> list[str]:
     errors = [error for f in tool.fields if applies(f, tool, values)
-            if (error := limit_error(f, value_of(f, values)) if f.limits else code_error(f, value_of(f, values)))]
+            if (error := limit_error(f, value_of(f, values)) if f.limits
+                else code_error(f, value_of(f, values), tool.key.split("-")[0]))]
     for field in tool.fields:
         if field.kind == "builder" and (error := gift_builder.problem(tool, value_of(field, values))):
+            errors.append(error)
+        if field.kind == "rewards" and not code_error(field, value_of(field, values), tool.key.split("-")[0]) \
+                and (error := reward_problem(tool, values, value_of(field, values))):
             errors.append(error)
         if field.kind == "raidpartners" and applies(field, tool, values):
             value = value_of(field, values)
@@ -201,13 +250,15 @@ def prepare(tool: Tool, values: dict) -> None:
             gift_builder.prepare(tool, value_of(field, values))
 
 
-def code_error(field: Field, value) -> str:
+def code_error(field: Field, value, game: str = "sv") -> str:
     """A console code is eight digits, or empty where the field allows none; a Let's Go link code must
     name three picker Pokemon. Either partial one would host under another code. A raid seed is eight
     hex digits; a raid reward row names an item and a quantity from 1 to 999; a raid event is in the
     app's event gallery."""
     if field.kind == "raidseed":
         return "" if re.fullmatch(r"[0-9A-Fa-f]{8}", str(value or "")) else "Enter eight hexadecimal digits."
+    if field.kind == "lairseed":
+        return "" if re.fullmatch(r"[0-9A-Fa-f]{0,16}", str(value or "")) else "Enter up to sixteen hexadecimal digits."
     if field.kind == "raidpartners":
         value = value if isinstance(value, dict) else {}
         picks = list(value.get("picks", ()))
@@ -222,15 +273,15 @@ def code_error(field: Field, value) -> str:
             return "A chosen partner is not among this progress's trainers."
         return ""
     if field.kind == "raidevent":
-        if not value or events_gallery.holds(value):
+        if not value or events_gallery.holds(value, game=game):
             return ""
-        if not events_gallery.present():
+        if not events_gallery.present(game=game):
             return "Download the event gallery in Raid event, or choose no event."
         return "The chosen event is not in the event gallery any more."
     if field.kind == "rewards":
         rows = list(value or ())
-        if len(rows) > REWARD_ROWS:
-            return f"A raid gives at most {REWARD_ROWS} rewards."
+        if len(rows) > raid_rewards.rows(game):
+            return f"A raid gives at most {raid_rewards.rows(game)} rewards."
         for n, row in enumerate(rows, 1):
             item = str(row.get("item_id", ""))
             quantity = str(row.get("quantity", ""))

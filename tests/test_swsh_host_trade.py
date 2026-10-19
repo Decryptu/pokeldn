@@ -321,3 +321,18 @@ def test_a_joiner_that_cancels_and_offers_again_gets_our_offer_again(monkeypatch
         now[0] += 0.01
     assert joiner.stage == "accepted" and host.stage == "saving", host.stage
     assert host.elements[50].values[1][0] == right
+
+
+def test_a_second_joiners_snapshot_is_acked_on_its_own_port():
+    """Each station's 0x84 stream is on its station index's port; an emulated Shield at index 2
+    sent on port 2 and repeated its snapshot until it was acked there (docs/swsh_raid.md)."""
+    sent = []
+    host = host_trade.HostTrade(
+        HOST, JOINER, snapshot=bytes(3456), offer_pk8=bytes(0x158), send=lambda *a: None,
+        send_broadcast=lambda port, msg, packed: sent.append(port), send_mesh=lambda p: None,
+        log=lambda *a: None)
+    snapshot = bytes(range(256)) * 13 + bytes(128)
+    for msg, packed in broadcast4.Sender().transfer(snapshot):
+        host.on_broadcast(2, msg, packed)
+    assert host.peer_snapshot == snapshot
+    assert sent and set(sent) == {2}

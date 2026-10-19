@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration "pokeldn-windows": the dist/pokeldn folder the release workflow
+     uploads. Only binaries built from source in that workflow are signed; the rest ship as built. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="pokeldn.exe">
+      <authenticode-sign/>
+    </pe-file>
+    <pe-file path="_internal/services/pkhex/dist/pokeldn-pkhex.exe">
+      <authenticode-sign/>
+    </pe-file>
+    <pe-file path="_internal/unicorn/lib/unicorn.dll">
+      <authenticode-sign/>
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

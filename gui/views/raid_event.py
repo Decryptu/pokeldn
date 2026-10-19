@@ -33,6 +33,7 @@ class RaidEventPicker:
 
     def __init__(self, view, field):
         self.view, self.app, self.field = view, view.app, field
+        self.game = getattr(getattr(view, "game", None), "key", "sv")
         self.stop = threading.Event()
         self.events = None          # the gallery's index, once listed
         self.chevron = t.pixel_icon("chevron-down" if view.raid_event_open else "chevron-right", color=t.FAINT)
@@ -40,14 +41,14 @@ class RaidEventPicker:
         folded = "" if key else view.values.get(FOLDED) or ""
         # An event the gallery lacks (never downloaded, or updated without it) stays chosen, for the
         # gallery to come back; the run refuses it (pokeldn.app.command.code_error).
-        missing = bool(key) and not gallery.holds(key)
+        missing = bool(key) and not gallery.holds(key, game=self.game)
         if missing:
-            summary, tip = (tr('raid_event.missing_0d71ec', 'Missing: {value0}', value0=raid_label(gallery.title(key))),
+            summary, tip = (tr('raid_event.missing_0d71ec', 'Missing: {value0}', value0=raid_label(gallery.title(key, game=self.game))),
                             tr('raid_event.not_in_the_event_gallery_download_or_update_it_or_choos_8b8767', 'Not in the event gallery: download or update it, or choose another event'))
         elif key:
-            summary, tip = raid_label(gallery.title(key)), tr('raid_event.fold_to_set_the_event_aside_and_host_a_standard_raid_c8854c', 'Fold to set the event aside and host a standard raid')
+            summary, tip = raid_label(gallery.title(key, game=self.game)), tr('raid_event.fold_to_set_the_event_aside_and_host_a_standard_raid_c8854c', 'Fold to set the event aside and host a standard raid')
         elif folded:
-            summary, tip = tr('raid_event.off_d2834c', 'Off: {value0}', value0=raid_label(gallery.title(folded))), tr('raid_event.unfold_to_raid_the_event_again_2db3e3', 'Unfold to raid the event again')
+            summary, tip = tr('raid_event.off_d2834c', 'Off: {value0}', value0=raid_label(gallery.title(folded, game=self.game))), tr('raid_event.unfold_to_raid_the_event_again_2db3e3', 'Unfold to raid the event again')
         else:
             summary, tip = tr('raid_event.none_a_standard_raid_23a8c4', 'None, a standard raid'), tr('raid_event.show_or_hide_the_event_raids_19f0b5', 'Show or hide the event raids')
         self.summary = t.text(summary, 12, t.RED if missing else t.BLUE if key else t.MUTED, max_lines=1,
@@ -103,7 +104,7 @@ class RaidEventPicker:
         self._working(tr('raid_event.looking_for_the_event_gallery_d438b4', 'Looking for the event gallery...'))
         if update:
             self.control.update()
-        self._background(gallery.state, self._show_state)
+        self._background(lambda: gallery.state(game=self.game), self._show_state)
 
     def _show_state(self, found, error: str) -> None:
         self.busy.visible = self.bar.visible = False
@@ -120,7 +121,7 @@ class RaidEventPicker:
         self.status.value = tr('raid_event.event_gallery_of_7d0c46', 'Event gallery of {value0}', value0=day(found.date))
         self.actions.controls = [t.secondary_button(tr('raid_event.check_for_updates_f26f32', 'Check for updates'), self._check, "refresh")]
         self.control.update()
-        self._background(gallery.index, self._fill)
+        self._background(lambda: gallery.index(game=self.game), self._fill)
 
     # The events
 
@@ -178,7 +179,7 @@ class RaidEventPicker:
 
     def _show_catch(self) -> None:
         """The override under the event, for an event whose bosses a save catches once."""
-        event = self.view.raid_event()
+        event = self.view.raid_event() if self.game == "sv" else None
         names = [translate(name) for name in raid_event.catch_once(event)] if event is not None else []
         self.catch.visible = bool(names)
         if not names:
@@ -193,11 +194,11 @@ class RaidEventPicker:
     # Download, check, update
 
     def _download(self, _e) -> None:
-        self._run(lambda progress: gallery.download(progress=progress, cancelled=self.stop.is_set),
+        self._run(lambda progress: gallery.download(progress=progress, cancelled=self.stop.is_set, game=self.game),
                   tr('raid_event.downloading_the_event_gallery_17c46e', 'Downloading the event gallery...'))
 
     def _update(self, _e) -> None:
-        self._run(lambda progress: gallery.download(progress=progress, cancelled=self.stop.is_set),
+        self._run(lambda progress: gallery.download(progress=progress, cancelled=self.stop.is_set, game=self.game),
                   tr('raid_event.updating_the_event_gallery_575a75', 'Updating the event gallery...'))
 
     def _run(self, job, text: str) -> None:
@@ -240,7 +241,7 @@ class RaidEventPicker:
     def _check(self, _e) -> None:
         self._working(tr('raid_event.checking_for_updates_8bcaee', 'Checking for updates...'))
         self.control.update()
-        self._background(gallery.check, self._checked)
+        self._background(lambda: gallery.check(game=self.game), self._checked)
 
     def _checked(self, found, error: str) -> None:
         self.busy.visible = False

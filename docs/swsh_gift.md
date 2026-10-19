@@ -200,8 +200,10 @@ joiner's address. The version-4 location deserializer (`0x0185eff8` onward) stor
 gift scene and accepted on the trade scene.
 
 The maximum `session+0x1F0` is written only by `0x006b9900` (`str w1, [x0, #0x1f0]`), reached through
-the uncalled thunk `0x006b5c00` and the wrapper `0x0110e5e0`, whose two callers `0x00bd9b30` and
-`0x01031c74` (`SetMax(GetCount())`) are the raid-den and rental-multi matching paths. Read live in one
+the uncalled thunk `0x006b5c00` and the wrapper `0x0110e5e0`, whose two callers (`SetMax(GetCount())`)
+are the Dynamax Adventure matching (`0x00bd9b30`, among the `ChikaMatchingState*` states
+`0x00bd1978..0x00bda158`) and the Max Raid den (`0x01031c74`, among `View_NestHole`,
+`StateGuestReady`, `StateHostReady` `0x0102aba4..0x010370cc`). Read live in one
 running game it is 0 on the gift screen, 2 hosting a link trade and 4 hosting a Max Raid, with the
 same filter armed in all three. The raid host advertises `NodeCountMax` 4; the gift screen advertises
 2 over a Pia maximum of 0.

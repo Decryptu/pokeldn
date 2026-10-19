@@ -670,10 +670,11 @@ class NamePicker:
     """A searchable list of the species, moves, items or balls a game has, by name; the value is the id."""
 
     def __init__(self, app, game: str, kind: str, value: str, on_change, optional: bool = True,
-                 names: list[dict] | Callable[[], list[dict]] | None = None):
-        """`names` replaces the PKHeX list, directly or through a loader run off the UI thread."""
+                 names: list[dict] | Callable[[], list[dict]] | None = None, only=None):
+        """`names` replaces the PKHeX list, directly or through a loader run off the UI thread, for a
+        game whose ids differ from it; `only` keeps the ids it holds."""
         self.app, self.game, self.kind, self.optional = app, game, NAME_LISTS[kind], optional
-        self.names = names
+        self.names, self.only = names, only
         self.dropdown = t.dropdown([], None, on_select=lambda e: on_change("" if e.control.value == EMPTY
                                                                            else e.control.value),
                                    enable_filter=True, editable=True, menu_height=320,
@@ -690,6 +691,8 @@ class NamePicker:
                 names = SERVICE.names(self.game, self.kind)
         except Exception:
             names = None
+        if names is not None and self.only is not None:
+            names = [n for n in names if int(n["id"]) in self.only]
 
         def show():
             self.dropdown.trailing_icon = t.pixel_icon("chevron-down", color=t.MUTED)

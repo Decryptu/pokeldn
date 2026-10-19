@@ -30,6 +30,9 @@ The separate `pokeldn-radio*.bin` (wireless; `-ble` for Bluetooth wireless) and 
 firmware images for manual flashing at address `0x0`; the app selects the right image for the
 connected chip. `SHA256SUMS` covers all thirteen downloads.
 
+Code signing policy: free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org); [what is signed, team roles and privacy](https://decryptu.github.io/pokeldn/code_signing.html).
+
 ## First run
 
 1. Extract the archive for your computer. On Windows, run `pokeldn.exe` inside the extracted `pokeldn` folder.

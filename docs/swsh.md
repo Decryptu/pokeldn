@@ -21,6 +21,7 @@ A retail Sword has traded with pokeldn in both roles ([Hosting a trade](swsh_tra
 | [The sync framework](swsh_protocol.md) | message ids, contents, holders, routing, the party payload |
 | [Trading](swsh_trade.md) | the trade screen, the box state machine, the confirmation ladder |
 | [Mystery Gift](swsh_gift.md) | the Mystery Gift menu's local-wireless branch |
+| [Max Raid Battles](swsh_raid.md) | the den lobby, its advertisement, hosting a raid one or several consoles join, the battle a guest fights, Dynamax Adventures, leaving |
 
 ## Sources
 
