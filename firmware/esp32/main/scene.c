@@ -264,10 +264,10 @@ static void radio_scene(uint8_t *fb, const scene_radio_t *r, uint32_t now)
         centered(fb, o, 50, text);
     } else {
         centered(fb, o, 36, "radio ready");
-        centered(fb, o, 50, "start a trade or gift");
+        centered(fb, o, 46, "start a trade or gift");
         char version[24];
         snprintf(version, sizeof(version), "v%s", POKELDN_FIRMWARE_VERSION);
-        fb_text_centered(fb, 58, version, 1);
+        centered(fb, o, 56, version);
     }
 }
 

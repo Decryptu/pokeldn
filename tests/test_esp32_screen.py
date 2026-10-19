@@ -33,13 +33,18 @@ def lit(fb, x, y):
 
 
 @needs_cc
-@pytest.mark.parametrize("panel, y_range", [("full", range(58, 64)), ("small", range(54, 63))])
-def test_idle_screen_shows_firmware_version(scene, built, panel, y_range):
+@pytest.mark.parametrize("panel, y_range", [("full", range(56, 63)), ("small", range(54, 61))])
+def test_idle_screen_version_moves_with_the_splash(scene, built, panel, y_range):
     if panel == "small":
         built.scene_panel(1)
-    fb = scene.frame()
+    first = scene.frame()
+    scene.advance(60_000)  # ORBIT moves the splash two pixels horizontally; the version follows it.
+    moved = scene.frame()
     x0 = 30 if panel == "small" else 0
-    assert any(lit(fb, x, y) for y in y_range for x in range(x0, x0 + (72 if panel == "small" else 128)))
+    width = 72 if panel == "small" else 128
+    assert any(lit(first, x, y) for y in y_range for x in range(x0, x0 + width))
+    assert all(lit(moved, x + 2, y) == lit(first, x, y)
+               for y in y_range for x in range(x0, x0 + width - 2))
     if panel == "small":
         built.scene_panel(0)
 
