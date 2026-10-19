@@ -37,6 +37,7 @@ static struct {
     uint32_t started;
     uint32_t reveal;        /* a traded show: ms after its start when theirs starts coming in */
     sprite_t sprite[SLOTS];
+    uint8_t raid_stars, raid_occupied, raid_players;
 } s;
 
 /* Packets on a cable: progress 0..1000 from the console's end (dir 1) or from ours (dir -1). */
@@ -290,6 +291,19 @@ static void trade_scene(uint8_t *fb, uint32_t now)
     cable(fb, 24, 62, 53);
 }
 
+static void raid_scene(uint8_t *fb)
+{
+    char stars[8] = "*******";
+    char text[16];
+    stars[s.raid_stars] = '\0';
+    header(fb, "tera raid", NULL);
+    if (!sprite_draw(fb, SLOT_OURS, 29, 54)) poke_ball(fb, 29, 32, 12);
+    fb_text(fb, 63, 16, stars, 1);
+    snprintf(text, sizeof(text), "%u/%u joined", (unsigned)s.raid_occupied,
+             (unsigned)s.raid_players);
+    fb_text(fb, 63, 28, text, 1);
+}
+
 static void traded_scene(uint8_t *fb, uint32_t now)
 {
     const uint32_t t = elapsed(now);
@@ -439,6 +453,18 @@ static void small_trade(uint8_t *fb, uint32_t now)
     if (!sprite_half(fb, SLOT_OURS, 36, 40 - (int)(now / 500 % 2))) poke_ball(fb, 36, 25, 9);
 }
 
+static void small_raid(uint8_t *fb)
+{
+    char stars[8] = "*******";
+    char text[16];
+    stars[s.raid_stars] = '\0';
+    small_text(fb, 0, 0, stars);
+    snprintf(text, sizeof(text), "%u/%u joined", (unsigned)s.raid_occupied,
+             (unsigned)s.raid_players);
+    small_text(fb, 0, 10, text);
+    if (!sprite_half(fb, SLOT_OURS, 20, 30)) poke_ball(fb, 20, 18, 7);
+}
+
 static void small_traded(uint8_t *fb, uint32_t now)
 {
     const uint32_t t = elapsed(now);
@@ -562,6 +588,23 @@ bool scene_command(const uint8_t *p, size_t n, uint32_t now)
         memcpy(sprite->bits, p + 4, size);
         return true;
     }
+    if (p[0] == DISPLAY_OP_RAID) {
+        if (n != 4 || p[1] < 1 || p[1] > 7 || p[2] > 3 || p[3] < 1 || p[3] > 3)
+            return false;
+        s.raid_stars = p[1];
+        s.raid_occupied = p[2];
+        s.raid_players = p[3];
+        s.has_next = false;
+        start(&(show_t){.show = SHOW_RAID}, now);
+        return true;
+    }
+    if (p[0] == DISPLAY_OP_RAID_LOBBY) {
+        if (n != 3 || p[1] > 3 || p[2] < 1 || p[2] > 3 || s.now.show != SHOW_RAID)
+            return false;
+        s.raid_occupied = p[1];
+        s.raid_players = p[2];
+        return true;
+    }
     if (p[0] != DISPLAY_OP_SHOW || n < 4 || p[1] >= SHOWS) return false;
     if (p[1] == SHOW_ARRIVED) {   /* the console's animation is over: theirs comes in now */
         if (s.now.show == SHOW_TRADED && elapsed(now) < s.reveal)
@@ -615,7 +658,8 @@ uint8_t scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now)
     }
     /* A lasting show belongs to a session: a radio going back to idle has ended it. A show sent
        before the radio started stays. */
-    if ((s.now.show == SHOW_TRADE || s.now.show == SHOW_GIFT) && radio->mode == SCENE_IDLE &&
+    if ((s.now.show == SHOW_TRADE || s.now.show == SHOW_GIFT || s.now.show == SHOW_RAID) &&
+        radio->mode == SCENE_IDLE &&
         s.radio_mode != SCENE_IDLE)
         s.now.show = SHOW_AUTO;
     s.radio_mode = radio->mode;
@@ -627,6 +671,7 @@ uint8_t scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now)
         case SHOW_TRADED: small_traded(fb, now); break;
         case SHOW_GIFT: small_gift(fb, now); break;
         case SHOW_GIFTED: small_gifted(fb, now); break;
+        case SHOW_RAID: small_raid(fb); break;
         default: small_radio(fb, radio, now); break;
         }
         to_window(fb);
@@ -636,6 +681,7 @@ uint8_t scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now)
         case SHOW_TRADED: traded_scene(fb, now); break;
         case SHOW_GIFT: gift_scene(fb, now); break;
         case SHOW_GIFTED: gifted_scene(fb, now); break;
+        case SHOW_RAID: raid_scene(fb); break;
         default: radio_scene(fb, radio, now); break;
         }
     }

@@ -94,6 +94,19 @@ def test_the_72x40_panel_draws_inside_its_window_whenever_the_full_one_draws(sma
         assert any(lit(fb, x, y) for x, y in inside) == any(whole)
 
 
+def test_raid_payloads_and_sprite_rows_are_validated():
+    assert esp32.display_raid_payload(5, 2, 3) == bytes([2, 5, 2, 3])
+    assert esp32.display_raid_lobby_payload(1, 2) == bytes([3, 1, 2])
+    for args in ((0, 0, 1), (8, 0, 1), (5, 4, 3), (5, 0, 0), (5, 0, 4)):
+        with pytest.raises(ValueError):
+            esp32.display_raid_payload(*args)
+    for args in ((-1, 1), (4, 1), (1, 0), (1, 4)):
+        with pytest.raises(ValueError):
+            esp32.display_raid_lobby_payload(*args)
+    with pytest.raises(ValueError, match="same width"):
+        esp32.display_sprite_payload("ours", [[True], [True, False]])
+
+
 @needs_cc
 def test_malformed_commands_are_refused(scene):
     good = esp32.display_sprite_payload("theirs", [[True] * 8] * 2)
@@ -102,9 +115,46 @@ def test_malformed_commands_are_refused(scene):
     assert not scene.command(bytes([1, 1, 65, 1]) + bytes(9))         # wider than 64
     assert not scene.command(bytes([1, 3, 8, 1, 0]))                  # no such slot
     assert not scene.command(bytes([0, 6, 0, 0]))                     # no such show
+    assert not scene.command(bytes([2, 0, 0, 1]))                     # zero stars
+    assert not scene.command(bytes([2, 5, 4, 1]))                     # too many occupied
+    assert not scene.command(bytes([2, 5, 0, 4]))                     # invalid target
+    assert not scene.command(bytes([2, 5, 0]))                        # short raid command
+    assert not scene.command(bytes([3, 1, 2]))                        # no active raid
     assert not scene.command(b"")
     with pytest.raises(ValueError):
         esp32.display_sprite_payload("ours", [[True] * 65])
+
+
+@needs_cc
+@pytest.mark.parametrize("panel", ["full", "small"])
+def test_raid_scene_draws_boss_and_updates_occupancy(scene, built, panel):
+    from screen_preview import pixel
+    if panel == "small":
+        built.scene_panel(1)
+        x0, y0, scale = 30 + 20 - 2, 24 + 30 - 4, 2
+        bounds = (30, 24, 102, 64)
+    else:
+        x0, y0, scale = 29 - 4, 54 - 8, 1
+        bounds = (0, 0, 128, 64)
+    half = [[(x + y) % 2 == 0 for x in range(4)] for y in range(4)]
+    sprite = [[half[y // 2][x // 2] for x in range(8)] for y in range(8)]
+    assert scene.command(esp32.display_sprite_payload("ours", sprite))
+    assert scene.command(esp32.display_raid_payload(5, 0, 2))
+    waiting = scene.frame()
+    assert any(pixel(waiting, x, y) for x in range(bounds[0], bounds[2])
+               for y in range(bounds[1], bounds[3]))
+    for y, row in enumerate(half if scale == 2 else sprite):
+        for x, on in enumerate(row):
+            assert pixel(waiting, x0 + x, y0 + y) == on
+    assert scene.command(esp32.display_raid_lobby_payload(1, 2))
+    updated = scene.frame()
+    assert updated != waiting
+    assert all(not pixel(updated, x, y) for y in range(64) for x in range(128)
+               if not (bounds[0] <= x < bounds[2] and bounds[1] <= y < bounds[3]))
+    assert scene.command(esp32.display_show_payload("auto"))
+    assert scene.frame() != updated
+    if panel == "small":
+        built.scene_panel(0)
 
 
 def frame_of(built, show_payloads, now):

@@ -67,11 +67,27 @@ def display_sprite_payload(slot: str, rows: list[list[bool]]) -> bytes:
     height, width = len(rows), len(rows[0]) if rows else 0
     if width > SPRITE_MAX[0] or height > SPRITE_MAX[1]:
         raise ValueError(f"a {width}x{height} sprite is larger than {SPRITE_MAX}")
+    if any(len(row) != width for row in rows):
+        raise ValueError("sprite rows must all have the same width")
     bits = bytearray()
     for row in rows:
         for start in range(0, width, 8):
             bits.append(sum(0x80 >> i for i, on in enumerate(row[start:start + 8]) if on))
     return struct.pack("<BBBB", 1, DISPLAY_SLOTS.index(slot), width, height) + bytes(bits)
+
+
+def display_raid_payload(stars: int, occupied: int, target: int) -> bytes:
+    """RAID: stars and current/target lobby size, after sending the boss as the ours sprite."""
+    if not 1 <= stars <= 7 or not 0 <= occupied <= 3 or not 1 <= target <= 3:
+        raise ValueError("raid stars must be 1..7, occupied 0..3, and target 1..3")
+    return struct.pack("<BBBB", 2, stars, occupied, target)
+
+
+def display_raid_lobby_payload(occupied: int, target: int) -> bytes:
+    """RAID_LOBBY: update current/target lobby size without retransmitting the boss sprite."""
+    if not 0 <= occupied <= 3 or not 1 <= target <= 3:
+        raise ValueError("raid occupied must be 0..3 and target 1..3")
+    return struct.pack("<BBB", 3, occupied, target)
 
 MSG_INFO = 0x81
 MSG_RESULT = 0x82

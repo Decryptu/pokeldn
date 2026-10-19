@@ -185,6 +185,28 @@ def delivered(line: str = "") -> bool:
     return _submit(lambda: _send(esp32.display_show_payload("gifted", GIFTED_HOLD_S, "", ascii_text(line))))
 
 
+def show_raid(species: int, stars: int, occupied: int, target: int) -> bool:
+    """Show a raid boss and lobby size on the board, using its monochrome sprite cache."""
+    def job():
+        from pokeldn.ldn import esp32
+        bits = sprite_bits(species, 40) if species else None
+        _send(esp32.display_sprite_payload("ours", bits or []))
+        _send(esp32.display_raid_payload(stars, occupied, target))
+    return _submit(job)
+
+
+def raid_lobby(occupied: int, target: int) -> bool:
+    """Update a raid's occupied and expected lobby seats."""
+    from pokeldn.ldn import esp32
+    return _submit(lambda: _send(esp32.display_raid_lobby_payload(occupied, target)))
+
+
+def reset() -> bool:
+    """Return to the radio scene after a host session ends."""
+    from pokeldn.ldn import esp32
+    return _submit(lambda: _send(esp32.display_show_payload("auto")))
+
+
 def drain(timeout: float = 10.0) -> bool:
     """Waits for the queued work: a launcher about to close its board calls it first."""
     done = threading.Event()
