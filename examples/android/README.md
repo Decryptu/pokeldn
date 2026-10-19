@@ -11,8 +11,8 @@ low as 9): the session log auto-scrolls, each scroll event reached `theme.fade`'
 automatic update after the handler re-diffed the whole page (72 to 85 ms, up to 350 times a run) on the
 interpreter the run shares. The handler now turns that automatic update off.
 
-The CP210x path accepts `10c4:ea60`; its integration in this app awaits a hardware test. Other bridge
-drivers included in usb-serial-for-android are not enabled.
+A classic ESP32 through a CP210x bridge (`10c4:ea60`) was verified on Android with the Wireless
+firmware and a retail FireRed/LeafGreen workflow. Other bridge drivers are not enabled.
 
 `touch files/data/ui_trace.on` (with `adb shell run-as org.pokeldn.usbprobe`) makes the app write
 `files/data/ui_trace.txt` (`pokeldn.app.sampler.trace_updates`): every Flet patch by control type and
