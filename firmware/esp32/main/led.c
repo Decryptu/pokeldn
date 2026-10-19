@@ -12,7 +12,7 @@
 
 #include "led.h"
 
-#if CONFIG_IDF_TARGET_ESP32
+#if CONFIG_IDF_TARGET_ESP32 && !defined(POKELDN_DISPLAY_TFT)
 #define LED_GPIO 2
 #define LED_INVERT 0
 #elif CONFIG_IDF_TARGET_ESP32S3
