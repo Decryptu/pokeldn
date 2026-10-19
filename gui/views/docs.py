@@ -7,36 +7,40 @@ import flet as ft
 
 from gui import theme as t
 from gui.views.widgets import MarkdownDocument, heading_sections
-from pokeldn.app import preview
+from pokeldn.app import i18n, preview
 from pokeldn.app.paths import ROOT
 from pokeldn.app.i18n import t as tr
-from pokeldn.app import i18n
 
 DOCS = os.path.join(ROOT, "docs")
 GUIDE = os.path.join(ROOT, "gui", "guide.md")
 SITE = "https://decryptu.github.io/pokeldn/"
 
 
-def document_path(file: str):
-    return i18n.document(file, GUIDE if file == "guide" else os.path.join(DOCS, file))
+def _english(file: str) -> str:
+    return GUIDE if file == "guide" else os.path.join(DOCS, file)
 
 
-def document_body(file: str):
-    path = document_path(file)
+def _read(path) -> tuple[dict, str]:
     with open(path, encoding="utf-8") as source:
-        _, body = split_front_matter(source.read())
-    original = GUIDE if file == "guide" else os.path.join(DOCS, file)
-    reference = None
-    if os.path.abspath(path) != os.path.abspath(original):
-        with open(original, encoding="utf-8") as source:
-            _, reference = split_front_matter(source.read())
-    return body, reference
+        return split_front_matter(source.read())
+
+
+def document_path(file: str):
+    """The language pack's copy of a page, else the English one (pokeldn.app.i18n.document)."""
+    return i18n.document(file, _english(file))
+
+
+def document_body(file: str) -> tuple[str, str | None]:
+    """A page's Markdown, and for a pack's copy the English page whose anchors its headings keep."""
+    path = document_path(file)
+    if os.path.samefile(path, _english(file)):
+        return _read(path)[1], None
+    return _read(path)[1], _read(_english(file))[1]
 
 
 def page_title(page: "Page") -> str:
-    with open(document_path(page.file), encoding="utf-8") as source:
-        meta, _ = split_front_matter(source.read())
-    return i18n.message(meta.get("title", page.title))
+    path = document_path(page.file)
+    return page.title if os.path.samefile(path, _english(page.file)) else _read(path)[0].get("title", page.title)
 
 
 @dataclass

@@ -11,6 +11,18 @@ static partial class Program
 {
     static void Main() => Serve();
 
+    // A language pack's BCP 47 tag -> PKHeX's text language; a TW, HK or MO region is Traditional Chinese.
+    static string DisplayLanguage(string? tag)
+    {
+        var parts = (tag ?? "en").ToLowerInvariant().Split('-');
+        return parts[0] switch
+        {
+            "zh" => parts.Skip(1).Any(p => p is "hant" or "tw" or "hk" or "mo") ? "zh-Hant" : "zh-Hans",
+            "ja" or "fr" or "it" or "de" or "es" or "ko" => parts[0],
+            _ => "en",
+        };
+    }
+
     internal static void Serve()
     {
         var strings = GameInfo.GetStrings("en");
@@ -44,18 +56,8 @@ static partial class Program
             try
             {
                 var request = JsonNode.Parse(line)!.AsObject();
-                // Display language leaves the entity's trainer language and Showdown parser unchanged.
-                var requestedLanguage = (string?)request["display_language"] ?? "en";
-                var languageParts = requestedLanguage.Split('-');
-                displayLanguage = languageParts[0].ToLowerInvariant() switch
-                {
-                    "zh" => languageParts.Any(p => p.Equals("Hant", StringComparison.OrdinalIgnoreCase)
-                        || p.Equals("TW", StringComparison.OrdinalIgnoreCase)
-                        || p.Equals("HK", StringComparison.OrdinalIgnoreCase)
-                        || p.Equals("MO", StringComparison.OrdinalIgnoreCase)) ? "zh-Hant" : "zh-Hans",
-                    "ja" => "ja", "fr" => "fr", "it" => "it", "de" => "de",
-                    "es" => "es", "ko" => "ko", _ => "en",
-                };
+                // A reply's names; the record's own language and the Showdown parser stay as requested.
+                displayLanguage = DisplayLanguage((string?)request["display_language"]);
                 strings = GameInfo.GetStrings(displayLanguage);
                 emptyTracker = (string?)request["home_tracker"] != "made";
                 madeTrackers.Clear();
@@ -140,21 +142,6 @@ static partial class Program
             }
             switch (list)
             {
-                case "forms":
-                    for (ushort species = 1; species <= blank.MaxSpeciesID; species++)
-                        for (var form = 1; form < game.Table[species].FormCount; form++)
-                            if (game.Table.IsPresentInGame(species, (byte)form))
-                                Add((species << 8) | form,
-                                    ShowdownParsing.GetStringFromForm((byte)form, strings, species, game.Context));
-                    break;
-                case "natures":
-                    for (var n = 0; n < strings.natures.Length; n++)
-                        Add(n, strings.natures[n]);
-                    break;
-                case "abilities":
-                    for (var a = 1; a <= blank.MaxAbilityID; a++)
-                        Add(a, strings.abilitylist[a]);
-                    break;
                 case "moves":
                     var dummied = MoveInfo.GetDummiedMovesHashSet(game.Context);
                     for (ushort m = 1; m <= blank.MaxMoveID; m++)

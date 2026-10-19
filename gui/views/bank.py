@@ -1,9 +1,5 @@
 """The bank: every Pokemon a trade brought in, and the way to trade one into another game
 [pokeldn.app.bank, docs/gui.md, The bank]."""
-
-from gui.localization import date_time
-from gui.localization import summary_text, import_note
-from gui.localization import SERVICE, translate
 from pokeldn.app.i18n import t as tr
 import os
 import threading
@@ -14,6 +10,7 @@ from gui import drop, theme as t
 from gui.views.games import tool_role
 from gui.views.sprites import MINI, SIZE, Sprite
 from gui.views.widgets import open_folder
+from gui.localization import SERVICE, date_time, summary_lines, summary_text, translate
 from pokeldn import pokemon
 from pokeldn.app import bank
 from pokeldn.app.settings import GEN3
@@ -177,11 +174,10 @@ class BankView:
         if entry is None:
             self.detail.controls = [t.text(tr('bank.pick_a_pokemon_to_see_where_it_can_go_3b278b', 'Pick a Pokemon to see where it can go.'), 13, t.MUTED)]
             return
-        parts = summary_text(entry.summary).split(" · ")
-        head = 3 if len(parts) > 2 and parts[2] == tr("presentation.shiny", "shiny") else 2
+        head, rest = summary_lines(entry.summary)
         about = ft.Column([
-            t.text(" · ".join(parts[:head]), 15, weight=ft.FontWeight.W_600),
-            t.text(" · ".join(parts[head:]), 12, t.MUTED),
+            t.text(head, 15, weight=ft.FontWeight.W_600),
+            t.text(rest, 12, t.MUTED),
             ft.Row([game_icon(entry.game), t.text(tr('bank.in_bb2233', 'In {value0}', value0=NAMES[entry.game]), 12, t.SOFT)], spacing=6),
             t.text(tr('bank.banked_faf7b7', 'Banked {value0}', value0=date_time(entry.created)), 12, t.FAINT),
             t.badge(tr('bank.legal_4787ea', 'Legal'), t.GREEN, "checkbox-on") if entry.legal else
@@ -421,8 +417,9 @@ class ImportDialog:
         if found.where:
             about.append(t.text(translate(found.where), 11, t.FAINT))
         if found.detail:
-            about.append(t.text(import_note(found.detail), 11, t.AMBER if found.state == "refused" else t.MUTED,
-                                max_lines=2, overflow=ft.TextOverflow.ELLIPSIS, tooltip=import_note(found.detail)))
+            detail = " · ".join(translate(part) for part in found.detail.split(" · "))
+            about.append(t.text(detail, 11, t.AMBER if found.state == "refused" else t.MUTED,
+                                max_lines=2, overflow=ft.TextOverflow.ELLIPSIS, tooltip=detail))
         status = [ft.Container(game_icon(found.game, 18), tooltip=tr('bank.kept_as_a_pokemon_8c187f', 'Kept as a {value0} Pokemon', value0=NAMES[found.game]))
                   ] if found.game and found.state != "refused" else []
         status.append(t.chip(label, icon, color))

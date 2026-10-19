@@ -1,7 +1,3 @@
-from gui.localization import raid_label
-from pokeldn.app.i18n import help_text as advanced_description
-from gui.localization import summary as pokemon_summary, summary_text
-from gui.localization import SERVICE, translate
 import os
 import shlex
 import threading
@@ -13,7 +9,6 @@ import flet as ft
 
 from gui import board
 from gui.app import keys_found
-from pokeldn import pokemon as builder
 from pokeldn import panel, progress
 from pokeldn.app import bank, command, panels, events_gallery, gift_builder, online, received, runner
 from pokeldn.swsh import raid_event as swsh_raid_event
@@ -35,7 +30,8 @@ from gui.views.library import LibraryCard
 from gui.views.panels import StatusCards
 from gui.views.sprites import MINI, Sprite
 from gui.views.widgets import CodeBlock, DigitCode, Log, PathField, open_folder
-from pokeldn.app.i18n import t as tr
+from gui.localization import SERVICE, summary as pokemon_summary, summary_lines, summary_text, translate
+from pokeldn.app.i18n import help_text, t as tr
 
 TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift", "Tera Raid": "diamond-gem"}
 EMPTY = "-"   # a dropdown option cannot carry an empty key
@@ -478,7 +474,7 @@ class GamesView:
         if field.kind == "raidden":
             event, context = self.raid_event(), self.raid_context()
             dens = raid_events.dens(event, context["version"]) if event is not None else []
-            control = t.dropdown([(str(d.group), raid_label(d.label)) for d in dens], str(context.get("group", "")),
+            control = t.dropdown([(str(d.group), translate(d.label)) for d in dens], str(context.get("group", "")),
                                  on_select=lambda e: self.set_value(field, e.control.value, rebuild=True))
             control.disabled = len(dens) == 1
             return control
@@ -570,7 +566,7 @@ class GamesView:
         # The settings kept off the Basic tab come first.
         for flag in sorted(flags, key=lambda f: f.option not in hidden):
             field = hidden.get(flag.option)
-            localized = advanced_description(self.tool.key, flag.option, flag.help)
+            localized = help_text(self.tool.key, flag.option, flag.help)
             text = " ".join((flag.option, flag.help, localized, field.label, field.help) if field else (flag.option, flag.help, localized))
             if query and query not in text.lower():
                 continue
@@ -613,7 +609,7 @@ class GamesView:
             if field.flag == flag.option and field.choice_help:
                 detail = dict(field.choice_help).get(value or flag.default, "")
                 break
-        lines = ([bound.help] if bound and bound.help else [advanced_description(self.tool.key, flag.option, flag.help)])
+        lines = ([bound.help] if bound and bound.help else [help_text(self.tool.key, flag.option, flag.help)])
         if detail:
             lines.append(detail)
         help_ = t.text("\n".join(l for l in lines if l) or tr('games.no_description_06a694', 'No description.'), 12, t.MUTED, max_lines=4,
@@ -637,12 +633,10 @@ class GamesView:
 
 def pokemon_row(app, species: int, shiny: bool, summary: str, tip: str = "", form: int = 0) -> ft.Control:
     """A small sprite, then pokeldn.pokemon.summary on two lines: species, level and shininess, then the rest."""
-    parts = summary_text(summary).split(" · ")
-    head = 3 if len(parts) > 2 and parts[2] == tr("presentation.shiny", "shiny") else 2
-    lines = [t.text(" · ".join(parts[:head]), 13, weight=ft.FontWeight.W_600, max_lines=1,
-                    overflow=ft.TextOverflow.ELLIPSIS)]
-    if parts[head:]:
-        lines.append(t.text(" · ".join(parts[head:]), 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS))
+    head, rest = summary_lines(summary)
+    lines = [t.text(head, 13, weight=ft.FontWeight.W_600, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)]
+    if rest:
+        lines.append(t.text(rest, 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS))
     return ft.Container(ft.Row([Sprite(app, species, shiny, size=MINI, form=form).control,
                                 ft.Column(lines, spacing=0, expand=True)],
                                spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),

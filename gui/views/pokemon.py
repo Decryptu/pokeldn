@@ -1,5 +1,3 @@
-from gui.localization import summary_text
-from gui.localization import SERVICE, error_message, translate
 import threading
 from pathlib import Path
 from collections.abc import Callable
@@ -13,6 +11,7 @@ from pokeldn.lgpe.session import CODE_PICKER, code_picks
 from gui import drop, theme as t
 from gui.views.sprites import EDGE, MINI, SIZE as SPRITE_SIZE, Sprite
 from gui.views.widgets import PixelActivity
+from gui.localization import SERVICE, error_message, summary_text, translate
 from pokeldn.app.i18n import t as tr
 
 VERSIONS = {"firered": "FR", "leafgreen": "LG", "emerald": "E", "ruby": "R", "sapphire": "S"}   # PKHeX's GameVersion names

@@ -2,14 +2,13 @@
 a drop, renamed and deleted by the app [pokeldn.app.library, docs/plugins.md, A library]."""
 import os
 import threading
-import time
 
 import flet as ft
 
 from gui import drop, theme as t
-from gui.localization import error_message, translate
 from gui.views.panels import image
 from gui.views.widgets import open_folder
+from gui.localization import date_time, error_message
 from pokeldn import plugins
 from pokeldn.app import library, panels
 from pokeldn.app.i18n import t as tr
@@ -83,7 +82,7 @@ class LibraryCard:
             tooltip=tr('library.more', 'More'), bgcolor=t.PANEL, menu_position=ft.PopupMenuPosition.UNDER, items=[
                 item(tr('library.rename', 'Rename'), "label", lambda e, x=entry: self._rename(x)),
                 item(tr('library.delete', 'Delete'), "trash", lambda e, x=entry: self._delete(x), t.RED)])
-        when = time.strftime(tr('library.date_format', '%d %b %Y, %H:%M'), time.localtime(entry.modified))
+        when = date_time(entry.modified)
         note = self.notes.get(entry.name)
         lines = [t.text(entry.name, 13, weight=ft.FontWeight.W_600, max_lines=1,
                         overflow=ft.TextOverflow.ELLIPSIS, tooltip=entry.name),

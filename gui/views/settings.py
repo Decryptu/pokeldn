@@ -1,4 +1,3 @@
-from gui.localization import SERVICE, translate
 import copy
 import os
 import threading
@@ -181,7 +180,7 @@ class SettingsView:
 
     def _home_tracker(self, value: str) -> None:
         self.save("home_tracker", value)
-        pokemon.SERVICE.home_tracker = SERVICE.home_tracker = value
+        pokemon.SERVICE.home_tracker = value
 
     def _toggle_advanced(self, e) -> None:
         self.show_advanced = not self.show_advanced

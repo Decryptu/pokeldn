@@ -2,10 +2,6 @@
 (pokeldn.pokemon.Service.gift_events), searched by anything a tile shows. Up to the field's queue limit are
 picked in order, each made fresh and legal for the app's trainer, then offered by the trade host
 (docs/gift_simulated.md)."""
-
-from gui.localization import event_text
-from gui.localization import summary_text
-from gui.localization import SERVICE, error_message, translate
 from pokeldn.app.i18n import t as tr
 
 import threading
@@ -16,6 +12,7 @@ import flet as ft
 from gui import theme as t
 from gui.views.sprites import MINI, Sprite
 from gui.views.widgets import PixelActivity
+from gui.localization import SERVICE, error_message, summary_text, translate
 from pokeldn import pokemon as builder
 from pokeldn.app.command import offers
 

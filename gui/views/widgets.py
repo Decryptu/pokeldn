@@ -235,8 +235,8 @@ class Log:
         color = t.RED if ("traceback" in lower or "error" in lower or "failed" in lower) else \
             t.GREEN if ("complete" in lower or "success" in lower) else \
             t.BLUE if line.startswith("[app]") else t.SOFT
-        from gui.localization import translate_app_log
-        return ft.Text(translate_app_log(line), size=11, color=color, font_family=t.MONO, selectable=True)
+        from gui.localization import app_log
+        return ft.Text(app_log(line), size=11, color=color, font_family=t.MONO, selectable=True)
 
     def add(self, line: str) -> None:
         if self.redactor is not None:

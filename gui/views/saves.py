@@ -1,9 +1,6 @@
 """The FireRed/LeafGreen Mystery Gift tool's save mode: back the console's save up into the library, or
 put one from the library back on the console; the library lists, names, imports, exports and edits them
 [pokeldn.app.saves, docs/gui.md, Your saves]."""
-
-from gui.localization import date_time
-from gui.localization import SERVICE, translate
 from pokeldn.app.i18n import t as tr
 
 import os
@@ -15,7 +12,7 @@ from gui import drop, theme as t
 from gui.views.pokemon import PokemonPicker
 from gui.views.sprites import MINI, Sprite
 from gui.views.widgets import open_folder
-from pokeldn import pokemon
+from gui.localization import SERVICE, date_time
 from pokeldn.app import saves
 from pokeldn.frlg.save import sav
 

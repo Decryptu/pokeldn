@@ -2,9 +2,6 @@
 searches seeds by what the boss is and the rewards it gives (pokeldn.sv.raid_search). An event's
 context (its `event`, `group` and `den`) draws from the event and narrows the finder to what the
 event spawns."""
-
-from gui.localization import raid_label
-from gui.localization import SERVICE, error_message, translate
 from pokeldn.app.i18n import t as tr
 
 import random
@@ -19,7 +16,7 @@ from gui.views.pokemon import NamePicker
 from gui.views.reward_filter import RewardFilter
 from gui.views.sprites import MINI, SIZE, Sprite
 from gui.views.widgets import Check, PixelActivity
-from pokeldn import pokemon as builder
+from gui.localization import SERVICE, error_message, translate
 from pokeldn.sv import raid_encounter, raid_event, raid_search
 from pokeldn.sv.raid_encounter import NATURES as NATURES_EN, TERA_TYPES as TERA_TYPES_EN
 NATURES = tuple(translate(name) for name in NATURES_EN)
@@ -186,7 +183,7 @@ def boss_card(app, seed, stars, boss, context, *, compact=False, rewards=None, a
         *([t.chip(translate(f"{mark} mark"), f"{mark.lower()}-mark", accent)] if mark and not compact else []),
     ], spacing=6, run_spacing=6, wrap=True)
     where = (tr('raid_seed._c00a83', '{value0} · {value1} · {value2} · {value3}', value0=VERSIONS[context['version']], value1=REGIONS[context['map_name']], value2=dict(PROGRESS)[context['progress']], value3=CRYSTALS[context['content']])
-             + (tr('raid_seed._940234', ' · {value0}', value0=raid_label(context['den'])) if context.get("den") else ""))
+             + (tr('raid_seed._940234', ' · {value0}', value0=translate(context['den'])) if context.get("den") else ""))
     ivs = ft.Row([iv_tile(label, iv, stat, compact)
                   for label, iv, stat in zip(STATS, boss["ivs"], boss["stats"])], spacing=6, wrap=True)
     column = [ft.Row(title, spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER), facts, ivs]
@@ -321,7 +318,7 @@ class RaidSeedPicker:
             story = choose([("any", tr('raid_seed.any_progress_92dec4', 'Any progress')),
                             *((key, label) for key, label in PROGRESS if key in stages)], current["progress"])
             crystal = choose(([("any", tr('raid_seed.any_den_110e59', 'Any den'))] if len(dens) > 1 else [])
-                             + [(str(d.group), raid_label(d.label)) for d in dens], str(current["group"]))
+                             + [(str(d.group), translate(d.label)) for d in dens], str(current["group"]))
             star_levels = sorted({s for d in dens for s in d.stars})
         species = NamePicker(self.app, "sv", "species", "", lambda _v: changed(),
                              names=[{"id": s, "name": translate(n)} for s, n in raid_search.species(event)]).control

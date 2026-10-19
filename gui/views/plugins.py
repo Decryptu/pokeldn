@@ -1,7 +1,6 @@
 """The Plugins page: add a .pokeplugin, turn plugins on and off, update and remove them, pick a radio.
 Every install shows the risks and waits for the user's acceptance (docs/plugins.md)."""
 from pokeldn.app.i18n import t as tr
-from gui.localization import translate
 import os
 import shutil
 import threading
@@ -13,6 +12,7 @@ import flet as ft
 from gui import drop
 from gui import theme as t
 from gui.views.widgets import open_folder
+from gui.localization import translate
 from pokeldn import plugins
 from pokeldn.ldn import radios
 from pokeldn.app import plugin_sources as sources

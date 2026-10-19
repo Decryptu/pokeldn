@@ -1,8 +1,6 @@
 """The raid finder's wanted rewards: a foldable list of items, each with the least quantity a raid
 must give of it, chosen among what the raids searched can give (pokeldn.sv.raid_search). Folded,
 the list is kept and leaves the search alone."""
-
-from gui.localization import SERVICE, error_message, translate
 from pokeldn.app.i18n import t as tr
 
 import threading
@@ -11,7 +9,7 @@ import flet as ft
 
 from gui import theme as t
 from gui.views.widgets import PixelActivity
-from pokeldn import pokemon as builder
+from gui.localization import SERVICE, error_message
 from pokeldn.sv import raid_search
 from pokeldn.sv.raid import REWARD_ROWS
 

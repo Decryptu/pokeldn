@@ -1,4 +1,3 @@
-from gui.localization import SERVICE
 import errno
 import os
 import sys
@@ -45,7 +44,7 @@ class App:
         page.fonts = {**(getattr(page, "fonts", None) or {}), **theme.FONT_ASSETS}
         SESSION.mkdir(parents=True, exist_ok=True)
         self.settings = settings.load()
-        pokemon.SERVICE.home_tracker = SERVICE.home_tracker = self.settings.home_tracker
+        pokemon.SERVICE.home_tracker = self.settings.home_tracker
         self.plugin_stopped = plugins.turn_off_the_one_that_stopped(self.settings)   # and watches this start
         self.picker = ft.FilePicker()
         if android.active():   # the web view's picker gives no paths

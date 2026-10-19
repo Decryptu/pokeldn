@@ -1,7 +1,6 @@
 """The controller: a Switch's buttons pressed from this computer through the controller board, and
 the macros the board plays on its own clock [pokeldn.pad, docs/gui.md, The controller]."""
 from pokeldn.app.i18n import t as tr
-from gui.localization import error_message
 import copy
 import os
 import sys
@@ -14,6 +13,7 @@ import flet as ft
 from gui import theme as t
 from gui.views import widgets
 from gui.views.widgets import open_folder
+from gui.localization import error_message
 from pokeldn.app import macros
 from pokeldn.app.paths import SESSION
 from pokeldn.app.runner import Process

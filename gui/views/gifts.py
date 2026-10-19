@@ -1,8 +1,5 @@
 """The gift builder shared by the Mystery Gift tools: a preset, a gift built in a form, or an opened
 file, then a summary of what the console gets. Each game's form lives in its builder module."""
-
-from gui.localization import event_text, event_label, gift_description
-from gui.localization import SERVICE, error_message, translate
 from pokeldn.app.i18n import t as tr
 from pokeldn.app import i18n
 
@@ -18,6 +15,7 @@ from gui.views.pokemon import NamePicker, pokemon_header
 from gui.views.saves import SavePanel
 from gui.views.sprites import MINI, SIZE, Sprite
 from gui.views.widgets import PathField, PixelActivity
+from gui.localization import SERVICE, error_message, gift_description, translate
 from pokeldn import gifts, pokemon
 from pokeldn.app import command, gift_builder, gift_files, saves
 from pokeldn.frlg.gift import builder as frlg
@@ -25,7 +23,7 @@ from pokeldn.frlg.rom import custom_code
 from pokeldn.swsh import gift_builder as swsh, wc8
 
 def species_frlg():
-    # These editors also work without PKHeX. Keep the original English list and GBA IDs.
+    """FRLG's species by cartridge id: PKHeX's names in the pack's language, else the offline list."""
     if i18n.locale() != "en":
         try:
             return SERVICE.names("frlg", "species3")
@@ -171,7 +169,7 @@ class GiftBuilder:
         if settings:
             head.append(t.pixel_icon("sliders-horizontal", color=t.BLUE if active else t.FAINT,
                                      tooltip=tr('gifts.has_settings_8e00a4', 'Has settings')))
-        lines = [ft.Row(head, spacing=6), t.text(event_text(summary), 12, t.MUTED)]
+        lines = [ft.Row(head, spacing=6), t.text(translate(summary), 12, t.MUTED)]
         if warning:
             lines.append(ft.Row([t.pixel_icon("warning-diamond", size=12, color=t.AMBER),
                                  t.text(translate(warning), 12, t.AMBER, expand=True)], spacing=6))
@@ -180,7 +178,7 @@ class GiftBuilder:
             *([Sprite(self.app, species_id, shiny, size=MINI, form=form).control] if species_id else []),
             ft.Column(lines, spacing=1, expand=True),
         ], spacing=10), padding=ft.Padding(10, 8, 10, 8), border_radius=10,
-            tooltip=event_text(summary), border=ft.Border.all(1, t.AMBER if warning else t.BLUE if active else t.BORDER),
+            tooltip=translate(summary), border=ft.Border.all(1, t.AMBER if warning else t.BLUE if active else t.BORDER),
             bgcolor=t.SELECTED if active else None, on_click=on_click)
 
     def _toggle(self, preset, key) -> None:
@@ -252,9 +250,9 @@ class GiftBuilder:
         group = {"value": self.value.get("event_group", "")}
 
         def render(update=True):
-            words = event_text(search.value).casefold().split()
+            words = translate(search.value).casefold().split()
             shown = [c for c in cards if (not group["value"] or c["group"] == group["value"])
-                     and all(w in tr('gifts._8320f6', '{value0} {value1} {value2}', value0=event_label(self.game, c), value1=translate(c['group']), value2=event_text(c['summary'])).casefold() for w in words)]
+                     and all(w in tr('gifts._8320f6', '{value0} {value1} {value2}', value0=translate(c['label']), value1=translate(c['group']), value2=translate(c['summary'])).casefold() for w in words)]
             tiles.controls = t.grid_rows([self._event_tile(c) for c in shown])
             count.value = tr('gifts.of_cards_d600f0', '{value0} of {value1} cards', value0=len(shown), value1=len(cards))
             if update:
@@ -296,7 +294,7 @@ class GiftBuilder:
     def _event_tile(self, card) -> ft.Control:
         raw = card["record"]
         mon = wc8.read(raw) if raw[wc8.GIFT_KIND_AT] == wc8.GIFT_KIND_POKEMON else {}
-        return self._tile(event_label(self.game, card), card["summary"], card["key"] == self.value["event"],
+        return self._tile(translate(card["label"]), card["summary"], card["key"] == self.value["event"],
                           lambda e: self._event(card["key"]),
                           warning=pokemon.HOME_TRACKER_WARNINGS["empty"]
                           if self.module.OFFICIAL.from_home(raw) else "",
@@ -699,10 +697,9 @@ class GiftBuilder:
 
     def name(self, kind, n) -> str:
         """The name PKHeX gives an id; the first miss loads the list and redraws the summary."""
-        if self.game == "frlg" and kind == "species":
-            names = "species3"
-        else:
-            names = "items" if kind == "item" else kind
+        if self.game == "frlg" and kind == "species" and i18n.locale() == "en":
+            return frlg.species_name(n)
+        names = "species3" if self.game == "frlg" and kind == "species" else "items" if kind == "item" else kind
         cached = SERVICE.species_cache.get(f"{self.game}:{names}")
         if cached is None:
             def load():
@@ -713,7 +710,9 @@ class GiftBuilder:
                 if self.games.tool is self.tool:
                     self.app.ui(lambda: self.show_summary(update=True))
             threading.Thread(target=load, daemon=True).start()
-        return next((entry["name"] for entry in cached or () if entry["id"] == _number(n)), tr('gifts._4eed26', '{value0} #{value1}', value0=translate({"species": "Pokemon", "item": "Item", "moves": "Moves"}.get(kind, kind)), value1=n))
+        fallback = (frlg.species_name(n) if names == "species3" else
+                    tr('gifts._4eed26', '{value0} #{value1}', value0=kind, value1=n))
+        return next((entry["name"] for entry in cached or () if entry["id"] == _number(n)), fallback)
 
     def show_summary(self, update=False) -> None:
         mode = self.value["mode"]
@@ -741,7 +740,7 @@ class GiftBuilder:
             if record and official.from_home(record):
                 warnings = [tr('gifts._04903a', '{value0}. {value1}', value0=pokemon.HOME_TRACKER_WARNINGS['empty'], value1=official.HOME_WHY)]
             if record and (shared := official.sharing(key, official.card_id(record))):
-                names = tr("presentation.list_separator", ", ").join(event_text(label) for label in shared[:3]) + (tr('gifts.and_more_247aa1', ' and {value0} more', value0=len(shared) - 3) if len(shared) > 3 else "")
+                names = tr("presentation.list_separator", ", ").join(translate(label) for label in shared[:3]) + (tr('gifts.and_more_247aa1', ' and {value0} more', value0=len(shared) - 3) if len(shared) > 3 else "")
                 warnings.append(tr('gifts.shares_card_id_with_a_save_that_took_one_of_them_refuse_152890', 'Shares card id {value0} with {value1}. A save that took one of them refuses this card: give it another card id.', value0=official.card_id(record), value1=names))
         else:
             when, lines = "", []

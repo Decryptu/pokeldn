@@ -1,10 +1,6 @@
-"""Language-neutral presentation of game data and legacy module messages.
-
-Only controls use these adapters. Stored IDs, cartridge text, trainer input and wire values
-remain owned by the game modules; language packs supply all translated text as data.
-"""
-import atexit
-import functools
+"""Language-pack text for game data and module messages, applied where a control shows it
+[pokeldn.app.i18n, docs/plugins.md, Additional resources]. Records, summaries, settings, peer
+messages and player input stay in English."""
 import re
 import time
 
@@ -12,55 +8,92 @@ from pokeldn import pokemon
 from pokeldn.app import i18n
 from pokeldn.app.i18n import t as tr
 
+SENTENCE = re.compile(r"(?<=[.!?])\s+")
+
 
 def date_time(seconds: float) -> str:
-    """Format stored timestamps only at the presentation boundary."""
     return time.strftime(tr("presentation.date_time_format", "%d %b %Y, %H:%M"), time.localtime(seconds))
 
 
-def names(value: str) -> str:
+def translate(value: str) -> str:
+    """A module's English text: the whole message, else each sentence, else the game terms in it."""
+    if not value or i18n.locale() == "en":
+        return value
+    if (whole := i18n.message(value)) != value:
+        return whole
+    sentences = SENTENCE.split(value)
+    if len(sentences) > 1 and any(i18n.message(s) != s for s in sentences):
+        return " ".join(translate(s) for s in sentences)
     return i18n.terms(value)
 
 
-def translate(value: str) -> str:
-    translated = i18n.message(value)
-    if translated != value:
-        return translated
-    # Shared reminders can follow otherwise independent module descriptions.
-    from pokeldn.frlg.gift import builder as frlg
-    for suffix in (" Turns off any game boost that is on.", frlg.MOM_STEPS):
-        if value.endswith(suffix) and value != suffix:
-            return translate(value[:-len(suffix)]) + i18n.message(suffix)
-    return names(value)
-
-
 def error_message(error: Exception | str) -> str:
-    """Keep OS errors and unrecognized diagnostics literal, including file and player names."""
-    value = str(error)
-    if isinstance(error, OSError):
-        return value
-    translated = i18n.message(value)
-    return translated if translated != value else value
+    """An OSError names a path and keeps its text; any other error is a module message."""
+    return str(error) if isinstance(error, OSError) else i18n.message(str(error))
+
+
+def summary_text(value: str) -> str:
+    """pokeldn.pokemon.summary as shown; a quoted nickname stays as the player typed it."""
+    return " · ".join(part if part[:1] == "'" else translate(part) for part in value.split(" · "))
+
+
+def summary_lines(value: str) -> tuple[str, str]:
+    """A summary's species, level and shininess, then the rest."""
+    parts = value.split(" · ")
+    head = 3 if len(parts) > 2 and parts[2] == "shiny" else 2
+    return summary_text(" · ".join(parts[:head])), summary_text(" · ".join(parts[head:]))
+
+
+def summary(info: dict) -> str:
+    """A display reply's summary in its own names; pokemon.summary alone reads the English ones."""
+    return summary_text(pokemon.summary({key: value for key, value in info.items() if key != "canonical"}))
+
+
+def gift_description(game, state, name):
+    from pokeldn.app.gift_builder import module
+    when, lines = module(game).describe(state, name)
+    return translate(when), [translate(line) for line in lines]
+
+
+def app_log(line: str) -> str:
+    """Only the app's own [app] lines are shown translated; the log keeps what was written."""
+    return "[app] " + i18n.message(line[6:]) if line.startswith("[app] ") else line
+
+
+def flet_locale():
+    """The pack's locale for Flet's own dialogs and pickers: language, script and region subtags."""
+    import flet as ft
+    language, *parts = i18n.locale().split("-")
+    script = next((p.title() for p in parts if len(p) == 4), None)
+    region = next((p.upper() for p in parts if len(p) == 2 or p.isdigit()), None)
+    current = ft.Locale(language.lower(), region, script)
+    return ft.LocaleConfiguration(supported_locales=[ft.Locale("en"), current], current_locale=current)
 
 
 class DisplayService(pokemon.Service):
-    """A separate service for UI copy, with caches isolated from the canonical game service."""
-    def __init__(self):
-        super().__init__(display_language=i18n.locale())
+    """pokemon.SERVICE's PKHeX process asked for names in the selected pack's language; a record or
+    file it keeps reads the English names under the reply's "canonical" (services/pkhex Describe)."""
 
-    def _sync_language(self):
-        selected = i18n.locale()
-        with self.lock:
-            if selected != self.display_language:
-                self.species_cache.clear()
-                self.display_language = selected
+    def __init__(self):
+        super().__init__()
+        self._caches: dict[str, dict] = {}
+
+    @property
+    def species_cache(self) -> dict:
+        return self._caches.setdefault(i18n.locale(), {})
+
+    @species_cache.setter
+    def species_cache(self, value) -> None:
+        self._caches = {}
 
     def _ask(self, request):
-        self._sync_language()
+        language = i18n.locale()
         try:
-            reply = super()._ask(request)
+            reply = pokemon.SERVICE._ask(request if language == "en" else {**request, "display_language": language})
         except pokemon.BuilderError as exc:
             raise pokemon.BuilderError(error_message(exc)) from exc
+        if language == "en":
+            return reply
         for found in reply.get("sets", ()):
             for key in ("errors", "notes"):
                 found[key] = [error_message(line) for line in found.get(key, ())]
@@ -72,137 +105,8 @@ class DisplayService(pokemon.Service):
             route["reason"] = error_message(route.get("reason", ""))
         return reply
 
-    def species(self, game):
-        self._sync_language()
-        return super().species(game)
-
-    def names(self, game, kind):
-        self._sync_language()
-        return super().names(game, kind)
-
-    def options(self, *args, **kwargs):
-        self._sync_language()
-        return super().options(*args, **kwargs)
-
-    def gift_events(self, *args, **kwargs):
-        self._sync_language()
-        return super().gift_events(*args, **kwargs)
+    def close(self):
+        pass
 
 
 SERVICE = DisplayService()
-atexit.register(SERVICE.close)
-
-
-@functools.cache
-def _game_terms(game: str, language: str) -> dict[str, str]:
-    result = {}
-    for kind in ("moves", "items", "balls", "natures", "abilities"):
-        localized = {n["id"]: n["name"] for n in SERVICE.names(game, kind)}
-        result.update((n["name"], localized[n["id"]]) for n in pokemon.SERVICE.names(game, kind)
-                      if n["id"] in localized)
-    return result
-
-
-def game_terms(game: str) -> dict[str, str]:
-    """Older peers send display names; pair their English names with localized names by ID."""
-    return _game_terms(game, i18n.locale()) if i18n.locale() != "en" else {}
-
-
-def import_note(value: str) -> str:
-    if i18n.locale() == "en":
-        return value
-    parts = []
-    for part in value.split(" · "):
-        if part.startswith("Left its ") and part.endswith(" behind"):
-            item = part[len("Left its "):-len(" behind")]
-            terms = {**game_terms("swsh"), **game_terms("frlg")}
-            parts.append(tr("presentation.left_item", "Left its {item} behind", item=terms.get(item, item)))
-        elif part.startswith("Forgot "):
-            moves = part[len("Forgot "):].split(", ")
-            terms = game_terms("sv")
-            parts.append(tr("presentation.forgot_moves", "Forgot {moves}",
-                            moves=tr("presentation.list_separator", ", ").join(terms.get(move, move) for move in moves)))
-        else:
-            parts.append(translate(part))
-    return " · ".join(parts)
-
-
-def summary(info: dict) -> str:
-    return summary_text(pokemon.summary({key: value for key, value in info.items() if key != "canonical"}))
-
-
-def gift_description(game, state, name):
-    from pokeldn.app.gift_builder import module
-    when, lines = module(game).describe(state, name)
-    return translate(when), [translate(line) for line in lines]
-
-
-def raid_label(value: str) -> str:
-    """Gallery labels only; never change the directory key used to select a raid."""
-    if i18n.locale() == "en":
-        return value
-    value = value.replace("Inceneroar", "Incineroar")
-    for source in (
-        "Mighty Mewtwo Showdown - Prepare the Offense!", "Mighty Mewtwo Showdown - A Show of Supporters",
-        "Mighty Mewtwo Showdown - ", "Prepare for Tricks and Treats from Mismagius!",
-        "Happy Valentine's Day", "Valentines Day", "Hard to Find Pokemon", "Presents from ",
-        "Hisuian ", "Alolan ", "Worthy ", "Shiny ",
-    ):
-        value = value.replace(source, i18n.message(source))
-    value = i18n.message(value)
-    value = re.sub(r"\bRound \d+\b", lambda match: i18n.message(match[0]), value)
-    for source in ("the Unrivaled", "Spotlight", "Round", "Mighty"):
-        value = re.sub(r"\b" + re.escape(source) + r"\b", lambda match: i18n.message(match[0]), value)
-    for source in (" Appears", " Returns", " and ", " & ", ", "):
-        value = value.replace(source, i18n.message(source))
-    return names(value)
-
-
-def event_text(value: str) -> str:
-    result = translate(value)
-    for pattern in (r"\blevel \d+\b", r"\b\d+ Battle Points\b", r"\b\d+ pieces? of clothing\b"):
-        result = re.sub(pattern, lambda match: i18n.message(match[0]), result)
-    result = re.sub(r"\b[Ss]hiny\b", lambda match: i18n.message(match[0]), result)
-    for source in ("(Galar)", "Master Ball", " (an egg)", " (Gmax)", "can Gigantamax"):
-        result = result.replace(source, i18n.message(source))
-    result = re.sub(r"\(([^()]*)\)", lambda match: tr("presentation.parenthesized", "({text})",
-                    text=i18n.message(match[1])) if i18n.message(match[1]) != match[1] else match[0], result)
-    result = re.sub(r"\((\d{4}) (Feb|March|April) International Competition ([JM])\)",
-                    lambda match: tr("presentation.competition", "({year} {month} International Competition {division})",
-                                     year=match[1], month=i18n.message(match[2]), division=match[3]), result)
-    return result
-
-
-def event_label(game: str, card: dict) -> str:
-    if i18n.locale() != "en" and game == "swsh" and card.get("group") == "Items":
-        from pokeldn.swsh.events import item_pairs
-        items = {item["id"]: item["name"] for item in SERVICE.names(game, "items")}
-        return tr("presentation.reward_separator", ", ").join(
-            f"{items.get(ident, tr('presentation.item_number', 'Item {number}', number=ident))} ×{quantity}"
-            for ident, quantity in item_pairs(card["record"]))
-    return event_text(card["label"])
-
-
-def summary_text(value: str) -> str:
-    """A stored/remote summary: quoted nicknames retain exactly what the player entered."""
-    parts = []
-    for number, part in enumerate(value.split(" · ")):
-        if part.startswith(("'", "\u201c")) and part.endswith(("'", "\u201d")):
-            parts.append(part)
-        elif part.startswith("holding "):
-            parts.append(tr("presentation.holding", "holding {item}", item=translate(part.removeprefix("holding "))))
-        else:
-            shown = event_text(part)
-            if number == 0 and "-" in shown:
-                species, _, form = shown.partition("-")
-                localized = i18n.message(form)
-                if localized == form:
-                    localized = "-".join(i18n.message(piece) for piece in form.split("-"))
-                shown = species + "-" + localized
-            parts.append(shown)
-    return " · ".join(parts)
-
-
-def translate_app_log(line: str) -> str:
-    """Only app-authored copy is localized; the log store and exported diagnostics stay raw."""
-    return "[app] " + i18n.message(line[6:]) if line.startswith("[app] ") else line

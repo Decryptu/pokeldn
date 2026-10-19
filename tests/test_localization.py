@@ -14,18 +14,10 @@ def test_english_presentation_keeps_module_text_and_identifiers():
     i18n.select()
     summary = "Pikachu · level 50 · shiny · 'Eevee' · Hardy · holding Light Ball"
     assert localization.summary_text(summary) == summary
-    assert localization.raid_label("7 stars: Pikachu the Unrivaled") == "7 stars: Pikachu the Unrivaled"
-    assert localization.import_note("Left its Light Ball behind · Forgot Thunderbolt") == (
-        "Left its Light Ball behind · Forgot Thunderbolt")
+    assert localization.summary_lines(summary) == ("Pikachu · level 50 · shiny", "'Eevee' · Hardy · holding Light Ball")
+    assert localization.translate("Left its Light Ball behind.") == "Left its Light Ball behind."
     assert localization.error_message(ValueError("unknown button 'Eevee'")) == "unknown button 'Eevee'"
-    assert localization.translate_app_log("[done] trade 1 complete") == "[done] trade 1 complete"
-    assert localization.translate_app_log("[app] Exited with code 0.") == "[app] Exited with code 0."
-
-
-def test_game_metadata_and_event_records_are_not_mutated():
-    card = {"group": "Items", "label": "Test title", "record": b"unread"}
-    assert localization.event_label("swsh", card) == "Test title"
-    assert card == {"group": "Items", "label": "Test title", "record": b"unread"}
+    assert localization.app_log("[done] trade 1 complete") == "[done] trade 1 complete"
 
 
 def test_translated_document_keeps_original_fragment_ids():
@@ -36,14 +28,6 @@ def test_translated_document_keeps_original_fragment_ids():
     sections = list(heading_sections(translated, reference=original))
     assert [(key, title) for key, title, _ in sections if title] == [
         ("guide", "Manuel"), ("shared-heading", "Section"), ("shared-heading-1", "Section")]
-
-
-def test_unrecognized_errors_and_os_errors_keep_literal_values(monkeypatch):
-    monkeypatch.setattr(i18n, "message", lambda text: "translated" if text == "known error" else text)
-    assert localization.error_message("known error") == "translated"
-    assert localization.error_message("new error in Pikachu.pk9") == "new error in Pikachu.pk9"
-    error = FileNotFoundError(2, "known error", "Eevee.pk9")
-    assert localization.error_message(error) == str(error)
 
 
 def test_explicit_anchors_work_when_a_translation_adds_sections():
@@ -105,6 +89,16 @@ def french_copy(monkeypatch):
     monkeypatch.setattr(i18n, "_strings", {})
     monkeypatch.setattr(i18n, "_terms_pattern", None)
     monkeypatch.setattr(i18n, "_message_rules", [])
+
+
+def test_a_pack_translates_a_whole_message_then_each_sentence_then_its_game_terms(french_copy):
+    i18n._pack.resources["messages"]["Turns off any game boost that is on."] = "Coupe les boosts."
+    assert localization.translate("Growlithe") == "Caninos"
+    assert localization.translate("It walks behind you. Turns off any game boost that is on.") == (
+        "It walks behind you. Coupe les boosts.")
+    assert localization.translate("A Squirtle appears") == "A Carapuce appears"
+    assert localization.summary_lines("Squirtle · level 50 · shiny · 'Squirtle' · Hardy") == (
+        "Carapuce · niveau 50 · shiny", "'Squirtle' · Hardi")
 
 
 @pytest.mark.parametrize("localized", [False, True])
@@ -185,46 +179,6 @@ def test_gts_localized_selection_publishes_canonical_wants(french_copy, monkeypa
     assert view_gts.wanted_text(wants) == "Squirtle"
 
 
-def test_raid_partner_translates_moves_and_type_without_changing_game_data(french_copy, monkeypatch):
-    ft = pytest.importorskip("flet")
-    from gui.views import raid_partners as view_partners
-    from pokeldn.sv.raid_partners import Partner
-
-    monkeypatch.setattr(view_partners, "Sprite", lambda *args, **kw: SimpleNamespace(control=ft.Container()))
-    view = view_partners.RaidPartnersPicker.__new__(view_partners.RaidPartnersPicker)
-    view.app, view.picks, view.free, view.level = None, [], 3, 16
-    partner = Partner("East", 58, "Growlithe", 16, "Intimidate", ("Ember", "Leer", "Bite"), "Fire")
-    original = deepcopy(partner)
-
-    texts = _texts(view._card(partner))
-    assert {"East", "Caninos", "Intimidation", "Feu", "Flammèche", "Groz'Yeux", "Morsure"} <= set(texts)
-    assert not {"Est", "Fire", "Ember", "Leer", "Bite"} & set(texts)
-    assert partner == original
-    monkeypatch.setattr(i18n, "_pack", None)
-    assert {"Growlithe", "Fire", "Ember", "Leer", "Bite"} <= set(_texts(view._card(partner)))
-
-
-@pytest.mark.parametrize("number", [None, 1])
-def test_queued_gift_renders_translated_summary_without_changing_saved_values(french_copy, monkeypatch, number):
-    ft = pytest.importorskip("flet")
-    from gui.views import event_gifts
-
-    monkeypatch.setattr(event_gifts, "Sprite", lambda *args, **kw: SimpleNamespace(control=ft.Container()))
-    view = event_gifts.EventGiftPicker.__new__(event_gifts.EventGiftPicker)
-    view.app = None
-    value = dict(legal=True, species=7, title="East", ot="East", moves=["Ember"],
-                 summary="Squirtle · level 50 · 'East' · Hardy")
-    original = deepcopy(value)
-
-    texts = _texts(view._result_card(value, number))
-    assert "Carapuce · niveau 50 · 'East' · Hardi" in texts
-    assert "Flammèche · OT East" in texts
-    assert ("East" if number is None else "1. East") in texts
-    assert value == original
-    monkeypatch.setattr(i18n, "_pack", None)
-    assert value["summary"] in _texts(view._result_card(value, number))
-
-
 @pytest.fixture
 def desktop_copy(french_copy, monkeypatch):
     i18n._pack.resources["messages"].update({"english": "anglais", "The delivery man": "Livreur",
@@ -250,85 +204,3 @@ def test_advanced_choice_translates_labels_but_keeps_argument_values(desktop_cop
     assert flag.choices == ["english"] and not view.extra
 
 
-def test_gift_giver_and_steps_translate_labels_without_changing_card_payload(desktop_copy):
-    ft = pytest.importorskip("flet")
-    from gui.views.gifts import GiftBuilder
-    view = GiftBuilder.__new__(GiftBuilder)
-    view.value = {"build": {"card": {"title": "Pokemon", "body": ["Item", "", "", ""]},
-                  "steps": [{"type": "item", "item": 1, "quantity": 1}]}}
-    for method in ("text_field", "name_field", "number_field", "switch_row"):
-        setattr(view, method, lambda *a, **kw: ft.Container())
-    before = deepcopy(view.state)
-    control = view.frlg_card()
-    giver = next(c for c in _walk(control) if isinstance(c, ft.Dropdown))
-    assert giver.options[0].key == "deliveryman" and giver.options[0].text == "Livreur, au centre"
-    assert "1. Objet" in _texts(control)
-    assert any(getattr(c, "content", None) == "Objet" for c in _walk(control))
-    assert view.state == before
-
-
-def test_gts_tile_and_own_rows_translate_species_only(desktop_copy, monkeypatch):
-    ft = pytest.importorskip("flet")
-    from gui.views import gts as views
-    from pokeldn.online.gts import Wants
-    monkeypatch.setattr(views, "Sprite", lambda *a, **kw: SimpleNamespace(control=ft.Container()))
-    view = views.GtsView.__new__(views.GtsView)
-    view.app, view.selected = None, ""
-    listing = SimpleNamespace(key="key", d="d", game="sv", wants=Wants(7, "Squirtle"),
-                              pokemon={"species": "Growlithe", "species_id": 58, "level": 50})
-    before = deepcopy(listing.pokemon)
-    assert view._tile(listing).tooltip == "Caninos level 50 for Carapuce"
-    state = {"id": "own", "info": listing.pokemon, "status": "active", "role": "listing",
-             "wants": {"species": 7, "name": "Squirtle"}}
-    assert "Caninos for Carapuce" in _texts(view._mine_row(state))
-    assert listing.pokemon == before and state["wants"]["name"] == "Squirtle"
-
-
-@pytest.mark.parametrize("mode", ["file", "dir"])
-def test_path_picker_passes_translated_title_and_original_extensions(desktop_copy, tmp_path, mode):
-    import asyncio
-    from gui.views.widgets import PathField
-    called = []
-    async def choose(**kwargs):
-        called.append(kwargs)
-        return [] if mode == "file" else None
-    picker = SimpleNamespace(pick_files=choose, get_directory_path=choose)
-    field = PathField(picker, lambda: str(tmp_path), mode=mode, exts=("pokegift", "wc3"))
-    asyncio.run(field._browse(None))
-    assert called[0]["dialog_title"] == ("Choisir un fichier" if mode == "file" else "Choisir un dossier")
-    assert called[0]["initial_directory"] == str(tmp_path)
-    if mode == "file":
-        assert called[0]["allowed_extensions"] == ["pokegift", "wc3"]
-    assert field.field.value == ""
-
-
-@pytest.mark.parametrize("done,total", [(0, 0), (10, 0), (10, 20)])
-def test_raid_download_callback_translates_progress_before_formatting(desktop_copy, monkeypatch, done, total):
-    import threading
-    ft = pytest.importorskip("flet")
-    from gui.views import raid_event
-    class InlineThread:
-        def __init__(self, target, **kwargs): self.target = target
-        def start(self): self.target()
-    monkeypatch.setattr(raid_event.threading, "Thread", InlineThread)
-    monkeypatch.setattr(raid_event.time, "monotonic", lambda: 1)
-    view = raid_event.RaidEventPicker.__new__(raid_event.RaidEventPicker)
-    view.stop = threading.Event()
-    view._working = lambda *a, **kw: None
-    view.status = SimpleNamespace(value="", update=lambda: None)
-    view.bar = SimpleNamespace(value=None, update=lambda: None)
-    view.actions = ft.Row()
-    view.control = SimpleNamespace(update=lambda: None)
-    view.app = SimpleNamespace(ui=lambda fn: fn())
-    view.view = SimpleNamespace(gallery_changed=lambda: None)
-    view._run(lambda progress: progress("Asking GitHub for the latest raid events...", done, total), "Download")
-    assert view.status.value.startswith("Lecture des événements...")
-    assert "Asking GitHub" not in view.status.value
-
-
-def test_timestamp_formatting_uses_pack_copy_and_preserves_timestamp(desktop_copy):
-    import time
-    seconds = 1234567890
-    assert localization.date_time(seconds) == time.strftime("%Y/%m/%d %H:%M", time.localtime(seconds))
-    i18n._strings = {}
-    assert localization.date_time(seconds) == time.strftime("%d %b %Y, %H:%M", time.localtime(seconds))

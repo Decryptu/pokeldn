@@ -1,9 +1,5 @@
 """The GTS: banked Pokemon listed against a wanted species on public relays, other players' listings,
 and offers on them [pokeldn.app.gts, docs/online.md, The GTS]."""
-
-from gui.localization import game_terms
-from gui.localization import summary_text
-from gui.localization import SERVICE, translate
 from pokeldn.app.i18n import t as tr
 import re
 import threading
@@ -14,6 +10,7 @@ import flet as ft
 from gui import theme as t
 from gui.views.bank import NAMES, game_icon
 from gui.views.sprites import MINI, SIZE, Sprite
+from gui.localization import SERVICE, summary_text, translate
 from pokeldn import __version__, pokemon
 from pokeldn.app import bank
 from pokeldn.app.gts import GtsError, Service
@@ -41,7 +38,7 @@ def resume(app) -> None:
 
 
 def level_of(entry: bank.Entry) -> int:
-    found = re.search(r"(?:level |等级 )(\d+)", entry.summary)
+    found = re.search(r"level (\d+)", entry.summary)
     return int(found.group(1)) if found else 0
 
 
@@ -234,19 +231,15 @@ class GtsView:
                                 t.section(tr('gts.your_pokemon_that_answer_it_2c53fc', 'Your Pokemon that answer it'), self._answers(listing))]
 
     def _about(self, shown: dict, game: str) -> ft.Control:
-        terms = game_terms(game)
-        shown = dict(shown)
-        for key in ("species", "nature", "ability", "ball", "held_item"):
-            value = shown.get(key, "")
-            shown[key] = terms.get(value, translate(value))
-        shown["moves"] = [terms.get(move, translate(move)) for move in shown.get("moves", ())]
+        shown = {**shown, **{key: translate(shown.get(key, "")) for key in ("species", "nature", "ability", "ball", "held_item")},
+                 "moves": [translate(move) for move in shown.get("moves", ())]}
         facts = [shown.get("nature"), shown.get("ability"), shown.get("ball")]
         if shown.get("held_item"):
             facts.append(tr('gts.holding_b3a475', 'holding {value0}', value0=shown['held_item']))
         return ft.Row([
             Sprite(self.app, int(shown.get("species_id") or 0), bool(shown.get("shiny")), size=SIZE).control,
             ft.Column([
-                t.text(tr('gts.level_dcff87', '{value0} · level {value1}', value0=translate(shown.get('species', '')), value1=shown.get('level')) + (tr('gts.shiny_3e4562', ' · shiny') if shown.get("shiny") else ""),
+                t.text(tr('gts.level_dcff87', '{value0} · level {value1}', value0=shown['species'], value1=shown.get('level')) + (tr('gts.shiny_3e4562', ' · shiny') if shown.get("shiny") else ""),
                        15, weight=ft.FontWeight.W_600),
                 t.text(" · ".join(str(f) for f in facts if f), 12, t.MUTED),
                 t.text(tr("presentation.list_separator", ", ").join(shown.get("moves") or []), 12, t.MUTED),

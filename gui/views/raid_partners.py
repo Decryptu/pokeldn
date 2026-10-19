@@ -2,14 +2,13 @@
 pool's trainers for each slot the consoles joining leave empty, in slot order (pokeldn.sv.raid_partners);
 the host draws a partner seed that seats them when it starts, and draws a partner left unpicked as the
 game does. Folding only hides the card: the choice goes to the raid."""
-
-from gui.localization import translate
 from pokeldn.app.i18n import t as tr
 
 import flet as ft
 
 from gui import theme as t
 from gui.views.sprites import MINI, Sprite
+from gui.localization import translate
 from pokeldn.app import command
 from pokeldn.sv import raid_partners
 
