@@ -844,6 +844,21 @@ def test_the_partners_we_choose_reach_the_bootstrap(monkeypatch, tmp_path, capsy
                       extra=["--raid-partner", "Dylan", "--raid-partner-progress", "3star"])
 
 
+def test_raid_screen_tracks_lobby_and_resets(monkeypatch, tmp_path):
+    shown = []
+    lobby = []
+    reset = []
+    monkeypatch.setattr(sv_host.screen, "show_raid", lambda *args: shown.append(args) or True)
+    monkeypatch.setattr(sv_host.screen, "raid_lobby", lambda *args: lobby.append(args) or True)
+    monkeypatch.setattr(sv_host.screen, "reset", lambda: reset.append(True) or True)
+    monkeypatch.setattr(sv_host.screen, "drain", lambda: True)
+    run_raid_host(monkeypatch, tmp_path)
+    found = raid_encounter.generate(0x000F34C3)
+    assert shown == [(found.species, found.stars, 0, 1)]
+    assert lobby == [(1, 1)]
+    assert reset == [True]
+
+
 def test_two_consoles_leave_one_slot_to_the_partner_we_choose(monkeypatch, tmp_path, capsys):
     """`--raid-players 2`: the consoles take seats 1 and 2, and the RaidPoint's partner seed draws the
     one partner chosen for seat 3. A second partner, or any with three consoles, is refused before the

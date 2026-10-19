@@ -658,6 +658,8 @@ DISPLAY (`0x0E`) carries one op:
 |---|---|
 | `0` SHOW | u8 show, u16 hold s (0: until the next show), title, NUL, line, NUL; each text at most 21 ASCII characters |
 | `1` SPRITE | u8 slot (0 ours, 1 theirs, 2 gift), u8 width <= 64, u8 height <= 64, rows of `(width + 7) / 8` bytes, MSB first; width 0 empties the slot |
+| `2` RAID | u8 stars (1..7), u8 occupied consoles (0..3), u8 target consoles (1..3); uses sprite slot 0 as the boss |
+| `3` RAID_LOBBY | u8 occupied consoles (0..3), u8 target consoles (1..3); updates the active raid scene without resending the sprite |
 
 | show | id | drawn |
 |---|---|---|
@@ -667,10 +669,13 @@ DISPLAY (`0x0E`) carries one op:
 | gift | 3 | a Wonder Card holding slot 2 (a gift box when empty), the line beside it |
 | gifted | 4 | the card leaves to the right, then "delivered!" |
 | arrived | 5 | no scene: a traded show still waiting brings its ball in now |
+| raid | 6 | the boss sprite, raid stars and occupied/target lobby size; compact on 72x40 |
 
-A trade or gift show sent before a traded or gifted show has ended waits for it to end. A trade or gift
-show ends when the radio returns to idle after being active; one sent before the radio starts stays.
-HELLO resets the screen to the radio's state with empty slots.
+A trade or gift show sent before a traded or gifted show has ended waits for it to end. Trade and gift
+shows, and raid scenes, end when the radio returns to idle after being active; one sent before the radio
+starts stays. HELLO resets the screen to the radio's state with empty slots. A raid host sets the boss
+sprite and starts the raid scene once, updates the lobby count as consoles join or leave, and restores
+auto when hosting ends.
 
 `pokeldn.app.screen` is the launchers' side: `offer`, `received`, `arrived`, `gift` and `delivered`
 return at once and run in order on one thread. Every launcher calls `received` at the trade's last
