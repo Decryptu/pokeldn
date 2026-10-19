@@ -15,6 +15,9 @@
 #define DIM_MS 60000        /* an idle radio's screen dims after a minute with nothing happening */
 #define OFF_MS 600000       /* and goes dark after ten */
 #define ORBIT_MS 60000      /* the idle scene moves one step of ORBIT a minute: no pixel lit for hours */
+#ifndef POKELDN_FIRMWARE_VERSION
+#define POKELDN_FIRMWARE_VERSION "unknown"
+#endif
 
 typedef struct {
     uint8_t w, h;
@@ -261,7 +264,10 @@ static void radio_scene(uint8_t *fb, const scene_radio_t *r, uint32_t now)
         centered(fb, o, 50, text);
     } else {
         centered(fb, o, 36, "radio ready");
-        centered(fb, o, 50, "start a trade or gift");
+        centered(fb, o, 46, "start a trade or gift");
+        char version[24];
+        snprintf(version, sizeof(version), "v%s", POKELDN_FIRMWARE_VERSION);
+        centered(fb, o, 56, version);
     }
 }
 
@@ -423,7 +429,7 @@ static void small_radio(uint8_t *fb, const scene_radio_t *r, uint32_t now)
         small_text(fb, o[0], 31 + o[1], text);
     } else {
         small_text(fb, o[0], 21 + o[1], "radio ready");
-        small_text(fb, o[0], 31 + o[1], "trade, gift");
+        small_text(fb, o[0], 31 + o[1], "v" POKELDN_FIRMWARE_VERSION);
     }
 }
 

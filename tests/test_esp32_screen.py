@@ -33,6 +33,23 @@ def lit(fb, x, y):
 
 
 @needs_cc
+@pytest.mark.parametrize("panel, y_range", [("full", range(56, 63)), ("small", range(54, 61))])
+def test_idle_screen_version_moves_with_the_splash(scene, built, panel, y_range):
+    if panel == "small":
+        built.scene_panel(1)
+    first = scene.frame()
+    scene.advance(60_000)  # ORBIT moves the splash two pixels horizontally; the version follows it.
+    moved = scene.frame()
+    x0 = 30 if panel == "small" else 0
+    width = 72 if panel == "small" else 128
+    assert any(lit(first, x, y) for y in y_range for x in range(x0, x0 + width))
+    assert all(lit(moved, x + 2, y) == lit(first, x, y)
+               for y in y_range for x in range(x0, x0 + width - 2))
+    if panel == "small":
+        built.scene_panel(0)
+
+
+@needs_cc
 def test_a_sprite_lands_bit_for_bit_where_the_trade_scene_draws_it(scene):
     # Odd width and a pattern in each row: a wrong bit order, stride or row order moves pixels.
     rows = [[(x * 3 + y * 5) % 7 < 3 for x in range(13)] for y in range(9)]
