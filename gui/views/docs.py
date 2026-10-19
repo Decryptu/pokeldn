@@ -40,7 +40,8 @@ def document_body(file: str) -> tuple[str, str | None]:
 
 def page_title(page: "Page") -> str:
     path = document_path(page.file)
-    return page.title if os.path.samefile(path, _english(page.file)) else _read(path)[0].get("title", page.title)
+    title = page.title if os.path.samefile(path, _english(page.file)) else _read(path)[0].get("title", page.title)
+    return i18n.message(title)
 
 
 @dataclass

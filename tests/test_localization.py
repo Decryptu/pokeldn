@@ -204,3 +204,109 @@ def test_advanced_choice_translates_labels_but_keeps_argument_values(desktop_cop
     assert flag.choices == ["english"] and not view.extra
 
 
+@pytest.mark.parametrize("selected", ["", "58"])
+def test_basic_choice_translates_labels_and_saves_the_original_value(french_copy, monkeypatch, selected):
+    from gui.views.games import EMPTY, GamesView
+    from pokeldn.app.catalog import Field
+    field = Field("--species", "Species", "choice", choices=(("", "Default"), ("58", "Growlithe")))
+    saved = []
+    view = SimpleNamespace(values={field.key: selected}, raid_choices=lambda _: None,
+                           set_value=lambda *args, **kw: saved.append((args, kw)))
+    dropdown = GamesView.input(view, field)
+    assert [(option.key, option.text) for option in dropdown.options] == [(EMPTY, "Default"), ("58", "Caninos")]
+    assert dropdown.value == (selected or EMPTY)
+    dropdown.on_select(SimpleNamespace(control=SimpleNamespace(value="58")))
+    assert saved[-1] == ((field, "58"), {"rebuild": True})
+    dropdown.on_select(SimpleNamespace(control=SimpleNamespace(value=EMPTY)))
+    assert saved[-1] == ((field, ""), {"rebuild": True})
+    assert field.choices == (("", "Default"), ("58", "Growlithe"))
+    monkeypatch.setattr(i18n, "_pack", None)
+    assert [(o.key, o.text) for o in GamesView.input(view, field).options] == [(EMPTY, "Default"), ("58", "Growlithe")]
+
+
+def test_event_boss_choice_translates_display_without_changing_the_encoded_key(french_copy, monkeypatch):
+    from gui.views import games
+    from pokeldn.app.catalog import Field
+    i18n._pack.resources["terms"].update({"Growlithe": "Caninos", "Sword": "Épée", "East": "Est"})
+    event = object()
+    boss = SimpleNamespace(name="Growlithe", level=50)
+    monkeypatch.setattr(games.swsh_raid_event, "hostable", lambda _: [("sword", 3, 0, "East", boss)])
+    field = Field("--raid-event-boss", "Event boss", "raideventboss")
+    view = SimpleNamespace(values={field.key: "sword:3:0:East"}, raid_event=lambda: event,
+                           set_value=lambda *args, **kw: None)
+    dropdown = games.GamesView.input(view, field)
+    assert [(option.key, option.text) for option in dropdown.options] == [
+        ("sword:3:0:East", "★★★ Caninos · Lv 50 · Épée · Est")]
+    assert dropdown.value == view.values[field.key] == "sword:3:0:East"
+    assert boss.name == "Growlithe"
+
+
+def test_lair_rentals_and_encounter_tiles_use_translated_names(french_copy, monkeypatch):
+    from gui.views.lair_seed import LairSeedPicker
+    picker = LairSeedPicker.__new__(LairSeedPicker)
+    picker.names = {"58": "Growlithe", "7": "Squirtle"}
+    picker.app = SimpleNamespace(settings=SimpleNamespace(sprites=False))
+    assert picker._name(58) == "Caninos"
+    assert picker._name(7) == "Carapuce"
+    assert picker._name(9999) == "#9999"
+    assert "Caninos" in _texts(picker._tiles([(58, 0)]))
+    assert picker.names == {"58": "Growlithe", "7": "Squirtle"}
+    monkeypatch.setattr(i18n, "_pack", None)
+    assert picker._name(58) == "Growlithe"
+
+
+def test_fixed_npc_names_translate_in_cards_and_summary_but_selection_keeps_ids(french_copy):
+    from gui.views.raid_partners import RaidPartnersPicker
+    from pokeldn.app.catalog import Field
+    from pokeldn.sv import raid_partners
+    i18n._pack.resources["messages"]["Austin"] = "Patrice"
+    saved = []
+    picker = RaidPartnersPicker.__new__(RaidPartnersPicker)
+    picker.picks, picker.free, picker.level = ["Austin"], 2, 16
+    picker.value = {"picks": ["Austin"]}
+    picker.field = Field("--raid-partner", "Partners", "raidpartners")
+    picker.app = SimpleNamespace(settings=SimpleNamespace(sprites=False))
+    picker.view = SimpleNamespace(tool=SimpleNamespace(fields=[Field("--raid-progress", "Progress", "choice")]),
+                                  set_value=lambda *args, **kw: saved.append((args, kw)))
+    card = picker._card(raid_partners.pool(0)[0])
+    assert "Patrice" in _texts(card) and "Austin" not in _texts(card)
+    assert picker._summary() == "Patrice, one drawn"
+    card.on_click(None)
+    assert picker.value["picks"] == []
+    picker.picks = []
+    picker._card(raid_partners.pool(0)[0]).on_click(None)
+    assert saved[-1] == ((picker.field, {"picks": ["Austin"]}), {"rebuild": True})
+
+
+@pytest.mark.parametrize("localized_title", [None, "Child", "Titre du paquet"])
+def test_document_titles_use_messages_and_keep_navigation_keys(french_copy, tmp_path, monkeypatch,
+                                                             localized_title):
+    from gui.views import docs
+    english = tmp_path / "english"
+    english.mkdir()
+    (english / "parent.md").write_text("---\ntitle: Parent\n---\n# Parent\nRoot page.", encoding="utf-8")
+    (english / "child.md").write_text("---\ntitle: Child\nparent: Parent\n---\n# Child\nDetails.", encoding="utf-8")
+    guide = tmp_path / "guide.md"
+    guide.write_text("# Guide\nStart.", encoding="utf-8")
+    monkeypatch.setattr(docs, "DOCS", str(english))
+    monkeypatch.setattr(docs, "GUIDE", str(guide))
+    i18n._pack.folder = tmp_path / "pack"
+    i18n._pack.resources.update({"documents": "docs"})
+    i18n._pack.resources["messages"].update({"Parent": "Parent traduit", "Child": "Enfant"})
+    if localized_title:
+        localized = i18n._pack.folder / "docs"
+        localized.mkdir(parents=True)
+        # A pack may keep English front matter and translate the title via messages.toml.
+        (localized / "child.md").write_text(f"---\ntitle: {localized_title}\n---\n# Enfant\nTexte traduit.", encoding="utf-8")
+    tree = docs.pages()
+    parent, child = tree[0], tree[0].children[0]
+    assert (parent.title, child.title, child.parent) == ("Parent", "Child", "Parent")
+    assert docs.page_title(parent) == "Parent traduit"
+    expected = "Titre du paquet" if localized_title == "Titre du paquet" else "Enfant"
+    assert docs.page_title(child) == expected
+    sections = docs.index(tree, "Guide")
+    assert any(s.file == "child.md" and s.page == expected and s.anchor == "child" for s in sections)
+    monkeypatch.setattr(i18n, "_pack", None)
+    assert docs.page_title(child) == "Child"
+
+
