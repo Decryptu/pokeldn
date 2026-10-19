@@ -209,7 +209,10 @@ The app's Max Raid (Host) tool runs these flags with a boss (or a Wild Area Even
 bosses a base den holds, `raid_event.hostable`), our Pokemon and up to 15 reward rows; without rows the
 host gives the den slot's own rewards. Its reward editor offers only the items of the den slot the
 chosen boss is advertised from (`raid.boss_den`, `pokeldn.app.raid_rewards.swsh_den`), fixes a bonus
-item's count, and follows the boss when it changes; a boss no base den holds leaves it empty.
+item's count, and follows the boss when it changes; a boss no base den holds leaves it empty. Run from the app with a level-20
+Wooloo boss and the template "Every reward of this den" at 7, a retail Sword won the raid and
+received all ten rows: Exp. Candy XS x5, Exp. Candy S x1 and Dynamax Candy x1 (the bonus rows), and
+seven drops at 7 each.
 
 With `--raid-console-serves` the joined console serves the battle and the host answers as client 1
 (`raid_battle.Master`):
