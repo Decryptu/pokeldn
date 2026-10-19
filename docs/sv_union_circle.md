@@ -306,11 +306,11 @@ which a member makes for the host by finishing its quests.
 
 `bin/sv_join.py --union-circle` joins a circle a console hosts the way a raid guest joins a raid
 (`pokeldn.sv.circle`). It takes the seat, sends its identity records, mirrors the host's channel
-table on 0x7C port 1, and holds the seat for `--hold`. It sends no lobby message and does not take
-the host role when the console leaves. When the host's field is up it puts its player on it
-(`circle.Member`, [The field](#the-field)). It prints what a user follows; `--verbose-circle` adds
-each circle message it sends and each step of the area search, which the `--capture` file keeps
-anyway.
+table on 0x7C port 1, and holds the seat for `--hold`, by default the whole `--seconds`. It sends no
+lobby message and does not take the host role when the console leaves. When the host's field is up
+it puts its player on it (`circle.Member`, [The field](#the-field)). It prints what a user follows;
+`--verbose-circle` adds each circle message it sends and each step of the area search, which the
+`--capture` file keeps anyway.
 
     ./.venv/bin/python bin/sv_join.py --union-circle --code 3707 --hold 540 --capture circle.jsonl
 

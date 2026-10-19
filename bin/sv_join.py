@@ -542,6 +542,8 @@ def circle_guest(ap, args):
     if args.bbq_clear is not None and not 1 <= args.bbq_clear <= circle.BP_MAX:
         ap.error(f"a clear pays 1 to {circle.BP_MAX} BP, the most a player holds")
     args.scene_id = circle.SCENE if args.scene_id is None else args.scene_id
+    if args.hold == ap.get_default("hold"):     # the circle's seat is the whole run
+        args.hold = args.seconds
     args.session_join = args.game_channel = args.net_ack = True
     args.no_identity, args.port2_now, args.take_host = True, False, False
     args.join_repeat, args.open_delay, args.record_delay = 0, 0.02, 0.44

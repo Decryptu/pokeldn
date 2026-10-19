@@ -13,12 +13,12 @@ from pokeldn.sv import circle, raid, streams
 from test_sv_raid import HOST_IP, HOST_MAC, JOIN_IP, JOIN_MAC, Clock, RaidHostConsole
 
 
-def test_a_circle_guest_takes_only_a_hosting_circle_s_scene():
+def test_a_circle_guest_takes_only_a_hosting_circle_s_scene_and_keeps_its_seat_for_the_run():
     ap = sv_join.build_parser()
-    for argv, scene in (([], circle.SCENE), (["--scene-id", "4"], 4)):
-        args = ap.parse_args(["--union-circle", *argv])
+    for argv, scene, hold in (([], circle.SCENE, 900), (["--scene-id", "4", "--hold", "30"], 4, 30)):
+        args = ap.parse_args(["--union-circle", "--seconds", "900", *argv])
         sv_join.circle_guest(ap, args)
-        assert args.scene_id == scene
+        assert (args.scene_id, args.hold) == (scene, hold)
 
 
 def test_a_retail_host_s_first_circle_message_is_lua_message_100():
