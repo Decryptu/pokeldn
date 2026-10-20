@@ -1,22 +1,23 @@
 package org.pokeldn.usbprobe;
 
 import android.hardware.usb.*;
-import com.hoho.android.usbserial.driver.UsbSerialDriver;
-import com.hoho.android.usbserial.driver.UsbSerialPort;
-import com.hoho.android.usbserial.driver.UsbSerialProber;
 import java.io.IOException;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
-import java.util.EnumSet;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+/** The board's serial link over Android's USB host API: Espressif's native USB (CDC-ACM), or a classic
+ *  ESP32's CP210x bridge through its vendor requests [Linux drivers/usb/serial/cp210x.c]. */
 public final class UsbStream implements AutoCloseable {
-    private UsbDeviceConnection connection;
-    private UsbInterface control, data;
-    private UsbEndpoint input, output;
-    private UsbSerialPort serialPort;
+    private static final int CP210X_OUT = 0x41;   /* vendor request to the interface */
+    private static final int CP210X_IFC_ENABLE = 0x00, CP210X_SET_LINE_CTL = 0x03, CP210X_SET_MHS = 0x07,
+        CP210X_SET_BAUDRATE = 0x1e;
+    private final boolean cp210x;
+    private final UsbDeviceConnection connection;
+    private final UsbInterface control, data;
+    private final UsbEndpoint input, output;
     private volatile boolean closed;
     private volatile IOException readFailure;
     private final ArrayBlockingQueue<byte[]> incoming = new ArrayBlockingQueue<>(256);
@@ -30,21 +31,15 @@ public final class UsbStream implements AutoCloseable {
     private byte[] remainder = new byte[0];
 
     public UsbStream(UsbManager manager, UsbDevice device) throws IOException {
-        if (Setup.backend(device.getVendorId(), device.getProductId()) == Setup.Backend.USB_SERIAL) {
-            openSerial(manager, device);
-            reader = new Thread(this::receiveSerialLoop, "android-usb-reader");
-            reader.start();
-            writer = new Thread(this::writeLoop, "android-usb-writer");
-            writer.start();
-            return;
-        }
+        cp210x = Setup.isCp210x(device.getVendorId(), device.getProductId());
         UsbInterface ctl = null, dat = null;
         for (int i = 0; i < device.getInterfaceCount(); i++) {
             UsbInterface iface = device.getInterface(i);
-            if (iface.getInterfaceClass() == 2) ctl = iface;
-            if (iface.getInterfaceClass() == 10) dat = iface;
+            if (cp210x && i == 0) ctl = dat = iface;    // one vendor interface: requests and bulk data
+            if (!cp210x && iface.getInterfaceClass() == 2) ctl = iface;
+            if (!cp210x && iface.getInterfaceClass() == 10) dat = iface;
         }
-        if (ctl == null || dat == null) throw new IOException("Missing CDC interfaces");
+        if (ctl == null || dat == null) throw new IOException(cp210x ? "Missing CP210x interface" : "Missing CDC interfaces");
         control = ctl; data = dat;
         UsbEndpoint in = null, out = null;
         for (int i = 0; i < data.getEndpointCount(); i++) {
@@ -58,40 +53,20 @@ public final class UsbStream implements AutoCloseable {
         connection = manager.openDevice(device);
         if (connection == null) throw new IOException("USB open failed");
         try {
-            if (!connection.claimInterface(control, true) || !connection.claimInterface(data, true))
+            if (!connection.claimInterface(control, true) || data != control && !connection.claimInterface(data, true))
                 throw new IOException("USB interface claim failed");
-            byte[] coding = {0, (byte)0xc2, 1, 0, 0, 0, 8};
-            if (connection.controlTransfer(0x21, 0x20, 0, control.getId(), coding, 7, 1000) != 7)
-                throw new IOException("CDC line coding failed");
-            if (connection.controlTransfer(0x21, 0x22, 0, control.getId(), null, 0, 1000) < 0)
-                throw new IOException("CDC line state failed");
+            // 8N1 (and the CP210x's UART switched on), then DTR and RTS low: a classic board's
+            // auto-reset circuit leaves EN and IO0 high, the chip running.
+            if (cp210x && (connection.controlTransfer(CP210X_OUT, CP210X_IFC_ENABLE, 1, control.getId(), null, 0, 1000) < 0
+                    || connection.controlTransfer(CP210X_OUT, CP210X_SET_LINE_CTL, 0x0800, control.getId(), null, 0, 1000) < 0))
+                throw new IOException("CP210x setup failed");
+            setBaud(115200);
+            setLines(false, false);
         } catch (IOException error) { close(); throw error; }
         reader = new Thread(this::receiveLoop, "android-usb-reader");
         reader.start();
         writer = new Thread(this::writeLoop, "android-usb-writer");
         writer.start();
-    }
-
-    private void openSerial(UsbManager manager, UsbDevice device) throws IOException {
-        UsbSerialDriver driver = UsbSerialProber.getDefaultProber().probeDevice(device);
-        if (driver == null || driver.getPorts().isEmpty()) throw new IOException("Missing USB serial driver");
-        UsbDeviceConnection opened = manager.openDevice(device);
-        if (opened == null) throw new IOException("USB open failed");
-        UsbSerialPort port = driver.getPorts().get(0);
-        try {
-            port.open(opened);
-            port.setParameters(115200, UsbSerialPort.DATABITS_8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE);
-            port.setFlowControl(UsbSerialPort.FlowControl.NONE);
-            EnumSet<UsbSerialPort.ControlLine> lines = port.getSupportedControlLines();
-            if (lines.contains(UsbSerialPort.ControlLine.DTR)) port.setDTR(false);
-            if (lines.contains(UsbSerialPort.ControlLine.RTS)) port.setRTS(false);
-            connection = opened;
-            serialPort = port;
-        } catch (Exception error) {
-            try { if (port.isOpen()) port.close(); } catch (Exception ignored) { }
-            opened.close();
-            throw error instanceof IOException ? (IOException)error : new IOException(error);
-        }
     }
 
     private void receiveLoop() {
@@ -114,19 +89,6 @@ public final class UsbStream implements AutoCloseable {
         } catch (Exception error) {
             if (!closed) readFailure = new IOException("USB reader: " + error, error);
         } finally { request.cancel(); request.close(); }
-    }
-
-    private void receiveSerialLoop() {
-        byte[] buffer = new byte[16384];
-        try {
-            while (!closed) {
-                int count = serialPort.read(buffer, 100);
-                if (count > 0 && !incoming.offer(Arrays.copyOf(buffer, count)))
-                    throw new IOException("Android USB receive queue overflow");
-            }
-        } catch (Exception error) {
-            if (!closed) readFailure = new IOException("USB reader: " + error, error);
-        }
     }
 
     public synchronized byte[] read(int size) throws IOException {
@@ -154,23 +116,24 @@ public final class UsbStream implements AutoCloseable {
     /** CDC SET_CONTROL_LINE_STATE: bit 0 DTR, bit 1 RTS. The native USB peripheral resets the chip on
      *  the sequence esptool sends (ESP-IDF, USB Serial/JTAG controller). */
     public void setLines(boolean dtr, boolean rts) throws IOException {
-        if (serialPort != null) {
-            EnumSet<UsbSerialPort.ControlLine> lines = serialPort.getSupportedControlLines();
-            if (lines.contains(UsbSerialPort.ControlLine.DTR)) serialPort.setDTR(dtr);
-            if (lines.contains(UsbSerialPort.ControlLine.RTS)) serialPort.setRTS(rts);
+        int value = (dtr ? 1 : 0) | (rts ? 2 : 0);
+        if (cp210x) {   // SET_MHS: the high byte says which lines the low byte writes
+            if (connection.controlTransfer(CP210X_OUT, CP210X_SET_MHS, value | 0x300, control.getId(), null, 0, 1000) < 0)
+                throw new IOException("CP210x line state failed");
             return;
         }
-        int value = (dtr ? 1 : 0) | (rts ? 2 : 0);
         if (connection.controlTransfer(0x21, 0x22, value, control.getId(), null, 0, 1000) < 0)
             throw new IOException("CDC line state failed");
     }
 
     public void setBaud(int baud) throws IOException {
-        if (serialPort != null) {
-            serialPort.setParameters(baud, UsbSerialPort.DATABITS_8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE);
+        byte[] rate = {(byte)baud, (byte)(baud >> 8), (byte)(baud >> 16), (byte)(baud >> 24)};
+        if (cp210x) {
+            if (connection.controlTransfer(CP210X_OUT, CP210X_SET_BAUDRATE, 0, control.getId(), rate, 4, 1000) != 4)
+                throw new IOException("CP210x baud rate failed");
             return;
         }
-        byte[] coding = {(byte)baud, (byte)(baud >> 8), (byte)(baud >> 16), (byte)(baud >> 24), 0, 0, 8};
+        byte[] coding = {rate[0], rate[1], rate[2], rate[3], 0, 0, 8};
         if (connection.controlTransfer(0x21, 0x20, 0, control.getId(), coding, 7, 1000) != 7)
             throw new IOException("CDC line coding failed");
     }
@@ -236,10 +199,6 @@ public final class UsbStream implements AutoCloseable {
 
     private int writeNow(byte[] bytes) throws IOException {
         if (closed) throw new IOException("USB stream closed");
-        if (serialPort != null) {
-            serialPort.write(bytes, 1000);
-            return bytes.length;
-        }
         int at = 0;
         while (at < bytes.length) {
             int count = connection.bulkTransfer(output, bytes, at, bytes.length - at, 1000);
@@ -253,12 +212,9 @@ public final class UsbStream implements AutoCloseable {
         if (closed) return;
         closed = true;
         if (writer != null) writer.interrupt();
-        if (serialPort != null) {
-            try { serialPort.close(); } catch (IOException ignored) { }
-        } else {
-            connection.releaseInterface(data);
-            connection.releaseInterface(control);
-        }
+        if (cp210x) connection.controlTransfer(CP210X_OUT, CP210X_IFC_ENABLE, 0, control.getId(), null, 0, 100);
+        connection.releaseInterface(data);
+        if (control != data) connection.releaseInterface(control);
         connection.close();
     }
 }

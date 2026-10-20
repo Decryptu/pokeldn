@@ -57,8 +57,9 @@ Switch `prod.keys`, and a Switch or Switch 2 with a supported game.
 
 On a phone:
 
-- **Android**: install `pokeldn-android-arm64.apk` from Releases and plug an ESP32-S3, C3 or C6 into
-  the phone with a USB data cable ([Android setup](docs/gui.md#android-setup-requirements)).
+- **Android**: install `pokeldn-android-arm64.apk` from Releases and plug an ESP32-S3, C3 or C6, or a
+  classic ESP32 with a CP210x USB chip, into the phone with a USB data cable
+  ([Android setup](docs/gui.md#android-setup-requirements)).
 - **iPhone and iPad**: install `pokeldn-ios.ipa` with AltStore or SideStore (the app's
   [AltStore source](https://raw.githubusercontent.com/Decryptu/pokeldn/main/.github/altstore/source.json)).
   Flash the board once with the **Bluetooth wireless** firmware from the desktop app's Board page; it
@@ -112,6 +113,8 @@ Contributors to this repository (GitHub does not list contributors on a fork):
   ESP32 credit for a frame still being written, near doubling USB upload speed, and the
   Scarlet/Violet Union Circle guest: Blueberry Quest clears, Snacksworth's legendaries and
   crafted wild encounters
+- [DedHapp3n](https://github.com/DedHapp3n): classic ESP32 boards with a CP210x USB chip in the Android
+  app
 - [elsardine6k7](https://github.com/elsardine6k7): friendship in the Pokemon builder, Showdown sets and
   the Simulated Mystery Gift queue
 - [junkmailkeep](https://github.com/junkmailkeep): Mystery Gift sprites and form previews in the gift

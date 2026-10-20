@@ -5,21 +5,19 @@ import java.util.Locale;
 /** The guided USB setup's states and their guidance (docs/gui.md, Android setup requirements). */
 public final class Setup {
     public enum State { NO_DEVICE, UNSUPPORTED_BRIDGE, NEEDS_PERMISSION, PERMISSION_DENIED, CHECKING, HANDSHAKE_FAILED, READY }
-    public enum Backend { NONE, NATIVE_CDC, USB_SERIAL }
 
     /** Espressif's native USB Serial/JTAG (S3, C3, C6). */
     public static final int ESPRESSIF_VID = 0x303a, ESPRESSIF_PID = 0x1001;
+    /** Silicon Labs CP210x, the bridge on most classic ESP32 boards (UsbStream drives it). */
     public static final int CP210X_VID = 0x10c4, CP210X_PID = 0xea60;
-    /** USB-to-UART chips on classic ESP32 boards: CP210x, CH34x, FTDI. */
+    /** USB-to-UART chips on classic ESP32 boards: CP210x, CH34x, FTDI; the app drives only the CP210x. */
     private static final int[] BRIDGE_VIDS = {0x10c4, 0x1a86, 0x0403};
 
-    public static Backend backend(int vid, int pid) {
-        if (vid == ESPRESSIF_VID && pid == ESPRESSIF_PID) return Backend.NATIVE_CDC;
-        if (vid == CP210X_VID && pid == CP210X_PID) return Backend.USB_SERIAL;
-        return Backend.NONE;
-    }
+    public static boolean isCp210x(int vid, int pid) { return vid == CP210X_VID && pid == CP210X_PID; }
 
-    public static boolean isBoard(int vid, int pid) { return backend(vid, pid) != Backend.NONE; }
+    public static boolean isBoard(int vid, int pid) {
+        return vid == ESPRESSIF_VID && pid == ESPRESSIF_PID || isCp210x(vid, pid);
+    }
 
     public static boolean isBridge(int vid) {
         for (int bridge : BRIDGE_VIDS) if (bridge == vid) return true;
@@ -59,11 +57,11 @@ public final class Setup {
     public static String guidance(State state, String manufacturer, String detail) {
         switch (state) {
             case NO_DEVICE:
-                return "Connect an ESP32 board to the phone with a data cable (some cables only charge).\n\n"
-                    + otgHint(manufacturer);
+                return "Connect an ESP32-S3, C3 or C6 board by its native USB port, or a classic ESP32 with a CP210x "
+                    + "USB chip, to the phone with a data cable (some cables only charge).\n\n" + otgHint(manufacturer);
             case UNSUPPORTED_BRIDGE:
-                return "This board talks through a USB-to-serial chip which the phone app does not support. "
-                    + "Use this board with the desktop app.";
+                return "This board talks through a USB-to-serial chip the phone app does not drive (it drives the "
+                    + "CP210x only). Use this board with the desktop app.";
             case NEEDS_PERMISSION:
                 return "Android asks once whether PokeLDN may use the board. Tap Allow USB access, then OK on Android's prompt.";
             case PERMISSION_DENIED:

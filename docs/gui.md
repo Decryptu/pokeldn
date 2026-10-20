@@ -54,8 +54,9 @@ connection setting powered and enumerated the connected ESP32C6 without repluggi
 | Board answers the handshake | Show the detected board and firmware, then allow the game workflow to continue. |
 | Board disconnects or the user returns from Settings | Refresh detection and permission state, update the guidance and resume setup when the board is ready. |
 
-A board seen only through a CP210x, CH34x or FTDI bridge (a classic ESP32) is named as one the
-phone app cannot drive. PKHeX runs on the phone, compiled for Android. The received Pokemon is saved
+A classic ESP32 on a Silicon Labs CP210x bridge (`10c4:ea60`) is driven through the bridge's vendor
+requests (`UsbStream.java`); one seen through a CH34x or FTDI bridge is named as one the phone app
+cannot drive. PKHeX runs on the phone, compiled for Android. The received Pokemon is saved
 through Android's file picker.
 
 Settings guidance uses verified manufacturer-specific paths or searchable setting names, with
