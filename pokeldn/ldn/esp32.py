@@ -73,6 +73,21 @@ def display_sprite_payload(slot: str, rows: list[list[bool]]) -> bytes:
             bits.append(sum(0x80 >> i for i, on in enumerate(row[start:start + 8]) if on))
     return struct.pack("<BBBB", 1, DISPLAY_SLOTS.index(slot), width, height) + bytes(bits)
 
+
+def display_lobby_payload(title: str, name: str, joined: int, seats: int, stars: int = 0,
+                          code: str = "") -> bytes:
+    """LOBBY: a hosted raid or adventure, its Pokemon in the ours slot; stars 0 draws none."""
+    if not 0 <= stars <= 7 or not 0 <= joined <= seats <= 3 or seats < 1:
+        raise ValueError(f"a lobby of {joined}/{seats} at {stars} stars")
+    text = b"".join(t.encode("ascii", "replace")[:DISPLAY_TEXT] + b"\0" for t in (title, name, code))
+    return bytes((2, stars, joined, seats)) + text
+
+
+def display_joined_payload(joined: int) -> bytes:
+    """JOINED: the consoles in the lobby on show now."""
+    return bytes((3, joined))
+
+
 MSG_INFO = 0x81
 MSG_RESULT = 0x82
 MSG_LOG = 0x83

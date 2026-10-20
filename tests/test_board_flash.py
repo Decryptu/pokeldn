@@ -28,15 +28,18 @@ BOOTLOADERS = {
 }
 
 
-@pytest.mark.parametrize("protocol,text,release,compatible,ble", [
-    (1, b"pokeldn-radio esp32c3 version=1.0.0 idf=v6.1", "1.0.0", True, False),
-    (1, b"pokeldn-radio esp32 version=0.9.9 idf=v6.1", "0.9.9", True, False),
-    (1, b"pokeldn-radio esp32s3 idf=v6.1", "", True, False),
-    (2, b"pokeldn-radio esp32 version=2.0.0 idf=v6.1", "2.0.0", False, False),
+@pytest.mark.parametrize("protocol,text,release,compatible,ble,stock", [
+    (1, b"pokeldn-radio esp32c3 version=1.0.0 idf=v6.1", "1.0.0", True, False, True),
+    (1, b"pokeldn-radio esp32 version=0.9.9 idf=v6.1", "0.9.9", True, False, True),
+    (1, b"pokeldn-radio esp32s3 idf=v6.1", "", True, False, True),
+    (2, b"pokeldn-radio esp32 version=2.0.0 idf=v6.1", "2.0.0", False, False, True),
     # What a XIAO ESP32C6 running the Bluetooth build answered over USB.
-    (1, b"pokeldn-radio esp32c6 version=1.6.2 idf=v6.1-dirty link=ble", "1.6.2", True, True),
+    (1, b"pokeldn-radio esp32c6 version=1.6.2 idf=v6.1-dirty link=ble", "1.6.2", True, True, True),
+    # radio.c send_info in a POKELDN_DISPLAY=E32R40T build.
+    (1, b"pokeldn-radio esp32 version=1.7.0 idf=v6.1 display=e32r40t", "1.7.0", True, False, False),
 ])
-def test_identify_preserves_release_and_protocol_across_serial(monkeypatch, protocol, text, release, compatible, ble):
+def test_identify_preserves_release_and_protocol_across_serial(monkeypatch, protocol, text, release, compatible, ble,
+                                                               stock):
     class SerialReply:
         def __init__(self):
             self.inbox = Queue()
@@ -72,6 +75,7 @@ def test_identify_preserves_release_and_protocol_across_serial(monkeypatch, prot
     assert ident.firmware_version == release
     assert ident.protocol == protocol and ident.current is compatible
     assert ident.ble is ble
+    assert ident.stock is stock
     assert serial.closed
 
 
@@ -235,3 +239,13 @@ def test_an_update_is_offered_only_for_a_newer_included_image(tmp_path, monkeypa
     assert board.image_info(image) == ("pokeldn_pad", included)
     assert board.update_for(installed, "pad", "ESP32-S3") == offered
     assert board.update_for(installed, "pad", "ESP32-C3") == ""    # the controller does not run on a C3
+
+
+def test_a_board_built_for_its_own_screen_is_never_offered_the_app_image(tmp_path, monkeypatch):
+    from gui.views.boards import Facts
+    image = _app_image(tmp_path / "radio.bin", b"pokeldn_radio", b"9.0.0")
+    monkeypatch.setattr(board, "bundled_firmware", lambda chip: image)
+    facts = Facts("COM4", kind="radio", version="1.7.0", chip="ESP32", state="ready")
+    assert facts.update == "9.0.0"
+    facts.stock = False      # display=e32r40t: the OLED image would leave its panel dark
+    assert facts.update == ""

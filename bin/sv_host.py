@@ -890,6 +890,11 @@ def main(argv=None):
             pending_records[ip] = now + 0.02
         print(f"[sv] {ip}: the station list is acknowledged; the raid's streams open")
 
+    if raiding:
+        boss = raid_group.raid.boss
+        screen.lobby("Tera Raid", boss["species"], boss["nickname"], args.raid_players,
+                     stars=raid_group.raid.stars, code=args.code, form=boss["form"])
+
     try:
         while time.time() < deadline:
             now = time.time()
@@ -980,6 +985,7 @@ def main(argv=None):
                     if raid_group.started_at is None:
                         raid_group.leave(stage.index)
                         raid_hosts.pop(ip, None)
+                        screen.joined(len(raid_group.present()))
                         print(f"[sv] {ip}: left the lobby; seat {stage.index} is free")
                         rest = [o for o in raid_hosts if o in current_ips]
                         if rest:
@@ -1535,6 +1541,7 @@ def main(argv=None):
                                     stage = raid_group.seat(seat_of(src_ip), time.time())
                                     if stage is not None:
                                         raid_hosts[src_ip] = stage
+                                        screen.joined(len(raid_group.present()))
                                 if (args.announce and slot is not None and src_ip in station_ids
                                         and (src_ip, "accept") not in sent_once):
                                     # The type 9 carries the joiner's station id; the receiver drops
@@ -1603,6 +1610,7 @@ def main(argv=None):
     except KeyboardInterrupt:
         print("\n[sv] interrupted")
     finally:
+        screen.drain()
         transport.stop()
         if partner:
             partner.close()

@@ -698,7 +698,12 @@ static void send_info(void)
 #else
 #define LINK_WORD ""
 #endif
-    snprintf(text, sizeof(text), "pokeldn-radio " CONFIG_IDF_TARGET " version=%s idf=" IDF_VER LINK_WORD,
+#ifdef POKELDN_DISPLAY_E32R40T
+#define DISPLAY_WORD " display=e32r40t"   /* gui/board.py Identity.stock: no OLED image offered over it */
+#else
+#define DISPLAY_WORD ""
+#endif
+    snprintf(text, sizeof(text), "pokeldn-radio " CONFIG_IDF_TARGET " version=%s idf=" IDF_VER LINK_WORD DISPLAY_WORD,
              esp_app_get_description()->version);
     wire_send(MSG_INFO, head, sizeof(head), text, strlen(text));
     usbwatch_report();

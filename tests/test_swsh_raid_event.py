@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from pokeldn import gen8
-from pokeldn.app import events_gallery as gallery
+from pokeldn.app import events_gallery as gallery, screen
 from pokeldn.swsh import beacon, raid, raid_event
 
 import swsh_host
@@ -191,6 +191,19 @@ def test_the_host_picks_an_event_boss_and_refuses_what_does_not_name_one(tmp_pat
     assert rewards[:3] == [(1127, 2), (1128, 1), (1129, 2)]
     assert swsh_host.main(["--ip-host", "--raid-stars", "5"]) == 1
     assert "pass --raid-event" in capsys.readouterr().out
+
+
+def test_the_host_shows_a_gigantamax_boss_and_an_adventure_legendary(event, monkeypatch):
+    calls = []
+    monkeypatch.setattr(screen, "lobby", lambda *args, **kw: calls.append((args, kw)))
+    toxtricity = raid_event.boss_pk8(boss(event, SHIELD, 5, 849, 1), random.Random(0))
+    ads = json.loads((DATA / "swsh_raid_adverts.json").read_text())
+    advert = raid.den_advert(bytes.fromhex(ads["advert_pidove"]), toxtricity, rank=4)
+    swsh_host.show_lobby(advert, toxtricity, None, "12345678")
+    swsh_host.show_lobby(advert, None, 150, "")
+    assert calls == [(("Max Raid", 849, "Toxtricity", 3),
+                      {"stars": 5, "code": "12345678", "form": 1, "gigantamax": True}),
+                     (("Adventure", 150, "Mewtwo", 3), {"code": ""})]
 
 
 def test_every_boss_the_app_offers_is_the_one_the_host_picks_and_shows_in_a_den(event, tmp_path):

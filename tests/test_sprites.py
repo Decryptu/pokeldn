@@ -187,6 +187,21 @@ def test_game_forms_resolve_to_their_own_sprite(species, form, key):
     assert sprite_key(species, form) == key
 
 
+def test_every_gigantamax_den_boss_has_its_own_gigantamax_sprite():
+    """The den tables' Gigantamax bosses (pokeldn/swsh/data), each drawn in its own shape, and an
+    Alcremie of any cream in the one shape."""
+    import json
+    from pokeldn.app.sprite_forms import sprite_key
+    from pokeldn.swsh import raid
+    slots = json.loads(raid.NEST_SLOTS.read_text())["slots"]
+    bosses = {(row[2], row[3]) for rows in slots.values() for row in rows if row[4]}
+    assert len(bosses) == 25
+    keys = {boss: sprite_key(*boss, gigantamax=True) for boss in bosses}
+    assert all(isinstance(key, int) and key > 10000 for key in keys.values())
+    assert len(set(keys.values())) == len(bosses)
+    assert sprite_key(869, 5, gigantamax=True) == keys[(869, 0)]
+
+
 def test_form_sprites_keep_separate_normal_and_shiny_cache_entries(host, tmp_path):
     host.routes = {f"/pokemon/{name}.png": (200, png(n)) for n, name in enumerate(
         ("423", "423-east", "shiny/423-east"), start=1)}

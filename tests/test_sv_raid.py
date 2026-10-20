@@ -844,6 +844,17 @@ def test_the_partners_we_choose_reach_the_bootstrap(monkeypatch, tmp_path, capsy
                       extra=["--raid-partner", "Dylan", "--raid-partner-progress", "3star"])
 
 
+def test_the_raid_host_puts_its_lobby_on_the_screen(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(sv_host.screen, "lobby", lambda *args, **kw: calls.append(("lobby", args, kw)))
+    monkeypatch.setattr(sv_host.screen, "joined", lambda count: calls.append(("joined", count)))
+    run_raid_host(monkeypatch, tmp_path)
+    found = raid_encounter.generate(0x000F34C3)
+    assert calls == [("lobby", ("Tera Raid", found.species, found.boss["nickname"], 1),
+                      {"stars": found.stars, "code": "4970", "form": found.boss["form"]}),
+                     ("joined", 1)]
+
+
 def test_two_consoles_leave_one_slot_to_the_partner_we_choose(monkeypatch, tmp_path, capsys):
     """`--raid-players 2`: the consoles take seats 1 and 2, and the RaidPoint's partner seed draws the
     one partner chosen for seat 3. A second partner, or any with three consoles, is refused before the

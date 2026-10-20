@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Play a trade and a Mystery Gift on the board's screen. No radio traffic, no console.
+"""Play a trade, a Mystery Gift and a raid lobby on the board's screen. No radio traffic, no console.
 
     ./.venv/bin/python tools/ldn/esp32_screen.py --port PORT [--offer 25] [--receive 150] [--gift 151]
 
@@ -49,6 +49,12 @@ def main(argv=None):
         time.sleep(6)
         display(esp32.display_show_payload("gifted", 6, "", gift_name), "gifted")
         time.sleep(7)
+        display(esp32.display_sprite_payload("ours", sprite_bits(6, gigantamax=True) or []), "Gigantamax #6")
+        display(esp32.display_lobby_payload("Max Raid", "Charizard", 0, 3, 5, "1234 5678"), "lobby")
+        for joined in (1, 2, 3):
+            time.sleep(3)
+            display(esp32.display_joined_payload(joined), f"{joined} joined")
+        time.sleep(3)
     finally:
         radio.close()
     return 0
