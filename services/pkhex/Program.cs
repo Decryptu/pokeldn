@@ -378,12 +378,16 @@ static partial class Program
                     if (shiny)
                         criteria = criteria with { Shiny = Shiny.Always };
                     // The PID, IVs and, for a wild slot, the level are rolled at random; a roll can be refused or land
-                    // above the level asked for, so an encounter gets several.
+                    // above the level asked for, so an encounter gets several. A roll above the level costs no legality
+                    // check and is not one of the eight: a slot straddling the level misses it often.
                     PKM? built = null, mendable = null;
-                    for (var roll = 0; roll < 8 && built is null; roll++)
+                    for (int roll = 0, tries = 0; roll < 8 && tries < 64 && built is null; tries++)
                     {
                         var rolled = convertible.ConvertToPKM(trainer, criteria);
-                        if (rolled.GetType() != blank.GetType() || (level != 0 && rolled.CurrentLevel > level))
+                        if (level != 0 && rolled.CurrentLevel > level && rolled.GetType() == blank.GetType())
+                            continue;
+                        roll++;
+                        if (rolled.GetType() != blank.GetType())
                             continue;
                         if (new LegalityAnalysis(rolled).Valid)
                             built = rolled;
