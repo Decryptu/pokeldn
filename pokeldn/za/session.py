@@ -2,7 +2,7 @@
 (docs/za.md has the address or scan behind each value)."""
 from pokeldn.ldn.beacon import build_pia_header, decode_pia_header
 from pokeldn.ldn import pia6
-from pokeldn.ldn.pia6 import SessionKeys, packet_iv  # noqa: F401
+from pokeldn.ldn.pia6 import LINK_CODE_IV_BYTES, SessionKeys, packet_iv  # noqa: F401
 
 # 64 bytes used raw: rodata 0x33391fc of main 2.0.2, and data 0x3eeda1f.
 PASSPHRASE = b"BM7cXkadR9ugiXdHiurkiyhrQwcR3rMgCM5BF47dranKXWAGpGEA9z3ncXRnPjCX"
@@ -40,16 +40,11 @@ APP_COMM_VERSION = 6              # and its application communication version
 ADVERTISE_NAME = " "              # the console does not publish its own name
 
 # Arceus's link code mask under the same game key (docs/pla.md, The link code in the advertisement).
-LINK_CODE_IV_BYTES = (1, 8, 7, 2)
 LINK_CODE_LEN = 8
 
 
 def link_code_keystream(game_key=GAME_KEY):
-    """-> the sixteen bytes the game XORs the code into."""
-    from Crypto.Cipher import AES
-    game_key = bytes(game_key)
-    iv = bytes(game_key[i] for i in LINK_CODE_IV_BYTES)
-    return AES.new(game_key, AES.MODE_GCM, nonce=iv).encrypt(bytes(16))
+    return pia6.link_code_keystream(game_key)
 
 
 LINK_CODE_MASK = link_code_keystream()
@@ -61,21 +56,15 @@ CODE_OFF, CODE_LEN_OFF = 0x00, 0x10
 
 
 def user_password(code):
-    """-> the sixteen bytes a console advertises for this code."""
-    code = code.encode() if isinstance(code, str) else bytes(code)
-    return bytes(m ^ c for m, c in zip(LINK_CODE_MASK, code.ljust(16, b"\x00")))
+    return pia6.link_code_password(LINK_CODE_MASK, code)
 
 
 def link_code(user_password_bytes, length=LINK_CODE_LEN):
-    """-> the code a console is waiting on, read back out of its advertised password field."""
-    raw = bytes(m ^ p for m, p in zip(LINK_CODE_MASK, bytes(user_password_bytes)))
-    return raw[:length].decode("ascii", "replace")
+    return pia6.link_code_of(LINK_CODE_MASK, user_password_bytes, length)
 
 
 def build_game_data(code):
-    """-> the twenty bytes after the system property block: the code, then its length."""
-    code = code.encode() if isinstance(code, str) else bytes(code)
-    return code.ljust(16, b"\x00")[:16] + len(code).to_bytes(4, "little")
+    return pia6.link_code_game_data(code)
 
 
 def build_advertise_data(code, *, name=ADVERTISE_NAME, num_players=1,

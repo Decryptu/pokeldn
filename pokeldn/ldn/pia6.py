@@ -186,6 +186,37 @@ def packet_iv(keys, source_ip, nonce8):
     return gcm_iv(keys.network_id, source_ip, nonce8)
 
 
+# The eight-digit link code of Legends Arceus and Legends Z-A: XORed into the advertised user
+# password with the first GCM block under the game key (docs/pla.md, docs/za.md).
+LINK_CODE_IV_BYTES = (1, 8, 7, 2)     # key[1] key[8] key[7] key[2]
+
+
+def link_code_keystream(game_key):
+    """-> the sixteen bytes the game XORs the code into: GCM's first block under the game key."""
+    from Crypto.Cipher import AES
+    game_key = bytes(game_key)
+    iv = bytes(game_key[i] for i in LINK_CODE_IV_BYTES)
+    return AES.new(game_key, AES.MODE_GCM, nonce=iv).encrypt(bytes(16))
+
+
+def link_code_password(mask, code):
+    """-> the sixteen bytes a console advertises for this code."""
+    code = code.encode() if isinstance(code, str) else bytes(code)
+    return bytes(m ^ c for m, c in zip(mask, code.ljust(16, b"\x00")))
+
+
+def link_code_of(mask, user_password_bytes, length):
+    """-> the code a console is waiting on, read back out of its advertised password field."""
+    raw = bytes(m ^ p for m, p in zip(mask, bytes(user_password_bytes)))
+    return raw[:length].decode("ascii", "replace")
+
+
+def link_code_game_data(code):
+    """-> the twenty bytes after the system property block: the code, then its length."""
+    code = code.encode() if isinstance(code, str) else bytes(code)
+    return code.ljust(16, b"\x00")[:16] + len(code).to_bytes(4, "little")
+
+
 def crypto(ssid, game_key):
     return PiaCrypto(ssid, game_key=bytes(game_key))
 

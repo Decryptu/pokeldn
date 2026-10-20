@@ -231,6 +231,15 @@ class VersionSearch:
         self.pending = (self.lo + self.hi) // 2
 
 
+def parse_reply(data):
+    """-> (message type, connection result or None)."""
+    if not data:
+        return None, None
+    kind = data[0]
+    result = data[1] if kind == CONNECTION_RESPONSE and len(data) > 1 else None
+    return kind, result
+
+
 def build_ack(ack_id):
     """The eight-byte ack (0x0154fa2c). A connection response repeats every 500 ms until acked."""
     return bytes([ACK, 0, 0, 0]) + struct.pack(">I", ack_id & 0xFFFFFFFF)

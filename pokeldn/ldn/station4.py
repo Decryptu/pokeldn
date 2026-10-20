@@ -5,6 +5,7 @@ Layout, handshake and gate byte: docs/pia.md, The version-4 connection request.
 
 import struct
 
+from pokeldn.ldn.station_protocol import parse_reply  # noqa: F401
 from pokeldn.ldn.station_protocol import (CONNECTION_REQUEST, CONNECTION_RESPONSE,
                                           DISCONNECTION_REQUEST, DISCONNECTION_RESPONSE,
                                           RELAY_CONNECTION_REQUEST, RESULT_NAMES,
@@ -142,10 +143,3 @@ def ack_id_of(data):
     return int.from_bytes(data[-4:], "big") if len(data) >= 4 else 0
 
 
-def parse_reply(data):
-    """-> (message type, connection result or None)."""
-    if not data:
-        return None, None
-    kind = data[0]
-    result = data[1] if kind == CONNECTION_RESPONSE and len(data) > 1 else None
-    return kind, result
