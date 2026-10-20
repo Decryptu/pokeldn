@@ -116,6 +116,9 @@ Contributors to this repository (GitHub does not list contributors on a fork):
   the Simulated Mystery Gift queue
 - [junkmailkeep](https://github.com/junkmailkeep): Mystery Gift sprites and form previews in the gift
   and trade editors
+- [MarcJa420](https://github.com/MarcJa420): the E32R40T 4-inch screen build, the firmware version on
+  the idle screen, hosted raid and Dynamax Adventure lobbies on the board's screen, and Gigantamax
+  sprites
 
 - [unlimitedcoder2](https://github.com/unlimitedcoder2): [ldnrs](https://github.com/unlimitedcoder2/ldnrs),
   the external Windows USB Wi-Fi daemon supported by the optional radio backend
