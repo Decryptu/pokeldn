@@ -67,8 +67,6 @@ def display_sprite_payload(slot: str, rows: list[list[bool]]) -> bytes:
     height, width = len(rows), len(rows[0]) if rows else 0
     if width > SPRITE_MAX[0] or height > SPRITE_MAX[1]:
         raise ValueError(f"a {width}x{height} sprite is larger than {SPRITE_MAX}")
-    if any(len(row) != width for row in rows):
-        raise ValueError("sprite rows must all have the same width")
     bits = bytearray()
     for row in rows:
         for start in range(0, width, 8):
@@ -76,36 +74,19 @@ def display_sprite_payload(slot: str, rows: list[list[bool]]) -> bytes:
     return struct.pack("<BBBB", 1, DISPLAY_SLOTS.index(slot), width, height) + bytes(bits)
 
 
-def display_raid_payload(stars: int, occupied: int, target: int, title: str = "Tera Raid") -> bytes:
-    """RAID: stars and current/target lobby size, after sending the boss as the ours sprite."""
-    if not 1 <= stars <= 7 or not 0 <= occupied <= 3 or not 1 <= target <= 3:
-        raise ValueError("raid stars must be 1..7, occupied 0..3, and target 1..3")
-    return struct.pack("<BBBB", 2, stars, occupied, target) + title.encode("ascii", "replace")[:21] + b"\0"
+def display_lobby_payload(title: str, name: str, joined: int, seats: int, stars: int = 0,
+                          code: str = "") -> bytes:
+    """LOBBY: a hosted raid or adventure, its Pokemon in the ours slot; stars 0 draws none."""
+    if not 0 <= stars <= 7 or not 0 <= joined <= seats <= 3 or seats < 1:
+        raise ValueError(f"a lobby of {joined}/{seats} at {stars} stars")
+    text = b"".join(t.encode("ascii", "replace")[:DISPLAY_TEXT] + b"\0" for t in (title, name, code))
+    return bytes((2, stars, joined, seats)) + text
 
 
-def display_raid_lobby_payload(occupied: int, target: int) -> bytes:
-    """RAID_LOBBY: update current/target lobby size without retransmitting the boss sprite."""
-    if not 0 <= occupied <= 3 or not 1 <= target <= 3:
-        raise ValueError("raid occupied must be 0..3 and target 1..3")
-    return struct.pack("<BBB", 3, occupied, target)
+def display_joined_payload(joined: int) -> bytes:
+    """JOINED: the consoles in the lobby on show now."""
+    return bytes((3, joined))
 
-
-def display_adventure_payload(players: int, legendary: str, code: str = "") -> bytes:
-    """ADVENTURE: four-seat count, legendary name, and optional link code."""
-    if not 1 <= players <= 4:
-        raise ValueError("adventure players must be 1..4")
-    if len(code) > 8 or (code and not (code.isascii() and code.isdecimal())):
-        raise ValueError("adventure code must be at most eight ASCII decimal digits")
-    text = b"".join(value.encode("ascii", "replace")[:DISPLAY_TEXT] + b"\0"
-                    for value in (legendary, code))
-    return bytes((4, players)) + text
-
-
-def display_adventure_lobby_payload(players: int) -> bytes:
-    """ADVENTURE_LOBBY: update the four-seat count without resending encounter details."""
-    if not 1 <= players <= 4:
-        raise ValueError("adventure players must be 1..4")
-    return bytes((5, players))
 
 MSG_INFO = 0x81
 MSG_RESULT = 0x82

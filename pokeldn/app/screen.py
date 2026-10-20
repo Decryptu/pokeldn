@@ -9,6 +9,7 @@ import queue
 import threading
 import unicodedata
 
+from pokeldn.app.sprite_forms import sprite_key
 from pokeldn.app.sprites import BASE, SpriteCache, pixels
 from pokeldn.app.paths import DATA
 
@@ -31,6 +32,7 @@ LATER = SpriteCache(DATA / "sprites" / "screen")
 
 _jobs: queue.Queue = queue.Queue()
 _worker: threading.Thread | None = None
+_joined: int | None = None
 
 
 def ascii_text(text: str) -> str:
@@ -91,7 +93,6 @@ def to_bits(png: bytes, size: int = 64) -> list[list[bool]] | None:
 
 def sprite_bits(species: int, size: int = 64, *, form: int = 0,
                 gigantamax: bool = False) -> list[list[bool]] | None:
-    from pokeldn.app.sprite_forms import sprite_key
     key = sprite_key(species, form, gigantamax)
     if key is None:
         return None
@@ -188,43 +189,31 @@ def delivered(line: str = "") -> bool:
     return _submit(lambda: _send(esp32.display_show_payload("gifted", GIFTED_HOLD_S, "", ascii_text(line))))
 
 
-def show_raid(species: int, stars: int, occupied: int, target: int, title: str = "Tera Raid", *,
-              form: int = 0, gigantamax: bool = False) -> bool:
-    """Show a raid boss and lobby size on the board, using its monochrome sprite cache."""
+def lobby(title: str, species: int, name: str, seats: int, *, stars: int = 0, code: str = "",
+          form: int = 0, gigantamax: bool = False) -> bool:
+    """A hosted raid or Dynamax Adventure: its Pokemon, stars, the consoles joined of `seats` and the
+    Link Code, until the session ends. `joined` updates the count."""
+    global _joined
+    _joined = 0
+    code = code.replace(" ", "")
+    shown_code = f"{code[:4]} {code[4:]}" if len(code) == 8 else code    # as the games print it
+
     def job():
         from pokeldn.ldn import esp32
-        bits = sprite_bits(species, 40, form=form, gigantamax=gigantamax) if species else None
-        _send(esp32.display_sprite_payload("ours", bits or []))
-        _send(esp32.display_raid_payload(stars, occupied, target, ascii_text(title)))
+        bits = sprite_bits(species, form=form, gigantamax=gigantamax)
+        _send(esp32.display_sprite_payload("ours", bits or []))   # an empty slot draws a Poke Ball
+        _send(esp32.display_lobby_payload(ascii_text(title), ascii_text(name), 0, seats, stars, shown_code))
     return _submit(job)
 
 
-def raid_lobby(occupied: int, target: int) -> bool:
-    """Update a raid's occupied and expected lobby seats."""
+def joined(count: int) -> bool:
+    """The consoles in the lobby `lobby` put up; sent only when the count changes."""
+    global _joined
+    if count == _joined:
+        return False
+    _joined = count
     from pokeldn.ldn import esp32
-    return _submit(lambda: _send(esp32.display_raid_lobby_payload(occupied, target)))
-
-
-def show_adventure(species: int, players: int, legendary: str, code: str = "") -> bool:
-    """Show a Dynamax Adventure's legendary, current party size, and optional link code."""
-    def job():
-        from pokeldn.ldn import esp32
-        bits = sprite_bits(species, 40) if species else None
-        _send(esp32.display_sprite_payload("ours", bits or []))
-        _send(esp32.display_adventure_payload(players, ascii_text(legendary), ascii_text(code)))
-    return _submit(job)
-
-
-def adventure_lobby(players: int) -> bool:
-    """Update a Dynamax Adventure lobby's player count."""
-    from pokeldn.ldn import esp32
-    return _submit(lambda: _send(esp32.display_adventure_lobby_payload(players)))
-
-
-def reset() -> bool:
-    """Return to the radio scene after a host session ends."""
-    from pokeldn.ldn import esp32
-    return _submit(lambda: _send(esp32.display_show_payload("auto")))
+    return _submit(lambda: _send(esp32.display_joined_payload(count)))
 
 
 def drain(timeout: float = 10.0) -> bool:

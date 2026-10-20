@@ -22,12 +22,11 @@ enum scene_power { SCENE_ON, SCENE_DIM, SCENE_OFF };
 /* DISPLAY ops. SHOW: u8 show, u16 hold s (0: until the next show; traded: the wait before theirs
    comes in), title, NUL, line, NUL. ARRIVED cuts a traded show's wait short.
    SPRITE: u8 slot, u8 width <= 64, u8 height <= 64, rows of (width + 7) / 8 bytes, MSB first.
-   RAID: u8 stars, u8 occupied, u8 target. RAID_LOBBY: u8 occupied, u8 target.
-   ADVENTURE: u8 players, legendary name, NUL, optional link code, NUL. ADVENTURE_LOBBY: u8 players. */
-enum { DISPLAY_OP_SHOW, DISPLAY_OP_SPRITE, DISPLAY_OP_RAID, DISPLAY_OP_RAID_LOBBY,
-       DISPLAY_OP_ADVENTURE, DISPLAY_OP_ADVENTURE_LOBBY };
-enum { SHOW_AUTO, SHOW_TRADE, SHOW_TRADED, SHOW_GIFT, SHOW_GIFTED, SHOW_ARRIVED, SHOWS, SHOW_RAID,
-       SHOW_ADVENTURE };
+   LOBBY: u8 stars (0: none), u8 joined, u8 seats (1..3), title, NUL, name, NUL, code, NUL; slot 0 is
+   its Pokemon. JOINED: u8 joined, at most the lobby's seats. */
+enum { DISPLAY_OP_SHOW, DISPLAY_OP_SPRITE, DISPLAY_OP_LOBBY, DISPLAY_OP_JOINED };
+/* SHOW selects the shows before SHOWS; LOBBY starts its own. */
+enum { SHOW_AUTO, SHOW_TRADE, SHOW_TRADED, SHOW_GIFT, SHOW_GIFTED, SHOW_ARRIVED, SHOWS, SHOW_LOBBY };
 enum { SLOT_OURS, SLOT_THEIRS, SLOT_GIFT, SLOTS };
 #define SPRITE_W 64
 #define SPRITE_H 64

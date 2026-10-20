@@ -37,8 +37,10 @@ static struct {
     uint32_t started;
     uint32_t reveal;        /* a traded show: ms after its start when theirs starts coming in */
     sprite_t sprite[SLOTS];
-    uint8_t raid_stars, raid_occupied, raid_players;
-    uint8_t adventure_players;
+    struct {
+        uint8_t stars, joined, seats;
+        char code[TEXT_MAX];
+    } lobby;                /* a lobby show's: its title and name are the show's title and line */
 } s;
 
 /* Packets on a cable: progress 0..1000 from the console's end (dir 1) or from ours (dir -1). */
@@ -292,28 +294,30 @@ static void trade_scene(uint8_t *fb, uint32_t now)
     cable(fb, 24, 62, 53);
 }
 
-static void raid_scene(uint8_t *fb)
+/* The lobby's text, one line each: the name, its stars, the seats taken, the Link Code. */
+static int lobby_lines(char lines[4][TEXT_MAX])
 {
-    char stars[8] = "*******";
-    char text[16];
-    stars[s.raid_stars] = '\0';
-    header(fb, s.now.title[0] ? s.now.title : "Tera Raid", NULL);
-    if (!sprite_draw(fb, SLOT_OURS, 29, 54)) poke_ball(fb, 29, 32, 12);
-    fb_text(fb, 63, 16, stars, 1);
-    snprintf(text, sizeof(text), "%u/%u joined", (unsigned)s.raid_occupied,
-             (unsigned)s.raid_players);
-    fb_text(fb, 63, 28, text, 1);
+    int n = 0;
+    if (s.now.line[0]) snprintf(lines[n++], TEXT_MAX, "%s", s.now.line);
+    if (s.lobby.stars) {
+        snprintf(lines[n], TEXT_MAX, "%.*s", s.lobby.stars, "*******");
+        ++n;
+    }
+    snprintf(lines[n++], TEXT_MAX, "%u/%u joined", (unsigned)s.lobby.joined, (unsigned)s.lobby.seats);
+    if (s.lobby.code[0]) snprintf(lines[n++], TEXT_MAX, "%s", s.lobby.code);
+    return n;
 }
 
-static void adventure_scene(uint8_t *fb)
+static void lobby_scene(uint8_t *fb, uint32_t now)
 {
-    char text[24];
-    header(fb, "Dynamax Adventure", NULL);
-    if (!sprite_draw(fb, SLOT_OURS, 29, 54)) poke_ball(fb, 29, 32, 12);
-    text_wrapped(fb, 63, 14, 10, s.now.title);
-    snprintf(text, sizeof(text), "%u/4 players", (unsigned)s.adventure_players);
-    fb_text(fb, 63, 38, text, 1);
-    if (s.now.line[0]) fb_text(fb, 63, 48, s.now.line, 1);
+    char lines[4][TEXT_MAX], cut[11];
+    half_header(fb, s.now.title);
+    if (!sprite_draw(fb, SLOT_OURS, 96, 64 - (int)(now / 500 % 2))) poke_ball(fb, 96, 34, 12);
+    const int n = lobby_lines(lines);
+    for (int i = 0; i < n; ++i) {
+        snprintf(cut, sizeof(cut), "%s", lines[i]);   /* the left half: 10 characters */
+        fb_text(fb, 0, 14 + 12 * i, cut, 1);
+    }
 }
 
 static void traded_scene(uint8_t *fb, uint32_t now)
@@ -465,25 +469,11 @@ static void small_trade(uint8_t *fb, uint32_t now)
     if (!sprite_half(fb, SLOT_OURS, 36, 40 - (int)(now / 500 % 2))) poke_ball(fb, 36, 25, 9);
 }
 
-static void small_raid(uint8_t *fb)
+static void small_lobby(uint8_t *fb)
 {
-    char stars[8] = "*******";
-    char text[16];
-    stars[s.raid_stars] = '\0';
-    small_text(fb, 0, 0, stars);
-    snprintf(text, sizeof(text), "%u/%u joined", (unsigned)s.raid_occupied,
-             (unsigned)s.raid_players);
-    small_text(fb, 0, 10, text);
-    if (!sprite_half(fb, SLOT_OURS, 20, 30)) poke_ball(fb, 20, 18, 7);
-}
-
-static void small_adventure(uint8_t *fb)
-{
-    char text[24];
-    small_text(fb, 0, 0, s.now.title[0] ? s.now.title : "Adventure");
-    snprintf(text, sizeof(text), "%u/4 players", (unsigned)s.adventure_players);
-    small_text(fb, 0, 10, text);
-    if (s.now.line[0]) small_text(fb, 0, 20, s.now.line);
+    char lines[4][TEXT_MAX];
+    const int n = lobby_lines(lines);
+    for (int i = 0; i < n; ++i) small_text(fb, 0, 10 * i, lines[i]);
 }
 
 static void small_traded(uint8_t *fb, uint32_t now)
@@ -609,45 +599,23 @@ bool scene_command(const uint8_t *p, size_t n, uint32_t now)
         memcpy(sprite->bits, p + 4, size);
         return true;
     }
-    if (p[0] == DISPLAY_OP_RAID) {
-        if (n < 4 || p[1] < 1 || p[1] > 7 || p[2] > 3 || p[3] < 1 || p[3] > 3)
-            return false;
-        s.raid_stars = p[1];
-        s.raid_occupied = p[2];
-        s.raid_players = p[3];
-        show_t show = {.show = SHOW_RAID};
-        if (n > 4) {
-            const char *text = (const char *)p + 4, *end = (const char *)p + n;
-            copy_text(show.title, &text, end);
-        }
-        s.has_next = false;
-        start(&show, now);
-        return true;
-    }
-    if (p[0] == DISPLAY_OP_RAID_LOBBY) {
-        if (n != 3 || p[1] > 3 || p[2] < 1 || p[2] > 3 || s.now.show != SHOW_RAID)
-            return false;
-        s.raid_occupied = p[1];
-        s.raid_players = p[2];
-        return true;
-    }
-    if (p[0] == DISPLAY_OP_ADVENTURE) {
-        if (n < 4 || p[1] < 1 || p[1] > 4) return false;
-        show_t show = {.show = SHOW_ADVENTURE};
-        const char *text = (const char *)p + 2, *end = (const char *)p + n;
-        const char *first_end = memchr(text, '\0', (size_t)(end - text));
-        if (!first_end || !memchr(first_end + 1, '\0', (size_t)(end - first_end - 1))) return false;
+    if (p[0] == DISPLAY_OP_LOBBY) {
+        if (n < 7 || p[1] > 7 || p[3] < 1 || p[3] > 3 || p[2] > p[3]) return false;
+        show_t show = {.show = SHOW_LOBBY};
+        const char *text = (const char *)p + 4, *end = (const char *)p + n;
         copy_text(show.title, &text, end);
         copy_text(show.line, &text, end);
-        if (text != end) return false;
-        s.adventure_players = p[1];
+        copy_text(s.lobby.code, &text, end);
+        s.lobby.stars = p[1];
+        s.lobby.joined = p[2];
+        s.lobby.seats = p[3];
         s.has_next = false;
         start(&show, now);
         return true;
     }
-    if (p[0] == DISPLAY_OP_ADVENTURE_LOBBY) {
-        if (n != 2 || p[1] < 1 || p[1] > 4 || s.now.show != SHOW_ADVENTURE) return false;
-        s.adventure_players = p[1];
+    if (p[0] == DISPLAY_OP_JOINED) {
+        if (n != 2 || s.now.show != SHOW_LOBBY || p[1] > s.lobby.seats) return false;
+        s.lobby.joined = p[1];
         return true;
     }
     if (p[0] != DISPLAY_OP_SHOW || n < 4 || p[1] >= SHOWS) return false;
@@ -703,10 +671,8 @@ uint8_t scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now)
     }
     /* A lasting show belongs to a session: a radio going back to idle has ended it. A show sent
        before the radio started stays. */
-    if ((s.now.show == SHOW_TRADE || s.now.show == SHOW_GIFT || s.now.show == SHOW_RAID ||
-         s.now.show == SHOW_ADVENTURE) &&
-        radio->mode == SCENE_IDLE &&
-        s.radio_mode != SCENE_IDLE)
+    if ((s.now.show == SHOW_TRADE || s.now.show == SHOW_GIFT || s.now.show == SHOW_LOBBY) &&
+        radio->mode == SCENE_IDLE && s.radio_mode != SCENE_IDLE)
         s.now.show = SHOW_AUTO;
     s.radio_mode = radio->mode;
     dots_step(radio->rx, radio->tx, now);
@@ -717,8 +683,7 @@ uint8_t scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now)
         case SHOW_TRADED: small_traded(fb, now); break;
         case SHOW_GIFT: small_gift(fb, now); break;
         case SHOW_GIFTED: small_gifted(fb, now); break;
-        case SHOW_RAID: small_raid(fb); break;
-        case SHOW_ADVENTURE: small_adventure(fb); break;
+        case SHOW_LOBBY: small_lobby(fb); break;
         default: small_radio(fb, radio, now); break;
         }
         to_window(fb);
@@ -728,8 +693,7 @@ uint8_t scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now)
         case SHOW_TRADED: traded_scene(fb, now); break;
         case SHOW_GIFT: gift_scene(fb, now); break;
         case SHOW_GIFTED: gifted_scene(fb, now); break;
-        case SHOW_RAID: raid_scene(fb); break;
-        case SHOW_ADVENTURE: adventure_scene(fb); break;
+        case SHOW_LOBBY: lobby_scene(fb, now); break;
         default: radio_scene(fb, radio, now); break;
         }
     }

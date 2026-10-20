@@ -590,15 +590,6 @@ no such moment. `tools/ldn/esp32_led.py --port PORT PATTERN` sets a look; `--dem
 
 ## The screen
 
-The default `OLED` display profile auto-probes the SSD1306 I2C panels described below. To build for the
-E32R40T 480x320 ST7796 SPI panel instead, configure the ESP32 firmware with
-`idf.py -D POKELDN_DISPLAY=E32R40T build` (original ESP32 target only). Its profile owns the SPI/GPIO
-pins (CS 15, DC 2, SCK 14, MOSI 13, MISO 12, backlight 27), controller setup and RGB565 transfer.
-Scene drawing stays on the shared 128x64 monochrome framebuffer and is scaled to the panel, with lit
-scene pixels rendered black on white. The TFT backlight is held at a steady GPIO-high level; the ESP32
-status LED on GPIO2 is disabled in this profile because that pin is LCD data/command. OLED scene
-dim/off behavior is unchanged.
-
 An SSD1306 128x64 one-bit OLED on I2C is optional. Users report 128x64 SSD1315 and SSD1309 modules
 working with the same firmware. At boot the firmware probes 0x3C, then 0x3D;
 when neither answers it frees the pins and starts nothing. With a screen, a priority-1 task on the
@@ -658,8 +649,8 @@ DISPLAY (`0x0E`) carries one op:
 |---|---|
 | `0` SHOW | u8 show, u16 hold s (0: until the next show), title, NUL, line, NUL; each text at most 21 ASCII characters |
 | `1` SPRITE | u8 slot (0 ours, 1 theirs, 2 gift), u8 width <= 64, u8 height <= 64, rows of `(width + 7) / 8` bytes, MSB first; width 0 empties the slot |
-| `2` RAID | u8 stars (1..7), u8 occupied consoles (0..3), u8 target consoles (1..3); uses sprite slot 0 as the boss |
-| `3` RAID_LOBBY | u8 occupied consoles (0..3), u8 target consoles (1..3); updates the active raid scene without resending the sprite |
+| `2` LOBBY | u8 stars (0..7, 0: none), u8 joined, u8 seats (1..3, at least joined), title, NUL, name, NUL, Link Code, NUL; starts the lobby show |
+| `3` JOINED | u8 joined, at most the lobby's seats; refused without a lobby show |
 
 | show | id | drawn |
 |---|---|---|
@@ -669,16 +660,17 @@ DISPLAY (`0x0E`) carries one op:
 | gift | 3 | a Wonder Card holding slot 2 (a gift box when empty), the line beside it |
 | gifted | 4 | the card leaves to the right, then "delivered!" |
 | arrived | 5 | no scene: a traded show still waiting brings its ball in now |
-| raid | 6 | the boss sprite, raid stars and occupied/target lobby size; compact on 72x40 |
+| lobby | LOBBY | slot 0 on the right half, the title over the left, then the name, the stars, "joined/seats joined" and the code; on 72x40 the text lines only |
 
-A trade or gift show sent before a traded or gifted show has ended waits for it to end. Trade and gift
-shows, and raid scenes, end when the radio returns to idle after being active; one sent before the radio
-starts stays. HELLO resets the screen to the radio's state with empty slots. A raid host sets the boss
-sprite and starts the raid scene once, updates the lobby count as consoles join or leave, and restores
-auto when hosting ends.
+A trade or gift show sent before a traded or gifted show has ended waits for it to end. Trade, gift
+and lobby shows end when the radio returns to idle after being active; one sent before the radio
+starts stays. HELLO resets the screen to the radio's state with empty slots. The idle scene ends
+with the firmware's version.
 
-`pokeldn.app.screen` is the launchers' side: `offer`, `received`, `arrived`, `gift` and `delivered`
-return at once and run in order on one thread. Every launcher calls `received` at the trade's last
+`pokeldn.app.screen` is the launchers' side: `offer`, `received`, `arrived`, `gift`, `delivered`,
+`lobby` and `joined` return at once and run in order on one thread. A hosted Max Raid, Dynamax
+Adventure or Tera Raid puts up a lobby (its boss, Gigantamax shape included, or the legendary) and
+sends `joined` when the consoles in it change. Every launcher calls `received` at the trade's last
 step, before the console's trade animation, with a hold of the title's measured time from that step
 to the received Pokemon appearing on the console, less 2.5 s so the ball opens with the console's:
 
@@ -707,6 +699,23 @@ after, through the app's sprite cache and its download setting. A sprite becomes
 `tools/ldn/esp32_screen.py --port PORT` plays a trade and a gift on a board, no radio traffic.
 `tools/ldn/screen_preview.py OUT.gif` builds `scene.c` and `screen.c` for the host and renders a
 scripted session offline.
+
+### The E32R40T board
+
+The E32R40T (sold as the 4.0-inch ESP32-32E display) is a classic ESP32 with a 480x320 ST7796S panel
+on SPI. Its firmware is a separate build, `POKELDN_DISPLAY=E32R40T` in the environment of `idf.py`
+(the default is `OLED`); the release images are OLED builds.
+
+| signal | GPIO |
+|---|---|
+| CS, DC, SCK, MOSI | 15, 2, 14, 13 |
+| backlight, lit while high | 27 |
+| RGB LED, lit while low: red, green, blue | 22, 16, 17 |
+
+The panel shows the same 128x64 frame three times larger (384x192) in its middle, lit pixels black on
+white, at 40 MHz SPI; a frame identical to the last one is not sent again. GPIO2 is the panel's DC, so
+the board's LED is the blue one on GPIO17. The panel has no dim step: the backlight goes off when the
+OLED would turn off.
 
 ## Building and flashing
 

@@ -164,6 +164,11 @@ class Identity:
         """The Bluetooth build says `link=ble` in its HELLO text (firmware radio.c send_info)."""
         return "link=ble" in self.firmware.split()
 
+    @property
+    def stock(self) -> bool:
+        """A build for one board's own screen says `display=NAME`: the app's images are not for it."""
+        return not any(word.startswith("display=") for word in self.firmware.split())
+
 
 def ports() -> list[Port]:
     found = []

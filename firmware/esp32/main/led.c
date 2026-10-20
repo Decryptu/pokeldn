@@ -1,4 +1,4 @@
-/* The LED: LEDC PWM on GPIO2 (classic ESP32), GPIO21 (XIAO ESP32S3) or GPIO15 (XIAO ESP32C6),
+/* The LED: LEDC PWM on GPIO2 (classic ESP32; GPIO17 in the E32R40T build), GPIO21 (XIAO ESP32S3) or GPIO15 (XIAO ESP32C6),
    recomputed every 10 ms by a priority-1 task on the last core, below the wire tasks (19 to 21).
    It reads counters the radio already keeps. docs/hardware_esp32.md, The board's LED and buttons. */
 #include <math.h>
@@ -12,7 +12,10 @@
 
 #include "led.h"
 
-#if CONFIG_IDF_TARGET_ESP32 && !defined(POKELDN_DISPLAY_TFT)
+#if CONFIG_IDF_TARGET_ESP32 && defined(POKELDN_DISPLAY_E32R40T)
+#define LED_GPIO 17     /* the E32R40T's blue RGB LED, lit while low: GPIO2 is its LCD's DC */
+#define LED_INVERT 1
+#elif CONFIG_IDF_TARGET_ESP32
 #define LED_GPIO 2
 #define LED_INVERT 0
 #elif CONFIG_IDF_TARGET_ESP32S3

@@ -94,67 +94,6 @@ def test_the_72x40_panel_draws_inside_its_window_whenever_the_full_one_draws(sma
         assert any(lit(fb, x, y) for x, y in inside) == any(whole)
 
 
-def test_adventure_payloads_have_nul_separators_and_validate_party_and_code():
-    assert esp32.display_adventure_payload(3, "Mewtwo", "12345678") == (
-        b"\x04\x03Mewtwo\0" + b"12345678\0")
-    assert esp32.display_adventure_payload(1, "Mewtwo") == b"\x04\x01Mewtwo\0\0"
-    assert esp32.display_adventure_lobby_payload(4) == b"\x05\x04"
-    for players in (0, 5):
-        with pytest.raises(ValueError):
-            esp32.display_adventure_payload(players, "Mewtwo")
-        with pytest.raises(ValueError):
-            esp32.display_adventure_lobby_payload(players)
-    for code in ("123456789", "12x4", "１２３４"):
-        with pytest.raises(ValueError):
-            esp32.display_adventure_payload(1, "Mewtwo", code)
-
-
-def test_raid_payloads_and_sprite_rows_are_validated():
-    assert esp32.display_raid_payload(5, 2, 3) == bytes([2, 5, 2, 3])
-    assert esp32.display_raid_payload(5, 0, 3, "Dyna Raid") == bytes([2, 5, 0, 3]) + b"Dyna Raid" + bytes([0])
-    assert esp32.display_raid_payload(5, 0, 3) == bytes([2, 5, 0, 3]) + b"Tera Raid" + bytes([0])
-    assert esp32.display_raid_lobby_payload(1, 2) == bytes([3, 1, 2])
-    for args in ((0, 0, 1), (8, 0, 1), (5, 4, 3), (5, 0, 0), (5, 0, 4)):
-        with pytest.raises(ValueError):
-            esp32.display_raid_payload(*args)
-    for args in ((-1, 1), (4, 1), (1, 0), (1, 4)):
-        with pytest.raises(ValueError):
-            esp32.display_raid_lobby_payload(*args)
-    with pytest.raises(ValueError, match="same width"):
-        esp32.display_sprite_payload("ours", [[True], [True, False]])
-
-
-@needs_cc
-@pytest.mark.parametrize("panel", ["full", "small"])
-def test_adventure_scene_draws_and_updates_player_count(scene, built, panel):
-    from screen_preview import pixel
-    if panel == "small":
-        built.scene_panel(1)
-        bounds = (30, 24, 102, 64)
-    else:
-        bounds = (0, 0, 128, 64)
-    half = [[(x + y) % 2 == 0 for x in range(4)] for y in range(4)]
-    sprite = [[half[y // 2][x // 2] for x in range(8)] for y in range(8)]
-    assert scene.command(esp32.display_sprite_payload("ours", sprite))
-    show = esp32.display_adventure_payload(1, "Mewtwo", "12345678")
-    assert scene.command(show)
-    waiting = scene.frame()
-    assert any(pixel(waiting, x, y) for x in range(bounds[0], bounds[2])
-               for y in range(bounds[1], bounds[3]))
-    # The Link Code line stays visible above either panel's lower edge.
-    code_y = range(48, 56) if panel == "full" else range(44, 52)
-    code_x = range(63, bounds[2]) if panel == "full" else range(bounds[0], bounds[2])
-    assert any(pixel(waiting, x, y) for x in code_x for y in code_y)
-    assert scene.command(esp32.display_adventure_lobby_payload(3))
-    updated = scene.frame()
-    assert updated != waiting
-    assert all(not pixel(updated, x, y) for y in range(64) for x in range(128)
-               if not (bounds[0] <= x < bounds[2] and bounds[1] <= y < bounds[3]))
-    assert scene.command(esp32.display_show_payload("auto"))
-    if panel == "small":
-        built.scene_panel(0)
-
-
 @needs_cc
 def test_malformed_commands_are_refused(scene):
     good = esp32.display_sprite_payload("theirs", [[True] * 8] * 2)
@@ -163,48 +102,16 @@ def test_malformed_commands_are_refused(scene):
     assert not scene.command(bytes([1, 1, 65, 1]) + bytes(9))         # wider than 64
     assert not scene.command(bytes([1, 3, 8, 1, 0]))                  # no such slot
     assert not scene.command(bytes([0, 6, 0, 0]))                     # no such show
-    assert not scene.command(bytes([2, 0, 0, 1]))                     # zero stars
-    assert not scene.command(bytes([2, 5, 4, 1]))                     # too many occupied
-    assert not scene.command(bytes([2, 5, 0, 4]))                     # invalid target
-    assert not scene.command(bytes([2, 5, 0]))                        # short raid command
-    assert not scene.command(bytes([3, 1, 2]))                        # no active raid
-    assert not scene.command(bytes([5, 1]))                            # no active adventure
-    assert not scene.command(bytes([4, 1, ord("M"), ord("e")]))       # missing NUL separators
+    assert not scene.command(bytes([3, 0]))                           # JOINED with no lobby
+    assert not scene.command(bytes([2, 8, 0, 3, 0, 0, 0]))            # eight stars
+    assert not scene.command(bytes([2, 0, 2, 1, 0, 0, 0]))            # more joined than seats
+    assert not scene.command(bytes([2, 0, 0, 4, 0, 0, 0]))            # four seats
+    assert not scene.command(bytes([2, 0, 0, 3, 0, 0]))               # a text short
+    assert scene.command(esp32.display_lobby_payload("Max Raid", "Snorlax", 0, 2))
+    assert not scene.command(esp32.display_joined_payload(3))         # more than its seats
     assert not scene.command(b"")
     with pytest.raises(ValueError):
         esp32.display_sprite_payload("ours", [[True] * 65])
-
-
-@needs_cc
-@pytest.mark.parametrize("panel", ["full", "small"])
-def test_raid_scene_draws_boss_and_updates_occupancy(scene, built, panel):
-    from screen_preview import pixel
-    if panel == "small":
-        built.scene_panel(1)
-        x0, y0, scale = 30 + 20 - 2, 24 + 30 - 4, 2
-        bounds = (30, 24, 102, 64)
-    else:
-        x0, y0, scale = 29 - 4, 54 - 8, 1
-        bounds = (0, 0, 128, 64)
-    half = [[(x + y) % 2 == 0 for x in range(4)] for y in range(4)]
-    sprite = [[half[y // 2][x // 2] for x in range(8)] for y in range(8)]
-    assert scene.command(esp32.display_sprite_payload("ours", sprite))
-    assert scene.command(esp32.display_raid_payload(5, 0, 2))
-    waiting = scene.frame()
-    assert any(pixel(waiting, x, y) for x in range(bounds[0], bounds[2])
-               for y in range(bounds[1], bounds[3]))
-    for y, row in enumerate(half if scale == 2 else sprite):
-        for x, on in enumerate(row):
-            assert pixel(waiting, x0 + x, y0 + y) == on
-    assert scene.command(esp32.display_raid_lobby_payload(1, 2))
-    updated = scene.frame()
-    assert updated != waiting
-    assert all(not pixel(updated, x, y) for y in range(64) for x in range(128)
-               if not (bounds[0] <= x < bounds[2] and bounds[1] <= y < bounds[3]))
-    assert scene.command(esp32.display_show_payload("auto"))
-    assert scene.frame() != updated
-    if panel == "small":
-        built.scene_panel(0)
 
 
 def frame_of(built, show_payloads, now):
@@ -372,7 +279,7 @@ def test_text_is_reduced_to_the_screens_ascii():
 def test_an_offer_reaches_the_screen_through_the_launchers_radio(monkeypatch, scene):
     from pokeldn.ldn import esp32_sim, esp32_wlan
     rows = [[x == y for x in range(10)] for y in range(10)]
-    monkeypatch.setattr(screen, "sprite_bits", lambda species, size=64: rows if species == 25 else None)
+    monkeypatch.setattr(screen, "sprite_bits", lambda species, size=64, **form: rows if species == 25 else None)
     monkeypatch.setenv("POKELDN_RADIO", "esp32:sim")
     board = esp32_sim.SimulatedBoard(esp32_sim.Air())
     monkeypatch.setattr(esp32_wlan, "_radio", esp32.Radio(board.host_stream()))
@@ -388,3 +295,49 @@ def test_an_offer_reaches_the_screen_through_the_launchers_radio(monkeypatch, sc
         assert scene.command(payload)
     fb = scene.frame()
     assert all(lit(fb, 91 + i, 54 + i) for i in range(10)) and not lit(fb, 92, 54)
+
+
+@needs_cc
+@pytest.mark.parametrize("panel", [0, 1], ids=["128x64", "72x40"])
+def test_a_hosted_lobby_reaches_the_screen_and_ends_with_the_session(monkeypatch, scene, built, panel):
+    """screen.lobby and screen.joined through the launchers' radio into scene.c: the boss where a trade
+    draws its Pokemon, the count redrawn only when it changes, the panel's window kept, and the radio
+    going idle ending the show."""
+    from pokeldn.ldn import esp32_sim, esp32_wlan
+    rows = [[x == y for x in range(10)] for y in range(10)]
+    asked = []
+    monkeypatch.setattr(screen, "sprite_bits", lambda species, size=64, **form: asked.append(form) or rows)
+    monkeypatch.setenv("POKELDN_RADIO", "esp32:sim")
+    board = esp32_sim.SimulatedBoard(esp32_sim.Air())
+    monkeypatch.setattr(esp32_wlan, "_radio", esp32.Radio(board.host_stream()))
+    try:
+        assert screen.lobby("Max Raid", 849, "Toxtricity", 3, stars=5, code="12345678", form=1,
+                            gigantamax=True)
+        assert screen.joined(0) is False                 # the lobby opened at 0
+        assert screen.joined(2) and screen.joined(2) is False
+        assert screen.drain(5)
+        esp32_wlan._radio.drain()
+    finally:
+        esp32_wlan._radio.close()
+    assert asked == [{"form": 1, "gigantamax": True}]
+    assert board.displays == [esp32.display_sprite_payload("ours", rows),
+                              esp32.display_lobby_payload("Max Raid", "Toxtricity", 0, 3, 5, "1234 5678"),
+                              esp32.display_joined_payload(2)]
+    built.scene_panel(panel)
+    try:
+        scene.radio.mode = 3                                 # hosting
+        assert all(scene.command(p) for p in board.displays[:2])
+        before = scene.frame()
+        assert scene.command(board.displays[2])
+        during = scene.frame()
+        x0, y0, w, h = (0, 0, 128, 64) if panel == 0 else (30, 24, 72, 40)
+        assert any(lit(during, x, y) != lit(before, x, y) for x in range(128) for y in range(64))
+        assert not any(lit(during, x, y) for x in range(128) for y in range(64)
+                       if not (x0 <= x < x0 + w and y0 <= y < y0 + h))
+        if panel == 0:
+            assert all(lit(during, 91 + i, 54 + i) for i in range(10)) and not lit(during, 92, 54)
+        scene.radio.mode = 0                                 # the launcher stopped the radio
+        scene.advance(1000)
+        assert scene.frame() == frame_of(built, [], scene.now)
+    finally:
+        built.scene_panel(0)

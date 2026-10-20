@@ -36,9 +36,9 @@ class Scene:
     def __init__(self, build_dir: str | None = None, panel: str = "128x64"):
         folder = Path(build_dir or tempfile.mkdtemp(prefix="pokeldn-screen-"))
         lib = folder / ("libscene" + (".dylib" if sys.platform == "darwin" else ".so"))
-        version_define = f'-DPOKELDN_FIRMWARE_VERSION=\\"{FIRMWARE_VERSION}\\"'
         subprocess.run([os.environ.get("CC", "cc"), "-O1", "-Wall", "-Werror", "-shared", "-fPIC",
-                        version_define, "-o", str(lib), *map(str, SOURCES)], check=True)
+                        f'-DPOKELDN_FIRMWARE_VERSION="{FIRMWARE_VERSION}"', "-o", str(lib),
+                        *map(str, SOURCES)], check=True)
         self.lib = ctypes.CDLL(str(lib))
         self.lib.scene_command.restype = ctypes.c_bool
         self.lib.scene_draw.restype = ctypes.c_uint8

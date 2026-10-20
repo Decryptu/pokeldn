@@ -891,7 +891,9 @@ def main(argv=None):
         print(f"[sv] {ip}: the station list is acknowledged; the raid's streams open")
 
     if raiding:
-        screen.show_raid(raid_group.raid.species, raid_group.raid.stars, 0, args.raid_players)
+        boss = raid_group.raid.boss
+        screen.lobby("Tera Raid", boss["species"], boss["nickname"], args.raid_players,
+                     stars=raid_group.raid.stars, code=args.code, form=boss["form"])
 
     try:
         while time.time() < deadline:
@@ -983,7 +985,7 @@ def main(argv=None):
                     if raid_group.started_at is None:
                         raid_group.leave(stage.index)
                         raid_hosts.pop(ip, None)
-                        screen.raid_lobby(len(raid_group.present()), args.raid_players)
+                        screen.joined(len(raid_group.present()))
                         print(f"[sv] {ip}: left the lobby; seat {stage.index} is free")
                         rest = [o for o in raid_hosts if o in current_ips]
                         if rest:
@@ -1539,7 +1541,7 @@ def main(argv=None):
                                     stage = raid_group.seat(seat_of(src_ip), time.time())
                                     if stage is not None:
                                         raid_hosts[src_ip] = stage
-                                        screen.raid_lobby(len(raid_group.present()), args.raid_players)
+                                        screen.joined(len(raid_group.present()))
                                 if (args.announce and slot is not None and src_ip in station_ids
                                         and (src_ip, "accept") not in sent_once):
                                     # The type 9 carries the joiner's station id; the receiver drops
@@ -1608,9 +1610,7 @@ def main(argv=None):
     except KeyboardInterrupt:
         print("\n[sv] interrupted")
     finally:
-        if raiding:
-            screen.reset()
-            screen.drain()
+        screen.drain()
         transport.stop()
         if partner:
             partner.close()

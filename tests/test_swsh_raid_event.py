@@ -193,68 +193,17 @@ def test_the_host_picks_an_event_boss_and_refuses_what_does_not_name_one(tmp_pat
     assert "pass --raid-event" in capsys.readouterr().out
 
 
-def test_swsh_raid_screen_forwards_gigantamax_form_from_boss_record(event, monkeypatch):
+def test_the_host_shows_a_gigantamax_boss_and_an_adventure_legendary(event, monkeypatch):
     calls = []
-    monkeypatch.setattr(screen, "show_raid", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(screen, "lobby", lambda *args, **kw: calls.append((args, kw)))
     toxtricity = raid_event.boss_pk8(boss(event, SHIELD, 5, 849, 1), random.Random(0))
     ads = json.loads((DATA / "swsh_raid_adverts.json").read_text())
     advert = raid.den_advert(bytes.fromhex(ads["advert_pidove"]), toxtricity, rank=4)
-
-    display = swsh_host.RaidScreen(advert, toxtricity)
-    display.start()
-
-    fields = gen8.read(gen8.decrypt(toxtricity))
-    assert (fields["species"], fields["form"]) == (849, 1)
-    assert calls == [((849, 5, 0, 3),
-                      {"title": "Dyna Raid", "form": 1, "gigantamax": True})]
-
-
-def test_swsh_raid_screen_lifecycle_uses_dynamax_advert_and_resets(monkeypatch):
-    calls = []
-    monkeypatch.setattr(screen, "show_raid", lambda *args, **kwargs: calls.append(("show", args, kwargs)))
-    monkeypatch.setattr(screen, "raid_lobby", lambda *args: calls.append(("lobby", args)))
-    monkeypatch.setattr(screen, "reset", lambda: calls.append(("reset",)))
-    monkeypatch.setattr(screen, "drain", lambda: calls.append(("drain",)))
-    ads = json.loads((DATA / "swsh_raid_adverts.json").read_text())
-    advert = raid.den_advert(bytes.fromhex(ads["advert_pidove"]),
-                             bytes.fromhex(ads["boss_hoothoot"]), rank=4)
-
-    boss_pk8 = bytes.fromhex(ads["boss_hoothoot"])
-    display = swsh_host.RaidScreen(advert, boss_pk8)
-    display.start()
-    display.update(0)
-    display.update(1)
-    display.update(1)
-    display.update(3)
-    display.update(9)
-    display.close()
-
-    species = gen8.read(gen8.decrypt(bytes.fromhex(ads["boss_hoothoot"])))['species']
-    assert calls == [("show", (species, 5, 0, 3),
-                      {"title": "Dyna Raid", "form": 0, "gigantamax": False}),
-                     ("lobby", (1, 3)), ("lobby", (3, 3)),
-                     ("reset",), ("drain",)]
-
-
-def test_swsh_adventure_screen_lifecycle_shows_legendary_and_host_in_player_count(monkeypatch):
-    calls = []
-    monkeypatch.setattr(screen, "show_adventure", lambda *args: calls.append(("show", args)))
-    monkeypatch.setattr(screen, "adventure_lobby", lambda *args: calls.append(("lobby", args)))
-    monkeypatch.setattr(screen, "reset", lambda: calls.append(("reset",)))
-    monkeypatch.setattr(screen, "drain", lambda: calls.append(("drain",)))
-
-    display = swsh_host.AdventureScreen(150, "12345678")
-    display.start()
-    display.update(0)
-    display.update(1)
-    display.update(1)
-    display.update(3)
-    display.update(5)
-    display.close()
-
-    assert calls == [("show", (150, 1, "Mewtwo", "12345678")),
-                     ("lobby", (2,)), ("lobby", (4,)),
-                     ("reset",), ("drain",)]
+    swsh_host.show_lobby(advert, toxtricity, None, "12345678")
+    swsh_host.show_lobby(advert, None, 150, "")
+    assert calls == [(("Max Raid", 849, "Toxtricity", 3),
+                      {"stars": 5, "code": "12345678", "form": 1, "gigantamax": True}),
+                     (("Adventure", 150, "Mewtwo", 3), {"code": ""})]
 
 
 def test_every_boss_the_app_offers_is_the_one_the_host_picks_and_shows_in_a_den(event, tmp_path):

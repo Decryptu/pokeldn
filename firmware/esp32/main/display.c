@@ -7,7 +7,7 @@
 #include "freertos/task.h"
 
 #include "display.h"
-#include "display_backend.h"
+#include "panel.h"
 #include "screen.h"
 
 #define FRAME_MS 50
@@ -17,11 +17,10 @@ typedef struct {
     uint8_t *payload;
 } display_msg_t;
 
-static const display_backend_t *s_backend;
 static QueueHandle_t s_commands;
 static display_state_t s_state;
 static uint8_t s_frame[SCREEN_BYTES];
-static uint8_t s_power = SCENE_OFF;
+static uint8_t s_power = SCENE_ON;   /* each panel_init's */
 
 static void display_task(void *arg)
 {
@@ -37,33 +36,20 @@ static void display_task(void *arg)
         scene_radio_t state = {0};
         if (s_state) s_state(&state);
         const uint8_t power = scene_draw(s_frame, &state, now);
-        /* Present before waking the backlight so stale framebuffer contents are not exposed. */
-        if (power != SCENE_OFF) s_backend->present(s_frame);
-        if (power != s_power) {
-            s_backend->set_power(power);
+        /* The frame goes before the panel lights, so waking never shows the last one. */
+        if (power != SCENE_OFF) panel_present(s_frame);
+        if (power != s_power && panel_power(power))
             s_power = power;
-        }
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(FRAME_MS));
     }
 }
 
 bool display_start(display_state_t state)
 {
-#ifdef POKELDN_DISPLAY_TFT
-    s_backend = display_e32r40t_backend();
-#else
-    s_backend = display_oled_backend();
-#endif
-    if (!s_backend || !s_backend->init()) return false;
+    if (!panel_init()) return false;
     s_state = state;
     s_commands = xQueueCreate(8, sizeof(display_msg_t));
-    if (!s_commands) return false;
-    if (xTaskCreatePinnedToCore(display_task, "display", 3072, NULL, 1, NULL,
-                                configNUMBER_OF_CORES - 1) != pdPASS) {
-        vQueueDelete(s_commands);
-        s_commands = NULL;
-        return false;
-    }
+    xTaskCreatePinnedToCore(display_task, "display", 3072, NULL, 1, NULL, configNUMBER_OF_CORES - 1);
     return true;
 }
 

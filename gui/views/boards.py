@@ -38,6 +38,7 @@ class Facts:
     detail: str = ""
     port: board.Port | None = None
     mac: str = ""
+    stock: bool = True      # False: a board-specific build the app's images would replace
 
     @property
     def firmware(self) -> board.Firmware | None:
@@ -45,7 +46,7 @@ class Facts:
 
     @property
     def update(self) -> str:
-        return board.update_for(self.version, self.kind, self.chip) if self.state == "ready" else ""
+        return board.update_for(self.version, self.kind, self.chip) if self.state == "ready" and self.stock else ""
 
 
 class BoardView:
@@ -156,6 +157,7 @@ class BoardView:
         ident = self.app.identities.get(key)
         if isinstance(ident, board.Identity):
             f.kind, f.version, f.mac = "radio_ble" if ident.ble else "radio", ident.firmware_version, ident.sta_mac
+            f.stock = ident.stock
             f.chip = ident.chip or f.chip
             f.state = "ready" if ident.current else "old"
         elif isinstance(ident, board.PadIdentity):

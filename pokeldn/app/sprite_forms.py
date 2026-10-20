@@ -2,6 +2,7 @@
 PKHeX.Core/PKM/Util/Conversion/FormConverter.cs defines the indices; docs/gui.md, Pokemon sprites.
 """
 
+# PokeAPI's ids for the Gigantamax shapes, by (species, form).
 GIGANTAMAX_SPRITES = {
     (3, 0): 10195,       # Venusaur
     (6, 0): 10196,       # Charizard
@@ -102,6 +103,7 @@ FORM_SPRITES = {
 
 
 def sprite_key(species: int, form: int = 0, gigantamax: bool = False) -> int | str | None:
-    if gigantamax and (key := GIGANTAMAX_SPRITES.get((species, form))) is not None:
+    # Every cream of Alcremie Gigantamaxes into the one shape.
+    if gigantamax and (key := GIGANTAMAX_SPRITES.get((species, 0 if species == 869 else form))):
         return key
     return FORM_SPRITES.get((species, form), None if form else species)

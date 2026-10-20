@@ -336,58 +336,17 @@ def raid_rewards(args, app_data, event_rewards):
     return rewards
 
 
-class AdventureScreen:
-    """The optional ESP32 display for one Sword/Shield Dynamax Adventure lobby."""
-
-    def __init__(self, species, code=""):
-        self.species = int(species)
-        species_file = Path(lair.__file__).with_name("data") / "species.json"
-        names = json.loads(species_file.read_text(encoding="utf-8"))["species_names"]
-        self.legendary = names.get(str(self.species), f"#{self.species}")
-        self.code = code
-        self.players = None
-
-    def start(self):
-        self.players = 1
-        screen.show_adventure(self.species, self.players, self.legendary, self.code)
-
-    def update(self, guests):
-        players = min(max(guests + 1, 1), RAID_PARTICIPANTS)
-        if players != self.players:
-            self.players = players
-            screen.adventure_lobby(players)
-
-    def close(self):
-        screen.reset()
-        screen.drain()
-
-
-class RaidScreen:
-    """The optional ESP32 display for one Sword/Shield Max Raid lobby."""
-
-    def __init__(self, app_data, boss_pk8):
-        self.species = struct.unpack_from("<H", app_data, raid.ADVERT_SHOWN)[0] & 0x3FF
-        self.stars = (app_data[raid.ADVERT_RANK] >> 4) + 1
-        boss = gen8.decrypt(bytes(boss_pk8))
-        fields = gen8.read(boss)
-        self.form = fields["form"]
-        self.gigantamax = bool(boss[raid.PK8_GIGANTAMAX] & 0x10)
-        self.guests = None
-
-    def start(self):
-        self.guests = 0
-        screen.show_raid(self.species, self.stars, 0, RAID_PARTICIPANTS - 1, title="Dyna Raid",
-                         form=self.form, gigantamax=self.gigantamax)
-
-    def update(self, guests):
-        guests = min(max(guests, 0), RAID_PARTICIPANTS - 1)
-        if guests != self.guests:
-            self.guests = guests
-            screen.raid_lobby(guests, RAID_PARTICIPANTS - 1)
-
-    def close(self):
-        screen.reset()
-        screen.drain()
+def show_lobby(app_data, boss_pk8, legendary, code):
+    """A hosted Max Raid's boss or a Dynamax Adventure's legendary on the board's screen."""
+    names = raid_event.tables()["species_names"]
+    if boss_pk8 is not None:
+        plain = gen8.decrypt(bytes(boss_pk8))
+        boss = gen8.read(plain)
+        screen.lobby("Max Raid", boss["species"], names.get(str(boss["species"]), ""), RAID_PARTICIPANTS - 1,
+                     stars=(app_data[raid.ADVERT_RANK] >> 4) + 1, code=code, form=boss["form"],
+                     gigantamax=bool(plain[raid.PK8_GIGANTAMAX] & 0x10))
+    elif legendary is not None:
+        screen.lobby("Adventure", legendary, names.get(str(legendary), ""), RAID_PARTICIPANTS - 1, code=code)
 
 
 def main(argv=None):
@@ -627,12 +586,7 @@ def main(argv=None):
                           max_stations=RAID_PARTICIPANTS if boss_pk8 or lairing else 2)
     if boss_pk8 is not None:
         party[0] = raid_host.RaidParty(host.constant, args.raid_console_serves)
-    raid_screen = RaidScreen(app_data, boss_pk8) if boss_pk8 is not None else None
-    adventure_screen = AdventureScreen(args.lair_legendary, args.code) if lairing else None
-    if raid_screen is not None:
-        raid_screen.start()
-    if adventure_screen is not None:
-        adventure_screen.start()
+    show_lobby(app_data, boss_pk8, args.lair_legendary, args.code)
     print(f"[sw] up at {transport.our_ip}; waiting for a console")
     deadline = time.time() + args.seconds
     try:
@@ -649,10 +603,8 @@ def main(argv=None):
                     gone = trades.pop(ip, None)
                     if party[0] is not None:
                         party[0].remove(gone)
-            if raid_screen is not None:
-                raid_screen.update(len(present))
-            if adventure_screen is not None:
-                adventure_screen.update(len(present))
+            if boss_pk8 is not None or lairing:
+                screen.joined(min(len(present), RAID_PARTICIPANTS - 1))
             if left_after_trade(present):
                 print("[sw] the console left after the trade; closing")
                 break
@@ -682,15 +634,12 @@ def main(argv=None):
     except KeyboardInterrupt:
         print("\n[sw] stopping")
     finally:
+        screen.drain()
         transport.stop()
         if partner:
             partner.close()
         if cap:
             cap.close()
-        if raid_screen is not None:
-            raid_screen.close()
-        if adventure_screen is not None:
-            adventure_screen.close()
     return 0
 
 

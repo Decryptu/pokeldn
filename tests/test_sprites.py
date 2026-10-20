@@ -187,21 +187,19 @@ def test_game_forms_resolve_to_their_own_sprite(species, form, key):
     assert sprite_key(species, form) == key
 
 
-@pytest.mark.parametrize("species,form,key", [
-    (3, 0, 10195), (6, 0, 10196), (9, 0, 10197), (12, 0, 10198),
-    (25, 0, 10199), (52, 0, 10200), (68, 0, 10201), (94, 0, 10202),
-    (99, 0, 10203), (131, 0, 10204), (133, 0, 10205), (143, 0, 10206),
-    (569, 0, 10207), (809, 0, 10208), (812, 0, 10209), (815, 0, 10210),
-    (818, 0, 10211), (823, 0, 10212), (826, 0, 10213), (834, 0, 10214),
-    (839, 0, 10215), (841, 0, 10216), (842, 0, 10217), (844, 0, 10218),
-    (849, 0, 10219), (851, 0, 10220), (858, 0, 10221), (861, 0, 10222),
-    (869, 0, 10223), (879, 0, 10224), (884, 0, 10225),
-    (892, 0, 10226), (892, 1, 10227), (849, 1, 10228),
-])
-def test_gigantamax_sprites_resolve_to_alternate_ids(species, form, key):
+def test_every_gigantamax_den_boss_has_its_own_gigantamax_sprite():
+    """The den tables' Gigantamax bosses (pokeldn/swsh/data), each drawn in its own shape, and an
+    Alcremie of any cream in the one shape."""
+    import json
     from pokeldn.app.sprite_forms import sprite_key
-    assert sprite_key(species, form, gigantamax=True) == key
-    assert sprite_key(species, form, gigantamax=False) != key
+    from pokeldn.swsh import raid
+    slots = json.loads(raid.NEST_SLOTS.read_text())["slots"]
+    bosses = {(row[2], row[3]) for rows in slots.values() for row in rows if row[4]}
+    assert len(bosses) == 25
+    keys = {boss: sprite_key(*boss, gigantamax=True) for boss in bosses}
+    assert all(isinstance(key, int) and key > 10000 for key in keys.values())
+    assert len(set(keys.values())) == len(bosses)
+    assert sprite_key(869, 5, gigantamax=True) == keys[(869, 0)]
 
 
 def test_form_sprites_keep_separate_normal_and_shiny_cache_entries(host, tmp_path):

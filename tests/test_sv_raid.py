@@ -844,19 +844,15 @@ def test_the_partners_we_choose_reach_the_bootstrap(monkeypatch, tmp_path, capsy
                       extra=["--raid-partner", "Dylan", "--raid-partner-progress", "3star"])
 
 
-def test_raid_screen_tracks_lobby_and_resets(monkeypatch, tmp_path):
-    shown = []
-    lobby = []
-    reset = []
-    monkeypatch.setattr(sv_host.screen, "show_raid", lambda *args: shown.append(args) or True)
-    monkeypatch.setattr(sv_host.screen, "raid_lobby", lambda *args: lobby.append(args) or True)
-    monkeypatch.setattr(sv_host.screen, "reset", lambda: reset.append(True) or True)
-    monkeypatch.setattr(sv_host.screen, "drain", lambda: True)
+def test_the_raid_host_puts_its_lobby_on_the_screen(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(sv_host.screen, "lobby", lambda *args, **kw: calls.append(("lobby", args, kw)))
+    monkeypatch.setattr(sv_host.screen, "joined", lambda count: calls.append(("joined", count)))
     run_raid_host(monkeypatch, tmp_path)
     found = raid_encounter.generate(0x000F34C3)
-    assert shown == [(found.species, found.stars, 0, 1)]
-    assert lobby == [(1, 1)]
-    assert reset == [True]
+    assert calls == [("lobby", ("Tera Raid", found.species, found.boss["nickname"], 1),
+                      {"stars": found.stars, "code": "4970", "form": found.boss["form"]}),
+                     ("joined", 1)]
 
 
 def test_two_consoles_leave_one_slot_to_the_partner_we_choose(monkeypatch, tmp_path, capsys):

@@ -1,11 +1,14 @@
+/* An SSD1306 128x64 (or the C3 board's 72x40) on I2C, probed at boot. */
 #include <string.h>
 
 #include "driver/i2c_master.h"
 
-#include "display_backend.h"
+#include "panel.h"
+#include "scene.h"
 #include "screen.h"
 
-/* Auto-probed SSD1306 wiring: common ESP32 variants, then the compact C3 OLED module. */
+/* Probed in order: the pins the usual pinouts name for I2C (DevKit V1 D21/D22, XIAO D4/D5), then
+   the 0.42-inch ESP32-C3 board's panel on GPIO5/6 [Zephyr esp32c3_042_oled-pinctrl.dtsi]. */
 static const struct {
     uint8_t sda, scl, panel;
 } PINS[] = {
@@ -20,21 +23,25 @@ static const struct {
 #endif
 };
 
-/* Panel wiring per the module sheet; see docs/hardware_esp32.md, The screen. */
+/* Panel wiring per the module's sheet: segment 127 is column 1 (A1), COM0 is row 63 (C8). The 72x40
+   panel shows columns 30..101, rows 24..63 of the same frame. docs/hardware_esp32.md, The screen. */
 static const uint8_t INIT[] = {
-    0x00, 0xae, 0xd5, 0x80, 0xa8, 0x3f, 0xd3, 0x00, 0x40, 0x8d, 0x14, 0x20, 0x00, 0xa1, 0xc8,
+    0x00,                   /* control byte: commands follow */
+    0xae, 0xd5, 0x80, 0xa8, 0x3f, 0xd3, 0x00, 0x40, 0x8d, 0x14, 0x20, 0x00, 0xa1, 0xc8,
     0xda, 0x12, 0x81, 0xcf, 0xd9, 0xf1, 0xdb, 0x40, 0xa4, 0xa6, 0x2e, 0xaf,
 };
 static const uint8_t WINDOW[] = {0x00, 0x21, 0x00, 0x7f, 0x22, 0x00, 0x07};
+/* By enum scene_power: INIT's contrast and pre-charge; dim; off, RAM kept. On the 0.96-inch module
+   contrast 0 is black and pre-charge 1+1 clocks (D9 11) flickers. docs/hardware_esp32.md, The screen. */
 static const uint8_t POWER[][6] = {
     {0x00, 0x81, 0xcf, 0xd9, 0xf1, 0xaf}, {0x00, 0x81, 0x01, 0xd9, 0x22, 0xaf}, {0x00, 0xae},
 };
 static const size_t POWER_LEN[] = {6, 6, 2};
 
 static i2c_master_dev_handle_t s_dev;
-static uint8_t s_frame[1 + SCREEN_BYTES] = {0x40};
+static uint8_t s_frame[1 + SCREEN_BYTES] = {0x40};   /* control byte: data follows */
 
-static bool init(void)
+bool panel_init(void)
 {
     for (size_t i = 0; i < sizeof(PINS) / sizeof(PINS[0]); ++i) {
         const i2c_master_bus_config_t bus_config = {
@@ -45,9 +52,8 @@ static bool init(void)
         i2c_master_bus_handle_t bus;
         if (i2c_new_master_bus(&bus_config, &bus) != ESP_OK) continue;
         uint16_t address = 0x3c;
-        if (i2c_master_probe(bus, address, 20) != ESP_OK &&
-            i2c_master_probe(bus, ++address, 20) != ESP_OK) {
-            i2c_del_master_bus(bus);
+        if (i2c_master_probe(bus, address, 20) != ESP_OK && i2c_master_probe(bus, ++address, 20) != ESP_OK) {
+            i2c_del_master_bus(bus);   /* frees the pins: a board without a screen is left as it was */
             continue;
         }
         const i2c_device_config_t dev_config = {
@@ -61,27 +67,14 @@ static bool init(void)
     return false;
 }
 
-static bool present(const uint8_t *framebuffer)
+void panel_present(const uint8_t *frame)
 {
-    s_frame[0] = 0x40;
-    memcpy(s_frame + 1, framebuffer, SCREEN_BYTES);
-    return i2c_master_transmit(s_dev, WINDOW, sizeof(WINDOW), 50) == ESP_OK &&
-           i2c_master_transmit(s_dev, s_frame, sizeof(s_frame), 100) == ESP_OK;
+    memcpy(s_frame + 1, frame, SCREEN_BYTES);
+    if (i2c_master_transmit(s_dev, WINDOW, sizeof(WINDOW), 50) == ESP_OK)
+        i2c_master_transmit(s_dev, s_frame, sizeof(s_frame), 100);
 }
 
-static void set_power(uint8_t power)
+bool panel_power(uint8_t power)
 {
-    if (power <= SCENE_OFF)
-        i2c_master_transmit(s_dev, POWER[power], POWER_LEN[power], 50);
+    return i2c_master_transmit(s_dev, POWER[power], POWER_LEN[power], 50) == ESP_OK;
 }
-
-static const display_backend_t OLED = {
-    .name = "SSD1306 OLED",
-    .width = SCREEN_W,
-    .height = SCREEN_H,
-    .init = init,
-    .present = present,
-    .set_power = set_power,
-};
-
-const display_backend_t *display_oled_backend(void) { return &OLED; }
