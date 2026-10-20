@@ -18,7 +18,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn import pokemon as pokemon_service
 from pokeldn.frlg.link import beacon
-from pokeldn.frlg import config as configmod  # noqa
+from pokeldn.frlg import config as configmod, host_cli  # noqa
 from pokeldn.frlg.link import sim as simmod, trade  # noqa
 from pokeldn.ldn import crypto as cryptomod  # noqa
 from pokeldn.frlg.link import linkstate as lsmod  # noqa: E402
@@ -448,18 +448,6 @@ def build_parser():
     return ap
 
 
-def _hex_bytes(ap, option, value, *, size=None):
-    if not value:
-        return None
-    try:
-        result = bytes.fromhex(value)
-    except ValueError:
-        ap.error(f"{option} must contain hexadecimal bytes")
-    if size is not None and len(result) != size:
-        ap.error(f"{option} must contain exactly {size} bytes")
-    return result
-
-
 def _build_run_config(ap, args):
     try:
         offered_slots = runtime.parse_slots(args.slots, args.trades, len(args.party))
@@ -474,7 +462,7 @@ def _build_run_config(ap, args):
             trades=args.trades, anim_delay=args.anim_delay,
             trust_pia=args.trust_pia)
         ldn = configmod.LdnConfig(
-            password=_hex_bytes(ap, "--password", args.password),
+            password=host_cli.parse_hex_bytes(ap, "--password", args.password),
             phy=args.phy,
             keys_path=args.keys or configmod.load_project_host_file_config().keys_path,
             local_comm_id=int(args.comm_id, 16) if args.comm_id else None,
@@ -483,7 +471,7 @@ def _build_run_config(ap, args):
             live=args.live, replay_path=args.replay,
             self_id=args.self_id, decline=args.decline,
             refuse_illegit=args.refuse_illegit, compress=args.compress, pace_ms=args.pace_ms,
-            connect_id=_hex_bytes(ap, "--connect-id", args.connect_id, size=2))
+            connect_id=host_cli.parse_hex_bytes(ap, "--connect-id", args.connect_id, size=2))
         return configmod.TradeRunConfig(profile, plan, ldn, role)
     except ValueError as exc:
         ap.error(str(exc))

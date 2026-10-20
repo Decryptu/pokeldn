@@ -1,5 +1,7 @@
 """The Mystery Gift client (pokeldn.frlg.gift.mg_client) against our own Mystery Gift host, row by row."""
 
+import pytest
+
 from pokeldn.frlg.gift import host_mystery_gift, mg_client, mg_script, wonder_card
 from pokeldn.frlg.link import linkplayer
 from pokeldn.gba import rfu
@@ -88,3 +90,12 @@ def test_link_game_data_matches_what_the_console_validates():
     assert parsed.version_name == "FireRed"
 
 
+
+
+@pytest.mark.parametrize("flag,value,error", [("--password", "zz", "hexadecimal bytes"),
+                                              ("--connect-id", "01", "exactly 2 bytes")])
+def test_a_malformed_hex_option_is_a_usage_error_before_any_radio(flag, value, error, capsys):
+    import frlg_mg_client
+    with pytest.raises(SystemExit) as stop:
+        frlg_mg_client.main(["--live", flag, value])
+    assert stop.value.code == 2 and error in capsys.readouterr().err

@@ -90,3 +90,29 @@ def parse_advertise_data(app_data):
     out = decode_pia_header(app)
     out["game_data"] = app[0x5C:0x5C + GAME_DATA_SIZE]
     return out
+
+
+PROTOCOL_NAMES = {
+    0x08: "keep alive", 0x2C: "net", 0x30: "turn", 0x58: "rtt", 0x65: "sync",
+    0x68: "unreliable", 0x74: "clone atomic", 0x75: "clone event",
+    0x76: "clone broadcast event", 0x77: "clone clock", 0x7B: "voice", 0x7C: "reliable",
+    0x80: "broadcast reliable", 0x81: "stream broadcast reliable", 0x98: "session",
+    0xA0: "nat traversal result", 0xA4: "monitoring data", 0xAC: "wan nat",
+}
+# Session type 7 is LeaveMeshWithHostMigrationJob (0x6d8de0) handing the host role over, not the
+# wiki's left-station sync (docs/sv.md).
+SESSION_MESSAGE_NAMES = {
+    0: "join request", 1: "join request ack", 2: "join response", 3: "leave request",
+    5: "update session", 6: "update session ack", 7: "start host migration",
+    8: "start host migration ack",
+}
+
+
+def describe_message(msg):
+    """One log line for a Pia message: protocol, Session type, port, flags and length."""
+    name = PROTOCOL_NAMES.get(msg.protocol, "?")
+    extra = ""
+    if msg.protocol == 0x98 and msg.payload:
+        extra = f" {SESSION_MESSAGE_NAMES.get(msg.payload[0], '?')}({msg.payload[0]})"
+    return (f"proto 0x{msg.protocol:02x} {name}{extra} port={msg.port} "
+            f"flags=0x{msg.message_flags:02x} len={len(msg.payload)}")

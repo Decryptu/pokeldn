@@ -34,18 +34,6 @@ from pokeldn.ldn import left_after_trade, show_done
 from pokeldn.online import session as online
 from pokeldn.app import screen
 
-PROTOCOL_NAMES = {
-    0x08: "keep alive", 0x2C: "net", 0x30: "turn", 0x58: "rtt", 0x65: "sync",
-    0x68: "unreliable", 0x74: "clone atomic", 0x75: "clone event",
-    0x76: "clone broadcast event", 0x77: "clone clock", 0x7B: "voice", 0x7C: "reliable",
-    0x80: "broadcast reliable", 0x81: "stream broadcast reliable", 0x98: "session",
-    0xA0: "nat traversal result", 0xA4: "monitoring data", 0xAC: "wan nat",
-}
-SESSION_MESSAGE_NAMES = {
-    0: "join request", 1: "join request ack", 2: "join response", 3: "leave request",
-    4: "leave response", 5: "update session", 6: "update session ack", 7: "left station sync",
-    8: "left station sync ack", 9: "start host migration", 10: "start host migration ack",
-}
 
 # The band's dispatch and addressing rules are Arceus's (docs/pla.md).
 ESTABLISHING_FLAGS = pia6.MESSAGE_FLAG_SKIP_SOURCE_CHECK
@@ -80,15 +68,6 @@ def identity_chunk(protocol, port, flags, seat):
     guide: a console that opened its stream twice sent record 1 at 47."""
     return (protocol == PROTO_STREAM_BROADCAST_RELIABLE and port == seat
             and bool(flags & reliable5.FLAG_ZLIB))
-
-
-def _describe(msg):
-    name = PROTOCOL_NAMES.get(msg.protocol, "?")
-    extra = ""
-    if msg.protocol == PROTO_SESSION and msg.payload:
-        extra = f" {SESSION_MESSAGE_NAMES.get(msg.payload[0], '?')}({msg.payload[0]})"
-    return (f"proto 0x{msg.protocol:02x} {name}{extra} port={msg.port} "
-            f"flags=0x{msg.message_flags:02x} len={len(msg.payload)}")
 
 
 def build_net_probe(keys, our_ip, our_mac, station_ips, seqid, nonce8, max_stations,
@@ -1203,7 +1182,7 @@ def main(argv=None):
                     counts[msg.protocol] = counts.get(msg.protocol, 0) + 1
                     if args.print_packets:
                         print(f"[sv] <- {src_ip} {header!r} footer={ids}")
-                        print(f"       {_describe(msg)}  {msg.payload.hex()}")
+                        print(f"       {sv.session.describe_message(msg)}  {msg.payload.hex()}")
                     record(rec="msg", src=src_ip, protocol=msg.protocol, port=msg.port,
                            flags=msg.message_flags, src_var=header.src_var, dst_var=header.dst_var,
                            payload=msg.payload.hex(), t=time.time())

@@ -89,18 +89,6 @@ ACK_ENTRIES = 4  # a retail station's bulk ack carries four
 MIRRORED_FLAGS = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START
                   | reliable5.FLAG_MESSAGE_END | reliable5.FLAG_ZLIB)
 
-PROTOCOL_NAMES = {
-    0x2C: "net", 0x58: "rtt", 0x68: "unreliable", 0x74: "clone atomic", 0x77: "clone clock",
-    0x7C: "reliable", 0x80: "broadcast reliable", 0x81: "stream broadcast reliable",
-    0x98: "session", 0xA4: "monitoring data",
-}
-SESSION_MESSAGE_NAMES = {
-    0: "join request", 1: "join request ack", 2: "join response", 3: "leave request",
-    5: "update session", 6: "update session ack", 7: "start host migration",
-    8: "start host migration ack",
-}
-# Session type 7 here is LeaveMeshWithHostMigrationJob (0x6d8de0) handing the host role over, not
-# the wiki's left-station sync (docs/sv.md).
 
 
 def set_mac(phy, mac, log=print):
@@ -147,15 +135,6 @@ def describe(net):
     return (f"comm_id=0x{net.local_communication_id:016x}{' (' + tag + ')' if tag else ''} "
             f"scene={net.scene_id} version={net.version} app_version={net.app_version} "
             f"ch={net.channel} {net.num_participants}/{net.max_participants}")
-
-
-def _describe_msg(msg):
-    name = PROTOCOL_NAMES.get(msg.protocol, "?")
-    extra = ""
-    if msg.protocol == PROTO_SESSION and msg.payload:
-        extra = f" {SESSION_MESSAGE_NAMES.get(msg.payload[0], '?')}({msg.payload[0]})"
-    return (f"proto 0x{msg.protocol:02x} {name}{extra} port={msg.port} "
-            f"flags=0x{msg.message_flags:02x} len={len(msg.payload)}")
 
 
 def build_out(keys, our_ip, body, dst_var, *, protocol, port=0, flags=0, src_var=OUR_VAR):
@@ -1270,7 +1249,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 member.on_frame(msg.payload, time.time())
             if msg.protocol not in (PROTO_RTT,) or args.verbose_rtt:
                 if args.print_packets:
-                    print(f"[sv] <- {addr[0]} {_describe_msg(msg)}  {msg.payload.hex()[:160]}")
+                    print(f"[sv] <- {addr[0]} {sv.session.describe_message(msg)}  {msg.payload.hex()[:160]}")
             if msg.protocol == PROTO_NET and len(msg.payload) > 1:
                 if msg.payload[:2] == bytes([1, pia_connect.NET_START_HOST_MIGRATION]):
                     host_leaving = True
@@ -1302,7 +1281,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 if (leaving is not None and kind == pia_connect.SESSION_LEAVE_RESPONSE
                         and msg.payload[5:17] == pia_connect._location_id(our_const, ours["var"])):
                     leaving["answered"] = True
-                print(f"[sv] the host spoke Session: {SESSION_MESSAGE_NAMES.get(kind, '?')}")
+                print(f"[sv] the host spoke Session: {sv.session.SESSION_MESSAGE_NAMES.get(kind, '?')}")
                 if kind == pia_connect.SESSION_JOIN_RESPONSE:
                     resp = pia_connect.parse_session_join_response_v11(msg.payload)
                     if resp is None:

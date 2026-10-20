@@ -136,13 +136,16 @@ def add_host_arguments(parser, *, option_defaults=None, ldn_defaults=None,
               % option_defaults.protocol_tick_hz))
 
 
-def parse_hex_bytes(parser, option, value):
+def parse_hex_bytes(parser, option, value, *, size=None):
     if not value:
         return None
     try:
-        return bytes.fromhex(value)
+        result = bytes.fromhex(value)
     except ValueError:
         parser.error(f"{option} must contain hexadecimal bytes")
+    if size is not None and len(result) != size:
+        parser.error(f"{option} must contain exactly {size} bytes")
+    return result
 
 
 def parse_hex_int(parser, option, value):
