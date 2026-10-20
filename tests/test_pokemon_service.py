@@ -177,6 +177,17 @@ def test_an_event_that_reached_the_game_through_home_gets_the_tracker_the_settin
     assert refused["legal"] == (mode == "made") and refused["home_tracker"] == ("empty" if mode == "empty" else "")
 
 
+@pytest.mark.parametrize("game, species, edit, encounter", [
+    ("swsh", 823, {}, "Wild"),          # Corviknight: PKHeX lists an egg and dozens of raid dens before Route 10
+    ("frlg", 16, {}, "Wild"),
+    ("sv", 963, {"level": 1}, "Egg"),   # Finizen: only an egg is level 1, and PKHeX lists it after 300 others
+])
+def test_a_species_is_built_as_a_catch_and_hatched_only_when_nothing_else_carries_the_request(service, game, species,
+                                                                                               edit, encounter):
+    built = service.make(game, species, TRAINER, **edit)
+    assert built["legal"] and built["encounter"].startswith(encounter)
+
+
 @pytest.mark.parametrize("game, species, edit", [
     ("frlg", 132, {"shiny": True}),                      # a Gen 3 PID is chosen with the encounter, not patched in
     ("frlg", 132, {"shiny": True, "version": "LG"}),
@@ -640,6 +651,17 @@ def test_a_set_asks_for_friendship_only_by_naming_it(service, game, text, friend
     found, = service.paste(game, text, TRAINER)
     assert found["errors"] == [] and found["options"].get("friendship") == friendship
     assert service.make(game, found["species_id"], TRAINER, found["level"], options=found["options"])["legal"]
+
+
+@pytest.mark.parametrize("game, text, ivs", [
+    ("swsh", "Wooloo\nLevel: 12", None),   # Showdown's six 31s would allow only a raid or an egg
+    ("swsh", CHARIZARD_FR + "IVs : 0 Atq", {"hp": 31, "atk": 0, "def": 31, "spe": 31, "spa": 31, "spd": 31}),
+])
+def test_a_set_asks_for_ivs_only_by_naming_them(service, game, text, ivs):
+    found, = service.paste(game, text, TRAINER)
+    assert found["errors"] == [] and found["options"].get("ivs") == ivs
+    built = service.make(game, found["species_id"], TRAINER, found["level"], options=found["options"])
+    assert built["legal"] and (ivs is not None or built["encounter"].startswith("Wild"))
 
 
 def test_a_team_paste_returns_every_set_in_order(service):
