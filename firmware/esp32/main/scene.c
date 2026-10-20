@@ -315,7 +315,7 @@ static void lobby_scene(uint8_t *fb, uint32_t now)
     if (!sprite_draw(fb, SLOT_OURS, 96, 64 - (int)(now / 500 % 2))) poke_ball(fb, 96, 34, 12);
     const int n = lobby_lines(lines);
     for (int i = 0; i < n; ++i) {
-        snprintf(cut, sizeof(cut), "%s", lines[i]);   /* the left half: 10 characters */
+        snprintf(cut, sizeof(cut), "%.10s", lines[i]);   /* the left half: 10 characters */
         fb_text(fb, 0, 14 + 12 * i, cut, 1);
     }
 }
