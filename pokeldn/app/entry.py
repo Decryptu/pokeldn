@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from pokeldn.app import paths
+from pokeldn.app import paths  # noqa: F401  (puts the repository and vendor/LDN on sys.path)
 from pokeldn.app.runner import child
 
 if __name__ == "__main__":

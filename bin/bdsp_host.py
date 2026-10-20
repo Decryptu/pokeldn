@@ -31,7 +31,7 @@ from pokeldn.bdsp.host import (APP_VERSION, MAX_PARTICIPANTS, SCENE_UNION_ROOM,
                                HostSession, TradePartner)
 from pokeldn.bdsp.session import COMM_ID, PASSPHRASE
 from pokeldn.host_support import resolve_keys, needs_root
-from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
+from pokeldn.ldn.transport import HostTransport, find_ap_phy
 
 SHOWN = {"seat", "left", "session_ack", "connection_request", "request_not_ours",
          "connection_acked", "join_request", "join_acked", "mesh_rx", "rx_bad", "their_emote",

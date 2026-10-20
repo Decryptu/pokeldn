@@ -30,12 +30,6 @@ def lookup(name: str) -> "Stack | None":
         return _stacks.get(name)
 
 
-def any_stack() -> "Stack | None":
-    """The only registered stack, for callers that do not know the interface name."""
-    with _stacks_lock:
-        return next(iter(_stacks.values())) if len(_stacks) == 1 else None
-
-
 def checksum(data: bytes) -> int:
     if len(data) % 2:
         data += b"\x00"
@@ -470,6 +464,26 @@ def udp_socket(ifname: str, port: int) -> UdpSocket | None:
     """A userspace UDP socket on `ifname` if a stack owns it, else None."""
     stack = lookup(ifname)
     return None if stack is None else stack.udp_socket(port)
+
+
+def pia_socket(ifname: str, port: int, bind_ip: str | None = None, broadcast: bool = True):
+    """A non-blocking UDP socket on `port`: the userspace stack's when one owns `ifname`, else a kernel
+    socket bound to `bind_ip` or, with none, to the interface (SO_BINDTODEVICE is Linux-only)."""
+    if bind_ip is None and (user := udp_socket(ifname, port)) is not None:
+        user.setblocking(False)
+        return user
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if broadcast:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    if bind_ip is None and hasattr(socket, "SO_BINDTODEVICE"):
+        try:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, ifname.encode())
+        except OSError:
+            pass
+    s.bind((bind_ip or "", port))
+    s.setblocking(False)
+    return s
 
 
 def packet_socket(ifname: str) -> PacketSocket | None:

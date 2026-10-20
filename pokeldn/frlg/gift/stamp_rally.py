@@ -369,14 +369,3 @@ def build_stamp_activation_script(state_var, *, flag_id=STAMP_RALLY_FLAG_ID,
             + bytes([_ME_END]) + bytes(embedded))
 
 
-def _build_stamp_event(species, stamp_id, state_var, *, flag_id):
-    return MysteryGiftDistribution(
-        card=build_stamp_rally_card(flag_id=flag_id),
-        ram_script=build_stamp_rally_delivery_script(flag_id=flag_id),
-        stamp=_stamp(species, stamp_id),
-        activation_script=build_stamp_activation_script(
-            state_var, flag_id=flag_id, install=False),
-        install_activation_script=build_stamp_activation_script(
-            state_var, flag_id=flag_id, install=True),
-    )
-

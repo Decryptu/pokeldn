@@ -104,19 +104,7 @@ def associate(our_ip, host_ip, our_mac, name, timeout):
 
 def make_socket(ifname, our_ip=None):
     from pokeldn.ldn import userspace_ip  # no kernel interface on the ESP32
-    if our_ip is None and (user := userspace_ip.udp_socket(ifname, pla.PIA_PORT)) is not None:
-        user.setblocking(False)
-        return user
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    if our_ip is None and hasattr(socket, "SO_BINDTODEVICE"):
-        try:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, ifname.encode())
-        except (PermissionError, OSError):
-            pass
-    s.bind((our_ip or "", pla.PIA_PORT))
-    s.setblocking(False)
-    return s
+    return userspace_ip.pia_socket(ifname, pla.PIA_PORT, our_ip, broadcast=False)
 
 
 def build_offer(args, exchange):

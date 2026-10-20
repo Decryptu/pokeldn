@@ -188,20 +188,7 @@ def _blob(text):
 
 def make_socket(ifname, bind_ip=None):
     from pokeldn.ldn import userspace_ip  # no kernel interface on the ESP32
-    if bind_ip is None and (user := userspace_ip.udp_socket(ifname, PIA_PORT)) is not None:
-        user.setblocking(False)
-        return user
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    if bind_ip is None:
-        try:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, ifname.encode())
-        except (PermissionError, OSError):
-            pass
-    s.bind((bind_ip or "", PIA_PORT))
-    s.setblocking(False)
-    return s
+    return userspace_ip.pia_socket(ifname, PIA_PORT, bind_ip)
 
 
 def try_decrypt(keys, data, macs):

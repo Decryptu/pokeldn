@@ -266,14 +266,6 @@ def build_save_payload(*, base=RESIDENT_BASE, size=SAVE_PAYLOAD_SIZE,
     return bytes(blob)
 
 
-def save_write_chunks(blob, *, offset=SAVE_PAYLOAD_OFFSET, limit=None):
-    """-> [(offset, bytes)]: the blob split into `MAX_SAVE_WRITE_BYTES` save-write sessions."""
-    from pokeldn.frlg.rom.buffer_script import MAX_SAVE_WRITE_BYTES
-    limit = MAX_SAVE_WRITE_BYTES if limit is None else int(limit)
-    blob = bytes(blob)
-    return [(offset + at, blob[at:at + limit]) for at in range(0, len(blob), limit)]
-
-
 def build_loader_script(*, base=RESIDENT_BASE, size=SAVE_PAYLOAD_SIZE,
                         offset=SAVE_PAYLOAD_OFFSET, magic=SAVE_PAYLOAD_MAGIC,
                         sav2_pointer=None, scratch=SCRATCH, sound=SE_SUCCESS, build=None):

@@ -8,21 +8,43 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn.frlg.rom import rom_map, scrcmd, scrcmd_names, special_names, thumb  # noqa: E402
 from pokeldn.frlg.text import charmap  # noqa: E402
 
-# ScrCmd_special and its literal pool, dumped off the console; the pool words are gSpecials and
-# gSpecialsEnd.
-SPECIAL_BASE = 0x0806D7EC
-SPECIAL_BYTES = bytes.fromhex(
-    "00b5fff7fbfc0004800b054941180548814202d2086874f10ffd002002bc0847"
-    "fc391608ec40160830b5041c"
-)
 
-# MEScrCmd_crc, dumped off the console. agbcc's epilogue: `pop {r4,r5,r6}; pop {r1}; bx r1`.
+def _thumb(base, *ops):
+    """Assembles a THUMB body at `base`: halfwords, ("bl", target), ("ldr", rd, pool address) and
+    ("word", value). Built here so the tests ship no cartridge code; the shapes are agbcc's."""
+    out = bytearray()
+    for op in ops:
+        at = base + len(out)
+        if isinstance(op, int):
+            out += op.to_bytes(2, "little")
+        elif op[0] == "bl":
+            offset = (op[1] - (at + 4)) & 0x7FFFFF
+            out += (0xF000 | offset >> 12).to_bytes(2, "little")
+            out += (0xF800 | (offset >> 1) & 0x7FF).to_bytes(2, "little")
+        elif op[0] == "ldr":
+            out += (0x4800 | op[1] << 8 | (op[2] - ((at + 4) & ~3)) // 4).to_bytes(2, "little")
+        else:
+            out += op[1].to_bytes(4, "little")
+    return bytes(out)
+
+
+PUSH_LR, PUSH_R4_R6_LR, PUSH_R4_R7_LR = 0xB500, 0xB570, 0xB5F0
+POP_R4_R6, POP_R1, BX_R1, POP_R0, BX_R0, NOP, PAD = 0xBC70, 0xBC02, 0x4708, 0xBC01, 0x4700, 0x46C0, 0
+
+# ScrCmd_special's shape: read the halfword argument, index gSpecials (bounded by gSpecialsEnd)
+# from a literal pool, `bx` through the entry.
+SPECIAL_BASE = 0x0806D7EC
+SPECIAL_BYTES = _thumb(SPECIAL_BASE, PUSH_LR, ("bl", rom_map.SCRIPT_READ_HALFWORD),
+                       ("ldr", 1, SPECIAL_BASE + 16), ("ldr", 0, SPECIAL_BASE + 20), NOP, POP_R0, BX_R0,
+                       ("word", rom_map.G_SPECIALS), ("word", rom_map.G_SPECIALS_END), PUSH_R4_R6_LR)
+
+# MEScrCmd_crc's shape: three ScriptReadWord calls, one CalcCRC16, agbcc's epilogue
+# `pop {r4,r5,r6}; pop {r1}; bx r1`, padding and the next function's `push {r4-r7, lr}`.
 CRC_BASE = 0x080DE830
-CRC_BYTES = bytes.fromhex(
-    "70b5061c8ef7e4fc051c301c8ef7e0fc041cb06e241a706e2418301c8ef7d8fc"
-    "011cb06e091a706e0918091b201c6af79ff80004000c854203d0002030670120"
-    "f066012070bc02bc08470000f0b5474680b4061c0c1c15062d0e"
-)
+CRC_BODY = (PUSH_R4_R6_LR, *[("bl", rom_map.SCRIPT_READ_WORD)] * 3, NOP,
+            ("bl", rom_map.CALC_CRC16), NOP, POP_R4_R6, POP_R1, BX_R1)
+CRC_BYTES = _thumb(CRC_BASE, *CRC_BODY, PAD, PUSH_R4_R7_LR, NOP, NOP)
+CRC_LENGTH = len(_thumb(CRC_BASE, *CRC_BODY))
 
 # The string Std_ObtainItem points at, off the French cartridge: a placeholder, then '!'.
 OBTAINED_TEXT = bytes.fromhex("c9d6e8d9e2e9f000fd03ab")
@@ -53,7 +75,7 @@ def test_a_function_ends_on_the_agbcc_epilogue_not_only_on_pop_pc():
     assert end < limit, "the epilogue was not found: bx Rn is not being treated as a return"
     # It ends after `bx r1`, before the padding and the next function's `push {r4-r7, lr}`.
     assert CRC_BYTES[end - CRC_BASE - 2:end - CRC_BASE] == bytes.fromhex("0847")
-    assert end - CRC_BASE == 74
+    assert end - CRC_BASE == CRC_LENGTH
 
 
 def test_the_crc_handler_makes_the_four_calls_the_decomp_gives_it():

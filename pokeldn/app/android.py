@@ -187,16 +187,6 @@ def share(path: str, kind: str = "") -> None:
     bridge().share(path, kind)
 
 
-def wait_for_usb_change(seen: int, timeout: float) -> int:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        now = changes()
-        if now != seen:
-            return now
-        time.sleep(0.2)
-    return seen
-
-
 class PickedFile:
     def __init__(self, path: str):
         self.path, self.name, self.size = path, os.path.basename(path), os.path.getsize(path)

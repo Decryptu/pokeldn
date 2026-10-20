@@ -3,9 +3,10 @@
 Header, crypto and framing: docs/pla.md, The wireless layer and The packet crypto. The message
 framing is `pia5`'s unaligned; flag 0x01 means "skip the source variable id check"."""
 import struct
+from dataclasses import dataclass
 
 from pokeldn.ldn.crypto import PiaCrypto, ip_bytes
-from pokeldn.ldn.pia5 import ALL_FIELDS_PRESENT, decrypt_payload, encrypt_payload
+from pokeldn.ldn.pia5 import decrypt_payload, encrypt_payload
 from pokeldn.ldn import pia5 as _pia5
 from pokeldn.ldn.pia5 import build_message as _build_message5
 from pokeldn.ldn.pia5 import pad_payload
@@ -162,6 +163,29 @@ def gcm_iv(network_id, src_ip, nonce8):
     return four.to_bytes(4, "big") + bytes(nonce8)
 
 
+@dataclass
+class SessionKeys:
+    session_key: bytes
+    game_key: bytes
+    ssid: bytes
+    network_id: int
+
+    def __repr__(self):
+        return (f"SessionKeys(session={self.session_key.hex()} game={self.game_key.hex()} "
+                f"ssid={self.ssid.hex()} network_id={self.network_id:#010x})")
+
+
+def session_keys(ssid, game_key):
+    """-> SessionKeys for a network: the session key and the network id both come from its SSID."""
+    ssid = bytes(ssid)
+    return SessionKeys(ldn_session_key(game_key, ssid), bytes(game_key), ssid, ldn_network_id(ssid))
+
+
+def packet_iv(keys, source_ip, nonce8):
+    """The twelve-byte GCM IV for a version-11 packet. `source_ip` is the SENDER's LDN address."""
+    return gcm_iv(keys.network_id, source_ip, nonce8)
+
+
 def crypto(ssid, game_key):
     return PiaCrypto(ssid, game_key=bytes(game_key))
 
@@ -207,11 +231,6 @@ BAND_PROTOCOLS = [(PROTO_NET, 0), (PROTO_RTT, 3), (PROTO_UNRELIABLE, 1), (PROTO_
 
 # A retail joiner's player id: 1 then 0 as two big-endian u64.
 DEFAULT_PLAYER_ID = (1).to_bytes(8, "big") + bytes(8)
-
-
-def station_address(ip, port=12345):
-    """The Net protocol's 18-byte station address: IPv4 in 16 bytes, big-endian port."""
-    return ip_bytes(ip).ljust(16, b"\x00") + int(port).to_bytes(2, "big")
 
 
 def location_id(constant_id, var):

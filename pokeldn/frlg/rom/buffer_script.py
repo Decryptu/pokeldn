@@ -1007,24 +1007,6 @@ def chain_call(function, args=(), *, arg_from_prev=False):
                      arg_from_prev=bool(arg_from_prev))
 
 
-def chain_read(address, size=4, *, from_prev=False, keep_prev=False):
-    """A READ step of 1, 2 or 4 bytes; `keep_prev` leaves the pointer as prev."""
-    op = {4: CHAIN_READ32, 2: CHAIN_READ16, 1: CHAIN_READ8}.get(int(size))
-    if op is None:
-        raise BufferScriptError(f"a read is 1, 2 or 4 bytes, got {size}")
-    return ChainStep(op, int(address), target_from_prev=bool(from_prev),
-                     keep_prev=bool(keep_prev))
-
-
-def chain_write(address, value=0, size=2, *, from_prev=False, value_from_prev=False):
-    """A WRITE step of 1, 2 or 4 bytes, which reads itself back into the answer."""
-    op = {4: CHAIN_WRITE32, 2: CHAIN_WRITE16, 1: CHAIN_WRITE8}.get(int(size))
-    if op is None:
-        raise BufferScriptError(f"a write is 1, 2 or 4 bytes, got {size}")
-    return ChainStep(op, int(address), (int(value) & 0xFFFFFFFF,),
-                     target_from_prev=bool(from_prev), arg_from_prev=bool(value_from_prev))
-
-
 def parse_chain_step(text, resolve=None):
     """-> a ChainStep from `OP[+keep]:TARGET[,ARG]...`: `call:FlagSet,0x828`, `write16:prev,7`,
     `read32:prev+4`. Only the first argument may be `prev[+N]`. A named call keeps its name so

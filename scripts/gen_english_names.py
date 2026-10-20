@@ -8,7 +8,6 @@ checked by the call.
 """
 from pathlib import Path
 import argparse
-import collections
 import os
 import sys
 

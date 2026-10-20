@@ -28,7 +28,7 @@ from pokeldn.sv import (pokemon, port2, raid, raid_encounter, raid_event, raid_p
                         streams, trade)
 from pokeldn.ldn import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
-from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
+from pokeldn.ldn.transport import HostTransport, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import left_after_trade, show_done
 from pokeldn.online import session as online
@@ -220,11 +220,6 @@ def raid_reward(text):
 def parse_send_payload(hx):
     """-> (data, flags) of a HEX[:z][:start|:end] send spec (`pokeldn.sv.streams`)."""
     return streams.parse_send_spec(hx)
-
-
-def apply_offer_fields(plain, settings):
-    """-> the record with each `FIELD=VALUE` written into it (`pokeldn.sv.trade.apply_fields`)."""
-    return trade.apply_fields(plain, settings)
 
 
 def build_parser():

@@ -4,6 +4,7 @@ inside the first block (docs/pla.md, The trade box and Choosing what to offer).
 """
 
 import struct
+from functools import partial
 
 from pokeldn import gen8
 
@@ -152,64 +153,13 @@ BITFIELDS = {
 NAMES = {"nickname": OFF_NICKNAME, "ht_name": OFF_HT_NAME, "ot_name": OFF_OT_NAME}
 
 
-def checksum(plain):
-    """The 16-bit sum of the decrypted body, bounded at SIZE_STORED as Gen-8's is."""
-    n = (SIZE_STORED - HEADER_SIZE) // 2
-    return sum(struct.unpack_from(f"<{n}H", plain, HEADER_SIZE)) & 0xFFFF
-
-
-def permute(data, order):
-    """-> data with its four blocks reordered, `order[i]` naming the block that becomes block i."""
-    out = bytearray(data[:HEADER_SIZE])
-    for src in order:
-        out += data[HEADER_SIZE + src * BLOCK_SIZE:HEADER_SIZE + (src + 1) * BLOCK_SIZE]
-    return bytes(out) + data[SIZE_STORED:]
-
-
-def decrypt(raw):
-    """-> the plain, unshuffled record. Raises if the checksum disagrees."""
-    if len(raw) not in (SIZE_STORED, SIZE_PARTY):
-        raise ValueError(f"{len(raw)} bytes, expected {SIZE_STORED} or {SIZE_PARTY}")
-    ec = struct.unpack_from("<I", raw, 0)[0]
-    out = bytearray(raw)
-    out[HEADER_SIZE:SIZE_STORED] = gen8.crypt(raw[HEADER_SIZE:SIZE_STORED], ec)
-    out[SIZE_STORED:] = gen8.crypt(raw[SIZE_STORED:], ec)
-    plain = permute(bytes(out), gen8.BLOCK_ORDER[(ec >> 13) & 31])
-    want = struct.unpack_from("<H", raw, 6)[0]
-    got = checksum(plain)
-    if got != want:
-        raise ValueError(f"checksum {got:#06x}, header says {want:#06x} - not a valid record")
-    return plain
-
-
-def encrypt(plain):
-    """-> the bytes to put on the wire, with the checksum written from the body itself."""
-    if len(plain) not in (SIZE_STORED, SIZE_PARTY):
-        raise ValueError(f"{len(plain)} bytes, expected {SIZE_STORED} or {SIZE_PARTY}")
-    body = bytearray(plain)
-    struct.pack_into("<H", body, 6, checksum(body))
-    ec = struct.unpack_from("<I", body, 0)[0]
-    order = gen8.invert(gen8.BLOCK_ORDER[(ec >> 13) & 31])
-    shuffled = bytearray(permute(bytes(body), order))
-    out = bytearray(shuffled)
-    out[HEADER_SIZE:SIZE_STORED] = gen8.crypt(shuffled[HEADER_SIZE:SIZE_STORED], ec)
-    out[SIZE_STORED:] = gen8.crypt(shuffled[SIZE_STORED:], ec)
-    return bytes(out)
-
-
-def is_plain(raw):
-    """-> whether a record is already decrypted: its own body sums to the checksum it carries."""
-    if len(raw) not in (SIZE_STORED, SIZE_PARTY):
-        return False
-    return checksum(raw) == struct.unpack_from("<H", raw, 6)[0]
-
-
-def load(raw):
-    """-> a plain PARTY record from a record in any of the four shapes, stored or party."""
-    plain = bytes(raw) if is_plain(raw) else decrypt(raw)
-    if len(plain) == SIZE_STORED:
-        plain += bytes(SIZE_PARTY - SIZE_STORED)
-    return plain
+# Gen-8's record crypto over 0x58-byte blocks.
+checksum = partial(gen8.checksum, block=BLOCK_SIZE)
+permute = partial(gen8.permute, block=BLOCK_SIZE)
+decrypt = partial(gen8.decrypt, block=BLOCK_SIZE)
+encrypt = partial(gen8.encrypt, block=BLOCK_SIZE)
+is_plain = partial(gen8.is_plain, block=BLOCK_SIZE)
+load = partial(gen8.load, block=BLOCK_SIZE)
 
 
 def text(plain, offset):

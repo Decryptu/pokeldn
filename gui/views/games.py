@@ -7,7 +7,6 @@ from pathlib import Path
 
 import flet as ft
 
-from gui import board
 from gui.app import keys_found
 from pokeldn import panel, progress
 from pokeldn.app import bank, command, panels, events_gallery, gift_builder, online, received, runner

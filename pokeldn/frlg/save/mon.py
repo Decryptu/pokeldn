@@ -173,9 +173,6 @@ class Mon:
     def party_bytes(self):
         return self.raw
 
-    def box_bytes(self):
-        return self.raw[:BOX_SIZE]
-
     def decode(self):
         return decode_mon(self.raw)
 

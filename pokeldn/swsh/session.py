@@ -6,7 +6,7 @@ The game key is a literal with no version substitution; the session seed is at a
 import struct
 from dataclasses import dataclass
 
-from pokeldn.ldn.pia5 import gcm_iv, ldn_nonce_crc, ldn_session_key, password_crc
+from pokeldn.ldn.pia5 import ldn_nonce_crc, ldn_session_key, packet_iv  # noqa: F401
 
 # 64 bytes used raw, main.bin 0x203ff04; the length is the literal 0x40 at 0x006c3ec8.
 PASSPHRASE = b"W3GoSMEn7RIIUQ89rzqBHGhGferRNb7K18ZBq2aNuj8Us9RO9Q9JYyGOZlLy8MYL"
@@ -63,7 +63,3 @@ def session_keys(net, game_key=GAME_KEY):
     return SessionKeys(ldn_session_key(game_key, param), bytes(game_key),
                        app[NETWORK_ID_OFF:NETWORK_ID_OFF + 4], param)
 
-
-def packet_iv(keys, source_mac, nonce8, source_id=0):
-    """The twelve-byte GCM IV for a version-4 packet: `pia5`'s construction."""
-    return gcm_iv(ldn_nonce_crc(keys.network_id_le, source_mac), source_id, nonce8)

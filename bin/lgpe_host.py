@@ -35,7 +35,7 @@ from pokeldn.ldn.station_protocol import (DISCONNECTION_REQUEST, DISCONNECTION_R
                                           ldn_constant_id, ldn_service_variable_id,
                                           station_location)
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
-from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
+from pokeldn.ldn.transport import HostTransport, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root, write_file
 from pokeldn.lgpe import (APPLICATION_VERSION, COMM_ID_PIKACHU, MAX_PARTICIPANTS, PASSPHRASE,
                           PIA_PORT, SSID, build_advertise_data, packet_iv, scene_id,

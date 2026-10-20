@@ -85,68 +85,77 @@ def crypt(chunk, seed):
     return bytes(out)
 
 
-def permute(data, order):
+def permute(data, order, block=BLOCK_SIZE):
     """-> data with its four blocks reordered, `order[i]` naming the block that becomes block i."""
     out = bytearray(data[:HEADER_SIZE])
     for src in order:
-        out += data[HEADER_SIZE + src * BLOCK_SIZE:HEADER_SIZE + (src + 1) * BLOCK_SIZE]
-    return bytes(out) + data[SIZE_STORED:]
+        out += data[HEADER_SIZE + src * block:HEADER_SIZE + (src + 1) * block]
+    return bytes(out) + data[_sizes(block)[0]:]
 
 
 def invert(order):
     return tuple(order.index(block) for block in range(BLOCK_COUNT))
 
 
-def checksum(plain):
-    """The 16-bit sum of the decrypted body up to SIZE_STORED; the party tail is not summed."""
-    n = (SIZE_STORED - HEADER_SIZE) // 2
+def _sizes(block):
+    """-> (stored, party) sizes for four blocks of `block` bytes; Legends Arceus's are 0x58."""
+    stored = HEADER_SIZE + BLOCK_COUNT * block
+    return stored, stored + 0x10
+
+
+def checksum(plain, block=BLOCK_SIZE):
+    """The 16-bit sum of the decrypted body up to the stored size; the party tail is not summed."""
+    n = (_sizes(block)[0] - HEADER_SIZE) // 2
     return sum(struct.unpack_from(f"<{n}H", plain, HEADER_SIZE)) & 0xFFFF
 
 
-def decrypt(raw):
+def decrypt(raw, block=BLOCK_SIZE):
     """-> the plain, unshuffled record, stored or party sized. Raises if the checksum disagrees."""
-    if len(raw) not in (SIZE_STORED, SIZE_PARTY):
-        raise ValueError(f"{len(raw)} bytes, expected {SIZE_STORED} or {SIZE_PARTY}")
+    stored, party = _sizes(block)
+    if len(raw) not in (stored, party):
+        raise ValueError(f"{len(raw)} bytes, expected {stored} or {party}")
     ec = struct.unpack_from("<I", raw, 0)[0]
     out = bytearray(raw)
-    out[HEADER_SIZE:SIZE_STORED] = crypt(raw[HEADER_SIZE:SIZE_STORED], ec)
+    out[HEADER_SIZE:stored] = crypt(raw[HEADER_SIZE:stored], ec)
     # The stream restarts here from the same seed [PokeCrypto.Decrypt8].
-    out[SIZE_STORED:] = crypt(raw[SIZE_STORED:], ec)
+    out[stored:] = crypt(raw[stored:], ec)
     # Decryption uses the read order; only encryption inverts it.
-    plain = permute(bytes(out), BLOCK_ORDER[(ec >> 13) & 31])
+    plain = permute(bytes(out), BLOCK_ORDER[(ec >> 13) & 31], block)
     want = struct.unpack_from("<H", raw, 6)[0]
-    got = checksum(plain)
+    got = checksum(plain, block)
     if got != want:
         raise ValueError(f"checksum {got:#06x}, header says {want:#06x} - not a valid Gen-8 record")
     return plain
 
 
-def is_plain(raw):
+def is_plain(raw, block=BLOCK_SIZE):
     """-> whether a record is PKHeX's decrypted export: its raw body matches the checksum."""
-    if len(raw) not in (SIZE_STORED, SIZE_PARTY):
+    if len(raw) not in _sizes(block):
         return False
-    return checksum(raw) == struct.unpack_from("<H", raw, 6)[0]
+    return checksum(raw, block) == struct.unpack_from("<H", raw, 6)[0]
 
 
-def load(raw):
+def load(raw, block=BLOCK_SIZE):
     """-> a plain party record from a stored or party .pk8, encrypted or not; a stored record gets a
     zero party tail, which the receiving game rebuilds (docs/swsh_trade.md)."""
-    plain = bytes(raw) if is_plain(raw) else decrypt(raw)
-    if len(plain) == SIZE_STORED:
-        plain += bytes(SIZE_PARTY - SIZE_STORED)
+    stored, party = _sizes(block)
+    plain = bytes(raw) if is_plain(raw, block) else decrypt(raw, block)
+    if len(plain) == stored:
+        plain += bytes(party - stored)
     return plain
 
 
-def encrypt(plain):
-    if len(plain) not in (SIZE_STORED, SIZE_PARTY):
-        raise ValueError(f"{len(plain)} bytes, expected {SIZE_STORED} or {SIZE_PARTY}")
+def encrypt(plain, block=BLOCK_SIZE):
+    stored, party = _sizes(block)
+    if len(plain) not in (stored, party):
+        raise ValueError(f"{len(plain)} bytes, expected {stored} or {party}")
     body = bytearray(plain)
-    struct.pack_into("<H", body, 6, checksum(body))
+    struct.pack_into("<H", body, 6, checksum(body, block))
     ec = struct.unpack_from("<I", body, 0)[0]
-    shuffled = bytearray(permute(bytes(body), invert(BLOCK_ORDER[(ec >> 13) & 31])))
+    shuffled = bytearray(permute(bytes(body), invert(BLOCK_ORDER[(ec >> 13) & 31]), block))
     out = bytearray(shuffled)
-    out[HEADER_SIZE:SIZE_STORED] = crypt(shuffled[HEADER_SIZE:SIZE_STORED], ec)
-    out[SIZE_STORED:] = crypt(shuffled[SIZE_STORED:], ec)
+    out[HEADER_SIZE:stored] = crypt(shuffled[HEADER_SIZE:stored], ec)
+    out[stored:] = crypt(shuffled[stored:], ec)
     return bytes(out)
 
 

@@ -25,9 +25,9 @@ from pokeldn import pokemon as pokemon_service
 from pokeldn.host_support import write_file
 from pokeldn import config, gen8
 from pokeldn.host_support import resolve_keys, needs_root
-from pokeldn.ldn import host4, left_after_trade, mesh_protocol as mesh, reliable4
+from pokeldn.ldn import host4, left_after_trade, mesh_protocol as mesh
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
-from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
+from pokeldn.ldn.transport import HostTransport, find_ap_phy
 from pokeldn.swsh import beacon, host_trade, lair, lair_host, league_card, pokemon as swsh_pokemon, raid, raid_event, raid_host, trade_payload
 from pokeldn.ldn.pia5 import password_crc
 from pokeldn.swsh.session import COMM_ID, PASSPHRASE, session_keys

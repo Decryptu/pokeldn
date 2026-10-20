@@ -20,11 +20,10 @@ from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
 from pokeldn import config, za
 from pokeldn.za import host as za_host
-from pokeldn.za import streams
 from pokeldn.online import session as online
 from pokeldn import receiver_gift
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
-from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
+from pokeldn.ldn.transport import HostTransport, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
 
 

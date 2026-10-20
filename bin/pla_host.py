@@ -21,7 +21,7 @@ from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
 from pokeldn import config
 from pokeldn import gen8, pla
-from pokeldn.ldn import left_after_trade, pia6, pia_connect, reliable5, rtt_protocol, show_done
+from pokeldn.ldn import left_after_trade, pia6, pia_connect, reliable5, show_done
 from pokeldn.ldn import channel_table
 from pokeldn import receiver_gift
 from pokeldn.app import screen
@@ -29,7 +29,7 @@ from pokeldn.online import session as online
 from pokeldn.pla import data_exchange, game_channel, trade_box
 from pokeldn.pla import pokemon as pla_pokemon
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
-from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
+from pokeldn.ldn.transport import HostTransport, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
 
 PROTOCOL_NAMES = {

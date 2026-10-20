@@ -4,7 +4,7 @@ follows it.
 
 docs/bdsp_session.md. Never pass --verbose to a live run; use --capture.
 """
-import argparse, json, os, pathlib, signal, socket, struct, sys, time, zlib
+import argparse, json, os, pathlib, signal, sys, time, zlib
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
@@ -42,19 +42,7 @@ def cleanup():
 
 def make_socket(ifname):
     from pokeldn.ldn import userspace_ip  # no kernel interface on the ESP32
-    if (user := userspace_ip.udp_socket(ifname, PIA_PORT)) is not None:
-        user.setblocking(False)
-        return user
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    try:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, ifname.encode())
-    except PermissionError:
-        pass
-    s.bind(("", PIA_PORT))
-    s.setblocking(False)
-    return s
+    return userspace_ip.pia_socket(ifname, PIA_PORT)
 
 
 def wrap(keys, our_mac, src_var, dst_var, nonce8, payload, protocol, port=0,
@@ -538,8 +526,6 @@ async def main_async(args):
             if not st["rel_max_seq"]:
                 print("[cx] no reliable data to ack yet")
                 return
-            ack_id, streams = st["rel_max_seq"], sorted(st["rel_streams"]) or [0]
-
             # On a RESET byte 1 is a counter: `0x0159fa24` rejects it when equal to the value held
             # for us, `0x0159fa4c` when it is not exactly one more.
             def send(msg, label):

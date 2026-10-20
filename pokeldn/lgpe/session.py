@@ -4,7 +4,7 @@
 import struct
 from dataclasses import dataclass
 
-from pokeldn.ldn.pia5 import gcm_iv, ldn_nonce_crc, ldn_session_key
+from pokeldn.ldn.pia5 import ldn_nonce_crc, ldn_session_key, packet_iv  # noqa: F401
 
 # 64 bytes used raw [main.bin 0xf73a50] (docs/lgpe_session.md "The LDN passphrase").
 PASSPHRASE = b"W3GoSMEn7RIIUQ89rzqBHGhGferRNb7K18ZBq2aNuj8Us9RO9Q9JYyGOZlLy8MYL"
@@ -127,8 +127,3 @@ def session_keys(net, game_key=GAME_KEY):
     return SessionKeys(ldn_session_key(game_key, param), bytes(game_key),
                        app[NETWORK_ID_OFF:NETWORK_ID_OFF + 4], param, crc)
 
-
-def packet_iv(keys, source_mac, nonce8, source_id=0):
-    """The twelve-byte GCM IV: three bytes of crc32(network id || sender MAC), one byte of source
-    id, the packet's own nonce. `pia5`'s construction, measured on Sword's version 4."""
-    return gcm_iv(ldn_nonce_crc(keys.network_id_le, source_mac), source_id, nonce8)

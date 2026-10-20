@@ -3,9 +3,8 @@
 Passphrase and game key equal Sword's; the Pia header is version 11 (`pokeldn.ldn.pia6`) and the
 session key and network id come from the SSID.
 """
-from dataclasses import dataclass
-
-from pokeldn.ldn.pia6 import gcm_iv, ldn_network_id, ldn_session_key
+from pokeldn.ldn import pia6
+from pokeldn.ldn.pia6 import SessionKeys, packet_iv  # noqa: F401
 
 # 64 bytes used raw, rodata 0x3985319, length 0x40 at 0x2c24268.
 PASSPHRASE = b"W3GoSMEn7RIIUQ89rzqBHGhGferRNb7K18ZBq2aNuj8Us9RO9Q9JYyGOZlLy8MYL"
@@ -25,28 +24,8 @@ PIA_TAG_SIZE = 8
 PIA_PORT = 12345
 
 
-@dataclass
-class SessionKeys:
-    session_key: bytes
-    game_key: bytes
-    ssid: bytes
-    network_id: int
-
-    def __repr__(self):
-        return (f"SessionKeys(session={self.session_key.hex()} game={self.game_key.hex()} "
-                f"ssid={self.ssid.hex()} network_id={self.network_id:#010x})")
-
-
 def session_keys(ssid, game_key=GAME_KEY):
-    """-> SessionKeys for a network: the session key and the network id both come from its SSID."""
-    ssid = bytes(ssid)
-    return SessionKeys(ldn_session_key(game_key, ssid), bytes(game_key), ssid,
-                       ldn_network_id(ssid))
-
-
-def packet_iv(keys, source_ip, nonce8):
-    """The twelve-byte GCM IV for a version-11 packet; `source_ip` is the sender's LDN address."""
-    return gcm_iv(keys.network_id, source_ip, nonce8)
+    return pia6.session_keys(ssid, game_key)
 
 
 # A waiting console's advertisement, measured on two retail sessions.

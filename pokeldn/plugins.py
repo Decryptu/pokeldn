@@ -16,7 +16,11 @@ import tomllib
 from dataclasses import dataclass, field, replace
 from importlib import metadata
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from pokeldn.app.catalog import Game, Tool
+
 
 def __getattr__(name):
     if name in ("Field", "Game", "Tool"):

@@ -1,9 +1,8 @@
 """Everything a Scarlet / Violet local session is keyed on, from main 4.0.0 and a retail beacon
 (docs/sv.md has the address or scan behind each value)."""
-from dataclasses import dataclass
-
 from pokeldn.ldn.beacon import build_pia_header, decode_pia_header
-from pokeldn.ldn.pia6 import gcm_iv, ldn_network_id, ldn_session_key
+from pokeldn.ldn import pia6
+from pokeldn.ldn.pia6 import SessionKeys, packet_iv  # noqa: F401
 
 # 64 bytes used raw, data 0x44dfd0a of main 4.0.0; equal to Sword's and Arceus's.
 PASSPHRASE = b"W3GoSMEn7RIIUQ89rzqBHGhGferRNb7K18ZBq2aNuj8Us9RO9Q9JYyGOZlLy8MYL"
@@ -24,28 +23,8 @@ PIA_TAG_SIZE = 8
 PIA_PORT = 12345
 
 
-@dataclass
-class SessionKeys:
-    session_key: bytes
-    game_key: bytes
-    ssid: bytes
-    network_id: int
-
-    def __repr__(self):
-        return (f"SessionKeys(session={self.session_key.hex()} game={self.game_key.hex()} "
-                f"ssid={self.ssid.hex()} network_id={self.network_id:#010x})")
-
-
 def session_keys(ssid, game_key=GAME_KEY):
-    """-> SessionKeys for a network, from its SSID alone: the band's derivation, `pia6`."""
-    ssid = bytes(ssid)
-    return SessionKeys(ldn_session_key(game_key, ssid), bytes(game_key), ssid,
-                       ldn_network_id(ssid))
-
-
-def packet_iv(keys, source_ip, nonce8):
-    """The twelve-byte GCM IV for a version-11 packet. `source_ip` is the SENDER's LDN address."""
-    return gcm_iv(keys.network_id, source_ip, nonce8)
+    return pia6.session_keys(ssid, game_key)
 
 
 # A searching retail Scarlet 4.0.0, offline, no link code.

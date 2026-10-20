@@ -116,7 +116,7 @@ CONDITIONS = ("<", "=", ">", "<=", ">=", "!=")
 
 def name_operand(opcode, index, width, value):
     """-> what an operand means, as text, or None to leave it as a plain number."""
-    from pokeldn.frlg.rom import scrcmd_args, scrcmd_names, special_names, symbol_names
+    from pokeldn.frlg.rom import scrcmd_args, special_names, symbol_names
 
     if width == 2 and symbol_names.is_var(value):
         return symbol_names.var_name(value)       # VarGet reads it
@@ -248,7 +248,6 @@ def follow(data, base, starts=None, limit=64, blocks=256):
 
     `data` is a dump with its `base`, or a `Memory` (then `starts` goes second). `reached` is
     {address: disassembly}; `referenced` is {address: {(kind, site)}} for targets not held."""
-    from pokeldn.frlg.rom import scrcmd_args
     if isinstance(data, Memory):
         memory, starts = data, base
     else:
@@ -347,7 +346,7 @@ def absolute_pointers(script):
     """-> [(offset, command, value)] for each absolute address the code reachable from offset 0
     uses; empty means every cartridge runs it alike. v-commands are relative to setvaddress
     [scrcmd.c:171]. Raises ValueError on a script it cannot walk to an end."""
-    from pokeldn.frlg.rom import scrcmd_args, scrcmd_names
+    from pokeldn.frlg.rom import scrcmd_args
     queue, seen, found, offset = [0], set(), [], None
     while queue:
         cursor = queue.pop()

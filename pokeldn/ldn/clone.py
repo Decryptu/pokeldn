@@ -30,9 +30,6 @@ RECORD_TAG = 0x20
 SHARED_CLONE_DATA = bytes(12) + b"\x01" + bytes(7)
 
 
-def shared_clone_data(state_word):
-    """The 20-byte data a clone type 2 copy carries. Byte 12 is the station's state word."""
-    return bytes(12) + bytes([state_word]) + bytes(7)
 RECORD_EMPTY = 0x01                 # a clone that has no data yet: six bytes, no clock
 RECORD_STATE = 0x03
 RECORD_ACK = 0x05

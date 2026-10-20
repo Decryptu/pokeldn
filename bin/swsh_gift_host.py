@@ -9,7 +9,6 @@ per advertisement.
 
     (them) Mystery Gift -> Recevoir un Cadeau Mystere -> Via communication sans fil locale
 """
-from pathlib import Path
 import argparse
 import os
 import sys

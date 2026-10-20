@@ -209,7 +209,7 @@ class ReplayTransport:
 
     @classmethod
     def from_capture(cls, raw_path):
-        metas, ins = [], []
+        ins = []
         sess = {}
         for line in Path(raw_path).read_text(encoding="utf-8", errors="replace").splitlines():
             line = line.strip()

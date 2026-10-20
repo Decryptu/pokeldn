@@ -938,7 +938,7 @@ def main(argv=None):
     app = application(
         config, plan=plan, transport_factory=factory,
         log=trade_runtime.ConsoleLog(args.verbose))
-    joined = app.run()
+    app.run()
     if app.interrupted:
         return 130
     if app.idle_timed_out:

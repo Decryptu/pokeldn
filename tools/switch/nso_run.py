@@ -4,7 +4,7 @@
 In the static image every PLT stub jumps through a zero GOT slot: stubs are mapped by name
 (nso_imports) and serviced in Python. bin/swsh_gift_host.py runs the Wonder Card validator with it."""
 from pathlib import Path
-import os, struct, sys
+import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from pokeldn.switch.nso import imports, load as _load, plt_stubs as _plt_stubs, relatives  # noqa: E402,F401
 from unicorn import *

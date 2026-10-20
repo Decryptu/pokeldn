@@ -140,21 +140,8 @@ def set_mac(phy, mac, log=print):
 
 
 def make_socket(ifname, our_ip=None):
-    from pokeldn.ldn import userspace_ip
-    if our_ip is None and (user := userspace_ip.udp_socket(ifname, sv.PIA_PORT)) is not None:
-        user.setblocking(False)
-        return user
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    if our_ip is None:
-        try:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, ifname.encode())
-        except (PermissionError, OSError):
-            pass
-    s.bind((our_ip or "", sv.PIA_PORT))
-    s.setblocking(False)
-    return s
+    from pokeldn.ldn import userspace_ip  # no kernel interface on the ESP32
+    return userspace_ip.pia_socket(ifname, sv.PIA_PORT, our_ip)
 
 
 def ip_scan_once(our_ip, host_ip, timeout):

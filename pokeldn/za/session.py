@@ -1,9 +1,8 @@
 """Everything a Legends Z-A local session is keyed on, from main 2.0.2 and a retail beacon
 (docs/za.md has the address or scan behind each value)."""
-from dataclasses import dataclass
-
 from pokeldn.ldn.beacon import build_pia_header, decode_pia_header
-from pokeldn.ldn.pia6 import gcm_iv, ldn_network_id, ldn_session_key
+from pokeldn.ldn import pia6
+from pokeldn.ldn.pia6 import SessionKeys, packet_iv  # noqa: F401
 
 # 64 bytes used raw: rodata 0x33391fc of main 2.0.2, and data 0x3eeda1f.
 PASSPHRASE = b"BM7cXkadR9ugiXdHiurkiyhrQwcR3rMgCM5BF47dranKXWAGpGEA9z3ncXRnPjCX"
@@ -26,28 +25,8 @@ PIA_PORT = 12345
 MAX_PACKET_SIZE = 0x1D + 0x71 * 0x40 - 1
 
 
-@dataclass
-class SessionKeys:
-    session_key: bytes
-    game_key: bytes
-    ssid: bytes
-    network_id: int
-
-    def __repr__(self):
-        return (f"SessionKeys(session={self.session_key.hex()} game={self.game_key.hex()} "
-                f"ssid={self.ssid.hex()} network_id={self.network_id:#010x})")
-
-
 def session_keys(ssid, game_key=GAME_KEY):
-    """-> SessionKeys for a network, from its SSID alone: the band's derivation."""
-    ssid = bytes(ssid)
-    return SessionKeys(ldn_session_key(game_key, ssid), bytes(game_key), ssid,
-                       ldn_network_id(ssid))
-
-
-def packet_iv(keys, source_ip, nonce8):
-    """The twelve-byte GCM IV for a packet. `source_ip` is the SENDER's LDN address."""
-    return gcm_iv(keys.network_id, source_ip, nonce8)
+    return pia6.session_keys(ssid, game_key)
 
 
 # A console on the local search screen, measured on two retail sessions.

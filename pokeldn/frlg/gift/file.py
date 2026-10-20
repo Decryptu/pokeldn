@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import struct
 from pokeldn import gifts
-from pokeldn.frlg.gift import gift_to_bin, mg_server, wonder_card, wonder_news
+from pokeldn.frlg.gift import gift_to_bin, mg_server, wonder_card
 from pokeldn.frlg.gift.mystery_gift import crc16
 from pokeldn.frlg.gift.stamp_rally import MysteryGiftDistribution
 from pokeldn.frlg.rom import builds
