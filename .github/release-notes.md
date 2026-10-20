@@ -1,23 +1,19 @@
-# pokeldn 0.33.0
+# pokeldn 0.33.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The Pokemon builder makes a species as a wild catch first, then as a static encounter, a trade or
-  an egg: most Pokemon that used to come out as hatched eggs now come from the wild. Species that
-  exist in the game only in a later form (Zygarde, Magearna, Vivillon and others) now build, and a
-  pasted set keeps the IVs the game gave unless it has an IVs line.
-- The optional board screen shows a hosted Max Raid, Dynamax Adventure or Tera Raid lobby: the boss
-  (Gigantamax shape included) or legendary, its stars, the consoles that joined and the Link Code.
-  The idle screen shows the firmware version.
-- Android: a classic ESP32 with a CP210x USB chip now works on the phone, as S3, C3 and C6 boards do.
-- Language packs now also translate game choices, Dynamax Adventure rentals, raid partners' names
-  and the documentation's page titles.
+A maintenance release: no new features, and trades, gifts and raids behave as in 0.33.0.
 
-The radio firmware is now 1.7.0 for the screen's lobby: the Board page offers the update. The
-controller firmware stays at 1.3.0.
+- Unused code and duplicated helpers removed; the app and its launchers share one copy of the
+  record encryption, session keys and link codes of Sword/Shield, Scarlet/Violet, Legends Arceus
+  and Legends Z-A.
+- Command line: every launcher reads the keys path set in `config/host.local.toml`, and
+  `frlg_mg_client.py` reports a mistyped `--password` or `--connect-id` instead of crashing.
+
+The radio firmware stays at 1.7.0 and the controller firmware at 1.3.0; no board update is needed.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
