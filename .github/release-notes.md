@@ -1,17 +1,12 @@
-# pokeldn 0.33.1
+# pokeldn 0.33.2
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-A maintenance release: no new features, and trades, gifts and raids behave as in 0.33.0.
-
-- Unused code and duplicated helpers removed; the app and its launchers share one copy of the
-  record encryption, session keys and link codes of Sword/Shield, Scarlet/Violet, Legends Arceus
-  and Legends Z-A.
-- Command line: every launcher reads the keys path set in `config/host.local.toml`, and
-  `frlg_mg_client.py` reports a mistyped `--password` or `--connect-id` instead of crashing.
+- The Pokemon builder no longer refuses, now and then, a wild Pokemon asked for at a level inside its
+  encounter's range (a level-50 Chingling in Legends Arceus was refused about once in 2000 builds).
 
 The radio firmware stays at 1.7.0 and the controller firmware at 1.3.0; no board update is needed.
 
