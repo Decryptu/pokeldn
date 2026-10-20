@@ -203,10 +203,13 @@ def test_the_empty_setting_accepts_what_a_tracker_would_make_legal(service, vaul
         assert info["legal"] and info["tracker"] == "0" and entry.home_tracker == "empty"
 
 
-@pytest.mark.parametrize("species", [25, 134])     # Pikachu and Vaporeon, hatched as Pichu and Eevee
-def test_a_pokemon_that_evolved_in_scarlet_moves_to_every_home_game_holding_it(service, species):
+@pytest.mark.parametrize("species, edit", [
+    (25, {"level": 50, "options": {"moves": [344]}}),   # Pikachu hatched as Pichu: Volt Tackle comes only from an egg
+    (134, {"level": 1, "options": {"gender": 1}}),      # Vaporeon hatched as Eevee: the other level 1 one is Penny's male
+])
+def test_a_pokemon_that_evolved_in_scarlet_moves_to_every_home_game_holding_it(service, species, edit):
     """Without a tracker PKHeX lets no evolution happen in another HOME game [EvolutionGroupHOME.CheckAllAdjacent]."""
-    built = service.make("sv", species, TRAINER, level=50)
+    built = service.make("sv", species, TRAINER, **edit)
     assert built["encounter"] == "Egg"
     routes = service.destinations("sv", base64.b64decode(built["data"]), "0", TRAINER)
     assert {game for game, route in routes.items() if route["ok"]} == {"sv", "swsh", "bdsp", "pla", "za"}

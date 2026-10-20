@@ -116,6 +116,30 @@ static partial class Program
             return null;
         }
 
+        // The encounters a build tries: per version wild slots, static encounters, trades, eggs; Mystery Gifts last, as an
+        // event's fixed PID makes a new-PID offer illegal. PKHeX lists eggs first; each kind is cut at 80 on its own
+        // (docs/architecture.md, Encounter order).
+        List<IEncounterable> Encounters(PKM blank, ITrainerInfo trainer, ReadOnlyMemory<ushort> moves, GameVersion[] versions)
+        {
+            List<IEncounterable> found = [], gifts = [];
+            try
+            {
+                foreach (var version in versions)
+                    foreach (var group in (EncounterTypeGroup[])[EncounterTypeGroup.Slot, EncounterTypeGroup.Static,
+                                 EncounterTypeGroup.Trade, EncounterTypeGroup.Egg, EncounterTypeGroup.Mystery])
+                    {
+                        EncounterMovesetGenerator.PriorityList = [group];
+                        (group == EncounterTypeGroup.Mystery ? gifts : found)
+                            .AddRange(EncounterMovesetGenerator.GenerateEncounters(blank, trainer, moves, version).Take(80));
+                    }
+            }
+            finally
+            {
+                EncounterMovesetGenerator.ResetFilters();
+            }
+            return [.. found, .. gifts];
+        }
+
         JsonObject GenderRatio(Game game, JsonObject request)
         {
             var species = checked((ushort)(int)request["species"]!);
@@ -201,7 +225,7 @@ static partial class Program
             blank.Form = form;
             var permitted = new HashSet<Ball>();
             Span<Ball> found = stackalloc Ball[BallApplicator.MaxBallSpanAlloc];
-            foreach (var encounter in EncounterMovesetGenerator.GenerateEncounters(blank, trainer, ReadOnlyMemory<ushort>.Empty, versions).Take(80))
+            foreach (var encounter in Encounters(blank, trainer, ReadOnlyMemory<ushort>.Empty, versions))
             {
                 if (encounter is not IEncounterConvertible convertible)
                     continue;
@@ -284,7 +308,31 @@ static partial class Program
             var shiny = (bool?)request["shiny"] ?? false;
             var nickname = (string?)request["nickname"] ?? "";
             var wish = Wish.From(request["options"] as JsonObject);
-            var form = wish.Form ?? first;
+            // A request that names no form takes the first that builds: Sword/Shield holds Zygarde only in its Power
+            // Construct forms, Scarlet/Violet Ursaluna only as Bloodmoon.
+            if (wish.Form is null)
+            {
+                InvalidOperationException? refused = null;
+                for (var f = first; f < game.Table[species].FormCount; f++)
+                {
+                    if (!game.Table.IsPresentInGame(species, f))
+                        continue;
+                    var probe = request.DeepClone().AsObject();
+                    if (probe["options"] is not JsonObject options)
+                        probe["options"] = options = [];
+                    options["form"] = (int)f;
+                    try
+                    {
+                        return Make(game, probe);
+                    }
+                    catch (InvalidOperationException e)
+                    {
+                        refused ??= e;
+                    }
+                }
+                throw refused!;
+            }
+            var form = wish.Form.Value;
             if (!game.Table.IsPresentInGame(species, form))
                 throw new ArgumentException("This form is absent from the selected game.");
             // SetNickname cuts a longer name without saying so; the record would not carry what was asked.
@@ -305,13 +353,14 @@ static partial class Program
             var shinyLocked = false;
             // The first encounter that stays legal with the requested level, shininess and nickname wins.
             // The first pass takes encounters as they come; the second lets an evolved Pokemon climb to its evolution level.
-            // Mystery Gifts come last: an event's fixed PID makes the launchers' new-PID offer illegal.
+            var encounters = Encounters(blank, trainer, wish.Moves, versions);
             foreach (var climb in new[] { false, true })
             {
-                foreach (var encounter in EncounterMovesetGenerator.GenerateEncounters(blank, trainer, wish.Moves, versions)
-                             .Take(80).OrderBy(e => e is MysteryGift))
+                foreach (var encounter in encounters)
                 {
                     if (encounter is not IEncounterConvertible convertible)
+                        continue;
+                    if (climb && (level > 0 || encounter.Species == species))
                         continue;
                     if (level > 0 && encounter.LevelMin > level)
                     {
@@ -358,9 +407,30 @@ static partial class Program
                     }
                     if (level > 0 && level < built.CurrentLevel)
                         continue;
-                    // An evolved Pokemon left at the level it was caught at can be below its evolution level: walk up.
-                    var last = climb && evolved && level == 0 ? 100 : Math.Max(level, built.CurrentLevel);
-                    for (var lv = Math.Max(level, built.CurrentLevel); lv <= last; lv++)
+                    var start = Math.Max(level, built.CurrentLevel);
+                    if (!climb)
+                    {
+                        if (Try(start) is { } made)
+                            return made;
+                        continue;
+                    }
+                    // An evolved Pokemon left at the level it was caught at can be below its evolution level: climb to the
+                    // lowest legal level. In 231 of 233 such climbs every level above it was legal too, so level 100 decides
+                    // (docs/architecture.md, Encounter order).
+                    if (Try(100) is not { } top)
+                        continue;
+                    var (low, high) = (start, 100);
+                    while (low < high)
+                    {
+                        var mid = (low + high) / 2;
+                        if (Try(mid) is { } made)
+                            (top, high) = (made, mid);
+                        else
+                            low = mid + 1;
+                    }
+                    return top;
+
+                    JsonObject? Try(int lv)
                     {
                         var pk = built.Clone();
                         if (lv > pk.CurrentLevel)
@@ -381,6 +451,7 @@ static partial class Program
                             firstProblem ??= la.Report(displayLanguage);
                         else
                             firstUnmet ??= unmet;
+                        return null;
                     }
                 }
             }
@@ -912,6 +983,9 @@ static partial class Program
             var blank = game.Blank();
             var dummied = MoveInfo.GetDummiedMovesHashSet(game.Context);
             var errorText = BattleTemplateParseErrorLocalization.Get(displayLanguage);
+            // Whether a line holds the token in any language the parser reads (French writes "IVs : 0 Atq").
+            static bool Names(string line, BattleTemplateToken token) => BattleTemplateLocalization.GetAll().Values
+                .Any(l => l.Config.TryParse(line.Trim(), out _) == token);
             // A set is a run of lines between blank ones, as PKHeX's parser splits them.
             var blocks = new List<List<string>> { new() };
             foreach (var line in lines)
@@ -989,7 +1063,9 @@ static partial class Program
                     options["moves"] = moves;
                 // The parser keeps stats in PKHeX's order, Speed fourth (H/A/B/S/C/D).
                 string[] stats = ["hp", "atk", "def", "spe", "spa", "spd"];
-                options["ivs"] = new JsonObject(stats.Select((s, i) => KeyValuePair.Create(s, (JsonNode?)set.IVs[i])));
+                // The parser fills an absent IVs line with 31s, which most wild catches cannot carry; a set names IVs to ask for them.
+                if (block.Any(line => Names(line, BattleTemplateToken.IVs)))
+                    options["ivs"] = new JsonObject(stats.Select((s, i) => KeyValuePair.Create(s, (JsonNode?)set.IVs[i])));
                 if (set.EVs.Any(v => v != 0))
                 {
                     if (blank is IAwakened or IGanbaru)
@@ -1007,8 +1083,7 @@ static partial class Program
                     notes.Add("Hidden Power follows the IVs; its type is not set.");
                 // Showdown leaves out a friendship of 255, its default; a set asks for one only by naming it, so an
                 // event Pokemon whose friendship is fixed still builds from a set that does not.
-                if (block.Any(line => BattleTemplateLocalization.GetAll().Values
-                        .Any(l => l.Config.TryParse(line.Trim(), out _) == BattleTemplateToken.Friendship)))
+                if (block.Any(line => Names(line, BattleTemplateToken.Friendship)))
                     options["friendship"] = set.Friendship;
                 sets.Add(new JsonObject
                 {

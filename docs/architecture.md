@@ -86,19 +86,63 @@ level 50, nickname), plain builds that fail are:
 |---|---|---|
 | FireRed/LeafGreen | 386 | 0 |
 | Let's Go | 153 | 0 |
-| Legends Arceus | 226 | 0 |
+| Legends Arceus | 242 | 0 |
 | Brilliant Diamond/Shining Pearl | 493 | 2 |
-| Sword/Shield | 664 | 3 |
-| Legends Z-A | 364 | 5 |
-| Scarlet/Violet | 733 | 32 |
+| Sword/Shield | 664 | 2 |
+| Legends Z-A | 364 | 1 |
+| Scarlet/Violet | 733 | 31 |
 
-Every failure but three is a species PKHeX has no encounter for in that game: Celebi and Deoxys in
-Brilliant Diamond/Shining Pearl, Diancie, Magearna and Meltan in Sword/Shield, Scatterbug, Spewpa,
-Vivillon and Zygarde in Legends Z-A, and in Scarlet/Violet the legendaries that arrive only from HOME.
-The three with an encounter are Milotic in Legends Z-A and Wyrdeer and Ursaluna in Scarlet/Violet.
-PKHeX gives Wyrdeer and Ursaluna no Generation 9 evolution; a Z-A Milotic built from Feebas with a
+Every failure but two is a species PKHeX has no encounter for in that game: Celebi and Deoxys in
+Brilliant Diamond/Shining Pearl, Diancie and Meltan in Sword/Shield, and in Scarlet/Violet the
+legendaries that arrive only from HOME. The two with an encounter are Milotic in Legends Z-A and Wyrdeer
+in Scarlet/Violet. PKHeX gives Wyrdeer no Generation 9 evolution; a Z-A Milotic built from Feebas with a
 handling trainer stops at Milotic in PKHeX's evolution chain, and the game's records refuse contest
 stats.
+
+A request that names no form takes the first form, in form order, that builds. Some species exist in a
+game only in a later form:
+
+| game | species | forms PKHeX builds |
+|---|---|---|
+| Sword/Shield | Zygarde | 10%-C, 50%-C (Power Construct) |
+| Sword/Shield | Magearna | Original Color, an event |
+| Legends Arceus | Giratina | Origin |
+| Scarlet/Violet | Ursaluna | Bloodmoon |
+| Legends Z-A | Zygarde | 10%-C, 50%-C, Complete |
+| Legends Z-A | Scatterbug, Spewpa | Garden, Meadow |
+| Legends Z-A | Vivillon | Garden, Meadow, Marine |
+
+### Encounter order
+
+A build tries PKHeX's encounters (`EncounterMovesetGenerator`) one game version at a time, the player's
+own first, and in each version by kind:
+
+| order | kind | the record built from it |
+|---|---|---|
+| 1 | wild slot | a catch: the slot's met location and level, any ball a catch allows |
+| 2 | static encounter | a gift, a legendary, a raid or a Max Lair Pokemon |
+| 3 | in-game trade | a Pokemon an NPC trades |
+| 4 | egg | a hatch: met where it hatched, in the ball its parent passed on |
+| 5 | Mystery Gift | after every other kind and version: an event's fixed PID makes the launchers' new-PID offer illegal |
+
+PKHeX's own order (`EncounterMovesetGenerator.PriorityList`) lists eggs first. Each kind is cut at its first
+80 encounters on its own: Scarlet/Violet lists up to 1806 encounters for one species, and in the order above 587
+species list their egg past the 80th. A plain build of every species gives:
+
+| game | wild | egg | other |
+|---|---|---|---|
+| FireRed/LeafGreen | 170 | 147 | 69 |
+| Let's Go | 142 | 0 | 11 |
+| Brilliant Diamond/Shining Pearl | 402 | 38 | 51 |
+| Sword/Shield | 384 | 6 | 272 |
+| Legends Arceus | 224 | 0 | 18 |
+| Scarlet/Violet | 552 | 2 | 148 |
+| Legends Z-A | 338 | 0 | 25 |
+
+An evolved Pokemon left at its encounter's level can be below its evolution level. Over every species, 231
+of 233 such builds were legal at every level from the lowest legal one up to 100, so level 100 decides
+whether the encounter can carry the species and a bisection finds the lowest level. The two others were
+Hydrapple in Scarlet/Violet, legal at scattered levels.
 
 ### Offer options
 
@@ -135,8 +179,9 @@ the event's own on an event Pokemon, such as Brilliant Diamond's Manaphy.
 | Sword | a Pichu sent at friendship 255 evolved on its next level-up when built under the receiving player's name, IDs and gender, and did not under another trainer |
 | Let's Go | unmeasured |
 
-The record must carry every request and pass the legality analysis. The first encounter that does is
-kept, and the first request no encounter can carry is named in the refusal.
+The record must carry every request and pass the legality analysis. The first encounter, in the
+[encounter order](#encounter-order), that does is kept, and the first request no encounter can carry is
+named in the refusal.
 
 The options offered are the ones a species can have in that game:
 
@@ -172,6 +217,7 @@ an IV the `IVs:` line leaves out is 31. The parser keeps stats in PKHeX's order,
 |---|---|
 | a line the parser cannot read, a species or form absent from the game, an ability the species lacks, an item the game cannot hold, a move the game lacks, EVs over 510 | refused with the reason; nothing is filled |
 | Tera Type, Gigantamax, Dynamax level, Hidden Power type | filled without it, with a note |
+| no `IVs:` line | the encounter's own IVs; the parser fills an absent line with six 31s, which a wild catch cannot carry |
 | no `Friendship:` line | the encounter's own friendship; Showdown leaves out its default, 255, so a set asks for friendship only by naming it |
 | EVs in Let's Go or Legends Arceus, an ability in Legends Z-A | left out, with a note |
 | several sets, in a trade queue | each fills a trade in order from the picker it was pasted into: an untouched picker after it is reused, otherwise one is inserted, up to the queue's limit; a set that does not fit is counted in a note. A refusal in any set refuses the paste |
