@@ -1,14 +1,19 @@
 # Android app
 
 The Android app runs the desktop app's own interface on a phone, with an ESP32-S3, C3 or C6 radio
-board on the phone's USB port. Every page, game and tool is the code in `gui/` and `pokeldn/`;
-only the shell in this folder is Android's. A OnePlus CPH2621 running Android 16 completed a
+board on its native USB port, or a classic ESP32 on a CP210x bridge (`10c4:ea60`), on the phone's USB
+port. Every page, game and tool is the code in `gui/` and `pokeldn/`; only the shell in this folder is Android's. A OnePlus CPH2621 running Android 16 completed a
 smooth retail FireRed trade with a XIAO ESP32C6 through the earlier diagnostic frontend
 (`MainActivity`, below). The full app on the same phone and board completes FireRed host trades at the
 diagnostic frontend's speed. It had been slow (a median 36 link slots per second against 51, and as
 low as 9): the session log auto-scrolls, each scroll event reached `theme.fade`'s handler, and Flet's
 automatic update after the handler re-diffed the whole page (72 to 85 ms, up to 350 times a run) on the
 interpreter the run shares. The handler now turns that automatic update off.
+
+`UsbStream.java` drives the CP210x with its vendor requests (UART enable, 8N1, baud rate, DTR and RTS)
+and the same bulk reader and writer as native USB. A classic ESP32 on a CP210x completed retail
+FireRed/LeafGreen trades on a contributor's phone through an earlier version that used the
+usb-serial-for-android library. CH34x and FTDI bridges are not driven.
 
 `touch files/data/ui_trace.on` (with `adb shell run-as org.pokeldn.usbprobe`) makes the app write
 `files/data/ui_trace.txt` (`pokeldn.app.sampler.trace_updates`): every Flet patch by control type and

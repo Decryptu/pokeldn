@@ -15,9 +15,14 @@ public class SetupTest {
         assertEquals(Setup.State.READY, Setup.decide(true, false, true, true, ""));
     }
 
-    @Test public void onlyNativeUsbIsTheBoard() {
+    @Test public void nativeUsbAndTheCp210xAreBoards() {
         assertTrue(Setup.isBoard(0x303a, 0x1001));
+        assertTrue(Setup.isBoard(0x10c4, 0xea60));
+        assertTrue(Setup.isCp210x(0x10c4, 0xea60));
+        assertFalse(Setup.isCp210x(0x303a, 0x1001));
         assertFalse(Setup.isBoard(0x303a, 0x0002));
+        assertFalse(Setup.isBoard(0x10c4, 0xea61));
+        assertFalse(Setup.isBoard(0x1a86, 0x7523));     // a CH340: a bridge the app does not drive
         assertTrue(Setup.isBridge(0x1a86));
         assertFalse(Setup.isBridge(0x303a));
     }

@@ -8,7 +8,13 @@ import java.util.Arrays;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+/** The board's serial link over Android's USB host API: Espressif's native USB (CDC-ACM), or a classic
+ *  ESP32's CP210x bridge through its vendor requests [Linux drivers/usb/serial/cp210x.c]. */
 public final class UsbStream implements AutoCloseable {
+    private static final int CP210X_OUT = 0x41;   /* vendor request to the interface */
+    private static final int CP210X_IFC_ENABLE = 0x00, CP210X_SET_LINE_CTL = 0x03, CP210X_SET_MHS = 0x07,
+        CP210X_SET_BAUDRATE = 0x1e;
+    private final boolean cp210x;
     private final UsbDeviceConnection connection;
     private final UsbInterface control, data;
     private final UsbEndpoint input, output;
@@ -25,13 +31,15 @@ public final class UsbStream implements AutoCloseable {
     private byte[] remainder = new byte[0];
 
     public UsbStream(UsbManager manager, UsbDevice device) throws IOException {
+        cp210x = Setup.isCp210x(device.getVendorId(), device.getProductId());
         UsbInterface ctl = null, dat = null;
         for (int i = 0; i < device.getInterfaceCount(); i++) {
             UsbInterface iface = device.getInterface(i);
-            if (iface.getInterfaceClass() == 2) ctl = iface;
-            if (iface.getInterfaceClass() == 10) dat = iface;
+            if (cp210x && i == 0) ctl = dat = iface;    // one vendor interface: requests and bulk data
+            if (!cp210x && iface.getInterfaceClass() == 2) ctl = iface;
+            if (!cp210x && iface.getInterfaceClass() == 10) dat = iface;
         }
-        if (ctl == null || dat == null) throw new IOException("Missing CDC interfaces");
+        if (ctl == null || dat == null) throw new IOException(cp210x ? "Missing CP210x interface" : "Missing CDC interfaces");
         control = ctl; data = dat;
         UsbEndpoint in = null, out = null;
         for (int i = 0; i < data.getEndpointCount(); i++) {
@@ -45,13 +53,15 @@ public final class UsbStream implements AutoCloseable {
         connection = manager.openDevice(device);
         if (connection == null) throw new IOException("USB open failed");
         try {
-            if (!connection.claimInterface(control, true) || !connection.claimInterface(data, true))
+            if (!connection.claimInterface(control, true) || data != control && !connection.claimInterface(data, true))
                 throw new IOException("USB interface claim failed");
-            byte[] coding = {0, (byte)0xc2, 1, 0, 0, 0, 8};
-            if (connection.controlTransfer(0x21, 0x20, 0, control.getId(), coding, 7, 1000) != 7)
-                throw new IOException("CDC line coding failed");
-            if (connection.controlTransfer(0x21, 0x22, 0, control.getId(), null, 0, 1000) < 0)
-                throw new IOException("CDC line state failed");
+            // 8N1 (and the CP210x's UART switched on), then DTR and RTS low: a classic board's
+            // auto-reset circuit leaves EN and IO0 high, the chip running.
+            if (cp210x && (connection.controlTransfer(CP210X_OUT, CP210X_IFC_ENABLE, 1, control.getId(), null, 0, 1000) < 0
+                    || connection.controlTransfer(CP210X_OUT, CP210X_SET_LINE_CTL, 0x0800, control.getId(), null, 0, 1000) < 0))
+                throw new IOException("CP210x setup failed");
+            setBaud(115200);
+            setLines(false, false);
         } catch (IOException error) { close(); throw error; }
         reader = new Thread(this::receiveLoop, "android-usb-reader");
         reader.start();
@@ -107,12 +117,23 @@ public final class UsbStream implements AutoCloseable {
      *  the sequence esptool sends (ESP-IDF, USB Serial/JTAG controller). */
     public void setLines(boolean dtr, boolean rts) throws IOException {
         int value = (dtr ? 1 : 0) | (rts ? 2 : 0);
+        if (cp210x) {   // SET_MHS: the high byte says which lines the low byte writes
+            if (connection.controlTransfer(CP210X_OUT, CP210X_SET_MHS, value | 0x300, control.getId(), null, 0, 1000) < 0)
+                throw new IOException("CP210x line state failed");
+            return;
+        }
         if (connection.controlTransfer(0x21, 0x22, value, control.getId(), null, 0, 1000) < 0)
             throw new IOException("CDC line state failed");
     }
 
     public void setBaud(int baud) throws IOException {
-        byte[] coding = {(byte)baud, (byte)(baud >> 8), (byte)(baud >> 16), (byte)(baud >> 24), 0, 0, 8};
+        byte[] rate = {(byte)baud, (byte)(baud >> 8), (byte)(baud >> 16), (byte)(baud >> 24)};
+        if (cp210x) {
+            if (connection.controlTransfer(CP210X_OUT, CP210X_SET_BAUDRATE, 0, control.getId(), rate, 4, 1000) != 4)
+                throw new IOException("CP210x baud rate failed");
+            return;
+        }
+        byte[] coding = {rate[0], rate[1], rate[2], rate[3], 0, 0, 8};
         if (connection.controlTransfer(0x21, 0x20, 0, control.getId(), coding, 7, 1000) != 7)
             throw new IOException("CDC line coding failed");
     }
@@ -191,8 +212,9 @@ public final class UsbStream implements AutoCloseable {
         if (closed) return;
         closed = true;
         if (writer != null) writer.interrupt();
+        if (cp210x) connection.controlTransfer(CP210X_OUT, CP210X_IFC_ENABLE, 0, control.getId(), null, 0, 100);
         connection.releaseInterface(data);
-        connection.releaseInterface(control);
+        if (control != data) connection.releaseInterface(control);
         connection.close();
     }
 }
