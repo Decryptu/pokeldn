@@ -1,22 +1,23 @@
-# pokeldn 0.32.0
+# pokeldn 0.33.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Sword/Shield Max Raid (Host): host a den raid your console joins, with a chosen, Gigantamax or
-  past Wild Area Event boss, and the rewards you pick among that den's own.
-- Sword/Shield Dynamax Adventure (Host): host a Max Lair whose legendary you choose; once the
-  adventure starts, a computer partner takes pokeldn's seat.
-- Scarlet/Violet Union Circle: join a console's circle as a guest. Union Circle - Quests gives the
-  host the BP you choose or every Blueberry Quest still missing for Snacksworth's legendaries.
-  Union Circle - Encounters spawns a wild Pokemon you craft around the host's player, to battle and
-  catch; with Legal encounters only, it spawns only where PKHeX accepts the catch as legal.
-- Language packs now translate game data too: species, moves, natures, abilities, forms and
-  PKHeX's legality messages show in the pack's language.
+- The Pokemon builder makes a species as a wild catch first, then as a static encounter, a trade or
+  an egg: most Pokemon that used to come out as hatched eggs now come from the wild. Species that
+  exist in the game only in a later form (Zygarde, Magearna, Vivillon and others) now build, and a
+  pasted set keeps the IVs the game gave unless it has an IVs line.
+- The optional board screen shows a hosted Max Raid, Dynamax Adventure or Tera Raid lobby: the boss
+  (Gigantamax shape included) or legendary, its stars, the consoles that joined and the Link Code.
+  The idle screen shows the firmware version.
+- Android: a classic ESP32 with a CP210x USB chip now works on the phone, as S3, C3 and C6 boards do.
+- Language packs now also translate game choices, Dynamax Adventure rentals, raid partners' names
+  and the documentation's page titles.
 
-The radio firmware stays at 1.6.2 and the controller firmware at 1.3.0; no board update is needed.
+The radio firmware is now 1.7.0 for the screen's lobby: the Board page offers the update. The
+controller firmware stays at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
