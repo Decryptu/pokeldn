@@ -193,6 +193,22 @@ def test_the_host_picks_an_event_boss_and_refuses_what_does_not_name_one(tmp_pat
     assert "pass --raid-event" in capsys.readouterr().out
 
 
+def test_swsh_raid_screen_forwards_gigantamax_form_from_boss_record(event, monkeypatch):
+    calls = []
+    monkeypatch.setattr(screen, "show_raid", lambda *args, **kwargs: calls.append((args, kwargs)))
+    toxtricity = raid_event.boss_pk8(boss(event, SHIELD, 5, 849, 1), random.Random(0))
+    ads = json.loads((DATA / "swsh_raid_adverts.json").read_text())
+    advert = raid.den_advert(bytes.fromhex(ads["advert_pidove"]), toxtricity, rank=4)
+
+    display = swsh_host.RaidScreen(advert, toxtricity)
+    display.start()
+
+    fields = gen8.read(gen8.decrypt(toxtricity))
+    assert (fields["species"], fields["form"]) == (849, 1)
+    assert calls == [((849, 5, 0, 3),
+                      {"title": "Dyna Raid", "form": 1, "gigantamax": True})]
+
+
 def test_swsh_raid_screen_lifecycle_uses_dynamax_advert_and_resets(monkeypatch):
     calls = []
     monkeypatch.setattr(screen, "show_raid", lambda *args, **kwargs: calls.append(("show", args, kwargs)))
@@ -203,7 +219,8 @@ def test_swsh_raid_screen_lifecycle_uses_dynamax_advert_and_resets(monkeypatch):
     advert = raid.den_advert(bytes.fromhex(ads["advert_pidove"]),
                              bytes.fromhex(ads["boss_hoothoot"]), rank=4)
 
-    display = swsh_host.RaidScreen(advert)
+    boss_pk8 = bytes.fromhex(ads["boss_hoothoot"])
+    display = swsh_host.RaidScreen(advert, boss_pk8)
     display.start()
     display.update(0)
     display.update(1)
@@ -213,7 +230,8 @@ def test_swsh_raid_screen_lifecycle_uses_dynamax_advert_and_resets(monkeypatch):
     display.close()
 
     species = gen8.read(gen8.decrypt(bytes.fromhex(ads["boss_hoothoot"])))['species']
-    assert calls == [("show", (species, 5, 0, 3), {"title": "Dyna Raid"}),
+    assert calls == [("show", (species, 5, 0, 3),
+                      {"title": "Dyna Raid", "form": 0, "gigantamax": False}),
                      ("lobby", (1, 3)), ("lobby", (3, 3)),
                      ("reset",), ("drain",)]
 

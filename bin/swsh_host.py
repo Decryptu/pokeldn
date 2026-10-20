@@ -365,14 +365,19 @@ class AdventureScreen:
 class RaidScreen:
     """The optional ESP32 display for one Sword/Shield Max Raid lobby."""
 
-    def __init__(self, app_data):
+    def __init__(self, app_data, boss_pk8):
         self.species = struct.unpack_from("<H", app_data, raid.ADVERT_SHOWN)[0] & 0x3FF
         self.stars = (app_data[raid.ADVERT_RANK] >> 4) + 1
+        boss = gen8.decrypt(bytes(boss_pk8))
+        fields = gen8.read(boss)
+        self.form = fields["form"]
+        self.gigantamax = bool(boss[raid.PK8_GIGANTAMAX] & 0x10)
         self.guests = None
 
     def start(self):
         self.guests = 0
-        screen.show_raid(self.species, self.stars, 0, RAID_PARTICIPANTS - 1, title="Dyna Raid")
+        screen.show_raid(self.species, self.stars, 0, RAID_PARTICIPANTS - 1, title="Dyna Raid",
+                         form=self.form, gigantamax=self.gigantamax)
 
     def update(self, guests):
         guests = min(max(guests, 0), RAID_PARTICIPANTS - 1)
@@ -622,7 +627,7 @@ def main(argv=None):
                           max_stations=RAID_PARTICIPANTS if boss_pk8 or lairing else 2)
     if boss_pk8 is not None:
         party[0] = raid_host.RaidParty(host.constant, args.raid_console_serves)
-    raid_screen = RaidScreen(app_data) if boss_pk8 is not None else None
+    raid_screen = RaidScreen(app_data, boss_pk8) if boss_pk8 is not None else None
     adventure_screen = AdventureScreen(args.lair_legendary, args.code) if lairing else None
     if raid_screen is not None:
         raid_screen.start()
