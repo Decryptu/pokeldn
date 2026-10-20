@@ -563,6 +563,19 @@ def board_radio():
     return radios.selected() is not None
 
 
+# The Linux card path's interfaces a stopped run can leave behind.
+STALE_VIFS = ("ldn", "ldn-mon", "ldn-tap", "ldnclient")
+
+
+def cleanup_stale_vifs():
+    """Deletes the interfaces a stopped Linux-card run left; the ESP32 board has none."""
+    if board_radio():
+        return
+    import subprocess
+    for name in STALE_VIFS:
+        subprocess.run(["iw", "dev", name, "del"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def find_ap_phy(log=print):
     """First phy advertising AP mode (`--phy auto`); phy numbers change when the adapter reloads."""
     if board_radio():

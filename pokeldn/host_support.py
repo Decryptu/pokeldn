@@ -1,8 +1,12 @@
 import os
 
 
-def resolve_keys(path):
-    """Resolves ~ against SUDO_USER's home when launched through sudo."""
+def resolve_keys(path=None):
+    """Resolves ~ against SUDO_USER's home when launched through sudo; None is the host
+    configuration's keys_path (config/host.toml, host.local.toml)."""
+    if path is None:
+        from pokeldn.config import load_project_host_file_config
+        path = load_project_host_file_config().keys_path
     expanded = os.path.expanduser(path)
     if os.path.exists(expanded):
         return expanded

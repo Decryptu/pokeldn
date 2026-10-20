@@ -229,7 +229,7 @@ def build_parser():
     online.add_arguments(ap)
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--channel", type=int, default=None)
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--capture", default=None, help="write every datagram here as JSON lines")
     ap.add_argument("--violet", action="store_true",
                     help="advertise Violet's local communication id instead of Scarlet's")

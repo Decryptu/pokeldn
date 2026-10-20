@@ -38,7 +38,7 @@ def build_parser():
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--channel", type=int, default=6,
                     help="a searching console put both of its measured sessions on channel 6")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--code", default="00000000", help="the link code the player types")
     ap.add_argument("--capture", default=None, help="every datagram as one JSON line")
     ap.add_argument("--player-name", default=" ",

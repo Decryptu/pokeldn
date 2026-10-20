@@ -16,7 +16,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pokeldn.host_support import open_output
+from pokeldn.host_support import open_output, resolve_keys
 from pokeldn.frlg.link import beacon
 from pokeldn.frlg import config as configmod  # noqa: E402
 from pokeldn.frlg.link import sim as simmod  # noqa: E402
@@ -85,7 +85,7 @@ def run_live(args, profile, lg):
     lg.info(f"scanning for the console's Mystery Gift LDN network (nickname={profile.name})...")
     t = tmod.LiveTransport(
         password=_hex_bytes(None, "--password", args.password) if args.password else None,
-        nickname=profile.name, keys_path=args.keys,
+        nickname=profile.name, keys_path=resolve_keys(args.keys),
         local_comm_id=int(args.comm_id, 16) if args.comm_id else None,
         phyname=args.phy, log=lg, beacon_debug=beacon.diagnose).start()
     pc = cryptomod.PiaCrypto(t.ssid)
@@ -221,7 +221,7 @@ def build_parser():
     ap.add_argument("--connect-id", default="", help="override the 2-byte emulator connect id (hex)")
     ap.add_argument("--password", default="", help="LDN passphrase as hex (default: the built-in one)")
     ap.add_argument("--phy", default="phy0")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--comm-id", help="LDN local_communication_id (hex) to join")
     ap.add_argument("--capture", metavar="FILE", help="record every Pia datagram both ways (.jsonl)")
     ap.add_argument("--out", metavar="PREFIX", default="", help="write PREFIX_card.bin etc.")

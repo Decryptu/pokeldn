@@ -32,27 +32,17 @@ from pokeldn.za import host as za_host, streams
 from pokeldn.za.host import (MSG_CANCEL, OFFER_PICK, OFFER_PREVIEW,  # noqa: F401
                              build_command, command_round)
 from pokeldn.ldn import crypto, host_pia, ldn_mitm, pia_connect, reliable
-from pokeldn.ldn.transport import board_radio, find_ap_phy
+from pokeldn.ldn.transport import board_radio, find_ap_phy, cleanup_stale_vifs as cleanup_stale
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import show_done
 from pokeldn.app import screen
 
 # Ours until the host names one in the footer of its first mesh-addressed packet.
 OUR_VAR = 0xC493
-STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
 PROTOCOL_NAMES = {
     pia_connect.PROTO_NET: "net", pia_connect.PROTO_RTT: "rtt",
     pia_connect.PROTO_RELIABLE: "reliable", pia_connect.PROTO_SESSION: "session",
 }
-
-
-def cleanup_stale():
-    if board_radio():
-        return
-    import subprocess
-    for name in STALE_VIFS:
-        subprocess.run(["iw", "dev", name, "del"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def make_socket(ifname, our_ip=None):
@@ -316,7 +306,7 @@ def build_parser():
                     help="print every packet in and out; the --capture file keeps them either way")
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--ifname", default="ldnclient")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--channels", default="1,6,11")
     ap.add_argument("--dwell", type=float, default=1.0, help="seconds per channel in a scan")
     ap.add_argument("--seconds", type=float, default=600.0, help="the whole run")
@@ -680,38 +670,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     return game is not None and game.traded_at is not None
 
 
-def ip_scan_once(our_ip, host_ip, timeout):
-    """-> the emulated host's NetworkInfo, or None. The bridge drops a scan from the host's own
-    address, so it leaves from ours."""
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as us:
-        us.settimeout(timeout)
-        us.bind((our_ip, 0))
-        try:
-            us.sendto(ldn_mitm.build(ldn_mitm.SCAN), (host_ip, ldn_mitm.PORT))
-            while True:
-                data, _ = us.recvfrom(4096)
-                kind, info = ldn_mitm.parse(data)
-                if kind == ldn_mitm.SCAN_RESP:
-                    return info
-        except (socket.timeout, OSError, ValueError):
-            return None
-
-
-def ip_associate(our_ip, host_ip, our_mac, name, timeout, version=0):
-    """-> (NetworkInfo, held TCP socket)."""
-    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    tcp.settimeout(timeout)
-    tcp.bind((our_ip, 0))
-    tcp.connect((host_ip, ldn_mitm.PORT))
-    tcp.sendall(ldn_mitm.build(ldn_mitm.CONNECT,
-                               ldn_mitm.build_node_info(our_ip, our_mac, name.encode(),
-                                                        version=version)))
-    kind, synced = ldn_mitm.parse(tcp.recv(8192))
-    if kind != ldn_mitm.SYNC_NETWORK:
-        tcp.close()
-        raise RuntimeError(f"the host answered our connect with type {kind}, not SyncNetwork")
-    tcp.settimeout(None)
-    return synced, tcp
+ip_scan_once, ip_associate = ldn_mitm.scan_once, ldn_mitm.associate
 
 
 def mark_seat(path, state, **fields):

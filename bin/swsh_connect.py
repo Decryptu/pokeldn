@@ -170,38 +170,7 @@ class _Advertised:
         self.ssid = ldn_mitm.session_id(info)
 
 
-def ip_scan_once(scan_ip, host_ip, timeout):
-    """-> the emulated host's NetworkInfo, or None. The bridge drops a scan from the host's own
-    address, so it leaves from `scan_ip` [docs/ldn.md, Hosting for an emulator]."""
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as us:
-        us.settimeout(timeout)
-        us.bind((scan_ip, 0))
-        try:
-            us.sendto(ldn_mitm.build(ldn_mitm.SCAN), (host_ip, ldn_mitm.PORT))
-            while True:
-                data, _ = us.recvfrom(4096)
-                kind, info = ldn_mitm.parse(data)
-                if kind == ldn_mitm.SCAN_RESP:
-                    return info
-        except (socket.timeout, OSError, ValueError):
-            return None
-
-
-def ip_associate(our_ip, host_ip, our_mac, name, timeout, version):
-    """-> (synced NetworkInfo, the TCP connection the seat lasts as long as)."""
-    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    tcp.settimeout(timeout)
-    tcp.bind((our_ip, 0))
-    tcp.connect((host_ip, ldn_mitm.PORT))
-    tcp.sendall(ldn_mitm.build(ldn_mitm.CONNECT,
-                               ldn_mitm.build_node_info(our_ip, our_mac, name.encode(),
-                                                        version=version)))
-    kind, synced = ldn_mitm.parse(tcp.recv(8192))
-    if kind != ldn_mitm.SYNC_NETWORK:
-        tcp.close()
-        raise RuntimeError(f"the host answered our connect with type {kind}, not SyncNetwork")
-    tcp.settimeout(None)
-    return synced, tcp
+ip_scan_once, ip_associate = ldn_mitm.scan_once, ldn_mitm.associate
 
 
 async def find_ip(args):
@@ -2095,7 +2064,7 @@ def build_parser():
                     help="the tested flag set: 'capture' records the console's party snapshot, "
                          "'trade' needs --send-snapshot")
     ap.add_argument("--comm-id", default=None, help="hex; defaults to Sword's 0x0100abf008968000")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--ip-join", action="store_true",
                     help="join an emulated console hosting over ldn_mitm on the LAN; no radio, "

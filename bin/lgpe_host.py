@@ -87,7 +87,7 @@ def build_parser():
     ap.add_argument("--no-accept-decrypted-ccmp", action="store_true",
                     help="do not accept the frames rtw88 has already decrypted. With this the "
                          "host reads nothing on that adapter")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--capture", default=None, help="every datagram, one JSON line each")
     ap.add_argument("--variable-id", type=lambda s: int(s, 0), default=0x0C0C0C0C,
                     help="our own variable id, any nonzero value")

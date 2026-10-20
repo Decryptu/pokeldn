@@ -45,7 +45,7 @@ def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seconds", type=float, default=600.0, help="how long to host")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--capture", default=None, help="every datagram and event, one JSON line each")
     ap.add_argument("--channel", type=int, default=6)
     ap.add_argument("--ldn-protocol", type=int, default=1, choices=(1, 3),

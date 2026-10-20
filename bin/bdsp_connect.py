@@ -1513,7 +1513,7 @@ def build_parser():
     ap.add_argument("--print-packets", action="store_true",
                     help="print every packet in and out; the --capture file keeps them either way")
     ap.add_argument("--comm-id", default=None)
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--ifname", default="ldnclient")
     ap.add_argument("--channels", default="1,6,11")

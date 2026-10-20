@@ -35,29 +35,13 @@ from pokeldn import pokemon as pokemon_service
 from pokeldn import gen8, pla
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import ldn_mitm, pia6
-from pokeldn.ldn.transport import board_radio, find_ap_phy
+from pokeldn.ldn.transport import board_radio, find_ap_phy, cleanup_stale_vifs
 from pokeldn.pla import data_exchange, joiner, trade_box
 from pokeldn.pla import pokemon as pla_pokemon
 from pokeldn.app import screen
 
-STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
 
-
-def scan_once(our_ip, host_ip, timeout):
-    """-> the host's NetworkInfo, or None. ldn_mitm drops a scan from the host's own address, so
-    it leaves from ours."""
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as us:
-        us.settimeout(timeout)
-        us.bind((our_ip, 0))
-        try:
-            us.sendto(ldn_mitm.build(ldn_mitm.SCAN), (host_ip, ldn_mitm.PORT))
-            while True:
-                data, _ = us.recvfrom(4096)
-                kind, info = ldn_mitm.parse(data)
-                if kind == ldn_mitm.SCAN_RESP:
-                    return info
-        except (socket.timeout, OSError, ValueError):
-            return None
+scan_once, associate = ldn_mitm.scan_once, ldn_mitm.associate
 
 
 def fast_scan(sock, host_ip, interval, deadline, last_ssid):
@@ -84,22 +68,6 @@ def fast_scan(sock, host_ip, interval, deadline, last_ssid):
                 if ldn_mitm.session_id(info) != last_ssid:
                     return info, time.time()
     return None, time.time()
-
-
-def associate(our_ip, host_ip, our_mac, name, timeout):
-    """-> (NetworkInfo, held TCP socket)."""
-    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    tcp.settimeout(timeout)
-    tcp.bind((our_ip, 0))
-    tcp.connect((host_ip, ldn_mitm.PORT))
-    tcp.sendall(ldn_mitm.build(ldn_mitm.CONNECT,
-                               ldn_mitm.build_node_info(our_ip, our_mac, name.encode())))
-    kind, synced = ldn_mitm.parse(tcp.recv(8192))
-    if kind != ldn_mitm.SYNC_NETWORK:
-        tcp.close()
-        raise RuntimeError(f"the host answered our connect with type {kind}, not SyncNetwork")
-    tcp.settimeout(None)
-    return synced, tcp
 
 
 def make_socket(ifname, our_ip=None):
@@ -273,11 +241,7 @@ def main_radio(args, offer, exchange, record):
     if not os.path.exists(keys_path):
         print(f"[pla] prod.keys not found at {keys_path!r}")
         return 2
-    if not board_radio():
-        import subprocess
-        for name in STALE_VIFS:
-            subprocess.run(["iw", "dev", name, "del"], stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL)
+    cleanup_stale_vifs()
     if args.mac and board_radio():
         from pokeldn.ldn import esp32_wlan
         esp32_wlan.set_station_mac(args.mac)
@@ -390,7 +354,7 @@ def build_parser():
     ap.add_argument("--scan-interval", type=float, default=0.02)
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--ifname", default="ldnclient")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--channels", default="1,6,11")
     ap.add_argument("--dwell", type=float, default=0.4, help="seconds per channel in a scan")
     ap.add_argument("--connect-timeout", type=float, default=6.0)
@@ -442,7 +406,7 @@ def host_argv(args, channel, seconds):
     """-> bin/pla_host.py's command line for the host role a console handed over."""
     from pokeldn.app.runner import command
     where = ["--ip-host", "--our-ip", args.our_ip] if args.ip_join else ["--channel", str(channel)]
-    argv = command("--run", "bin/pla_host.py", "--keys", args.keys, "--code", args.code,
+    argv = command("--run", "bin/pla_host.py", "--keys", resolve_keys(args.keys), "--code", args.code,
             *where, "--seconds", str(int(max(seconds, 60))),
             "--player-name", args.player_name, "--session-update", "--sustain", "--clock",
             "--data-exchange", "--game-channel", "--trade-box")

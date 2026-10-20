@@ -150,7 +150,7 @@ def build_parser():
     receiver_gift.add_arguments(ap, "--trade-box-record")
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--channel", type=int, default=None)
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--capture", default=None, help="write every datagram here as JSON lines")
     ap.add_argument("--app-version", type=int, default=0,
                     help="the LDN application version; the console's own is unread")

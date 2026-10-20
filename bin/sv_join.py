@@ -38,7 +38,7 @@ from pokeldn import gen9, panel, progress, sv
 from pokeldn.ldn import ldn_mitm, pia6, pia_connect, reliable5
 from pokeldn.sv import circle, pokemon, port2, raid, reference, streams, trade, wild
 from pokeldn.ldn import channel_table, game_channel
-from pokeldn.ldn.transport import board_radio, find_ap_phy
+from pokeldn.ldn.transport import board_radio, find_ap_phy, cleanup_stale_vifs as cleanup_stale
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import show_done, trades_done
 from pokeldn.app import screen
@@ -102,17 +102,6 @@ SESSION_MESSAGE_NAMES = {
 # Session type 7 here is LeaveMeshWithHostMigrationJob (0x6d8de0) handing the host role over, not
 # the wiki's left-station sync (docs/sv.md).
 
-STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
-
-
-def cleanup_stale():
-    if board_radio():
-        return
-    import subprocess
-    for name in STALE_VIFS:
-        subprocess.run(["iw", "dev", name, "del"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
 
 def set_mac(phy, mac, log=print):
     """Give the phy's interface this MAC, so the vif the association creates inherits it."""
@@ -144,36 +133,7 @@ def make_socket(ifname, our_ip=None):
     return userspace_ip.pia_socket(ifname, sv.PIA_PORT, our_ip)
 
 
-def ip_scan_once(our_ip, host_ip, timeout):
-    """-> the host's NetworkInfo, or None. ldn_mitm drops a scan from the host's own address."""
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as us:
-        us.settimeout(timeout)
-        us.bind((our_ip, 0))
-        try:
-            us.sendto(ldn_mitm.build(ldn_mitm.SCAN), (host_ip, ldn_mitm.PORT))
-            while True:
-                data, _ = us.recvfrom(4096)
-                kind, info = ldn_mitm.parse(data)
-                if kind == ldn_mitm.SCAN_RESP:
-                    return info
-        except (socket.timeout, OSError, ValueError):
-            return None
-
-
-def ip_associate(our_ip, host_ip, our_mac, name, timeout):
-    """-> (NetworkInfo, TCP socket the host holds open for the session)."""
-    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    tcp.settimeout(timeout)
-    tcp.bind((our_ip, 0))
-    tcp.connect((host_ip, ldn_mitm.PORT))
-    tcp.sendall(ldn_mitm.build(ldn_mitm.CONNECT,
-                               ldn_mitm.build_node_info(our_ip, our_mac, name.encode())))
-    kind, synced = ldn_mitm.parse(tcp.recv(8192))
-    if kind != ldn_mitm.SYNC_NETWORK:
-        tcp.close()
-        raise RuntimeError(f"the host answered our connect with type {kind}, not SyncNetwork")
-    tcp.settimeout(None)
-    return synced, tcp
+ip_scan_once, ip_associate = ldn_mitm.scan_once, ldn_mitm.associate
 
 
 def ip_comm_id(network_info):
@@ -232,7 +192,7 @@ def build_parser():
                     help="join only a console searching with this Link Code; empty takes any")
     ap.add_argument("--comm-id", default=None,
                     help="local communication id to join, hex; default is either cartridge's")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--ip-join", action="store_true",
                     help="join an emulated console over the LAN through ldn_mitm instead of the "
                          "radio: no root, no phy, no prod.keys")
@@ -779,7 +739,7 @@ def host_argv(args, channel, seconds):
     fixed[fixed.index("--seconds") + 1] = str(int(max(seconds, 60)))
     del fixed[fixed.index("--offer-out"):fixed.index("--offer-out") + 2]
     code = next(f for f in tool.fields if f.flag == "--code")
-    argv = command("--run", "bin/sv_host.py", "--keys", args.keys, *fixed,
+    argv = command("--run", "bin/sv_host.py", "--keys", resolve_keys(args.keys), *fixed,
                    *(["--code", args.code] if args.code else code.unset))
     for path in args.trade_offer:
         argv += ["--trade-offer", path]

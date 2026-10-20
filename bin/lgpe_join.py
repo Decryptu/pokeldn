@@ -34,7 +34,7 @@ from pokeldn.ldn import rtt_protocol as rtt
 from pokeldn.ldn import reliable3
 from pokeldn.ldn import local_protocol as lp
 from pokeldn.ldn.station_protocol import ldn_constant_id, ldn_service_variable_id, station_location
-from pokeldn.ldn.transport import board_radio, find_ap_phy
+from pokeldn.ldn.transport import find_ap_phy, cleanup_stale_vifs as cleanup_stale
 from pokeldn.host_support import resolve_keys, needs_root, write_file
 from pokeldn.lgpe import (COMM_ID_PIKACHU, PASSPHRASE, PIA_PORT, PIA_VERSION, packet_iv,
                           session_keys)
@@ -76,19 +76,8 @@ def _survive_netlink_overflow():
 
 _survive_netlink_overflow()
 
-STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
-
 KNOWN = {0x0100000011D90000: "BDSP", 0x0100ABF008968000: "Sword",
          COMM_ID_PIKACHU: "Let's Go Pikachu"}
-
-
-def cleanup_stale():
-    if board_radio():
-        return
-    import subprocess
-    for name in STALE_VIFS:
-        subprocess.run(["iw", "dev", name, "del"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def describe(net):
@@ -212,7 +201,7 @@ def build_parser():
                     help="print every packet in and out; the --capture file keeps them either way")
     ap.add_argument("--comm-id", default=None,
                     help="local_communication_id to join, hex. Omit to join the only unknown one")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--ifname", default="ldnclient")
     ap.add_argument("--channels", default="1,6,11,36,40,44,48")

@@ -3,7 +3,6 @@
 transport code involved). A waiting FRLG trade console is the RFU parent = LDN host, so it shows up here."""
 import argparse
 import os
-import subprocess
 import sys
 
 
@@ -16,21 +15,11 @@ if os.path.isdir(BUNDLED_LDN):
 import trio
 
 from pokeldn.ldn import api as ldn
-from pokeldn.ldn.transport import board_radio, find_ap_phy, list_phys
+from pokeldn.ldn.transport import find_ap_phy, list_phys, cleanup_stale_vifs as _cleanup_stale
 from pokeldn.host_support import resolve_keys, needs_root
-
-STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap"]
 
 ACCEPT = {ldn.ACCEPT_ALL: "ALL", ldn.ACCEPT_NONE: "NONE",
           ldn.ACCEPT_BLACKLIST: "BLACKLIST", ldn.ACCEPT_WHITELIST: "WHITELIST"}
-
-
-def _cleanup_stale():
-    if board_radio():
-        return                    # the ESP32 board has no kernel interfaces to remove
-    for name in STALE_VIFS:
-        subprocess.run(["iw", "dev", name, "del"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def main():
