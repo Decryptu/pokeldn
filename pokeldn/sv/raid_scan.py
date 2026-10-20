@@ -4,6 +4,7 @@ seeds worth keeping; raid_search then makes their raids with the plain Python co
 what the Python scan finds, faster (docs/sv_raid.md, Finding a seed). The scan runs in a helper process
 of its own, so a search never waits on the app's other PKHeX requests."""
 
+import atexit
 import hashlib
 import json
 import threading
@@ -47,6 +48,7 @@ def _service():
         if _SERVICE is None:
             from pokeldn import pokemon
             _SERVICE = pokemon.Service()
+            atexit.register(_SERVICE.close)
         return _SERVICE
 
 

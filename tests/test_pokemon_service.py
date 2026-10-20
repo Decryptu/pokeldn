@@ -727,3 +727,16 @@ for line in sys.stdin:
 ])
 def test_only_the_helper_built_as_a_library_runs_in_process(command, library):
     assert pokemon._library(command) is library
+
+
+@pytest.mark.parametrize("service", ["pokemon.SERVICE", "raid_scan._service()"])
+def test_a_long_lived_helper_is_closed_when_the_interpreter_exits(service):
+    """raid_scan's own helper process outlived the interpreter: its pipes and process were finalized
+    at shutdown, a ResourceWarning on every worker that had run a seed scan."""
+    helper = "import sys\nfor line in sys.stdin: print('{\"ok\": true}', flush=True)\n"
+    script = (f"import sys\nfrom pokeldn import pokemon\nfrom pokeldn.sv import raid_scan\n"
+              f"pokemon._command = lambda: [sys.executable, '-c', {helper!r}]\n"
+              f"assert {service}._ask({{'cmd': 'species'}}) == {{'ok': True}}\n")
+    done = subprocess.run([sys.executable, "-W", "always::ResourceWarning", "-c", script],
+                          cwd=Path(__file__).parent.parent, capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0 and "ResourceWarning" not in done.stderr, done.stderr
