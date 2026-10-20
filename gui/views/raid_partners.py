@@ -78,7 +78,7 @@ class RaidPartnersPicker:
             return tr('raid_partners.none_consoles_fill_the_slots_5b1d52', 'None, {value0} consoles fill the slots', value0=self.consoles)
         if not self.picks:
             return tr('raid_partners.drawn_as_the_game_draws_them_83bcc1', 'Drawn as the game draws them{value0}', value0=stage)
-        names = ", ".join(self.picks)
+        names = ", ".join(translate(name) for name in self.picks)
         return (names if len(self.picks) == self.free else tr('raid_partners.one_drawn_5e7b66', '{value0}, one drawn', value0=names)) + stage
 
     def _body(self) -> list[ft.Control]:
@@ -123,7 +123,7 @@ class RaidPartnersPicker:
                              alignment=ft.Alignment.CENTER) if picked else ft.Container()
         title = ft.Row([
             Sprite(self.app, partner.species, size=MINI).control,
-            ft.Column([t.text(partner.trainer, 13, weight=ft.FontWeight.W_600, max_lines=1,
+            ft.Column([t.text(translate(partner.trainer), 13, weight=ft.FontWeight.W_600, max_lines=1,
                               overflow=ft.TextOverflow.ELLIPSIS),
                        t.text(translate(partner.name), 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)],
                       spacing=0, expand=True),

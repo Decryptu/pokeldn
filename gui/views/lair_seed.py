@@ -9,6 +9,7 @@ import threading
 import flet as ft
 
 from gui import theme as t
+from gui.localization import translate
 from gui.views.sprites import MINI, Sprite
 from pokeldn.swsh import lair, raid_event
 
@@ -42,7 +43,7 @@ class LairSeedPicker:
         self._show(str(value or ""), update=False)
 
     def _name(self, species: int) -> str:
-        return self.names.get(str(species), f"#{species}")
+        return translate(self.names.get(str(species), f"#{species}"))
 
     def _tiles(self, rows) -> ft.Row:
         return ft.Row([ft.Column([Sprite(self.app, row[0], size=MINI, form=row[1]).control,

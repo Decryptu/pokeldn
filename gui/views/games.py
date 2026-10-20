@@ -489,7 +489,7 @@ class GamesView:
             return control
         if field.kind == "choice":
             choices = self.raid_choices(field) or field.choices
-            control = t.dropdown([(k or EMPTY, label) for k, label in choices], value or EMPTY,
+            control = t.dropdown([(k or EMPTY, translate(label)) for k, label in choices], value or EMPTY,
                                  on_select=lambda e: self.set_value(
                                      field, "" if e.control.value == EMPTY else e.control.value, rebuild=True))
             control.disabled = len(choices) == 1 and len(field.choices) > 1   # an event leaves one
@@ -504,6 +504,7 @@ class GamesView:
             chosen = value if value in keys else (keys[-1] if keys else "")
             if chosen != value and chosen:
                 self.values[field.key] = chosen
+            options = [(key, translate(label)) for key, label in options]
             control = t.dropdown(options or [(EMPTY, tr('games.no_boss_of_this_event_shows_in_a_den_8a4b1e', 'No boss of this event shows in a den'))],
                                  chosen or EMPTY, on_select=lambda e: self.set_value(field, e.control.value, rebuild=True))
             control.disabled = not options
