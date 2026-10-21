@@ -141,6 +141,33 @@ def test_bundled_font_covers_cjk():
                    for start, end, glyph in ranges), character
 
 
+def test_punctuation_font_draws_latin_width_ahead_of_cjk():
+    """The CJK font's ’ is a 1000-unit cell: "Reveler’s Road" read as "Reveler’ s Road"."""
+    import struct
+    from gui import theme
+    assert theme.FALLBACK_FONTS.index(theme.PUNCTUATION_FONT) < theme.FALLBACK_FONTS.index(theme.CJK_FONT)
+    font = (ROOT / "gui/assets" / theme.FONT_ASSETS[theme.PUNCTUATION_FONT]).read_bytes()
+    tables = {font[at:at + 4]: struct.unpack_from(">I", font, at + 8)[0]
+              for at in range(12, 12 + struct.unpack_from(">H", font, 4)[0] * 16, 16)}
+    cmap, hmtx = tables[b"cmap"], tables[b"hmtx"]
+    metrics = struct.unpack_from(">H", font, tables[b"hhea"] + 34)[0]
+    per_em = struct.unpack_from(">H", font, tables[b"head"] + 18)[0]
+    count = struct.unpack_from(">H", font, cmap + 2)[0]
+    at = next(cmap + struct.unpack_from(">I", font, cmap + 4 + n * 8 + 4)[0] for n in range(count)
+              if struct.unpack_from(">H", font, cmap + struct.unpack_from(">I", font, cmap + 4 + n * 8 + 4)[0])[0] == 4)
+    segments = struct.unpack_from(">H", font, at + 6)[0] // 2
+    ends, starts, deltas, offsets = (struct.unpack_from(f">{segments}H", font, base) for base in
+                                     (at + 14, at + 16 + segments * 2, at + 16 + segments * 4, at + 16 + segments * 6))
+    for character in "‘’“”·":
+        code = ord(character)
+        n = next(n for n in range(segments) if starts[n] <= code <= ends[n])
+        assert offsets[n] == 0, character
+        glyph = (code + deltas[n]) & 0xFFFF
+        assert glyph, character
+        advance = struct.unpack_from(">H", font, hmtx + min(glyph, metrics - 1) * 4)[0]
+        assert advance < per_em // 2, (character, advance)
+
+
 def test_translations_do_not_change_catalog_arguments(isolated):
     code = '''
 import json, os

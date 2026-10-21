@@ -64,7 +64,9 @@ Below 760 points wide, pages sit in a bottom tab bar and panels show one at a ti
 Settings, App language lists English and installed language packs
 ([Language packs](plugins.md#language-packs-15)); a change applies after restart, missing strings
 fall back to English. Trainer language is separate. The bundled Noto Sans CJK SC font covers
-Chinese, Japanese and Korean (`gui/assets/fonts/LICENSE`).
+Chinese, Japanese and Korean (`gui/assets/fonts/LICENSE`). Its own ‘ ’ “ ” · … are full-width, so
+Noto Sans Punctuation, the Latin-width forms of the same six from the same font
+(`scripts/gen_punctuation_font.py`), comes ahead of it; a pack's `font_family` still comes first.
 
 ## Your trainer
 

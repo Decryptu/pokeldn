@@ -1885,3 +1885,14 @@ def test_docs_search_finds_a_section_under_its_heading():
     assert (found[0].file, found[0].anchor) == ("hardware_esp32.md", "the-host-watchdog")
     runs = docs.snippet(found[0].text, ["host", "watchdog"])
     assert any(hit and part.lower() in ("host", "watchdog") for part, hit in runs)
+
+
+@pytest.mark.parametrize("typed, picked", [("dunsparce ", ["206"]), ("zzz", []), ("", [])])
+def test_enter_on_typed_species_text_picks_the_option_it_names_or_nothing(typed, picked):
+    seen = []
+    box = t.dropdown([("25", "Pikachu"), ("206", "Dunsparce")], None, on_select=lambda e: seen.append(e.control.value),
+                     enable_filter=True, editable=True)
+    box.update = lambda: None
+    box.text = typed
+    box.on_select(SimpleNamespace(control=box))
+    assert seen == picked

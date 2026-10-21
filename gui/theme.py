@@ -30,7 +30,10 @@ BRAND_RED = ("#FAA555", "#FD474D")
 SELECTED = ft.Colors.with_opacity(0.14, BLUE)
 MONO = "monospace"
 CJK_FONT = "Noto Sans CJK SC"
-FONT_ASSETS = {CJK_FONT: "fonts/NotoSansCJKsc-Regular.otf"}
+# The CJK font draws ‘ ’ “ ” · … full-width; this one holds its Latin-width forms (scripts/gen_punctuation_font.py).
+PUNCTUATION_FONT = "Noto Sans Punctuation"
+FALLBACK_FONTS = [PUNCTUATION_FONT, CJK_FONT]
+FONT_ASSETS = {PUNCTUATION_FONT: "fonts/NotoSansPunctuation.otf", CJK_FONT: "fonts/NotoSansCJKsc-Regular.otf"}
 CONTROL_HEIGHT = 34
 CONTROL_PADDING = ft.Padding(12, 8, 12, 8)
 CONTROL_RADIUS = 8
@@ -46,7 +49,7 @@ def app_theme() -> ft.Theme:
     from pokeldn.app.i18n import font_family
     return ft.Theme(
         font_family=font_family(),
-        text_theme=ft.TextTheme(**{f.name: ft.TextStyle(font_family_fallback=[CJK_FONT])
+        text_theme=ft.TextTheme(**{f.name: ft.TextStyle(font_family_fallback=FALLBACK_FONTS)
                                    for f in fields(ft.TextTheme)}),
         color_scheme_seed=BLUE,
         color_scheme=ft.ColorScheme(primary=BLUE, secondary=BLUE, surface=PANEL, on_surface=TEXT,
@@ -57,12 +60,12 @@ def app_theme() -> ft.Theme:
                                           thumb_color=ft.Colors.with_opacity(0.2, "#FFFFFF")),
         tooltip_theme=ft.TooltipTheme(decoration=ft.BoxDecoration(bgcolor=HOVER, border_radius=8),
                                       text_style=ft.TextStyle(color=TEXT, size=12, font_family=font_family(),
-                                                              font_family_fallback=[CJK_FONT])),
+                                                              font_family_fallback=FALLBACK_FONTS)),
     )
 
 
 def text(value: str, size: float = 13, color: str = TEXT, weight=None, **kwargs) -> ft.Text:
-    kwargs.setdefault("style", ft.TextStyle(height=1.4, font_family_fallback=[CJK_FONT]))
+    kwargs.setdefault("style", ft.TextStyle(height=1.4, font_family_fallback=FALLBACK_FONTS))
     return ft.Text(value, size=size, color=color, weight=weight, **kwargs)
 
 
@@ -235,7 +238,7 @@ def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, 
     if digits:
         kwargs.setdefault("keyboard_type", ft.KeyboardType.NUMBER)
     style = ft.TextStyle(size=13, color=TEXT, font_family=MONO if mono else None,
-                         font_family_fallback=[CJK_FONT])
+                         font_family_fallback=FALLBACK_FONTS)
     uniform = not kwargs.get("multiline") and not label and "height" not in kwargs
     if uniform:
         kwargs.setdefault("height", CONTROL_HEIGHT)
@@ -251,9 +254,21 @@ def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, 
 
 
 def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, **kwargs) -> ft.Dropdown:
+    if on_select and kwargs.get("editable"):
+        chosen = on_select
+
+        def on_select(e):
+            # Enter on typed text selects nothing: value None. Take the option it names, or ignore it.
+            if e.control.value is None:
+                typed = (e.control.text or "").strip().casefold()
+                e.control.value = next((o.key for o in e.control.options if typed and (o.text or "").casefold() == typed), None)
+                if e.control.value is None:
+                    return
+                e.control.update()
+            chosen(e)
     return ft.Dropdown(value=value, options=[ft.DropdownOption(key=k, text=t) for k, t in options],
                        on_select=on_select, dense=True, filled=True, bgcolor=FIELD, border=_border(),
-                       text_size=13, text_style=ft.TextStyle(font_family_fallback=[CJK_FONT]),
+                       text_size=13, text_style=ft.TextStyle(font_family_fallback=FALLBACK_FONTS),
                        expand=True, height=CONTROL_HEIGHT, content_padding=CONTROL_PADDING,
                        trailing_icon=pixel_icon("chevron-down", color=MUTED),
                        selected_trailing_icon=pixel_icon("chevron-up", color=BLUE),
@@ -286,7 +301,7 @@ def button(label: str, on_click=None, icon=None, color: str = BLUE, filled: bool
         shape=ft.StadiumBorder(), padding=ft.Padding(16, 8, 16, 8),
         side={ft.ControlState.FOCUSED: ft.BorderSide(2, ft.Colors.with_opacity(0.6, BLUE)),
               ft.ControlState.DEFAULT: ft.BorderSide(0, ft.Colors.TRANSPARENT)},
-        text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_500, font_family_fallback=[CJK_FONT]),
+        text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_500, font_family_fallback=FALLBACK_FONTS),
         overlay_color={ft.ControlState.DEFAULT: ft.Colors.TRANSPARENT,
                        ft.ControlState.HOVERED: ft.Colors.with_opacity(0.08, "#FFFFFF"),
                        ft.ControlState.PRESSED: ft.Colors.with_opacity(0.14, "#000000")},
