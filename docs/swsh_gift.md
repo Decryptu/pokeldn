@@ -29,19 +29,8 @@ The receive states are `StateReceiveBase`, `StateReceiveInternet`, `StateReceive
 play-record keys `fushigi_net`, `fushigi_serial` and `fushigi_p2p` count receipts per channel, beside
 `yy_battle_single_p2p` / `_net`.
 
-`/bin/message/French/common/mystery.dat` in the base RomFS:
-
-| line | text |
-|---|---|
-| 9 | `Recherche de cadeau en cours...` |
-| 11 | `Aucun cadeau n'a été trouvé.` |
-| 39 | `Connexion à Internet activée.` |
-| 42 | `Communication sans fil locale activée.` |
-| 63 | `Via Internet` |
-| 64 | `Via un code ou mot de passe` |
-| 65 | `Voir vos Cadeaux Mystère` |
-| 69 | `Via communication sans fil locale` |
-| 72-75 | the top menu: `Recevoir un Cadeau Mystère`, the Wild Area news, the Poké Ball Plus, the Battle Stadium rewards |
+The local-wireless button is line 69 of `/bin/message/<lang>/common/mystery.dat`; line 9 is the
+search message and line 11 "no gift found".
 
 ### The app's state machine
 
@@ -61,40 +50,24 @@ that state. `SetNextState(id)` is `0x00FF0DE0`, with 63 call sites.
 | 7 | SelectReceiveDataLocal | 16 | (default, TopMenu) |
 | 8 | SelectReceiveDataInternet | | |
 
-Local wireless is state 2, the search, then 7, the pick from what a distributor offers. What advances
-2 to 7 is unread; `StateReceiveLocal` sets no next state itself. `0x00FE700C` is `mov w8, w21`, the
-dispatcher's jump-table index; patching it to `mov w8, #N` forces state N. Forced state 7 draws an
-empty list and touches the network in no way (no `Connect`, `OpenStation` or session creation, no
-change to the maximum, the registration table or the advertisement byte, also over 100 s seated with
-the maximum patched), so its list is filled before it is entered.
-
-The class's primary vtable is `0x025737C8`; its group base `0x025737B8` is held only in
-`main+0x2624698`, and the constructor `0x00FE5D60` has no caller (the applet framework builds the app
-through a vtable). Nothing in `main` points at the app; find it by scanning the heap for the vtable.
-The image has no Mystery Gift protocol-buffer module: every `.pb.cc` belongs to `gflnet3`'s p2p
-framework or to trade, the three battle modules, the raid dens, the underground, the camp,
-`comp_organize` or `btl_spot`.
+Local wireless is state 2, the search, then 7, the pick from what a distributor offers; state 7
+touches no network and its list is filled before it is entered. What advances 2 to 7 is unknown.
+`0x00FE700C` (`mov w8, w21`) is the dispatcher's jump-table index. The class's primary vtable is
+`0x025737C8`; nothing in `main` points at the app, so find it by scanning the heap for the vtable.
+The image has no Mystery Gift protocol-buffer module.
 
 ## The gift screen's network
 
 On the local-wireless screen the console advertises its always-on local-play network: local
 communication id `0x0100ABF008968000` (both titles), version 4, scene id 65535 (60001 on the link
 trade), accept policy ALL, `NodeCountMax` 2, 384 bytes of advertise data, password CRC zero. The game
-creates that access point once, some seconds after loading (16 to 31 s measured); entering or leaving
-Mystery Gift makes no LDN call. The gift screen only sets its advertise data and arms the Pia join filter.
+creates that access point once, 16 to 31 s after loading; entering or leaving Mystery Gift makes no
+LDN call. The gift screen only sets its advertise data and arms the Pia join filter.
 
-On the screen the game calls `nn::ldn::Scan` about forty times a minute (33 in a 40 s IPC trace),
-interleaved with `SetAdvertiseData` and `GetNetworkInfo`, never `Connect` or `CreateNetwork`. The
-scan is passive at the 802.11 layer. Its filter names only the local communication id and the network
-type; `SessionId` and `SceneId` are unfiltered.
-
-Monitor captures with the console hosting on channel 6:
-
-| channel | beacons from it | LDN advertisement action frames | probe requests |
-|---|---|---|---|
-| 1 | 0 | 153 in 90 s | 0 |
-| 6 | 339 in 70 s | 435 in 70 s | 0 |
-| 11 | 0 | 95 in 90 s | 0 |
+On the screen the game calls `nn::ldn::Scan` about forty times a minute, interleaved with
+`SetAdvertiseData` and `GetNetworkInfo`, never `Connect` or `CreateNetwork`. The scan is passive at
+the 802.11 layer (no probe requests). Its filter names only the local communication id and the
+network type; `SessionId` and `SceneId` are unfiltered.
 
 ### The mode byte
 
@@ -112,30 +85,18 @@ count through the jump table `0x02066C14`; `0x010961a8` maps it to the advertise
 | 5 | 60004 | 4 | 0x10 |
 | 6 | 60005 | 2 | 0x1E |
 
-The link trade is mode 2 (0x0D measured); the gift screen runs mode 0 (0xFF measured), which creates
-no session. Entering the app reads the mode (`0x01096d20`), saves it at `app+0xFE8` and sets 0
-(`0x01022f08`); leaving restores it (`0x01023198`). The byte stays `0xFF` across idling, leaving and
-re-entering. A Max Raid host advertises `0x11`, which is not in the table.
-
-Across five trade and four gift advertisements from one console, the only other byte that differs by
-screen is `0xB9` (0x00 gift, 0xAA trade), meaning unread; the rest is fixed or random per session.
-The LDN `SceneId` reads 60001 on a scanned Link Trade network and 65535 on the gift screen
-([Taking a seat](swsh_session.md#taking-a-seat)).
+The link trade is mode 2; the gift screen runs mode 0, which creates no session. Entering the app
+saves the mode at `app+0xFE8` and sets 0 (`0x01022f08`); leaving restores it (`0x01023198`). A Max
+Raid host advertises `0x11`, which is not in the table. The only other advertise byte that differs by
+screen is `0xB9` (0x00 gift, 0xAA trade), meaning unknown.
 
 ## The Pia mesh on the gift screen
 
-The mesh on this screen admits no joiner, and a station seated in it by force receives nothing; the
-card uses [the beacon transport](#the-card-travels-in-beacon-advertise-data).
-
-A joiner completes the station handshake on 0x14 (the console's connection request, a result-0
-response, its type-5 ack, its 840-byte type-2 station record) and the mesh join request on 0x18 is
-refused:
+The mesh on this screen admits no joiner; the card uses [the beacon
+transport](#the-card-travels-in-beacon-advertise-data). A joiner completes the station handshake on
+0x14 and its mesh join request on 0x18 is refused:
 
     02 00 ff ff 01        JOIN_RESPONSE, refused, reason 1
-
-The same join against the link trade draws a 148-byte response. Nothing follows on
-0x58, 0x7C or 0x80. Held with no join sent, the console sends nothing after the handshake but its
-update session, which lists the joiner as seat 1 with `allow_participating` set.
 
 `ProcessJoinRequestJob` runs `InitialStep`, `CheckApprovalJoin`, `SendJoinRefused`,
 `SendJoinResponse`, `WaitResponseAck` and `JoinSucceeded`. Reason 1 comes only from the application
@@ -143,88 +104,37 @@ callback; the transport check gives the others.
 
 | | Sword | Shield |
 |---|---|---|
-| state-name strings | `0x03ad0f4e`..`0x03ad1010` | |
 | `CheckApprovalJoin` | `0x01553d20` | `0x017cc450` |
 | reason-1 store | `0x01553d58 strb w9, [x19, #0xbc]` | `0x017cc59c strb w9, [x19, #0xba]` |
-| `MeshProtocol` global | `0x04c4db60` | |
 | Pia trampoline at `MeshProtocol+0x60` | `0x0157fcfc`, global `0x04c4b848` | `0x018414b0`, global `0x02616a30` |
-| trampoline installed by | `0x0171a0b4`, from slot `0x04c513f8` | |
-| `SendJoinRefused` | `0x01553d80`; `0x0154cd00` writes `0xFFFF0002`, then the reason at offset 4 | |
-| transport check | `0x0154806c`: `0xFF`, or reason 0, 2, 4, 5 | `0x017bb2e0` |
-
-    0x01553cc0  ldr  x8, [x8, #0x60]      ; the approval callback (Sword)
-    0x01553cc4  cbz  x8, #0x1553d34       ; no callback installed -> accept
-    0x01553d2c  blr  x8
-    0x01553d30  tbz  w0, #0, #0x1553d4c   ; bit 0 clear -> refuse
-    0x01553d54  mov  w9, #1
-
-    0x018414b0  adrp x8, #0x2616000 ; ldr x8, [x8, #0xa30] ; ldr x8, [x8]    (Shield)
-    0x018414bc  ldr  x1, [x8, #0xb0]
-    0x018414c0  cbz  x1, #0x18414c8      ; null -> mov w0, #1 ; ret
-    0x018414c4  br   x1
+| `SendJoinRefused` | `0x01553d80` | |
+| transport check | `0x0154806c` | `0x017bb2e0` |
 
 The trampoline approves when `+0xb0` of its object is null and otherwise tail-calls it. The game
-writes that field with `0x01841490` (`str x1, [x0, #0xb0]`), called at `0x006b47b0` with the
-filter `0x006b41c0` from slot `0x02616a38`, and clears it with `0x018414a0` (`str xzr`), called at
-`0x006b5340`; both sites are reached from the mode switch `0x006a9af0`.
+sets it to the join filter `0x006b41c0` at `0x006b47b0` and clears it at `0x006b5340`, both from the
+mode switch `0x006a9af0`.
 
 ### The join filter 0x006b41c0
 
-`manager` is `[0x02610000 + 0x4b0]` and `session` (the game session) is `[manager+0x58]`. The filter
-runs four gates in order; the values are read live on the search screen:
+`manager` is `[0x02610000 + 0x4b0]` and `session` is `[manager+0x58]`. Four gates in order, with the
+gift screen's values:
 
-| order | site | test | live value | verdict |
+| order | site | test | value | verdict |
 |---|---|---|---|---|
-| 1 | `0x006b4204` | block list enabled (`manager+0x21C`) and non-empty (`+0x1C0`, 16-byte entries walked by `0x006be4a0`) | enabled, empty | passes |
-| 2 | `0x006b8260` in `0x006b8230` | Pia station count `pia_obj+0x1A8` below `session+0x1F0`, unsigned `b.lo` | count 1, max 0 | refuses |
-| 3 | `0x006b827c` | recruiting predicate, `session` vtable `+0xB0` = `0x006ccb00` (`ldrb w0, [x0, #0x4f5]; ret`); non-zero walks the allow list at `session+0x4c0`, count `+0x4c8` (`0x006b8290`) | flag 0 | approves |
-| 4 | `0x006b4248` | `cbz` on the halfword at identity `+0x10`; else it is looked up in `[manager+0x2b0]` (count `+0x2b8`) and compared with `[manager+0x220]` | 0 for any IPv4 station | approves |
+| 1 | `0x006b4204` | block list enabled (`manager+0x21C`) and non-empty (`+0x1C0`) | enabled, empty | passes |
+| 2 | `0x006b8260` | Pia station count `pia_obj+0x1A8` below `session+0x1F0` | count 1, max 0 | refuses |
+| 3 | `0x006b827c` | allow-list flag `session+0x4f5`; set, walks the list at `session+0x4c0` | 0 | approves |
+| 4 | `0x006b4248` | halfword at identity `+0x10` (address byte 8, zero for IPv4) | 0 | approves |
 
-The allow-list flag `session+0x4f5` is set by `0x006b86c4` and `0x006cc7bc` and cleared at
-`0x006ca848`, just before `LdnCreateSessionSetting` is built at `0x006ca86c`. Entries are appended via
-`0x006b5c80` -> `0x006b9920` and emptied via `0x006b5c70` -> `0x006b9910`.
-
-The identity is built by `0x0177b7b0` and filled by `0x017b1bd0`, which copies 32 bytes from `+0x10`
-of the joiner's mesh station-location entry (the one whose `+0x448` is the station and `+0x440` is
-3):
-
-    0x017b1c50  add x1, x23, #0x10 ; mov w2, #0x20 ; mov x0, x20 ; bl 0x18fde50
-
-`InetAddress` (deserializer `0x01767a10`) has a zero-filled 16-byte address field at `+0x08` holding a
-big-endian IPv4 unless the size byte is 0x12, and the port at `+0x18`. A location keeps its public
-address at `+0x00` and its private one at `+0x28`, so the identity lies in the public address and
-identity `+0x10` is address byte 8, zero for IPv4; the lists the callback walks are keyed on the
-joiner's address. The version-4 location deserializer (`0x0185eff8` onward) stores the relay port at
-`+0x60`, constant id `+0x68`, variable id `+0x70`, service variable id `+0x74` and nat quad
-`+0x78`..`+0x7b`, outside the copied window. The constant id `0x1249a221d8580000` is refused on the
-gift scene and accepted on the trade scene.
-
-The maximum `session+0x1F0` is written only by `0x006b9900` (`str w1, [x0, #0x1f0]`), reached through
-the uncalled thunk `0x006b5c00` and the wrapper `0x0110e5e0`, whose two callers (`SetMax(GetCount())`)
-are the Dynamax Adventure matching (`0x00bd9b30`, among the `ChikaMatchingState*` states
-`0x00bd1978..0x00bda158`) and the Max Raid den (`0x01031c74`, among `View_NestHole`,
-`StateGuestReady`, `StateHostReady` `0x0102aba4..0x010370cc`). Read live in one
-running game it is 0 on the gift screen, 2 hosting a link trade and 4 hosting a Max Raid, with the
-same filter armed in all three. The raid host advertises `NodeCountMax` 4; the gift screen advertises
-2 over a Pia maximum of 0.
-
-`game_session+0x3F8` is 1 on the gift screen and 0 on both accepting sessions. `+0x365`, `+0x33D`
-and advertisement `+0xF9` keep their raid values after a raid, so they are mode residue. `manager` is
-byte-identical between the gift screen and a trade host.
+The maximum `session+0x1F0` is written only by `0x006b9900`, reached from the Dynamax Adventure
+matching (`0x00bd9b30`) and the Max Raid den (`0x01031c74`): 0 on the gift screen, 2 hosting a link
+trade, 4 hosting a Max Raid. Writing 8 there on the gift screen admits a join, but the seated scene
+sends no application payload and opens nothing on 0x84.
 
 ### The transport check
 
-`0x017bb2e0` runs in `CheckApprovalJoin` before the callback and returns `0xFF` or the reason byte,
-sent unchanged:
-
-    0x017bb358  bl   0x017bab70        the live station count
-    0x017bb35c  ldrh w9, [x19, #0xa8]  the maximum
-    0x017bb368  b.hs 0x017bb380        count >= max, reason 0
-    0x017bb370  bl   0x017bb5a0        the index of the first free station slot
-    0x017bb378  cmp  w8, #0xfd         no free slot, reason 0
-
-Its object is `read_u64(read_u64(main + 0x0262F7B0))`, distinct from `pia_obj` (`main + 0x02616A30`)
-and `game_session`.
+`0x017bb2e0` runs before the callback and returns `0xFF` or the reason byte. Its object is
+`read_u64(read_u64(main + 0x0262F7B0))`.
 
 | field | width | what it holds |
 |---|---|---|
@@ -235,38 +145,13 @@ and `game_session`.
 | `+0xC4` | u32 | the occupancy bitmask, read when `[0xAC] == [0xAB]` |
 | `+0xC8` | u32 | the occupancy bitmask otherwise, the only one the free-slot search reads |
 
-The count is 1 plus one per set bit (`0x017bad94`); the free-slot search returns the first clear bit,
-or `0xFD`. Live on the emulator's link-trade screen, idle and across 49 attempts: max 8, enable 1,
-sel 0, bits 0, `+0xC4` 0, `+0xC8` 1, so the first two tests pass. Three more exits return 0:
-
-| site | the test |
+| site | returns 0 when |
 |---|---|
-| `0x017bb380` | `count >= max`, or the free-slot search returns `0xFD`; measured passing |
-| `0x017bb498` | the table at `mesh_obj+0x370`: its size against a u16 at `read_u64(main + 0x02616710) + 0x70`, then against its capacity at `table+0x48`; a joiner already in the table skips both (`0x017bb41c`) |
-| `0x017bb4d4` | the byte at `mesh_obj+0x132`, set by the handler at `mesh_obj+0x120` on a type-0x18 event and cleared as read |
+| `0x017bb380` | count (1 plus one per set bit) `>= max`, or no free slot (`0xFD`) |
+| `0x017bb498` | the table at `mesh_obj+0x370` is full against a u16 at `read_u64(main + 0x02616710) + 0x70` or its capacity `table+0x48` |
+| `0x017bb4d4` | the byte at `mesh_obj+0x132`, set on a type-0x18 event |
 
-It returns 2 when `+0xAA` is zero or a preliminary predicate holds, and 4 when `mesh_obj+0x131` is set
-by the type-0x19 event.
-
-### With a station seated
-
-- Writing 8 to `game_session+0x1F0` on the search screen admits the join at once (148-byte response,
-  station count 1 to 2); writing 0 brings reason 1 back.
-- On the emulator, with `+0x1F0` and `+0x1F4` patched to 2, the join drew `02 00 ff ff 00` (reason 0,
-  the transport check's short form), the same five bytes a link-trade host there answers with. Every
-  packet authenticates.
-- Once an LDN node joins, the console broadcasts a Local Protocol update session about six times a
-  second listing it as seat 1, and none with no node. One ack stops it; unacked
-  (`--no-ack-update`) it continues. Trap: the emulator's wildcard
-  socket on 12345 can take another listener's broadcasts; observe updates with an external capture.
-- The only flows between the nodes are Pia on 12345 and ldn_mitm's control channel on 11452.
-- Seated, the scene sends RTT probes, reliable-window opens on two ports and mesh updates, and no
-  application payload; nothing opens on 0x84. It acks pings on 0x7C in sequence.
-- A 0x2D0 record behind the trade driver's 4-byte header (`u16 id, u8 disc, u8 0`), sent on 0x7C and
-  0x80, ports 0 and 1, is acked and never reaches the receive job.
-- Advertisements built from the console's own sessions, six variants and scene ids 60001..60021, are
-  returned by its scan and filed at `pia_obj+0x3C0`, and none draws a `Connect`, an `OpenStation`, an
-  accept-policy call, or a change to the maximum or `+0x3F8`.
+It returns 4 when `mesh_obj+0x131` is set by the type-0x19 event.
 
 ## The receive job and the importer
 
@@ -282,25 +167,13 @@ The job holds the data sink at `job+0x60` (target `0x01005BC0`), a progress call
 appears when the search screen opens and is freed when it closes. Trap: re-entering the screen
 rebuilds the job and the sink's object at new addresses.
 
-The sink tail-calls `0x00FF0E00` -> `0x00FF1FB0` -> `0x00FF2170`, the importer. The importer refuses
-a body that is not a whole number of 0x2D0-byte records (720 bytes, PKHeX's Gen 8 Wonder Card size;
-the app also allocates a 0x2D0 object at `0x00feba7c`):
+The sink tail-calls `0x00FF0E00` -> `0x00FF1FB0` -> `0x00FF2170`, the importer, which refuses a
+body that is not a whole number of 0x2D0-byte records (720 bytes, PKHeX's Gen 8 Wonder Card size;
+`0x00ff22f4`). Each record passes the checks of [What a record must carry](#what-a-record-must-carry)
+at `0x00FF2354`, is filtered through `0x01449820` and materialised by `0x00FF3EC0`.
 
-    0x00ff22e4  umulh x8, x21, x8        ; x21 = the length
-    0x00ff22e8  lsr   x28, x8, #7        ; x28 = length / 0x2d0, the record COUNT
-    0x00ff22ec  mov   w8, #0x2d0
-    0x00ff22f0  msub  x8, x28, x8, x21   ; the remainder
-    0x00ff22f4  cbnz  x8, #0xff272c      ; not a whole number of records -> refuse
-
-Each record passes the checks of [What a record must carry](#what-a-record-must-carry) at
-`0x00FF2354`, is filtered through `0x01449820` and materialised by `0x00FF3EC0`. With nothing
-received, forcing `StateConfirmGift` (12) faults on a null card (`0x015C9230 ldrb w8,[x0,#0x1AC]`,
-from the controller `0x015BFFA0` via app `0x00FFA458`) and `StateReceiveComplete` (14) draws an empty
-panel.
-
-The importer's second argument is the route. It passes unchanged through `0x00FF0E00` and
-`0x00FF1FB0` to `0x00FF2170`, which keeps it at `[sp+0x35c]`; it becomes card `+0x64`
-(`0x00FF3F5C`) and, as `route != 0`, header `+0x0E` (`0x010B5FAC`). Each caller is a lambda in slot
+The importer's second argument is the route; it becomes card `+0x64` (`0x00FF3F5C`) and, as
+`route != 0`, header `+0x0E` (`0x010B5FAC`). Each caller is a lambda in slot
 16 of a receive state's vtable:
 
 | state | route | call sites |
@@ -311,26 +184,19 @@ The importer's second argument is the route. It passes unchanged through `0x00FF
 | `StateReceiveFromBall` | 2 | `0x0100fc78`, `0x0100fce0` |
 | `StateReceiveRankMatch` | 3, 4 | `0x01012458`, `0x010124c0` |
 
-Any route but 0 overwrites the record's date ([The card's date](#the-cards-date)). After the import
-(`0x00ff24e0..0x00ff26d4`), routes 3 and 4 set bytes from 2 to 4 in blocks `0xa83021c1` (0x268
-bytes) and `0xce07d358` (0x1c bytes): route 3 at an index from record `+0x1c` (at most 0x2f), in the
-half chosen by `+0x1e` and the group chosen by the kind at `+0x11`; route 4 when the u32 at record
-`+0x18` equals the block's first word. Route 0 touches neither block.
+Any route but 0 overwrites the record's date ([The card's date](#the-cards-date)). Routes 3 and 4
+also set bytes in blocks `0xa83021c1` and `0xce07d358` (`0x00ff24e0..0x00ff26d4`); route 0 touches
+neither.
 
 ## The card travels in beacon advertise data
 
 A distributor joins nothing. It advertises a network whose advertise data carries the card, and the
 receiver reassembles it from its `Scan` results.
 
-The gift is a consumer of the gflnet3 core, separate from the trade sync pump (registration array
-`0x006db3b0`, manager `read_u64(read_u64(main+0x02616750))`, empty on the gift screen), which drains
-0x7C/0x80 with a 4-byte header. The core manager `read_u64(read_u64(main+0x02616B80))` names itself
-`BeaconCommunication` (`0x02068858`, and at `conn+0x278` and `conn+0x308`) and drives
+The gift is a consumer of the gflnet3 core, separate from the trade sync pump. The core manager
+`read_u64(read_u64(main+0x02616B80))` names itself `BeaconCommunication` (`0x02068858`) and drives
 `nn::ldn::Scan`, `GetNetworkInfo`, `SetAdvertiseData` and `OpenAccessPoint` (wrappers `0x017978F0`,
-`0x01794C3C`/`0x01799BE0`, `0x017961B0`, `0x01794CF0`). Its connection object at `core+0x50` exists
-before any peer, its send gate `+0x2FA` never arms, and a Pia mesh join changes nothing in it but the
-mirrored LDN node count. The core send `0x006C2840` queues at `core+0xF8`. On the send path `0x136`
-is a `memset` length at `0x010F7E00` and the message id comes from the getter `0x010F7050`.
+`0x01794C3C`/`0x01799BE0`, `0x017961B0`, `0x01794CF0`). A Pia mesh join changes nothing in it.
 
 ## The beacon body frame
 
@@ -345,14 +211,11 @@ beacon core.
 | `+0x04` | 1 | zero on every capture |
 | `+0x05` | up to 0x163 | application payload |
 
-The network id is `0xD70` on every captured beacon, on the Mystery Gift, link trade and Max Raid
-screens. The payload bound is `cmp x2, #0x163` at `0x006c2174`, guarding the `memcpy` to `body+5`
-(`add x0, x8, #5`, `0x006c2148`).
+The network id is `0xD70` on the Mystery Gift, link trade and Max Raid screens. The payload bound
+is `cmp x2, #0x163` at `0x006c2174`.
 
-The checksum routine `0x0065dcb0` is table-driven; `0x0065def0` builds the table lazily behind
-`0x02615fd8`. It is the reflected CRC-16/ARC table for polynomial `0xA001`, updated as
-`crc = T[(crc ^ byte) & 0xFF] ^ (crc >> 8)` from 0. Forty captured bodies reproduce their stored
-checksum and rebuild byte for byte from their decoded fields.
+The checksum routine is `0x0065dcb0` (table built by `0x0065def0`), reflected CRC-16/ARC,
+polynomial `0xA001`.
 
 The builder `0x006c1fa0` zeroes the body, writes the network id at `body+2` with the bit-packed writer
 `0x006c1830`, copies the payload to `body+5`, and stores the checksum over `body+2`, `0x166` bytes, at
@@ -360,12 +223,8 @@ The builder `0x006c1fa0` zeroes the body, writes the network id at `body+2` with
 
 ## The gate a received beacon passes
 
-`0x006c1be0` takes one entry object and returns 1 to accept it. On the build path it checks a body
-before `SetAdvertiseData` (`0x006b5ba8` builds, `0x006b5bb0` validates; `0x006c3de4` and `0x006c42c4`
-validate the advertise object at `conn+0x360` before the 0x168 copy at `0x017760e0`). On ingestion,
-`0x006bb9d4`, `0x006c4b38` and `0x006ca0dc` copy a received advertisement into a stack entry through
-`0x006c2360`, call the gate, and offer the entry to the store `0x006c53b0` only when bit 0 is set. Any
-test failing rejects:
+`0x006c1be0` returns 1 to accept an entry. Received advertisements (`0x006bb9d4`, `0x006c4b38`,
+`0x006ca0dc`) reach the store `0x006c53b0` only when it accepts. Any test failing rejects:
 
 1. the core object behind `0x02616b80` exists;
 2. `body+0` equals the checksum recomputed over `body[2:0x168]`;
@@ -374,17 +233,14 @@ test failing rejects:
 4. the network id agrees with the core's own nibble by nibble (`0x006c1cf0`): the low nibble must be
    equal; a differing second nibble accepts; otherwise the third nibble must be equal.
 
-A beacon with a stale checksum is scanned and never stored; the same beacon with the correct
-checksum is stored on its first scan (0.21 s measured).
+A beacon with a stale checksum is scanned and never stored.
 
 Trap: the 0x480-byte `NetworkInfo` scan-result slots, `pia_obj+0x3C0` among them, take a full 0x180
 copy of any body whatever its checksum; a marker there proves only reception.
 
-`0x006c53b0` compares an accepted entry with each stored one (`0x006c1da0`: the body and the id
-struct) and appends through `0x006c5460` only when it is new. A store has its array at `+0x40`, count
-at `+0x48`, capacity at `+0x50` (0x32) and mutex at `+0x60`. An entry is 0x180 bytes, a vtable
-pointer then the body at `+8`; the same vtable sits at `conn+0x360`, 8 bytes before the console's
-own body at `conn+0x368`. Two stores alternate through `0x006c5300`.
+`0x006c53b0` appends an accepted entry only when it is new. A store has its array at `+0x40`, count
+at `+0x48`, capacity at `+0x50` (0x32) and mutex at `+0x60`; an entry is 0x180 bytes, a vtable
+pointer then the body at `+8`. Two stores alternate through `0x006c5300`.
 
 `0x010f6600` walks a store, reading the network id through `0x006c1d50` and the payload through
 `0x006c1f80` (returns `body+5`; sole caller `0x010f66c4`), and passes the payload to `0x010f8cf0`,
@@ -416,24 +272,16 @@ The poll reads a ten-byte header at `payload+1` through `0x010f7bf0` (field acce
 | `+8` | 2 | CRC-16/ARC of the reassembled message (`0x0065dcb0`) |
 
 Reassembly contexts of 0x88 bytes, one per message in flight, sit between `job+0x160` and
-`job+0x168`. `0x010f7550` matches a fragment to a context on every header field but the index;
-failing a match, `0x010f7360` appends a context, storing the fields at `+0`, `+8`, `+0x10`, `+0x18`,
-sizing the buffer at `+0x20` from the length (`0x010f6fa0`) and the arrival bitmap behind `+0x58`
-from the count. `0x010f7430` accepts a fragment and `0x010f7100` copies it to `index * 300`, the last
-fragment taking the remainder; an index past the buffer or an already-set bit is dropped. A message is
-at most 65535 bytes and 256 fragments; a 720-byte card is fragments of 300, 300 and 120.
+`job+0x168`, matched on every header field but the index (`0x010f7550`). `0x010f7100` copies a
+fragment to `index * 300`; an index past the buffer or an already-set bit is dropped. A message is at
+most 65535 bytes and 256 fragments; a 720-byte card is fragments of 300, 300 and 120.
 
 When `0x010f7610` reports every bit set, `0x010f7680` compares `context+0x18` with `0x010f71e0` (the
 buffer through `0x0065dcb0`) and returns null on a mismatch. The poll skips the sink on null
 (`0x010b77fc`) and erases the context either way, within one poll.
 
-Traps:
-
-- A message with a wrong checksum leaves no trace. Its context is only ever sampled one fragment
-  short, then vanishes; the sink `0x01005bc0` is never reached.
-- An empty context list after a beacon is what a completed message leaves.
-- With header `+0` non-zero, `job+0x160` stays null and no context list is allocated; with it zero
-  the list is allocated and `manager+0x80` takes its first stamp.
+Trap: a message with a wrong checksum leaves no trace, and an empty context list is also what a
+completed message leaves.
 
 ## What a record must carry
 
@@ -470,32 +318,22 @@ u16 card id at `+8`. An entry holding the id takes the record's date (`0x0144965
 first entry whose date is older (`0x016cc1f0`, unsigned) takes id and date (`0x01449804`,
 `0x0144980c`). An empty entry is taken because its zero date is older.
 
-An accepted record is copied into a `0x338`-byte structure (leading `0x68` bytes zeroed, record at
-`+0x68`, `0x00ff2380`) and handed with length `0x2D0` to the validator `0x010b5de0`. The card object
-built is `0x3A8` bytes and keeps the structure at `+0x70`.
+An accepted record is copied into a `0x338`-byte structure (record at `+0x68`, `0x00ff2380`) and
+handed to the validator `0x010b5de0`, which zeroes `+0x2CC` and runs CRC-16/CCITT-FALSE over all
+0x2D0 bytes (polynomial `0x1021`, init `0xFFFF`, `0x010b5e60`, `0x010b5f54`). It returns
+`0x80000000` for a null pointer or a length other than `0x2D0`, `0x80000001` for a checksum mismatch
+(the importer maps it to 1, `0x00ff23d0`), and 0 otherwise, kinds outside 1..5 included. It fills the
+`0x68`-byte header: card id to `+8`, `+0x15` to `+0xa`, `+0x11` to `+0xc`, `route != 0` to `+0xe`,
+`+0x1C` to `+0xf`. The card object is `0x3A8` bytes and keeps the structure at `+0x70`.
 
-`0x010b5de0` copies the record to its stack, zeroes `+0x2CC`, and runs CRC-16/CCITT-FALSE over all
-0x2D0 bytes: table MSB-first from polynomial `0x1021` (`0x010b5e60`), init `0xFFFF`, update
-`T[(byte ^ (crc >> 8)) & 0xFF] ^ (crc << 8)` (`0x010b5f54`). It returns `0x80000000` for a null
-pointer or a length other than `0x2D0`, `0x80000001` for a checksum mismatch (the importer maps it to
-1 at `0x00ff23d0`), and 0 otherwise, kinds outside 1..5 included (`0x010b6004`); the kind-1 and
-kind-4 builders' results are discarded. It fills the `0x68`-byte header (`0x010b5f98..0x010b5fbc`):
-card id to `+8`, `+0x15` to `+0xa`, `+0x11` to `+0xc`, `route != 0` to `+0xe`, `+0x1C` to `+0xf`.
-Under emulation a sealed record is accepted and reaches the kind-3 path with the word from `+0x20`;
-the same record unsealed, and an all-zero record, return `0x80000001`.
-
-Card id: after the import loop `0x00ff2760` collects the cards whose id matches; `0x00ff2f50` reads
-the u32 at record `+0x08` (`0x00ff30c0`, `ldr w8,[card+0xe0]`) against the 16-bit id, so anything
-non-zero at `+0x0A` or `+0x0B` matches nothing and the importer reports 2 (a gift that cannot be
-obtained in this game). On a retail console `80 06` at `+0x0A` was refused that way; `+0x0A` zero
-with `a5 6a` at `+0x0C` was received. Nothing read touches `+0x0C`. All 161 SwSh cards in
-projectpokemon's EventsGallery carry zero at `+0x0A` and at `+0x0C` either 3 or their title index.
+Card id: `0x00ff2f50` compares the u32 at record `+0x08` (`0x00ff30c0`) with the 16-bit id, so
+anything non-zero at `+0x0A` or `+0x0B` matches nothing and the importer reports 2 (a gift that
+cannot be obtained in this game). Nothing reads `+0x0C`.
 
 Title: `+0x15` indexes the title table PKHeX ships as `text_wondercard8_<lang>.txt`, shown in the
 list before the card is accepted. Indices the builder uses: 1 Pokemon egg, 3 the item's name, 21
 "{species} (Gigantamax Pokemon)", 34 pocket money, 36 clothing, 39 Battle Points. Index 0 is the
-species name alone (a record with `0b 00` at `+0x0C` and title 0 was listed as "Pikachu"); index 11 is "{species} de {original trainer}", listed and kept
-as "Pikachu de POKELDN" on a French console.
+species name alone; index 11 is "{species} de {original trainer}".
 
 Kind: 1 to 5 dispatch through `0x02067620`; anything else returns success with nothing built. Kinds
 3 and 5 (`0x010b5fd8`) keep the word at `+0x20` in header `+0x30` and build nothing. Kind 1 goes to
@@ -542,86 +380,45 @@ The language index comes from the table at `0x02067650` (game language to 0..8).
 `0x00775d50`; indices above 127 set nothing. A record with zero ribbon bytes names ribbon 0
 thirty-two times: fill the list with `0xFF`.
 
-The parser does not read the level or the met level. Both offsets come from cards, not code:
-`+0x244` and `+0x249` are the only offsets in `0x238..0x272` that predict two claimed cards' distinct
-levels (28 and 63 for the level, 32 and 59 for the met level).
+The parser does not read the level or the met level; both offsets come from claimed cards.
 
 Level 0: the builder draws `r = random & 0x7f` until `r <= 99` and takes `r + 1`, uniform over
-1..100 (`0x010b6218`); one record gave 20 then 35. An egg (`+0x245` = 1) gets level 1 regardless
-(`0x010b6400`). A rolled Pokemon shows met level 0, the empty `+0x249`. Experience always matches the
-species' growth group (a cube-curve species had 8000 at level 20, a slower one 96 at level 4).
+1..100 (`0x010b6218`), with met level 0. An egg gets level 1 regardless (`0x010b6400`). Experience
+matches the species' growth group.
 
 IVs: the builder tests the six bytes in the order HP, Atk, Def, SpA, SpD, Spe; the first in
 `0xFC..0xFE` stores a flawless count `byte - 0xFB` (1 to 3) at `[sp+0x110]` and sets all six spec IVs
 to `0xFFFF`, discarding the rest (`0x010b6300..0x010b63c4`). Otherwise a byte of 32 or more becomes
-`0xFFFF` and a byte below 32 is kept. The spec reaches `0x007667a0` through `0x007662a0`,
-`0x00777f40` and `0x00766660`, which caps the level at 100 (`0x00766a14`) and, for a count of 1 to 5,
-writes 31 to that many distinct random positions (`0x00766a50..0x00766b04`); a count of 6 or more
-(out of a card's reach) gives no 31 (`0x00766a2c..0x00766a44`). Every IV still `0xFFFF` is rolled
-0..31 (`0x00766de8`, `0x007660d0(0x20)`, the game's random below `n`). So `0xFC`, `0xFD` or `0xFE` in
-any IV byte gives exactly 1, 2 or 3 random IVs of 31.
+`0xFFFF` and a byte below 32 is kept. `0x00766660` caps the level at 100 and writes 31 to that many distinct random positions
+(`0x00766a50..0x00766b04`); every IV still `0xFFFF` is rolled 0..31 (`0x00766de8`). So `0xFC`,
+`0xFD` or `0xFE` in any IV byte gives exactly 1, 2 or 3 random IVs of 31.
 
-A record left at zero gives a male, Hardy Pokemon with its first ability and IVs of 0, as the
-builder run under unicorn showed. `pokeldn.swsh.wc8.pokemon_card` writes gender 3, nature `0xFF`,
-ability 3 and every IV byte `0xFF` unless the field is given, so the game rolls each one.
+A record left at zero gives a male, Hardy Pokemon with its first ability and IVs of 0.
+`pokeldn.swsh.wc8.pokemon_card` writes gender 3, nature `0xFF`, ability 3 and every IV byte `0xFF`
+unless the field is given, so the game rolls each one.
 
-Gender 3 is rolled once per build, and a claim builds the Pokemon twice: the reveal state
-`0x00fe3720` builds one from the record (`0x00fe3a50`) and reads its sex for the model, and the
-redemption `0x010159d0` builds the one the party receives (`0x01015a0c`). On a retail Sword one claim
-showed a female and gave a male. Gender 0, 1 or 2 skips the roll (`0x00766d94`), so both builds
-agree; a retail Sword showed and gave a male for 0 and a female for 1. The app and
-`bin/swsh_gift_host.py` draw the gender once when the card is built, as the game draws it (female when `r + 1 < ratio`, `r` below 253, the species' personal ratio from PKHeX);
+Gender 3 is rolled once per build, and a claim builds twice: the reveal `0x00fe3720` (`0x00fe3a50`)
+and the redemption `0x010159d0` (`0x01015a0c`), so the reveal can show a different sex than the
+party receives. Gender 0, 1 or 2 skips the roll (`0x00766d94`). The app and `bin/swsh_gift_host.py`
+draw the gender once when the card is built (female when `r + 1 < ratio`, `r` below 253);
 `--set gender=3` restores the game's own rolls.
 
 ## A card delivered by beacon, end to end
 
-A 720-byte record split into three fragments and served from a synthesised beacon reaches the
-importer on an unmodified emulated console, with no memory or code patch. The importer's result is
-at `bound+0x2C0`, `bound` being `job+0x80`. Two records differing only in their version mask:
-
-| version mask | result | the console's message |
-|---|---|---|
-| `0x0000` | 2 | a gift was received but cannot be obtained in this game |
-| `0xFFFF` | 1 | receiving the gift failed |
-
-`0x00ff1fb0` returns the importer's value when non-zero, else 2 when the card list is empty: a
-record the mask filters out leaves the list empty. The `0xFFFF` record had a zero checksum at
-`+0x2CC`, and the validator's `0x80000001` came back as 1. Neither faulted.
-
-A sealed kind-3 record is listed, confirmed and saved. The screen shows the title from the kind at
-`+0x11`, the quantity from the word at `+0x20`, and 1 January 2070 for a zeroed date; with a zero
-identifier it delivers nothing.
+A 720-byte record in three fragments from a synthesised beacon reaches the importer on an unmodified
+console. The importer's result is at `bound+0x2C0`, `bound` being `job+0x80`; `0x00ff1fb0` returns
+it when non-zero, else 2 when the card list is empty (a version mask of 0 gives 2, "cannot be
+obtained in this game"; a bad checksum gives 1, "receiving the gift failed"). A sealed kind-3 record
+with a zero date shows 1 January 2070.
 
 ## A card delivered to a retail console
 
-`bin/swsh_gift_host.py` delivers a card to a retail Sword over LDN. A retail Sword lists a card only
-when the advertise data opens with the Pia header:
-
-| what the host advertised | listed |
-|---|---|
-| LDN protocol 3 (the GBA app's), advertise data opening with 24 zero bytes | no |
-| LDN protocol 1, the console's own, 24 zero bytes | no |
-| LDN protocol 1, the Pia header at the front of the advertise data | yes |
-
-The Pia header is the one the console's own gift advertisement opens with
+`bin/swsh_gift_host.py` delivers every kind to a retail Sword over LDN. The console lists a card
+only on LDN protocol 1 with advertise data opening with the Pia header of its own gift advertisement
 ([Sword sessions](swsh_session.md)): a random network id, a zero password CRC, system communication
-version 5, header size 0x18, a random session parameter and eight zero bytes. Scene id 0 and
-application version 4 were accepted; the console's own advertisement carries scene 65535 and
-application version 7, so neither is filtered on. ldn_mitm carries no 802.11 advertisement, so an
-emulator cannot test these variables.
-
-| kind | record | result on the console |
-|---|---|---|
-| 1 | `+0x245` = 1, level-1 Pikachu, title index 1 | listed "Oeuf de Pokemon", an egg in the party |
-| 2 | item id at `+0x20`, quantity at `+0x22`: `01 00 03 00`, title index 3 | listed "Master Ball", three in the bag |
-| 3 | amount 10 at `+0x20`, title index 1 | listed with the title "Oeuf de Pokemon", 10 BP added |
-| 3 | amount 10 at `+0x20`, title index 39, as the EventsGallery Battle Points cards carry | listed "Points de Combat", 10 BP added |
-| 4 | EventsGallery's Casual Tee (Pokemon Quest) card, title index 36 | listed, the tee in the wardrobe |
-| 4 | the Pikachu uniform's pairs, title index 36 | received five pieces: haut, gants, short, bas and chaussures de sport |
-| 5 | amount 100,000 at `+0x20`, title index 34 | listed "Argent de poche", money up by 100,000 |
-| 1 | Pikachu with `+0x24B` = 1, Dynamax level 10, title index 21 | listed "Pikachu (Pokemon Gigamax)", the Gigantamax mark in its summary |
-
-The title comes from `+0x15` alone, whatever the kind; the kind decides what is delivered.
+version 5, header size 0x18, a random session parameter and eight zero bytes. Scene id and
+application version are not filtered on. The title comes from `+0x15` alone, whatever the kind; the
+kind decides what is delivered.
 
 A kind-2 record needs only the kind, the item pairs and a quantity. The parser copies exactly six
 id/quantity pairs from record `+0x20..+0x37` to header `+0x30..+0x47` (`0x010b6024..0x010b6080`) and
@@ -638,18 +435,13 @@ Kind 4 is clothing ([Clothing](#clothing)). Kinds 3 and 5 add the word at `+0x20
     kind 5  0x010160b0   [status+0x64]: an amount above 9,999,999 sets 9,999,999;
                          otherwise old + amount, clamped to 9,999,999              0x01438f2c
 
-`status+0x64` is pocket money: `AddPocketMoney_` (`0x014ad5e0`) calls the same `0x01438f20`
-(`0x014ad624`) and `GetPocketMoney_` (`0x014ad700`) reads it through `0x01438ef0`. Both redemptions read
-the amount at header-and-record `+0x88`, record `+0x20`. Under unicorn, `0x010160b0` on a kind-5
-record of 100,000 took the money from 0 to 100,000 and from 9,950,000 to 9,999,999. EventsGallery
-holds no kind-5 card.
+`status+0x64` is pocket money (`AddPocketMoney_` `0x014ad5e0`, `GetPocketMoney_` `0x014ad700`).
+Both redemptions read the amount at record `+0x20`.
 
 The kind-1 redemption `0x010159d0` builds the Pokemon (`0x010b6110`; null returns 0) and offers it to
 the party (`0x01015b78`, virtual `+0x28`). If the party refuses, it asks the box store
 `[[0x2610798]+0x220]` for a free slot (`0x01408000`, `0x01015bd0`) and places it only if one exists
-(`0x01406b00`, `0x01015c08`). It returns `{1, 0}` for the party, `{1, 1}` for a box, `{0, 1}` when
-not placed (`0x01015cd0`, `0x01015cf4`); the caller stores that at `+0x78` of the object `0x00feb610`
-returns (`0x01014fe4`) and never tests it. A card that fails the room test never gets here
+(`0x01406b00`, `0x01015c08`). Its result is never tested; a card that fails the room test never gets here
 ([What the menu refuses](#what-the-menu-refuses)).
 
 `Bag::AddItem` (`0x01420790`; bag, id, count, new-flag) takes the pocket from item field 14
@@ -694,13 +486,9 @@ cards 1641 and 1642 gave it to Bulbasaur and Squirtle, and on Melmetal, which Ma
 
 ### Pokemon HOME
 
-Pokemon HOME gave its gifts into its own boxes, not as Wonder Cards. The group holds the community's
-cards of them, the gallery's `HOME Simulated WCs` for Sword/Shield (card ids 9000 and up, PKHeX's
-`WC8.IsHOMEGift`), each byte for byte a card PKHeX's event database holds. They are listed under
-projectpokemon's titles: the HOME starters Bulbasaur, Charmander and Squirtle with their hidden
-ability, the first login Pikachu, the National Dex Magearna, the first Wonder Box Eevee, the first GTS
-Rotom, the first challenge Pichu, the hidden ability Grookey, Scorbunny and Sobble, the shiny Zeraora,
-the Pokemon GO Melmetal, the Gigantamax Bulbasaur and Squirtle, and the shiny Keldeo. The first
+The group holds the gallery's `HOME Simulated WCs` for Sword/Shield (card ids 9000 and up, PKHeX's
+`WC8.IsHOMEGift`), each byte for byte a card PKHeX's event database holds, under projectpokemon's
+titles. The first
 revision of cards 9000 to 9007 fixes every PID at 0; the second, kept, has the game roll one.
 
 A Pokemon received from one carries no HOME tracker, which PKHeX requires of a gift HOME gave: the
@@ -736,11 +524,9 @@ same id unless the second card's date is later.
 
 The app's Official events mode takes a card id per card (`event_ids` in the tool's value) and lists
 the cards that share the chosen card's id. A changed id rewrites only the u16 at `+0x08` and reseals
-the record. Under unicorn, the receipt check `0x00ff1a30` refuses the official Articuno (id 1) on a
-save whose bitmap holds id 1, and takes the same card as id 2. The validator `0x010b5de0` and PKHeX
-accept the changed record. A once-per-id card's id stays in 1..2047, because the bitmap read has no
-bound ([What the menu refuses](#what-the-menu-refuses)). The command line does the same with
-`--gift-file FILE --patch 0x08=0200`. No retail console has received a card with a changed id yet.
+the record; the receipt check `0x00ff1a30` then treats it as a new card, and the validator and PKHeX
+accept it. A once-per-id card's id stays in 1..2047 ([What the menu refuses](#what-the-menu-refuses)).
+The command line does the same with `--gift-file FILE --patch 0x08=0200`.
 
 ## Clothing
 
@@ -758,10 +544,8 @@ on the wardrobe `[[0x2610798]+0x218]`. That setter refuses a category above 14 o
 1023 and otherwise sets bit `index & 7` of byte `wardrobe + 0x68 + category * 0x80 + index / 8`.
 A pair `(0, 0)` sets bit 0 of category 0; skip a slot with index `0xFFFFFFFF`.
 
-Run under unicorn with the status byte at 0 and at 1, the validator, the parser and the redemption
-set exactly the record's first and last six pairs as wardrobe bits for every outfit the app offers
-(`tests/test_swsh_gift.py`). The pairs come from projectpokemon EventsGallery's fourteen official
-clothing cards:
+`tests/test_swsh_gift.py` runs the validator, the parser and the redemption under unicorn for every
+outfit the app offers. The pairs, from projectpokemon EventsGallery's official clothing cards:
 
 | outfit | card | first six | last six |
 |---|---|---|---|
@@ -824,51 +608,31 @@ through `0x00ff17b4` to `0x00ff1a30`:
 The bitmap read takes byte `id >> 3` (`0x00ff1a8c ubfx x9, x23, #3, #0xd`) with no bound: the
 bitmap is 0x100 bytes (ids 0 to 2047), so a record with flag bit 0 and an id of 2048 or more reads
 past it, and from id 13000 past the block's 0x17C8 bytes. A record with flag bit 0 clear never
-reads it. The bit is set on receipt; its writer is not located. On a retail Sword, EventsGallery's
-Poke Ball x100 card (id 0x6A, flags 1) sent a second time over local wireless was refused with message
-7 and dropped from the list; records with flags 0 and id 0x270F were received ten times.
+reads it. The bit is set on receipt; its writer is unknown.
 
 The entries are written only by `0x01449560`, whose only caller `0x00ff1558` sits behind
 `0x00ff154c tbz w8,#2` on `[card+0xe8]`, and they store the record's own date (`0x01449570`,
 `0x01449648`), not the receipt time. A card with flag bit 2 is taken once per card date and at most
 ten a day; resent with an unchanged date it is refused with message 0x10 while its entry survives.
 
-The keep path `0x00ff13f0` has one caller, `0x01014f74` in the redemption `0x01014eb0`, before the
-Pokemon is placed (`0x01014fb0 bl 0x010159d0`). Its body `0x00ff14c0` (sole caller `0x00ff1404`)
-calls `0x01449470`, `0x014494a0`, `0x01449560`, `0x01444f80`, `0x018fdc60`, `0x01444d60`,
-`0x01445000` and `0x01444de0`, none of which reads the Pokemon; `0x00ff13f0` then writes the current
-time (`0x01449ca0` -> `0x01900050`) to `card+0x70` for routes 1 to 4, or copies `card+0xd8` there for
-route 0, and files the card (`0x014480f0`). The keep path checks no legality.
+The keep path `0x00ff13f0` (one caller, `0x01014f74`, before the Pokemon is placed) updates the
+tables above, writes the receipt time to `card+0x70` for routes 1 to 4 (or the record's date for
+route 0) and files the card (`0x014480f0`). It checks no legality.
 
 The build and the redemption check no move, relearn move, nature, ball, held item or form against
 the species. The builder `0x010b6110` has one exit and no refusal: it stores the four moves and the
 four relearn moves as given (`0x77bfb0`, `0x77b9a0`; the store at `0x770c7c`), and a move id above
 826 changes only the PP lookup (`0x00781490`). The redemption `0x010159d0` tests only the kind byte,
 a non-null build and room in the party (`0x7840f0` refuses species 0 or a full party) or the boxes
-(`0x1406b00` needs an empty slot). Run under unicorn with the 1.3.2 personal table, the builder kept
-Pikachu's illegal moves 14, 337, 57, 900 and relearn moves 1, 2, 3, 9999, nature 200, ball 200 and
-item 9999 as given.
+(`0x1406b00` needs an empty slot).
 
 The one species test is in the PokemonParam constructor `0x777f40` (`0x778118..0x778148`): a
-species whose personal entry has bit 6 of byte 0x21 clear (`0x764990`, `0x77f530`) gets bit 2 of
-the record's `+0x04` word set (`0x76eb40`). With that bit set, every accessor reads and writes a
-static stand-in whose species is 0x383 (`0x776c50`, filled by `0x776bc0`). The bit is the game's
-bad-egg flag: `0x77d610(pp, mode)` reads it through `0x767f40` (mode 0 an egg and not bad, mode 1
-bad, mode 2 either), and `0x77f600` names any species above 0x382 with text 0, "Egg" in the 1.3.2
-English `monsname.dat`. Nothing on the menu's path refuses such a card: the validator `0x010b5de0`
-reads the species only in its checksum and header copy (`0x010b59b8`), none of the branches of
-`0x01014a60` reads it, the party add `0x7840f0` takes species 0x383, Pokedex registration returns on
-the egg byte (`0x01434b24`), and the copy `0x766390` keeps the raw 0x148 bytes with the flag and the
-record's species. Under unicorn, species 19 and 493 come out flagged and species 25 and 1000 do not;
-the validator accepts the Rattata record. An emulated French Shield 1.3.2 given that record
-(species 19, absent) listed it as "Rattata", played the reveal through, showed "Vous avez reçu un
-Rattata !" and filed "Rattata" in its album, and put in the party an entry named "Egg" with an egg
-model, language tag ANG and every summary field blank. The game saved on receipt; the party slot
-kept species 19 with bit 2 of `+0x04` set. A species above 898
- reads personal entry 0,
-which is marked present, and a form at or above the species' form count reads the base species, so
-neither is flagged. Never send a species absent from Sword and Shield; the PKHeX check in the
-desktop app refuses one.
+species whose personal entry has bit 6 of byte 0x21 clear (`0x764990`, `0x77f530`) gets the bad-egg
+bit 2 of the record's `+0x04` word (`0x76eb40`), and every accessor then reads a static stand-in of
+species 0x383 (`0x776c50`), named "Egg". Nothing on the menu's path refuses it: the card is listed
+and revealed under the species' name, and the party receives a blank "Egg". A species above 898
+reads personal entry 0, which is present, so it is not flagged. Never send a species absent from
+Sword and Shield; the desktop app's PKHeX check refuses one.
 
 Gender is the one field the build corrects (`0x777490`, personal field 0x14 read at `0x7774a4`):
 ratios 0, 254 and 255 force male, female and genderless (table `0x1c4d2d0`); on any other ratio a
@@ -894,23 +658,15 @@ constants are in it) and returns 0 when the value equals the sentinel behind `ma
 album draw `0x00ffbaa0` passes that to `nn::time::ToCalendarTime` (`0x00ffbaf0`), so the console's
 zone applies, falling back to `ToCalendarTimeInUtc`. The year is drawn with two digits.
 
-| record bytes | shown on a French retail console |
-|---|---|
-| zero | 01/01/2070 01:00 |
-| 18 October, 16:26 UTC | 18/10/2018 18:26 |
-| year 8218 | 2018 |
-| `01 02 03 04 05 06 07 08` (month 0 of year 321) | 01/12/2020 15:53 |
+A zero date shows 01/01/2070.
 
 Only a local-wireless card keeps its date. Every other route overwrites the eight bytes with
 `nn::time::StandardNetworkSystemClock::GetCurrentTime` (`0x00ff3f8c` -> `0x01449ca0`; PLT
 `0x01900050`, GOT `0x0260fbb8`), packed by `0x016cbfd0` and `0x016cc1d0`.
 
-The distributor fills an empty date with the computer's current UTC time immediately before
-sending a card, then reseals its checksum. A nonzero distributor date is preserved. Official event
-files often carry eight zero bytes because the online route supplies their receipt time. This
-fallback gives those files a date over local wireless as well. Exported files keep their original
-date, and cards already stored in the console's album are unchanged. The Pokemon's own met date
-is separate from the album date.
+The distributor fills an empty date with the computer's current UTC time before sending and reseals
+the checksum; a nonzero date is kept, and exported files keep their original date. The Pokemon's met
+date is separate from the album date.
 
 ## Where the album keeps a card
 
@@ -945,20 +701,14 @@ A slot is the `0x68`-byte header the importer fills from the record:
 Zeroing a slot's `+0x0C..+0x62` removes the card from the album; items it delivered stay in `MyItem`
 (`0x1177C2C4`).
 
+
+
 ## The per-frame update that drains the store
 
-`0x010f65a0` is the gfl net manager's per-frame update, called with the manager from `0x0261cba8`.
-It takes a steady-clock reading, drains the receiver at `manager+0x60` through the swap `0x006c5300`,
-walks the entries, and writes the reading to `manager+0x80` on every pass that finds a non-empty
-store. The `+0x80` accesses around the importer `0x00ff2170` are a different thing: the thread-local
-guard stack `nn::os::GetTlsValue` returns, the same push and pop around the store append at
-`0x006c54a4`.
+`0x010f65a0` is the gfl net manager's per-frame update (manager from `0x0261cba8`): it drains the
+receiver at `manager+0x60` through `0x006c5300`, walks the entries, and stamps `manager+0x80` on
+every pass that finds a non-empty store. Its only caller is `0x01109240`, inside `0x00f1df30`, which
+is reached through a registered callback.
 
-In some sessions the store is never drained: accepted bodies accumulate (a first body still there
-after 27 minutes), `manager+0x80` stays constant and `job+0x160` stays null. Other sessions drain
-normally; the cause is unresolved. Trap: check that `manager+0x80`
-advances before reading any beacon result.
-
-What ticks the update is unresolved. Its only caller is `0x01109240`, a sequence of per-subsystem
-updates, inside `0x00f1df30`, which has neither a `bl` caller nor a vtable slot and is reached
-through a registered callback.
+Trap: in some sessions the store is never drained and `manager+0x80` stays constant; check that it
+advances before reading any beacon result. The cause is unknown.

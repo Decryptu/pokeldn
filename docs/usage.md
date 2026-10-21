@@ -4,7 +4,8 @@ title: Command-line usage
 
 # Command-line usage
 
-Run commands from the repository root. Source tools need Python 3.11+, Switch `prod.keys`
+This page lists the command-line entry points for each title. Run them from the repository root.
+Source tools need Python 3.11+, Switch `prod.keys`
 (default `~/.switch/prod.keys`, or `--keys PATH`) and a flashed ESP32 board.
 See [supported boards](hardware_esp32.md#supported-boards) and
 [building and flashing](hardware_esp32.md#building-and-flashing).
@@ -19,14 +20,10 @@ python -m pokeldn --list
 python -m pokeldn --radio esp32:auto swsh-host --offer-file offer.pk8
 ```
 
-Trade tools need the .NET 10 SDK for the PKHeX helper. Install the bundled LDN library through
-`requirements.txt`; do not substitute the PyPI `ldn` package. On Windows, activate the venv with
-`.venv\Scripts\Activate.ps1` in PowerShell and set the radio with
-`$env:POKELDN_RADIO = "esp32:auto"`.
-
-`esp32:auto` selects the only USB serial port present; use `esp32:PORT` to select one explicitly.
-See [radio settings and diagnostics](hardware_esp32.md#running). Config files and default output
-paths resolve against the working directory. Each entry point accepts `--help`.
+Trade tools need the .NET 10 SDK. The PyPI `ldn` package is a different library. On Windows use
+`.venv\Scripts\Activate.ps1` and `$env:POKELDN_RADIO = "esp32:auto"`. `esp32:auto` picks the only
+USB serial port; `esp32:PORT` names one ([radio settings](hardware_esp32.md#running)). Each entry
+point accepts `--help`.
 
 ## FireRed and LeafGreen
 
@@ -37,17 +34,11 @@ Unlock the Direct Corner on the console and prepare at least two `.pk3` party me
 ./.venv/bin/python bin/frlg_trade_host.py -o output.pk3 PARTY1.pk3 PARTY2.pk3          # host a Direct Corner trade
 ```
 
-The host advertises the group and leads the trade. By default it offers `PARTY2.pk3` and writes what
-it receives to `output.pk3`. Defaults come from `config/host.toml`, then the ignored
-`config/host.local.toml`; flags override both; `--print-effective-config` shows the result.
-
-1. Run the host and wait for `Hosting Direct Corner`.
-2. On the Switch: Direct Corner, Join Group, pick pokeldn's trainer. Wait until the host reports
-   that trade selection is active.
-3. Select the Pokémon to trade away and confirm.
-4. The console returns to the trade menu after each trade. `--trades N` (1 to 6) offers party
-   slots 0 to N-1, one per trade, on the same link. After the last trade, wait for the host prompt,
-   then **CANCEL**, **YES**; the room exit and disconnect follow on their own.
+The host offers `PARTY2.pk3` and writes what it receives to `output.pk3`. Defaults come from
+`config/host.toml`, then `config/host.local.toml`; flags override both
+(`--print-effective-config`). After `Hosting Direct Corner`: Direct Corner, Join Group, pokeldn's
+trainer, pick and confirm. `--trades N` (1 to 6) offers slots 0 to N-1, one per trade; after the last,
+CANCEL, YES.
 
 | flag | purpose |
 |---|---|
@@ -56,58 +47,57 @@ it receives to `output.pk3`. Defaults come from `config/host.toml`, then the ign
 | `--capture FILE` | JSONL diagnostic capture |
 | `--config` / `--local-config` / `--no-local-config` | replace or disable a config layer |
 | `--ot NAME`, `--version firered\|leafgreen`, `--id TID[:SID]` | per-run trainer overrides (0..65535 each; the LinkPlayer ID is `(SID << 16) \| TID`) |
-| `--verbose` | per-packet output, logged synchronously inside the frame-timed loop; use it with `--replay` only |
+| `--verbose` | per-packet output; with `--replay` only, it stalls a live link |
 
-`DEFAULT_TRAINER` in [`pokeldn/config.py`](../pokeldn/config.py) holds the defaults with no flag
-(gender, language, National Dex). The link protocol is in [The link protocol](frlg_link.md).
+`DEFAULT_TRAINER` in [`pokeldn/config.py`](../pokeldn/config.py) holds the other defaults. Protocol:
+[The link protocol](frlg_link.md).
 
-**Union Room.** `--union-room` advertises on the middle NPC's path; the console shows itself
-connected after the keepalive wait, about 10 s ([The link protocol](frlg_link.md)). A Union
-Room link carries one trade, then the console returns to the field (`union_room.c:1744`).
-`--board-type normal` registers the offered Pokémon on the trading board, `--union-room-chat` with
-`--chat-message` / `--chat-file` chats, `--union-room-battle --battle-fight` battles (the console needs two non-egg Pokémon at level 30 or lower).
+### Union Room
+
+`--union-room` serves the middle NPC; the console connects after about 10 s. A link carries one
+trade (`union_room.c:1744`). `--board-type normal` registers on the trading board, `--union-room-chat`
+with `--chat-message` / `--chat-file` chats, `--union-room-battle --battle-fight` battles (two
+non-egg Pokémon at level 30 or lower).
 
 ```bash
 ./.venv/bin/python bin/frlg_trade_host.py --union-room --union-room-keepalive 120 PARTY1.pk3 PARTY2.pk3
 ```
 
-**Mystery Gift.** `bin/frlg_mg_host.py` advertises on the Friend path and sends a Wonder Card plus a
-delivery script. On the Switch: **Mystery Gift → Wonder Cards → Friend**, then pokeldn's host; the
-save must have Mystery Gift unlocked. `--make-artifact` writes a `.ram.lst` listing of the bytes sent.
-The catalogue, authoring system and Friend path requirement are in [Mystery Gift](frlg_gift.md).
+### Mystery Gift
+
+`bin/frlg_mg_host.py` sends a Wonder Card and delivery script on Mystery Gift, Wonder Cards, Friend.
+`--make-artifact` writes a `.ram.lst` of the bytes sent. Catalogue: [Mystery Gift](frlg_gift.md).
 
 ```bash
 ./.venv/bin/python -u bin/frlg_mg_host.py --gift beast-cutscene --flag-id 1005 --capture mystery-gift.jsonl
 ```
 
-The beast follows the save's starter (Bulbasaur Suicune, Squirtle Entei, Charmander Raikou). A shared
-Stamp Rally card is `--gift solrock-stamp` and `--gift lunatone-stamp`, in either order.
+The beast follows the starter (Bulbasaur Suicune, Squirtle Entei, Charmander Raikou).
 
-**Wonder News.** `--news` serves the console's second Mystery Gift column (**Mystery Gift → Wonder
-News → Friend**): 444 bytes of title and body, rewarding a berry in Cerulean City. A console keeps
-news only if it differs from what it holds; `--news-id N` forces a new one.
+### Wonder News
+
+`--news` serves Mystery Gift, Wonder News, Friend. A console keeps news only if it differs from
+what it holds; `--news-id N` forces a new one.
 
 ```bash
 ./.venv/bin/python -u bin/frlg_mg_host.py --news berry --news-id 7
 ```
 
-**Save backup and restore.** The same Friend path copies the whole 128 KB save to a `.sav` file, or
-writes a `.sav` back: beside the console's own save, every sector read back, then the game loads it
-and saves; anything short of that leaves the console's save as it was. In the app, the Mystery Gift
-tool's Your save tab keeps the backups, names them, imports and exports `.sav` files and edits the
-trainer and party through PKHeX. A backup took about four minutes on a retail French FireRed; a
-restore on a retail English FireRed loaded with CONTINUE, a French save included. [Save backup and restore](frlg_gift.md#save-backup-and-restore).
+### Save backup and restore
+
+The Friend path copies the 128 KB save to a `.sav` (about four minutes) or writes one back; an
+unfinished restore leaves the save as it was ([details](frlg_gift.md#save-backup-and-restore)).
 
 ```bash
 ./.venv/bin/python -u bin/frlg_mg_host.py --live --save-backup backup.sav --save-resume-dir partial
 ./.venv/bin/python -u bin/frlg_mg_host.py --live --save-restore backup.sav
 ```
 
-**Console save.** A Mystery Gift session runs native ARM code on the console. `save-dump` reads the
-live save back (secret ID, every party Pokémon's PID, IVs and nature); nothing is written.
-`flash-patch` edits one field: it reads the save sector, changes only the named bytes, recomputes the
-checksum, writes the sector back and bumps a counter so the game loads it. It edits a real save; read
-[Composing a sector from a RAM snapshot](frlg_rom.md#composing-a-sector-from-a-ram-snapshot) first. Payloads: [Code on the console](frlg_rom.md).
+### Console save
+
+`save-dump` reads the live save; `flash-patch` rewrites named bytes of one sector with its checksum
+and counter. Read [Composing a sector](frlg_rom.md#composing-a-sector-from-a-ram-snapshot) before a
+write. Payloads: [Code on the console](frlg_rom.md).
 
 ```bash
 ./.venv/bin/python -u bin/frlg_mg_host.py --buffer-script save-dump --dump-block sav2 --dump-size 64 --dump-file dump.bin
@@ -118,13 +108,9 @@ checksum, writes the sector back and bumps a counter so the game loads it. It ed
 
 ## Let's Go Pikachu and Eevee
 
-The trade screen alternates hosting and scanning, so pokeldn can host or join. Both send a kind-1
-identity message: the joiner the one `pokeldn.lgpe.reference` ships, the host the console's own back
-(`--first echo`) or a file. Both offer a 232-byte PB7 (`pokeldn.lgpe.pb7`; `--offer echo` returns the
-console's own). The host's `--next-offer` and the joiner's repeated `--offer` queue one record per
-later trade on the same seat. The joiner's `--leave-after S` backs out S seconds after it answers
-the first trade step, the way a player leaves the trade screen; without it the seat stays up for
-later trades.
+pokeldn hosts or joins. Both offer a 232-byte PB7 (`pokeldn.lgpe.pb7`; `--offer echo` returns the
+console's); the host's `--first echo` echoes the console's identity message. The host's `--next-offer`
+and the joiner's repeated `--offer` queue later trades; `--leave-after S` makes the joiner leave.
 
 ```bash
 ./.venv/bin/python bin/lgpe_host.py --seconds 600 --player-name POKELDN \
@@ -135,12 +121,11 @@ later trades.
 ```
 
 Console: Communiquer, Communication locale, Échange, link code Pikachu ×3, wait on the search
-screen. For an emulated console over the LAN, use `lgpe_host.py --ip-host --our-ip IP`. See
-[Let's Go](lgpe.md).
+screen. An emulated console: `lgpe_host.py --ip-host --our-ip IP`. See [Let's Go](lgpe.md).
 
 ## Sword and Shield
 
-Console: Y-Comm → Link Trade → local communication, A on both messages, wait on the search screen.
+Console: Y-Comm, Link Trade, local communication, A on both messages, wait on the search screen.
 
 ```bash
 # join the console's session and trade: the console's own party snapshot is sent back, rewritten
@@ -153,15 +138,10 @@ POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_host.py --keys PROD_KEYS \
   --offer-file your.pk8 --fresh-pid --received received.pk8 --channel 6 --seconds 900
 ```
 
-The host builds its own station advertisement and rewrites the joining console's live snapshot.
-When hosting, the console joins from Y-Comm → Link Trade → trade, after A on both messages that
-follow; `--received FILE` saves what it sends, `--code 12345678` hosts for a Link Code search.
-`--advert` and `--snapshot` still accept saved records for comparison. The host and the joiner
-take a repeated `--offer-file`, one per trade on the session, as the player picks again from the box;
-trade N writes what it received with `-N`. Details: [Trading](swsh_trade.md).
+`--code 12345678` hosts for a Link Code search. A repeated `--offer-file` queues one per trade; trade N
+writes with suffix `-N`. Details: [Trading](swsh_trade.md).
 
-Mystery Gift needs no session; the gift screen scans and a distributor advertises the card. Console:
-Mystery Gift → receive a gift → via local wireless.
+Mystery Gift: Mystery Gift, receive a gift, via local wireless.
 
 ```bash
 ./.venv/bin/python bin/swsh_gift_host.py --species 25 --level 25 \
@@ -169,15 +149,14 @@ Mystery Gift → receive a gift → via local wireless.
 ./.venv/bin/python bin/swsh_gift_host.py --record card.wc8 --seconds 300
 ```
 
-`--set FIELD=VALUE` sets any record field (`shiny_type=3`, `ball=1`, `held_item=236`, `iv_hp=31`,
-`gigantamax=1`), `--ribbon N` adds a ribbon, `--dump FILE` writes the record without a radio. Item ids
-are checked against the item table; an id with no row is accepted and then aborts the game when its
-bag row is shown. See [Mystery Gift](swsh_gift.md).
+`--set FIELD=VALUE` sets a record field (`shiny_type=3`, `held_item=236`), `--ribbon N` adds a ribbon,
+`--dump FILE` writes the record without a radio. An item id with no table row aborts the game when
+its bag row is shown. See [Mystery Gift](swsh_gift.md).
 
 ## Brilliant Diamond and Shining Pearl
 
-pokeldn joins the console's Union Room as a character. Console: any Pokémon Center → 2F → left
-attendant → plain "yes" (not the password or group option), then wait in the Union Room clear of the
+pokeldn joins the console's Union Room as a character. Console: any Pokémon Center, 2F, left
+attendant, plain "yes" (the first option), then wait in the Union Room clear of the
 walls.
 
 ```bash
@@ -190,32 +169,25 @@ walls.
   --trade-template offer.pb8 --trade-nickname POKELDN --src-var 0x2B7F4C12
 ```
 
-Association can fail (`Connect failed with status code 1`); retry the run before diagnosing
-([Session](bdsp_session.md)). `--room-pattern fixed` sends joins until the console asks for the
-character's state, at most `--room-walk` (15 above). A repeated `--trade-template` queues one
-Pokémon per trade in the session; the last is offered again. Use a fresh
-`--src-var` every run (the console keeps ids it has seen), and after a hand-stopped run the player
-leaves and re-enters the room. `--complete-trade` lets the console write its save; without it the
-trade stops at the last confirmation. Once the character has appeared and finished walking: Y →
-communication menu → trade Pokémon.
+On `Connect failed with status code 1`, retry ([Session](bdsp_session.md)). A repeated
+`--trade-template` queues trades, the last offered again. Use a fresh `--src-var` every run.
+`--complete-trade` lets the console save; without it the trade stops at the last confirmation. Once
+the character has walked in: Y, communication menu, trade Pokémon.
 
-To host instead, start the host first, then the player enters the room the same way and raises the
-trade emote (Y → communication menu → trade Pokémon):
+To host, start the host first; the player enters the room the same way and chooses Y,
+communication menu, trade Pokémon:
 
 ```bash
 ./.venv/bin/python bin/bdsp_host.py --offer offer.pb8 --complete-trade --capture host.jsonl
 ```
 
-`--offer` must be a legal PB8 whose PID the save does not hold; repeated, it queues one per trade,
-the last offered again. `--password 00000000` hosts a room
-entered with that password. See [Brilliant Diamond and Shining Pearl](bdsp.md).
+`--offer` is a legal PB8 whose PID the save lacks; repeated, it queues trades. `--password 00000000`
+hosts a password room. See [Brilliant Diamond and Shining Pearl](bdsp.md).
 
 ## Legends Arceus
 
-A console hosting a trade runs it with the station that joins, or hands that station the host role
-when the join lands late ([Legends Arceus](pla.md)). `bin/pla_host.py` hosts and the console
-joins by link code; `bin/pla_join.py` joins the console's search, trades one repeated `--offer` per
-trade on the seat, and takes the host role when it is handed.
+`bin/pla_host.py` hosts for the console's link code; `bin/pla_join.py` joins its search, with a
+repeated `--offer` per trade, and takes the host role when handed it ([Legends Arceus](pla.md)).
 
 ```bash
 ./.venv/bin/python bin/pla_host.py --code 00000000 --channel 6 --seconds 1800 \
@@ -225,17 +197,14 @@ trade on the seat, and takes the host role when it is handed.
 ./.venv/bin/python bin/pla_host.py --ip-host --our-ip 172.16.86.128 --code 00000000 ...   # emulated console, no radio
 ```
 
-Console: Simona at Jubilife Village → trade → someone nearby → the same eight-digit code, offer a
-Pokémon and confirm. The host re-reads its record file between offers and writes the record the console
-traded to `--offer-out` (`-2` and on for later trades); `--trade-box-collect DIR` keeps every record
-the console shows or offers, its cursor included. A repeated `--trade-box-record` queues one record per trade in the
-session, the last offered again. `pokeldn.pla.pokemon` reads, writes and `build`s a record from 376
-zero bytes; `pokeldn.pla.stats` computes stats and size. See [Legends Arceus](pla.md).
+Console: Simona at Jubilife Village, trade, someone nearby, the same eight-digit code, offer a
+Pokémon and confirm. `--offer-out` gets each received record (`-2` and on), `--trade-box-collect DIR`
+every record the console shows; a repeated `--trade-box-record` queues trades. `pokeldn.pla.pokemon`
+builds a record.
 
 ## Scarlet and Violet
 
-The offline Link Trade search alternates scanning and hosting, so pokeldn hosts (`bin/sv_host.py`) or
-joins (`bin/sv_join.py`).
+pokeldn hosts (`bin/sv_host.py`) or joins (`bin/sv_join.py`).
 
 ```bash
 ./.venv/bin/python bin/sv_host.py --seconds 240 --player-name POKELDN \
@@ -245,28 +214,19 @@ joins (`bin/sv_join.py`).
   --trade-offer offer.hex --offer-after-open 8
 ```
 
-Console: X → Poké Portal → Link Trade → offline, no code → search. A repeated `--trade-offer`
-offers one record per trade in the same seat. The wire-level requirements
-(identity message order, acknowledgement `lowest_pending`) are in [Scarlet and Violet](sv.md).
+Console: X, Poké Portal, Link Trade, offline, no code, search. A repeated `--trade-offer`
+queues trades. See [Scarlet and Violet](sv.md).
 
-Both also run a local Tera Raid. `--raid-seed` hosts one the console joins (Poké Portal → Tera
-Raid Battle, Link Code 4970): the seed and four context flags choose the boss, `--raid-reward
-ITEM:QUANTITY` replaces its rewards, and `--raid-pokemon` is the Pokémon pokeldn's player brings.
-`--raid-event FOLDER` draws the boss and rewards from a Poké Portal News delivery instead, an event
-of Project Pokemon's [EventsGallery](https://github.com/projectpokemon/EventsGallery), which the app
-downloads and updates on request. `--raid-players N` lets up to three consoles join one raid; it
-starts once N consoles are in the lobby and each has pressed Ready, or when the lobby timer runs out.
-`--raid-partner TRAINER`, up to once for each slot the consoles leave empty (two with one
-console), chooses the NPC partners who fill them, which a console otherwise draws from the host's
-story progress.
-`bin/sv_join.py --raid-pokemon FILE` joins a raid the console hosts. In both, pokeldn's player
-leaves as the battle starts and its Pokémon stays to fight beside the console's. The app's two
-Tera Raid tools carry the flags; see [Tera Raids](sv_raid.md).
+Tera Raids: `--raid-seed` hosts one (Poké Portal, Tera Raid Battle, Link Code 4970), `--raid-reward
+ITEM:QUANTITY` replaces rewards, `--raid-pokemon` is pokeldn's Pokémon, `--raid-event FOLDER` uses a
+Poké Portal News event from Project Pokemon's
+[EventsGallery](https://github.com/projectpokemon/EventsGallery), `--raid-players N` (up to 3)
+waits for N consoles, `--raid-partner TRAINER` picks NPC partners for empty slots.
+`bin/sv_join.py --raid-pokemon FILE` joins a console's raid. See [Tera Raids](sv_raid.md).
 
 ## Legends Z-A
 
-The Link Trade search alternates hosting and scanning, so pokeldn joins or hosts. Console: Link Trade →
-local communication → search with code 00000000. The joiner rescans until it takes a seat.
+Console: Link Trade, local communication, search with code 00000000.
 
 ```bash
 # host: start it first, then search on the console
@@ -276,14 +236,11 @@ POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/za_host.py --keys prod.keys -
   --hold 450 --quiet-seat 25 --connect-timeout 6 --game --trade-offer offer.bin --offer-delay 4
 ```
 
-Pick a Pokémon on the trade box and confirm when the other side's shows. Both roles answer another
-offer in the same session; a repeated `--trade-offer` queues records, one per trade. Back out with
-B when finished; the host closes when the console leaves.
-`--offer-out FILE` keeps what the console offered. For an emulated console over the LAN, use
-`za_host.py --ip-host --our-ip IP --comm-id ffffffffffffffff` and
-`za_join.py --ip-join --host-ip IP --our-ip IP --comm-id ffffffffffffffff`. The offer file is 354 bytes
-(nine-byte header, 344-byte record, one trailing byte); `pokeldn.gen9.build` composes the record
-because Z-A's layout is Scarlet's. See [Legends Z-A](za.md).
+A repeated `--trade-offer` queues trades; B on the console ends the session. `--offer-out FILE` keeps
+what the console offered. Emulated console: `--ip-host --our-ip IP --comm-id ffffffffffffffff`
+(host) or `--ip-join --host-ip IP --our-ip IP --comm-id ffffffffffffffff` (join). The offer file is
+354 bytes (9-byte header, 344-byte record, 1 trailing byte); `pokeldn.gen9.build` composes the
+record. See [Legends Z-A](za.md).
 
 ## Diagnostics
 
@@ -291,5 +248,5 @@ because Z-A's layout is Scarlet's. See [Legends Z-A](za.md).
   air sniffer for one MAC on one channel.
 - `POKELDN_ESP32_TRACE=FILE` records the board's serial traffic and counters; `--capture FILE` on
   every entry point writes the protocol trace as JSONL.
-- [Host implementation](frlg_host.md): component boundaries, protocol flow, timing, shutdown.
+- [Host implementation](frlg_host.md): component layout, protocol flow, timing, shutdown.
 

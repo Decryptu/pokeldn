@@ -86,7 +86,7 @@ INSTALL_RESIDENT = "install-resident"
 INSTALL_KEPT = "install-kept"
 
 # Save flash: 32 sectors of 0x1000 [decomp:include/save.h]. Only swi 0x48 and swi 0x56 write it
-# [docs/frlg_rom.md, the Sloop syscall boundary].
+# [docs/frlg_rom.md, the dispatcher and its jump table].
 FLASH_BASE, FLASH_SIZE = 0x0E000000, 0x00020000
 FLASH_SECTOR_SIZE = 0x1000
 # 0x48 writes a sector; 0x56 writes and then voids the destination's signature at +0xFF8.
@@ -1634,7 +1634,7 @@ SCRIPT_REGISTRY = {
     FLASH_WRITE: BufferScriptSpec(
         FLASH_WRITE,
         "compose 4 KB in EWRAM on the console and write it straight into a flash sector with "
-        "swi 0x48, bypassing the game's save code entirely - no counter, checksum or signature "
+        "swi 0x48, instead of going through the game's save code entirely - no counter, checksum or signature "
         "(--flash-sector, --flash-fill-base, --flash-fill-step, --flash-words; a sector inside "
         "the save bands needs --write-unsafe)",
         None),
@@ -1818,7 +1818,7 @@ def build_flash_write(sector, *, source=FLASH_WRITE_SCRATCH, fill_base=0x4657000
                       footer=False, sector_id=0, counter=0, signature=SECTOR_SIGNATURE,
                       derive=False, counter_bias=0, position=None, build=None):
     """The flash-write payload: fill `words` words at `source`, then swi `number` into `sector`,
-    bypassing the game's save code. Refuses a save-band sector unless `unsafe`. `derive` reads
+    instead of going through the game's save code. Refuses a save-band sector unless `unsafe`. `derive` reads
     `build`'s save globals."""
     build = builds.resolve(build)
     sector = int(sector)

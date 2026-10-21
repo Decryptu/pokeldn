@@ -6,45 +6,35 @@ nav_order: 2
 
 # Mystery Gift
 
-The Mystery Gift menu needs no Pokemon Center. A console on the Wonder Cards screen accepts a Wonder
-Card, a delivery script, Wonder News, a visiting Battle Tower trainer, and a Pokemon straight into the
-party. The Mystery Event VM and native ARM code are on [Code on the console](frlg_rom.md).
+FireRed/LeafGreen Mystery Gift over Friend accepts a Wonder Card, a delivery script, Wonder News, a
+visiting Battle Tower trainer, and a Pokemon straight into the party, with no Pokemon Center. The
+Mystery Event VM and native ARM code are on [Code on the console](frlg_rom.md).
 
 ## The session
 
 The console's client boots with `{CLI_RECV, MG_LINKID_CLIENT_SCRIPT}, {CLI_COPY_RECV}`
-[mystery_gift_scripts.c:15] and executes whatever `MysteryGiftClientCmd` array it receives
-[mystery_gift_client.c:87]. It understands the whole opcode set, so a host can drive flows beyond
-FireRed's two ROM server scripts.
+[mystery_gift_scripts.c:15] and executes any `MysteryGiftClientCmd` array it receives
+[mystery_gift_client.c:87].
 
     console joins  ->  SEND_PLAYER_IDS  ->  LinkPlayer block exchange  ->  one standby barrier
-                                                                              |
       server -> CLIENT_SCRIPT (sClientScript_SendGameData, 32 B)
       client -> GAME_DATA     (MysteryGiftLinkGameData, 96 B)   -- validated, card flag compared
       server -> CLIENT_SCRIPT (sClientScript_SaveCard, 48 B)
       server -> CARD          (struct WonderCard, 332 B)
       server -> RAM_SCRIPT    (1024 B: the delivery bytecode, zero-padded)
       client -> READY_END     (1024 B)
-                                                                              |
-                                              close-link handshake  ->  disconnect
-
-The host issues one LinkPlayer block request, waits for the console's valid block, sends its own,
-then waits for the standby barrier.
+    close-link handshake  ->  disconnect
 
 ### Framing rules
 
-Size 0 means 1024: `MysteryGiftLink_InitSend` [mystery_gift_link.c:55] expands it to
-`MG_LINK_BUFFER_SIZE`, and `SVR_COPY_SAVED_RAM_SCRIPT` never sets `ramScriptSize`
-[mystery_gift_server.c:275], so the RAM script and `CLI_SEND_READY_END` are full 1024-byte messages.
-The CRC covers the padded buffer.
-
-Block pacing has no acknowledgement. `SEND_BLOCK_INIT` is ignored unless the receiver's slot is
-`RECV_STATE_READY` [link_rfu_2.c:1146], restored only by the console's `MGL_ResetReceived`. The
-parent's own `MGL_HasReceived` flag is set at once [link_rfu_2.c:1044]; the four-VBlank countdown
-[link_rfu_2.c:1220] applies only to child blocks. `MysteryGiftTiming.inter_block_gap_frames` is 36:
-the console model takes up to 13 frames per block with nothing dropped, 16 before the transfer dies. A
-dropped block leaves the console waiting forever. Stalls while the console sends follow
-[the mirror rule](frlg_link.md#row-one-of-the-parents-table-is-the-consoles-own-command-mirrored-back).
+- Size 0 means 1024 [mystery_gift_link.c:55]; `SVR_COPY_SAVED_RAM_SCRIPT` never sets
+  `ramScriptSize` [mystery_gift_server.c:275], so the RAM script and READY_END are full 1024-byte
+  messages. The CRC covers the padded buffer.
+- Block pacing has no acknowledgement: `SEND_BLOCK_INIT` is ignored unless the receiver's slot is
+  `RECV_STATE_READY` [link_rfu_2.c:1146]. `MysteryGiftTiming.inter_block_gap_frames` is 36; a dropped
+  block leaves the console waiting forever.
+- Stalls while the console sends follow
+  [the mirror rule](frlg_link.md#row-one-of-the-parents-table-is-the-consoles-own-command-mirrored-back).
 
 ### Modules
 
@@ -62,7 +52,7 @@ Under `pokeldn/frlg/gift/` unless stated:
 | `gift_composer.py` | action definitions, cursor-state validation, RAM-script compiler |
 | `gift_registry.py` | the catalog |
 | `gift_to_bin.py` | `.bin` exporter for external Gen-3 Mystery Gift tools |
-| `pokeldn/frlg/save/save_inject.py` | save injection with card, RAM-script and sector checksums |
+| `pokeldn/frlg/save/save_inject.py` | save gift writing with card, RAM-script and sector checksums |
 | `bin/frlg_mg_host.py` | the CLI |
 
 ## Running it
@@ -72,11 +62,9 @@ Under `pokeldn/frlg/gift/` unless stated:
                --keys PROD_KEYS --gift beast-cutscene --flag-id 1005
     (them) join the host when it appears; YES on the replace-card prompt if one shows
 
-Radio setup: [The ESP32 radio](hardware_esp32.md). `bin/frlg_mg_host.py` serves one console per run
-and stops once it has left LDN ([Host implementation](frlg_host.md), Shutdown and cleanup); a second
-console needs a new run. `tests/test_mystery_gift_flow.py` models the block-receive gate, `MGL_Receive`
-and one client command per frame; `tests/test_mystery_gift_end_to_end.py` adds an impaired
-Reliable/RFU path.
+Radio setup: [The ESP32 radio](hardware_esp32.md). One console per run; the host stops once it has
+left LDN ([Host implementation](frlg_host.md)). `tests/test_mystery_gift_flow.py` and
+`tests/test_mystery_gift_end_to_end.py` model the console's receive path.
 
 ## What the link can carry
 
@@ -85,37 +73,31 @@ Three of the 22 client instructions [include/mystery_gift_client.h:18] execute s
 | instruction | what the console does |
 |---|---|
 | `CLI_SAVE_RAM_SCRIPT` (17) | stores a field script; it runs on the next NPC interaction |
-| `CLI_RUN_MEVENT_SCRIPT` (15) | runs a Mystery Event bytecode script, a second VM with its own 17-opcode table |
-| `CLI_RUN_BUFFER_SCRIPT` (21) | `func = (void *)gDecompressionBuffer; func(&param, gSaveBlock2Ptr, gSaveBlock1Ptr)`; up to 1024 bytes of ARM executed with both save-block pointers |
+| `CLI_RUN_MEVENT_SCRIPT` (15) | runs a Mystery Event bytecode script (17-opcode VM) |
+| `CLI_RUN_BUFFER_SCRIPT` (21) | `func = (void *)gDecompressionBuffer; func(&param, gSaveBlock2Ptr, gSaveBlock1Ptr)`; up to 1024 bytes of ARM |
 
 ## The one RAM script slot
 
-A console holds a Wonder Card or a bound RAM script, never both. `ValidateSavedWonderCard` checks the
-card CRC, `ValidateWonderCard`, then `ValidateRamScript` [mystery_gift.c:186], which requires
-`magic == RAM_SCRIPT_MAGIC`, map group and number `MAP_UNDEFINED`, and `objectId == 0xFF`
-[script.c:538]. The field runs a RAM script through `GetRamScript(gSpecialVar_LastTalked, script)`
-[field_control_avatar.c:458], which requires the coordinates of the object talked to.
-`CLI_SAVE_RAM_SCRIPT` calls `InitRamScript_NoObjectEvent` (MAP_UNDEFINED, 0xFF [script.c:578]); the
+A console holds a Wonder Card or a bound RAM script, never both. `ValidateSavedWonderCard` ends in
+`ValidateRamScript` [mystery_gift.c:186], which requires `RAM_SCRIPT_MAGIC`, map `MAP_UNDEFINED` and
+`objectId == 0xFF` [script.c:538]; the field runs one only at the coordinates of the object talked to
+[field_control_avatar.c:458]. `CLI_SAVE_RAM_SCRIPT` writes MAP_UNDEFINED/0xFF [script.c:578]; the
 Mystery Event VM's `initramscript` writes real coordinates. With a bound script the card stays in the
-save with a good CRC, but the menu hides it and `MysteryGift_LoadLinkGameData` reports `flagId` 0
-[mystery_gift.c:349] (`HAS_NO_CARD`).
+save but the menu hides it and GameData reports `flagId` 0 [mystery_gift.c:349].
 
-The next Wonder Card rebinds the slot (`magic` stays 51, coordinates 0xFF) and the card comes back; a
-buffer script sends no card and leaves the slot alone. An ordinary card delivered over a bound script
-rewrites the card at +0x32E0 and the RAM script at +0x361C, both in one save sector, and nothing in
-SaveBlock2; measured, 564 of the 15872 bytes of SaveBlock1 differed.
+The next Wonder Card rebinds the slot and the card comes back; a buffer script leaves the slot
+alone. A card rewrites SaveBlock1 +0x32E0 (card) and +0x361C (RAM script), one sector, nothing in
+SaveBlock2.
 
-The slot's checksum (`ramScript.checksum`, SaveBlock1 + 0x361C) is `CalcCRC16WithTable` over
-`sizeof(RamScriptData)`, which is 1000 bytes: the 999 declared bytes and one padding byte that
-`InitRamScript` zeroes first [script.c:500]. `CalculateRamScriptChecksum` passes `250 << 2`
-(`0x0806D43C` BPRE, `0x0806D5A0` BPRF). Every game-written slot read back carries the 1000-byte CRC. A
-slot whose CRC covers only 999 bytes is wiped by `GetRamScript` the first time its object is talked to
-[script.c:526].
+`ramScript.checksum` is `CalcCRC16WithTable` over 1000 bytes, the 999 declared and one zeroed
+padding byte [script.c:500] (`CalculateRamScriptChecksum` `0x0806D43C` BPRE, `0x0806D5A0` BPRF). A
+slot whose CRC covers 999 bytes is wiped the first time its object is talked to [script.c:526].
 
 ## The gift catalogue
 
 `--gift NAME`; `--help` lists flag ids (1000..1019). Only the held card matters: the same id means
-"already has this card" (`MysteryGift_CompareCardFlags`).
+"already has this card" (`MysteryGift_CompareCardFlags`). A console already holding the card takes
+a Mystery Event gift alone, with no prompt.
 
 | gift | what it does |
 |---|---|
@@ -124,44 +106,33 @@ slot whose CRC covers only 999 bytes is wiped by `GetRamScript` the first time i
 | `porygon-tm-gift` | a Porygon card, a Clefairy scene, TM29 Psychic then TM46 Thief |
 | `solrock-stamp` / `lunatone-stamp` | the two halves of one Stamp Rally card |
 | `altering-cave` | the official Altering Cave event, ported |
-| `wish-egg`, `pokepark-egg`, `pc-japan-egg` | the official distribution eggs; see Distribution eggs |
-| `event-pokemon` | a Gen 3 distribution Pokemon, straight into the party; see Event Pokemon |
+| `wish-egg`, `pokepark-egg`, `pc-japan-egg` | the official distribution eggs |
+| `event-pokemon` | a Gen 3 distribution Pokemon, straight into the party |
 | `starter-egg` | an egg of one of the nine first partners, drawn by `random` |
 | `rare-berries` | an Enigma, a Lansat and a Starf Berry, one stage each |
 | `national-dex` | `EnableNationalPokedex` (special 367) unless `IsNationalPokedexEnabled` (403) answers 1 |
-| `nature-mint`, `pc-anywhere` and 42 more | the GB-Link Team cards; see GB-Link Team cards |
+| `nature-mint`, `pc-anywhere` and 42 more | the GB-Link Team cards |
 | `battle-count-card` | the official Battle Count Card |
 | `visiting-trainer` | a Battle Tower trainer as ident 26 (FireRed only) |
-| `mystery-event-probe` | `givenationaldex; setstatus 42; checksum`, the VM's own self-test |
+| `mystery-event-probe` | `givenationaldex; setstatus 42; checksum`, the VM's self-test |
 | `mystery-event-celebi` | `givepokemon`: a Lv30 Celebi holding mail, straight into the party |
 | `mystery-event-npc` | `initramscript`: binds a field script to the Pallet Town fat man |
 | `rng-seed-reader`, `rng-rate-probe`, `rng-shiny-hunt`, `rng-mon-hunt`, `rng-mon-hunt-both`, `rng-mon-hunt-log` | see [the RNG](frlg_rng.md) |
 
-A console already holding the card takes a Mystery Event gift alone, with no prompt.
-
 ### The legendary beast
 
-A deliveryman cutscene gives the Lansat and Liechi Berries, then a Master Ball, then starts a wild
-level-65 legendary beast battle chosen by the save's starter:
-
-| starter | beast |
-|---|---|
-| Bulbasaur | Suicune |
-| Squirtle | Entei |
-| Charmander | Raikou |
-
-The saved script stays, so the event repeats.
+A deliveryman gives the Lansat and Liechi Berries and a Master Ball, then starts a repeatable
+level-65 battle: Suicune for a Bulbasaur save, Entei for Squirtle, Raikou for Charmander.
 
 ### Porygon TM gift
 
-A Porygon-icon card, a Clefairy sprite three tiles to the player's right facing west, TM29 Psychic
-then TM46 Thief, with separate delivery checkpoints so retrying Thief cannot duplicate Psychic.
-Default flag id 1007; the viewer shows `7` top right (`flag_id % 100`).
+A Porygon-icon card and a Clefairy sprite three tiles right of the player give TM29 then TM46 at
+separate checkpoints. Default flag id 1007; the viewer shows `flag_id % 100`.
 
 ### The Stamp Rally
 
-Two events share one `SUN AND MOON RALLY` card (Claydol icon, two stamp slots, displayed number `6`,
-flag id 1006), received in either order.
+Two events share one `SUN AND MOON RALLY` card (Claydol icon, two stamp slots, flag id 1006), in
+either order. Each stamp gives a level-30 Solrock or Lunatone; both give a level-50 Celebi.
 
 | state | meaning |
 |---|---|
@@ -169,40 +140,23 @@ flag id 1006), received in either order.
 | `VAR_MYSTERY_GIFT_2 = 0/1/2` | Solrock absent / active / received |
 | `VAR_MYSTERY_GIFT_3 = 0/1/2` | Lunatone absent / active / received |
 | `FLAG_MYSTERY_GIFT_DONE` | rally completion |
-| card receipt flag | synchronized when Celebi succeeds |
-
-Each stamp earns a level-30 Solrock or Lunatone; both earn a level-50 Celebi, all by plain `givemon`.
-Party or PC counts; if both are full nothing advances. Two pending stamps deliver all three at once.
 
 ```text
-matching =
-    saved flag ID == distribution flag ID
-    and max stamps == 2
-    and metadata icon species == CLAYDOL
-
+matching = saved flag ID == distribution flag ID and max stamps == 2 and icon species == CLAYDOL
 if no card:                install shared card + delivery script + selected stamp, run activation
 else if not matching:      offer the toss prompt; on accept, install as above
-else if stamp species or ID already exists:   HAS_STAMP, no activation
-else if neither slot empty:                   NO_ROOM_STAMPS, no activation
+else if stamp species or ID already exists:   HAS_STAMP
+else if neither slot empty:                   NO_ROOM_STAMPS
 else:                      save the stamp, run activation, STAMP_RECEIVED
 ```
 
-The activation is a Mystery Event wrapper (`runscript` plus an embedded field script). Stamps are
-live-host-only. `IsStampInMetadata` [mystery_gift.c:272] rejects a stamp whose id or species
-collides (maximum 7). `CLI_SAVE_STAMP` writes only `cardMetadata.stampData` [mystery_gift.c:307],
-avoiding the card wipe of `CLI_SAVE_CARD`.
+The activation is a Mystery Event wrapper. `IsStampInMetadata` [mystery_gift.c:272] rejects a
+colliding stamp; `CLI_SAVE_STAMP` writes only `cardMetadata.stampData` [mystery_gift.c:307].
 
 ### Altering Cave
 
-The official script [data/mystery_event_msg.s:325]: `addvar VAR_ALTERING_CAVE_WILD_SET, 1`, a wrap
-at 10 [:328], a message; it ends in `end`, so each talk advances one set. The reader clamps 9 and
-above to table 0 [wild_encounter.c:192]. The var (0x4024) is at SaveBlock1 + 0x1048:
-
-    --buffer-script save-dump --dump-block sav1 --dump-offset 0x1048 --dump-size 2
-
-Three talks set it to 3, and GROTTE METAMO (Six Island) then draws from table 3
-`sSixIslandAlteringCave_4_FireRed` [src/data/wild_encounters.json] (a level-16 Houndour on retail
-FireRed).
+The official script [data/mystery_event_msg.s:325] adds 1 to `VAR_ALTERING_CAVE_WILD_SET` (0x4024,
+SaveBlock1 + 0x1048), wrapping at 10; values 9 and above read table 0 [wild_encounter.c:192].
 
 | var | species | | var | species |
 |---|---|---|---|---|
@@ -214,10 +168,9 @@ FireRed).
 
 ### Distribution eggs
 
-Three Japanese distributions, ported from the bytes GB-Link-Switch-LDN carries (`web/js/gift/official.js`).
-Each card holds every egg of its distribution and the console picks one with `random` [scrcmd.c:455];
-the egg gets the distribution's four moves, the fateful-encounter bit and met location 0xFF, as the
-original scripts set them. A full party refuses before the draw and the card stays open.
+Three Japanese distributions, from GB-Link-Switch-LDN's `web/js/gift/official.js`. The card picks one
+egg with `random` [scrcmd.c:455]; it gets the distribution's moves, the fateful-encounter bit and met
+location 0xFF. A full party refuses before the draw.
 
 | card | eggs |
 |---|---|
@@ -225,43 +178,28 @@ original scripts set them. A full party refuses before the draw and the card sta
 | `pokepark-egg` (PokePark Market Fantasia) | Cacnea, Corphish, Corsola, Igglybuff, Minun, Pichu, Plusle, Psyduck, Skitty, Spinda, Spoink, Surskit, Taillow, Whismur, Wynaut |
 | `pc-japan-egg` (Pokemon Center Japan) | Bellsprout (Teeter Dance), Meowth (Petal Dance), Oddish (Leech Seed), Poliwag (Sweet Kiss) |
 
-The summary screen shows "Drôle d'ŒUF de POKéMON obtenu dans un bel endroit." for met location 0xFF or
-the fateful-encounter bit [pokemon_summary_screen.c:2799].
-
 ### Event Pokemon
 
-`--gift event-pokemon --event-pokemon NAME` sends a fresh copy of a Gen 3 distribution: PKHeX.Core
-makes it from its own event table (`EncounterGift3`, the non-egg, non-Japanese entries) by that
-event's PID/IV method, with its trainer name, trainer id, level, moves, held item, ribbons and
-fateful-encounter bit, and its legality check must pass. The record goes into the party through the
-Mystery Event `givepokemon` the moment the card is saved, as `mystery-event-celebi` does; a full party
-answers status 3 and gets nothing, and the card can be received again. Without `--event-pokemon`
-the card sends a stored WISHMKR Jirachi.
+`--gift event-pokemon --event-pokemon NAME` sends a Gen 3 distribution made by PKHeX.Core from
+`EncounterGift3` (non-egg, non-Japanese) by its PID/IV method, legality-checked, through the Mystery
+Event `givepokemon` when the card is saved. A full party answers status 3 and the card can be received
+again. The default is the WISHMKR Jirachi.
 
-`NAME` is the trainer name, a space and the species: `WISHMKR Jirachi`, `CHANNEL Jirachi`,
-`Aura Mew`, `MYSTRY Mew`, `DOEL Deoxys`, `SPACE C Deoxys`, `ROCKS Metang`, `10 ANIV Pikachu` and every
-other `10 ANIV` species, the European `10ANNIV`, `10JAHRE`, `10ANNI` and `10ANIV` releases. Where an
-event was released in several languages, the one matching `--language` is sent.
+`NAME` is trainer name and species: `WISHMKR Jirachi`, `CHANNEL Jirachi`, `Aura Mew`, `MYSTRY Mew`,
+`DOEL Deoxys`, `SPACE C Deoxys`, `ROCKS Metang`, every `10 ANIV` species, and the European
+`10ANNIV`, `10JAHRE`, `10ANNI` and `10ANIV` releases; `--language` picks among languages.
 
-The card is build-independent: the Mystery Event VM's 17-entry table, its `givepokemon` and the
-gift client's 23-case `Client_Run` switch have the same layout on all twelve cartridges, and
-`tests/test_frlg_english_cartridges.py` runs the card's script through each cartridge's own
-`RunMysteryEventScript` (status 2 and the record in the party; status 3 and nothing on a full party).
+The card is build-independent; `tests/test_frlg_english_cartridges.py` runs it through each
+cartridge's `RunMysteryEventScript`.
 
 ### GB-Link Team cards
 
-The GB-Link Team's custom Wonder Cards (GB-Link-Switch-LDN `cards/`, GPL-3.0) are a Wonder Card plus a
-delivery-man RAM script that carries THUMB code, called through `callnative`. Their ARM sources are in
-`vendor/gblink-cards/`; `scripts/gen_team_cards.py` assembles them for five cartridges into
-`pokeldn/frlg/data/team_cards.json`, and `pokeldn/frlg/gift/team_cards.py` registers each card under its
-id without `custom-` (`--gift nature-mint`). With their unmodified sources and their RAM addresses the
-generator reproduces their own `BPRE 1.10` payloads byte for byte, all 44 of them.
-
-`starter-egg`, `rare-berries` and `national-dex` are their three cards that need no native code,
-rebuilt with the composer: berries are items 173, 174 and 175, and the National Pokedex card sets
-`FLAG_SYS_NATIONAL_DEX` (0x840). Their event Pokemon come from PKHeX
-(see Event Pokemon) except the four PKHeX's table leaves out; their follower, Master Ball, speed-up and
-encounter hooks are covered by this project's own.
+The GB-Link Team's custom cards (GB-Link-Switch-LDN `cards/`, GPL-3.0) are a Wonder Card plus a RAM
+script that calls THUMB code through `callnative`. Sources are in `vendor/gblink-cards/`;
+`scripts/gen_team_cards.py` builds `pokeldn/frlg/data/team_cards.json`, reproducing all 44 of their
+`BPRE 1.10` payloads byte for byte, and `team_cards.py` registers each id without `custom-`.
+`starter-egg`, `rare-berries` (items 173-175) and `national-dex` (`FLAG_SYS_NATIONAL_DEX` 0x840) are
+rebuilt with the composer.
 
 | group | cards |
 |---|---|
@@ -270,69 +208,47 @@ encounter hooks are covered by this project's own.
 | other | `no-encounters`, `legendary-respawn`, `instant-eggs`, `gift-box`, `pocket-casino`, `gift-ribbons`, `trainer-ids`, `gender-swap`, `rival-name` |
 | event Pokemon | `box-eggs`, `colosseum-pikachu`, `ageto-celebi`, `mattle-ho-oh` |
 
-What differs from their build:
+Differences from their build:
 
-- All twelve revision `0x0A` cartridges. The 167 addresses the sources take are measured on
-  each English, French, German, Italian, Spanish and Japanese FireRed/LeafGreen ROM: a function
-  by unique instruction windows, RAM and pointer-bearing data by literal pools, and a field-script
-  label by its command sequence with pointers masked. `vendor/gblink-cards/symbols.json` holds
-  all twelve tables; `tests/test_team_cards.py` checks 25 entries against `builds.py` on every
-  cartridge. Each script checks the header's game letter, language letter and revision.
-  See [The cartridge maps](frlg_rom_map.md#the-international-revision-0x0a-cartridges).
-- The relocated script (996 bytes) and the menu list (80 bytes) go to `0x0203F768` and `0x0203FB50`,
-  newlib's malloc state, instead of `0x0203FC00`, where this project's resident hooks run; see
-  [Where a payload can live](frlg_rom.md#where-a-payload-can-live).
-- The hook cards' installers point `gIntrTable[4]` at `VBlankIntr` before their copy, chain to it
-  rather than to the handler they find, and store it at `0x0203FBFC`, where this project's resident
-  installs look. A hook card replaces a running game boost and the reverse; neither chains to a stale
-  copy. Their state is at `0x0203FF60`, their copy ends below it.
-- Their ids above 1019 have no `sReceivedGiftFlags` bit; the registry sends 1000 + the card's id
-  number mod 20 for those.
-- Two texts are four and six characters shorter (`hm-moves`, `physical-special-split`) to fit 995
-  bytes after the installer change.
+- All twelve revision `0x0A` cartridges: `vendor/gblink-cards/symbols.json` holds the 167 addresses
+  per ROM, `tests/test_team_cards.py` checks them, and each script checks the header's game,
+  language and revision ([The cartridge maps](frlg_rom_map.md#the-international-revision-0x0a-cartridges)).
+- The relocated script (996 bytes) and menu list (80 bytes) live at `0x0203F768` and `0x0203FB50`,
+  below the resident hooks at `0x0203FC00` ([Where a payload can live](frlg_rom.md#where-a-payload-can-live)).
+- Hook installers chain to `VBlankIntr`, stored at `0x0203FBFC`, so a hook card and a game boost
+  replace each other. Their state is at `0x0203FF60`.
+- Ids above 1019 have no `sReceivedGiftFlags` bit; the registry sends 1000 + id mod 20.
+- `hm-moves` and `physical-special-split` texts are shortened to fit 995 bytes.
 
-Every card has been exercised bound to Mom under mGBA on all twelve cartridges;
-these checks cover entry, messages and menus, rather than every choice within each card. `nature-mint`, `pc-anywhere` and
-`rival-name` have also run on a retail French FireRed. A payload sent to the other game's cartridge
-answers "This gift doesn't work with this version of the game." ("Wrong game." on Japanese). With a resident hook running,
-`nature-mint` leaves `0x0203FC00..0x02040000` untouched and `pc-anywhere` takes over `gIntrTable[4]`
-with `0x0800071D` kept at `0x0203FBFC`.
-
-`colosseum-pikachu` and `ageto-celebi` carry their Japanese trainer names, which a European cartridge
-draws as dots; PKHeX reports all four event Pokemon legal.
+Every card runs bound to Mom under mGBA on all twelve cartridges. On the other game's cartridge a
+payload answers "This gift doesn't work with this version of the game." ("Wrong game." in Japanese).
+`colosseum-pikachu` and `ageto-celebi` carry Japanese trainer names, drawn as dots on a European
+cartridge.
 
 ### The Battle Count Card
 
-`MysteryEventScript_BattleCard` [data/mystery_event_msg.s:162] reads `GET_CARD_BATTLES_WON` through
-`GetMysteryGiftCardStat` (special 390) and gives a POTION at exactly three. The port replaces the
-official `FLAG_MYSTERY_GIFT_DONE` gate with its own prize var, so it stays repeatable.
-
-The partner arms the counters: `Task_ExchangeCards` arms `MysteryGift_TryEnableStatsByFlagId` only if
-the u16 after the 96-byte trainer card in the `BLOCK_REQ_SIZE_100` buffer equals the held card's flag
-id [union_room.c:1777], on entry to the trade centre or colosseum (`frlg_trade_host.py
---card-flag-id N`).
+`MysteryEventScript_BattleCard` [data/mystery_event_msg.s:162] gives a POTION at exactly three
+`GET_CARD_BATTLES_WON` (special 390); the port gates on its own var, so it repeats. The counters advance
+only if the u16 after the 96-byte trainer card equals the held card's flag id
+[union_room.c:1777] (`frlg_trade_host.py --card-flag-id N`).
 
 | what increments | where | the rule |
 |---|---|---|
 | `numTrades` | a completed trade [trade_scene.c:2609] | a trainer id the card has not counted |
-| `battlesWon` / `battlesLost` | the end of a cable club battle [cable_club.c:792] | the same, 5 ids remembered per stat |
+| `battlesWon` / `battlesLost` | a cable club battle [cable_club.c:792] | the same, 5 ids per stat |
 
-`IncrementCardStatForNewTrainer` [mystery_gift.c:630] counts each trainer id once. The Union Room
-battle returns through `CB2_ReturnToField` and counts nothing; only
-[the colosseum](frlg_link.md#the-cable-club-colosseum) does. The counters sit at SaveBlock1 + 0x3434
-(`buffer_script.SAV1_CARD_METADATA`), read with no CRC check [mystery_gift.c:490]:
+Union Room battles count nothing; only [the colosseum](frlg_link.md#the-cable-club-colosseum) does.
+The counters sit at SaveBlock1 + 0x3434 with no CRC [mystery_gift.c:490]:
 
-    0x3434: 0000 0000 0000 2300     battlesWon 0, lost 0, trades 0, icon 35 (CARD_TYPE_GIFT)
-    0x3434: 0000 0000 0100 2300     trades 1                       (CARD_TYPE_LINK_STAT)
+    0x3434: 0000 0000 0100 2300     trades 1, icon 35 (CARD_TYPE_LINK_STAT)
 
-A `CARD_TYPE_GIFT` card stays at zero even when armed. The wireless club's trade centre goes through
-`union_room.c`'s `Task_StartActivity`, the only builder that writes the flag id at offset 96.
+A `CARD_TYPE_GIFT` card stays at zero even when the special runs.
 
 ### The visiting trainer
 
-`CLI_RECV_EREADER_TRAINER` (18, ident `MG_LINKID_EREADER_TRAINER` = 26) copies the buffer into
-`gSaveBlock2Ptr->battleTower.ereaderTrainer` and calls `ValidateEReaderTrainer`
-[mystery_gift_client.c:233]. The struct is 188 bytes [global.h:286]:
+`CLI_RECV_EREADER_TRAINER` (18, ident 26) copies the buffer into
+`gSaveBlock2Ptr->battleTower.ereaderTrainer` [mystery_gift_client.c:233]. The struct is 188 bytes
+[global.h:286]:
 
     0x00 u8  unk0                  0x10 u16 greeting[6]            0x34 BattleTowerPokemon party[3]
     0x01 u8  trainerClass          0x1C u16 farewellPlayerLost[6]  0xB8 u32 checksum
@@ -340,52 +256,35 @@ A `CARD_TYPE_GIFT` card stays at zero even when armed. The wireless club's trade
     0x04 u8  name[8]
     0x0C u8  trainerId[4]
 
-Validation: the first 46 words not all zero, the trailing u32 their sum [battle_tower.c:1354, :1384];
-a failure is cleared silently. `SevenIsland_House_Room1` gates only on it: the old woman offers a 3v3
-in Room2, built by `CreateBattleTowerMon` from the struct [battle_tower.c:928], healed after,
-repeatable. The level rule and banlist (`ShouldBattleEReaderTrainer` [:232]) are never called here.
-
-`CreateBattleTowerMon` sets species, item, four moves (PP from the move table), level, ppBonuses,
-EVs, IVs, abilityNum, otId, personality, nickname, friendship. The phrases are six Easy Chat words;
-`farewellPlayerWon` is said when the player wins. FRLG shows five of the eight name bytes
-[`CopyEReaderTrainerName5`, battle_tower.c:1343]. `CLI_MSG_TRAINER_RECEIVED` (12) [strings.c:1296]
-counts as success, so the console saves.
-
-`--gift visiting-trainer` sends card, RAM script and trainer in one session: no card → all three; the
-same card → the trainer alone, no toss prompt; another card → the toss prompt, then all three.
+Valid when the first 46 words are not all zero and the u32 is their sum [battle_tower.c:1354,
+:1384]. The old woman in `SevenIsland_House_Room1` then offers a repeatable 3v3 built by
+`CreateBattleTowerMon` [battle_tower.c:928]; no level rule or banlist applies. FRLG shows five name
+bytes [battle_tower.c:1343]. `--gift visiting-trainer` sends card, RAM script and trainer together;
+with the same card held, the trainer alone.
 
 ## Wonder News
 
-The Mystery Gift menu is {Wonder Cards, Wonder News} x {Wireless Communication, Friend}.
-`struct WonderNews` [global.h:646] is 444 bytes and carries no identity:
+`struct WonderNews` [global.h:646] is 444 bytes:
 
 | offset | size | field | notes |
 |---|---|---|---|
-| 0x000 | 2 | `id` | the only thing `ValidateWonderNews` checks: it must not be 0 [mystery_gift.c:113] |
-| 0x002 | 1 | `sendType` | `SEND_TYPE_DISALLOWED` hides the console's own "Send" option [mystery_gift.c:120] |
-| 0x003 | 1 | `bgType` | not validated; `WonderNews_Init` clamps `>= NUM_WONDER_BGS` to 0 [mystery_gift_show_news.c:110] |
+| 0x000 | 2 | `id` | must not be 0, the only check [mystery_gift.c:113] |
+| 0x002 | 1 | `sendType` | `SEND_TYPE_DISALLOWED` hides "Send" [mystery_gift.c:120] |
+| 0x003 | 1 | `bgType` | `>= NUM_WONDER_BGS` reads 0 [mystery_gift_show_news.c:110] |
 | 0x004 | 40 | `titleText` | centred in a 224 px window |
-| 0x02C | 400 | `bodyText[10][40]` | eight lines are on screen; a non-empty line past index 7 arms the scroll indicator [:346] |
+| 0x02C | 400 | `bodyText[10][40]` | eight lines on screen; a line past index 7 turns on the scroll indicator [:346] |
 
-News has no `flagId`, metadata, RAM script or receipt flag, and never consults
-`sReceivedGiftFlags`. `IsWonderNewsSameAsSaved` [mystery_gift.c:140] compares all 444 bytes, so one
-changed byte makes old news new (`--news-id N`). Against the Wonder Card host:
+`IsWonderNewsSameAsSaved` compares all 444 bytes [mystery_gift.c:140] (`--news-id N` makes news
+new). News and cards never displace each other.
 
-- The News accept list holds one activity [`sAcceptedActivityIds_WonderNews`,
-  src/data/union_room.h:406]: `build_wonder_news_app_data` advertises 22, not 21. The `hasNews` bit
-  matters only on the Wireless path [union_room.c:3777].
-- The console answers with `MG_LINKID_RESPONSE` (ident 19) [mystery_gift_client.c:210]: `FALSE` =
-  saved, `TRUE` = already held. `sServerScript_SendNews` [mystery_gift_scripts.c:126] ends in
-  `SVR_MSG_HAS_NEWS` on `TRUE` and otherwise runs `sClientScript_NewsReceived`, which saves and sets
-  the reward. `SCRIPT_SEND_WONDER_NEWS` drops its leading `SVR_COPY_SAVED_NEWS`.
-- No card check, toss prompt or RAM script: news and cards never displace each other.
+- `build_wonder_news_app_data` advertises activity 22 [src/data/union_room.h:406].
+- The console answers `MG_LINKID_RESPONSE` (ident 19): `FALSE` saved, `TRUE` already held
+  [mystery_gift_client.c:210; mystery_gift_scripts.c:126].
+- News from a Friend rolls a berry between `ITEM_RAZZ_BERRY` and `ITEM_NOMEL_BERRY`, given by the man
+  in `CeruleanCity_House4`, up to five, then 500 steps [mystery_gift_menu.c:1367, wonder_news.c:21].
+  The four-berry reward needs the closed Wireless path.
 
-News from a Friend rolls a berry between `ITEM_RAZZ_BERRY` and `ITEM_NOMEL_BERRY`
-[mystery_gift_menu.c:1367, wonder_news.c:21], given by the man in `CeruleanCity_House4`: up to five,
-then 500 steps [`MAX_REWARD`]. The four-berry reward needs `WONDER_NEWS_RECV_WIRELESS`, a closed path.
-
-`--news` (`--news berry`, `--news-id N`); the player picks Wonder News, "input one?", Friend (a
-console holding news shows it: A, then Receive). Message order of one session (about 18 s):
+`--news` (`--news berry`, `--news-id N`). Message order (about 18 s):
 
     ident 16  sClientScript_SendGameData
     ident 17  MysteryGiftLinkGameData
@@ -397,98 +296,74 @@ console holding news shows it: A, then Receive). Message order of one session (a
 
 ## The questionnaire as a password gate
 
-`SVR_CHECK_QUESTIONNAIRE` compares the four Poke Mart questionnaire words in order
-[`MysteryGift_DoesQuestionnaireMatch`, mystery_gift.c:422] into `param` for `SVR_GOTO_IF_EQ`; no ROM
-server script uses it. `mg_server.gate_on_questionnaire(script)` splices it after the game-data
-prefix:
+`SVR_CHECK_QUESTIONNAIRE` compares the four Poke Mart questionnaire words
+[mystery_gift.c:422]; `mg_server.gate_on_questionnaire(script)` splices it after the game-data prefix:
 
-    MysteryGiftServer(card, ram_script, questionnaire=phrase, denied_message="Say the words.")
     bin/frlg_mg_host.py --gift ... --questionnaire species:55,FEELINGS/60,move:177,why
 
-A word may be an English name, `species:N`, `move:N`, `GROUP/INDEX`, or a raw id. A wrong phrase gets
-the host's 64-byte message through `CLIENT_SCRIPT_DYNAMIC_ERROR` and `SVR_MSG_NOTHING_SENT`; nothing
-is sent or tossed. Test the refusal first: a passing gate looks like an unwired one.
-
-French word ids are read off a console: every session ships the four words in
-`MysteryGiftLinkGameData` [mystery_gift.c:361] and the host logs them.
+A word is an English name, `species:N`, `move:N`, `GROUP/INDEX` or a raw id. A wrong phrase gets the
+host's 64-byte message (`CLIENT_SCRIPT_DYNAMIC_ERROR`) and nothing is sent. Every session logs the
+console's four words from GameData [mystery_gift.c:361]:
 
     questionnaire: POKEMON/55  done [FEELINGS/60]  MOVE_1/177  why [MISC/37]
 
-for AKWAKWAK FURAX AEROBLAST POURQUOI: `EC_GROUP_POKEMON` indexes by species (Golduck, 55),
-`EC_GROUP_MOVE_1` by move id (Aeroblast, 177), and the English table is right about MISC/37 and wrong
-about FEELINGS/60. See [the French Easy Chat vocabulary](frlg_rom_map.md#the-french-easy-chat-vocabulary).
+`EC_GROUP_POKEMON` indexes by species, `EC_GROUP_MOVE_1` by move id; see
+[the French Easy Chat vocabulary](frlg_rom_map.md#the-french-easy-chat-vocabulary).
 
 ## What the console volunteers about itself
 
-Every session's `MysteryGiftLinkGameData` carries the Easy Chat profile and the card stats
-(`CARD_STAT_BATTLES_WON` / `_LOST` / `_NUM_TRADES` / `_NUM_STAMPS`) [mystery_gift.c:361].
-`--game-data-log PATH` (`pokeldn/frlg/gift/game_data_log.py`) appends each session to a JSONL ledger
-and prints what moved since that console's last one; `tools/frlg/game_data_read.py PATH` reads it. A
-counter is evidence only as a difference on the same card flag id. The ledger names every word id
-the French Easy Chat table lacks.
+GameData carries the Easy Chat profile and the card stats [mystery_gift.c:361]. `--game-data-log
+PATH` (`game_data_log.py`) appends each session to a JSONL ledger and prints what moved since that
+console's last one; `tools/frlg/game_data_read.py PATH` reads it. A counter is evidence only as a
+difference on the same card flag id.
 
 ## Save backup and restore
 
 A Wonder Cards, Friend session copies the console's whole 128 KiB save chip to the host, or writes a
-`.sav` onto it and makes the game load and save it. No card is sent and none is replaced. The two
-payloads, `asm/save-backup.s` and `asm/save-restore.s`, are ported from the GB-Link Team's
-`cards/savebackup.s` and `cards/saverestore.s` (`GB-Link/GB-Link-Switch-LDN`, GPL-3.0); the hosts are
-`pokeldn.frlg.gift.save_transfer` and `bin/frlg_mg_host.py --save-backup FILE` / `--save-restore FILE`.
-The app runs both from the Mystery Gift tool's Your save tab ([Your saves](gui.md#your-saves)).
-
-Both run on all twelve cartridges. Two build addresses are patched into the payloads; the rest of
-the save layout is shared ([Save backup and restore](frlg_rom_map.md#save-backup-and-restore)).
+`.sav` onto it and makes the game load and save it; no card is sent. `asm/save-backup.s` and
+`asm/save-restore.s` are ported from the GB-Link Team's `cards/savebackup.s` and
+`cards/saverestore.s` (GPL-3.0); the host is `pokeldn.frlg.gift.save_transfer` (`--save-backup FILE`,
+`--save-restore FILE`), and the app's Your save tab ([Your saves](gui.md#your-saves)). Both run on
+all twelve cartridges ([Save backup and restore](frlg_rom_map.md#save-backup-and-restore)).
 
 ### The token coding
 
-Both directions carry chip bytes as tokens: a byte `n < 0x80` is followed by `n + 1` literal bytes;
-a byte `n >= 0x80` by one byte repeated `n - 0x80 + 3` times. A run of three or more is taken whole,
-at most 130; a literal stretch is at most 128. A save is mostly `0x00` and `0xFF` runs.
+A byte `n < 0x80` is followed by `n + 1` literal bytes; `n >= 0x80` by one byte repeated
+`n - 0x80 + 3` times (runs of 3 to 130, literals up to 128).
 
 ### Backup
 
 The client script repeats `CLI_LOAD_TOSS_RESPONSE, CLI_RUN_BUFFER_SCRIPT, CLI_SEND_LOADED` up to 32
-times per script, then asks for the next script; the host sends as many passes as the rest should
-take at the pace so far, plus one. Each pass sends up to 1 KiB of tokens for at most 8 KiB of the chip,
-never across the 64 KiB bank boundary. The chip offset lives in `client->param` as
-`0x5A << 24 | offset` [mystery_gift_client.c:276]; a `param` without `0x5A` is the session's first pass,
-which starts at the header word `first`.
+times per script. Each pass sends up to 1 KiB of tokens for at most 8 KiB of the chip, never across
+the 64 KiB bank edge; the chip offset is `client->param = 0x5A << 24 | offset`
+[mystery_gift_client.c:276], and a `param` without `0x5A` starts at `first`.
 
 | payload word | offset | value |
 |---|---|---|
 | `first` | `0x004` | the chip offset the first pass starts at |
 | `send_queue` | `0x008` | `&gRfu.sendQueue.count` |
 
-A pass stages its stretch into `gDecompressionBuffer + 0x800`, `0x800` bytes a frame (returning 0),
-then compresses it into `gDecompressionBuffer + 0x400` and points `link.sendBuffer` (`param + 0x3C`)
-and `link.sendSize` (`param + 0x34`) at the message. A pass returns 0 while `gRfu.sendQueue.count` is
-not zero: a lost fragment is queued again on top of each frame's send, and the 40-command queue
-drains only while nothing new is sent.
-
-The session ends on `CLI_MSG_BUFFER_FAILURE` after a 64-byte message, so the console shows it and
-does not save [mystery_gift_menu.c:1379]. A backup cut short is kept on the host by game code and
-trainer id; the next backup of that console sets `first` to where it stopped.
+A pass stages `0x800` bytes a frame into `gDecompressionBuffer + 0x800`, compresses into `+ 0x400`,
+and sets `link.sendBuffer` (`param + 0x3C`) and `link.sendSize` (`param + 0x34`). It waits while
+`gRfu.sendQueue.count` is not zero. The session ends on `CLI_MSG_BUFFER_FAILURE` with a message, so
+the console does not save [mystery_gift_menu.c:1379]. A cut-short backup resumes by game code and
+trainer id.
 
 ### Restore
 
-1. The first message is the whole 620-byte image. `install` copies it to `gDecompressionBuffer + 0x400`,
-   past the 1 KiB each message overwrites, and answers with the 12-byte footers (id, checksum,
-   signature, counter at `+0xFF4`) of the 28 slot sectors.
-2. The host finds the chip's newest whole slot from the footers, as `GetSaveValidStatus` would, and
-   plans the writes: the file's loaded copy into the other slot with counter `newest + 1`, then
-   sectors 28 to 31 (Hall of Fame, Trainer Tower) as the file has them.
-3. The slot being replaced still loads while its 14 ids pass, whatever their counters, so a
-   half-written slot could be taken. The plan erases that slot's id-0 sector first and writes the new
-   id 0 last: until the copy is whole the slot lacks an id and the chip's own copy loads.
-4. Each later message starts with `b RESIDENT + 4` (`0xEA0000FF`), then an op. `OP_DATA` (1) carries
-   the sector, a write flag, a u16 offset, a u16 token length and tokens that fill a 4 KiB staging
-   buffer; the last message of a sector writes it with `swi 0x48` and reads it back through the
-   window. A sector that differs, or tokens that overflow the buffer, set a bit in the fail mask; the
-   host waits for that report before the next sector.
-5. `OP_FINISH` (2) calls `LoadGameSave(SAVE_NORMAL)` when no sector failed [save.c:803] and reports the
-   fail mask and the load result. With `SAVE_STATUS_OK` the session ends on
-   `CLI_MSG_BUFFER_SUCCESS`, and the console saves the loaded game into the slot its old copy held;
-   anything else ends on `CLI_MSG_BUFFER_FAILURE` and the console keeps the save it had.
+1. The first message is the 620-byte image; `install` copies it to `gDecompressionBuffer + 0x400`
+   and answers with the 12-byte footers (id, checksum, signature, counter at `+0xFF4`) of the 28 slot
+   sectors.
+2. The host finds the newest whole slot as `GetSaveValidStatus` would and writes the file's copy into
+   the other slot with counter `newest + 1`, then sectors 28 to 31 as the file has them.
+3. It erases the target slot's id-0 sector first and writes the new id 0 last, so the chip's own
+   copy loads until the new one is whole.
+4. Later messages start `b RESIDENT + 4` (`0xEA0000FF`), then an op. `OP_DATA` (1) carries sector,
+   write flag, u16 offset, u16 token length and tokens into a 4 KiB buffer; the sector's last
+   message writes it with `swi 0x48` and verifies it, setting a fail-mask bit on mismatch.
+5. `OP_FINISH` (2) calls `LoadGameSave(SAVE_NORMAL)` if nothing failed [save.c:803]. On
+   `SAVE_STATUS_OK` the session ends on `CLI_MSG_BUFFER_SUCCESS` and the console saves the loaded
+   game; otherwise on `CLI_MSG_BUFFER_FAILURE` and the old save stays.
 
 | payload word | offset | value |
 |---|---|---|
@@ -496,35 +371,17 @@ trainer id; the next backup of that console sets `first` to where it stopped.
 | `b entry` | `0x004` | every later message's entry, at `gDecompressionBuffer + 0x404` |
 | `load_game_save` | `0x008` | `LoadGameSave \| 1` |
 
-The host refuses a save whose loaded copy is not whole, and a save of the other layout: Japanese
-SaveBlock1 is 40 bytes shorter, which a zero-filled sector does not show in its checksum, so the
-layout is read from the language byte (`+0x12`) of the player's own Pokemon, those whose OT ID is the
-trainer's. A refusal writes nothing.
+The host refuses a save whose loaded copy is not whole or of the other layout: Japanese SaveBlock1
+is 40 bytes shorter, read from the language byte (`+0x12`) of the trainer's own Pokemon.
 
-### What is measured
-
-Offline, against the scripted console (`tests/test_save_transfer.py`): the backup returns the chip
-byte for byte on French FireRed, English LeafGreen and Japanese FireRed; a backup cut after 40 KB
-resumes and completes; a restore leaves the file's loaded copy as the chip's newest, the extra
-sectors equal to the file's and the console's old copy whole; a restore cut after eight sectors
-leaves the console's own copy loading.
-
-On retail French FireRed over the ESP32 board, a backup took 64 passes and 219 s from the first pass to the last block; both slots of the file are whole and its trainer is the console's. The console showed the message and kept its save.
-
-On retail English FireRed (BPRE) over the ESP32 board, with `--console-build auto` choosing BPRE from
-the console's game code, a backup read both slots whole (counters 2 and 1). A restore of that file
-wrote 19 of 19 sectors and ended on the success message. A backup taken right after held the file's
-loaded copy byte for byte in slot 1 under counter 3, and the console's own save of the loaded game in
-slot 0 under counter 4; that copy differs from the file in sectors 1 to 7, the blocks that carry the
-encryption key `LoadGameSave` re-rolls.
-
-A second restore put a French FireRed save on the same English cartridge. It ended on the success
-message, and CONTINUE loaded the French game into the overworld.
+`tests/test_save_transfer.py` covers backup, resume, restore and an interrupted restore against the
+scripted console. On retail, backup works on French and English FireRed, and restore on English
+FireRed, a French save included. The console's next save differs from the file in sectors 1 to 7,
+which carry the encryption key `LoadGameSave` re-rolls.
 
 ## Authoring gifts
 
-`pokeldn.frlg.gift.gift_composer` builds cards and deliveryman scripts from immutable `WonderGift`
-definitions:
+`pokeldn.frlg.gift.gift_composer` builds cards and delivery scripts from `WonderGift` definitions:
 
 ```python
 MEWTWO_GIFT = WonderGift(
@@ -541,82 +398,54 @@ MEWTWO_GIFT = WonderGift(
 )
 ```
 
-`GiftSpec` holds repeatable and shareable; `StampRallySpec` rally slots and completion hooks. A
-`DeliveryPlan` has three sequences: `WonderGift.delivery` uses `delivery`; `StampSlot.delivery` and
-`StampRallySpec.completion` use `pre_stages` and `post_stages`; anything else is rejected.
-
-The compiler shows `intro_message`, resumes the stages from `VAR_MYSTERY_GIFT_1`, and on success sets
-`FLAG_MYSTERY_GIFT_DONE` and the card receipt flag. A later visit shows `completed_message`;
-`GiftSpec(repeatable=True)` resets the cursor instead.
+`WonderGift.delivery` uses `delivery`; `StampSlot.delivery` and `StampRallySpec.completion` use
+`pre_stages` and `post_stages`. The compiler resumes stages from `VAR_MYSTERY_GIFT_1` and on success
+sets `FLAG_MYSTERY_GIFT_DONE` and the receipt flag; `GiftSpec(repeatable=True)` resets the cursor.
 
 ### Stages and conditions
 
-Each `DeliveryStage` is one checkpoint: a failed reward re-offers that stage and skips the successful
-ones before it. Never put two fallible rewards (`GiveItem`, `GivePokemon`, `GiveEgg`) in one stage.
-`GiveEgg` takes the same `moves=(...)` as `GivePokemon`; a move-bearing egg needs a party slot, so a
-full party retries later instead of sending it to the PC. A move of 0 after the first empties that
-slot. `GiveRandomEgg(eggs)` takes `(species, moves)` pairs and gives one picked by `random`: a jump
-table, so fifteen eggs with four moves each fit one RAM script (944 bytes).
-
-`condition=` (`VarEquals`, `FlagSet`, `Not`, `AllOf`, `AnyOf`) skips a stage's actions when false but
-still advances the cursor, for mutually exclusive branches. `RequireSpecialResult(...)` calls a field
-special into `VAR_RESULT`, compares it, and on failure shows its message without advancing.
+Each `DeliveryStage` is one checkpoint; never put two fallible rewards (`GiveItem`, `GivePokemon`,
+`GiveEgg`) in one stage. A move-bearing `GiveEgg` needs a party slot. `GiveRandomEgg(eggs)` picks one
+through a jump table (fifteen four-move eggs fit in 944 bytes). `condition=` (`VarEquals`, `FlagSet`,
+`Not`, `AllOf`, `AnyOf`) skips a stage but advances the cursor; `RequireSpecialResult(...)` stops on
+failure without advancing.
 
 ```python
 DeliveryStage(ShowSprite(142, RelativeToPlayer(dx=1)),
               condition=VarEquals(0x4031, 0))  # VAR_STARTER_MON == Bulbasaur
-DeliveryStage(BattleLegendary(243, level=65),
-              condition=Not(AnyOf((VarEquals(0x4031, 0), VarEquals(0x4031, 1)))))
 DeliveryStage(RequireSpecialResult(SPECIAL_HAS_ALL_KANTO_MONS, 1, "Finish the KANTO POKEDEX first."),
               GivePokemon(251, level=50))
 ```
 
-### Writing the player's save
-
-`SetVar(variable, value)` emits `setvar` (0x16) and `AddVar(variable, value)` emits `addvar` (0x17),
-both restricted to a saved var (0x4000..0x40FF) or a special var (0x8000..0x8011).
+`SetVar` (`setvar` 0x16) and `AddVar` (`addvar` 0x17) accept saved vars 0x4000..0x40FF and special vars
+0x8000..0x8011.
 
 ### Battles
 
-`BattleLegendary` emits `setwildbattle`, `special StartLegendaryBattle`, then `end` without
-`waitstate`, so nothing resumes a RAM-script pointer after the battle moves SaveBlock memory ([a RAM
-script may not come back from a battle](frlg_rng.md#a-ram-script-may-not-come-back-from-a-battle)).
-`BattlePokemon` emits the ordinary `dowildbattle`. Either must be the last action of its stage.
-Battles are prohibited in a stamp-slot path, including a rally's shared middle; conditional battle
-stages are allowed as terminal alternatives.
+`BattleLegendary` emits `setwildbattle`, `special StartLegendaryBattle`, `end` with no `waitstate`
+([a RAM script may not come back from a battle](frlg_rng.md#a-ram-script-may-not-come-back-from-a-battle));
+`BattlePokemon` emits `dowildbattle`. Either ends its stage. Battles are refused in a stamp-slot
+path except as conditional terminal alternatives.
 
 ### Sharing
 
-`GiftSpec.shareable` maps to the Wonder Card `sendType` bits:
-
-| value | behaviour |
-|---|---|
-| `"never"` | cannot be shared onward |
-| `"once"` | can be shared once; the receiving game flips the card to not shareable |
-| `"always"` | can continue to be shared after receipt |
+`GiftSpec.shareable` sets the card's `sendType`: `"never"`, `"once"` (the receiver's copy becomes
+unshareable) or `"always"`.
 
 ### Fateful-encounter marking
 
-`GivePokemon(..., fateful_encounter=True)` (and `GiveEgg`) emits the official Surf Pichu pair:
-`setmonmodernfatefulencounter` (`0xCD`) and `setmonmetlocation` (`0xD2`, `METLOC_FATEFUL_ENCOUNTER` =
-0xFF) [data/mystery_event_msg.s:71]. It is opt-in, so older cards are byte-identical.
-
-`ScrCmd_setmonmodernfatefulencounter` does not bounds-check its index [scrcmd.c:2239] (`setmonmove`
-clamps [script_pokemon_util.c:144]), so the composer's `LAST_PARTY_MON_INDEX` of 7 must not reach it.
-The index is the party count before the give (`specialvar ... CalculatePlayerPartyCount`); a full
-party jumps to the failure label, so a mon sent to the PC is never marked.
-
-The summary screen's fateful-encounter line comes from the met location alone
-[pokemon_summary_screen.c:2665, ORed at :2799]. `modernFatefulEncounter` is bit 31 of the
-ribbon word at Misc+0x08 [include/pokemon.h:40-82]; `mon.decode_mon` reads it from a party dump.
+`GivePokemon(..., fateful_encounter=True)` (and `GiveEgg`) emits `setmonmodernfatefulencounter`
+(`0xCD`) and `setmonmetlocation` (`0xD2`, 0xFF) [data/mystery_event_msg.s:71]. The first command does
+not bounds-check its index [scrcmd.c:2239]; the index is the party count before the give, and a full
+party jumps to the failure label. The summary line comes from the met location alone
+[pokemon_summary_screen.c:2665, 2799]; `modernFatefulEncounter` is bit 31 of Misc+0x08
+[include/pokemon.h:40-82].
 
 ### `initramscript` in the composer
 
-`gift_composer.build_bound_script(actions)` compiles composer actions into the field script
-`initramscript` binds; `build_mevent_npc_script(actions=...)` takes them directly. Same bytecode,
-interpreter and `ramScript` slot, so items, mons, sprites and battles all work. There is no stage
-cursor or receipt flag: the script ends in `end` and reruns whole, so a once-only effect needs its own
-`SetVar` or condition.
+`gift_composer.build_bound_script(actions)` and `build_mevent_npc_script(actions=...)` compile actions
+into the field script `initramscript` binds. It has no stage cursor and reruns whole, so a once-only
+effect needs its own `SetVar` or condition.
 
 ### Registration and validation
 
@@ -625,13 +454,9 @@ from pokeldn.frlg.gift.gift_registry import GIFT_REGISTRY
 GIFT_REGISTRY.register_definition(MEWTWO_GIFT)
 ```
 
-Registration validates and compiles the default flag id; a runtime `--flag-id` compiles again.
-Validation covers card text and flags, plan structure, action ranges, cursor bounds, unique stamps,
-battle placement, virtual pointers and the 995-byte RAM-script limit, naming the section:
-
-```text
-example-rally.event.slots[1].delivery.post_stages[0].actions[1]: battles are not allowed in stamp-slot delivery plans
-```
+Registration validates and compiles: card text and flags, plan structure, action ranges, cursor
+bounds, unique stamps, battle placement, pointers and the 995-byte RAM-script limit, with errors
+naming the path (`example-rally.event.slots[1].delivery.post_stages[0].actions[1]: ...`).
 
 ## Static tools
 
@@ -640,84 +465,58 @@ example-rally.event.slots[1].delivery.post_stages[0].actions[1]: battles are not
 ./.venv/bin/python -m pokeldn.frlg.save.save_inject game.sav --gift beast-cutscene --flag-id 1005
 ```
 
-`gift_to_bin` writes a 336-byte Wonder Card and a 1004-byte RAM script as
-`pokemon-gen3-mysterygift-tool` expects. `save_inject` writes both into the active save slot,
-rebuilds the card CRC, RAM-script CRC and sector checksum, and saves `<save>.gift.sav` (`--in-place`
-overwrites). `--make-artifact` writes a deterministic `.ram.lst` under `artifacts/` (bytes, decoded
-instructions, checksums, targets, stage summary).
+`gift_to_bin` writes a 336-byte Wonder Card and a 1004-byte RAM script for
+`pokemon-gen3-mysterygift-tool`. `save_inject` writes both into the active slot, fixes the card,
+RAM-script and sector checksums, and saves `<save>.gift.sav` (`--in-place` overwrites;
+`--make-artifact` writes a `.ram.lst` listing under `artifacts/`).
 
 ## Closed paths
 
 ### Wireless Communication (JoySpot)
 
-Blocked at the RFU serial-number gate. Both paths reach the same gift conversation:
+The Wireless path is blocked at the RFU serial-number gate:
 
 | | Friend | Wireless Communication |
 |---|---|---|
 | listener | `Task_ListenForCompatiblePartners` [union_room.c:3757] | `Task_ListenForWonderDistributor` [union_room.c:3799] |
-| accepts RFU serial | `IsRfuSerialNumberValid` → `{0x0002, 0x7F7D}` | `== 0x7F7D` only [link_rfu_3.c:920] |
-| selection | the player picks from a list | auto-connects, no button press |
+| accepts RFU serial | `{0x0002, 0x7F7D}` | `== 0x7F7D` only [link_rfu_3.c:920] |
+| selection | the player picks from a list | auto-connects |
 | reachable from a Switch | yes | no |
 
-`Task_CardOrNewsOverWireless` [union_room.c:2415] scans, waits 120 frames, then gates candidate 0:
-
-1. `Rfu_GetWonderDistributorPlayerData` [link_rfu_3.c:917] keeps the candidate only if
-   `partner[idx].serialNo == RFU_SERIAL_WONDER_DISTRIBUTOR (0x7F7D)`, else zeroes it.
-2. `groupScheduledAnim == UNION_ROOM_SPAWN_IN && !startedActivity`.
-3. `HasWonderCardOrNewsByLinkGroup`: the advertised `hasCard` bit; failing it plays SE_BOO.
-4. `CreateTask_RfuReconnectWithParent(...)`.
-
-A wrong serial fails gate 1 silently (no SE_BOO). The Switch bridge reports `0x0002`
-(`RFU_SERIAL_GAME`): Friend (`sAcceptedSerialNos` [link_rfu_2.c:240]) lists every candidate and
-Wireless ignores every one. The advertisement has no serial field; a native one is zero outside four
-fields:
+`Task_CardOrNewsOverWireless` [union_room.c:2415] keeps candidate 0 only if its `serialNo` is
+`0x7F7D`, then checks the spawn state, the `hasCard` bit (SE_BOO on failure) and reconnects. The
+Switch bridge reports `0x0002`, and the advertisement has no serial field; `svc_47` [sloopsvc.c:34]
+takes 24 bytes with no serial. A native advertisement:
 
 ```
 50 10 | c1 cc bf bf c8 ff 00 00 | 65 ac | 00 00 00 00 | 84 15 | 00 00 00 00 00 00
 TID   | uname                   | parent| unexplained | search| unexplained
 ```
 
-`svc_47` [sloopsvc.c:34] takes `{u8 HostRfuGameData[0x10]; u8 HostRfuUsername[8]}`, 24 bytes with no
-serial, while the bridge writes the candidate list through `svc_45_rfu_link_status()`.
+The search word at `record[16:18]` is
+`activity:7 | bit7 | version:3 | language:3 | hasCard?:1 | startedActivity:1`.
 
-Advertisements that drew no 802.11 authentication from the Wireless path (21 tried): the scene id
-(0, 21, 0x7F7D), LDN and Pia app versions, `0x7F7D` in both byte orders at offsets 12, 13, 14, 18,
-19, 20, 22, the activity (0, 4, 21), `hasCard`, and the search word's bit 7. Held constant: `local_communication_id =
-0x01006fa0233f8000`, LDN version 4, channel 1, `max_participants = 2`, Pia `sysCommVer = 22`, scene
-22287.
-
-`0x1584 & 0x7F = 4 = ACTIVITY_TRADE` in the native capture, and activity 21 at that offset gave a
-Friend listing and a join, so the search word at `record[16:18]` is
-`activity:7 | bit7 | version:3 | language:3 | hasCard?:1 | startedActivity:1` (version 5 = LeafGreen,
-language 2 = English in that capture).
-
-Untested: `local_communication_id` (a change hides the host, indistinguishable from the gate), a
-scene brute force, multi-variable combinations. It reopens on bridge evidence assigning
-`partner[].serialNo` from anything advertisable, or a capture of an advertisement a Switch treats as a
-wonder distributor. The block costs the zero-button path and the four-berry Wonder News reward.
+No tried advertisement variant (scene id, app versions, `0x7F7D` at every free offset, activity,
+`hasCard`, bit 7) drew an authentication from the Wireless path. Untested: `local_communication_id`,
+a scene brute force, combinations.
 
 ### The e-Reader itself
 
-Trainer Tower sets and `CEReaderTool_SaveTrainerTower`: `ereader_screen.c` opens
-`gLinkType = LINKTYPE_EREADER_FRLG` over the GBA serial link, not the wireless adapter.
+Trainer Tower e-Reader sets use `LINKTYPE_EREADER_FRLG` over the GBA serial link (`ereader_screen.c`),
+not the wireless adapter.
 
 ### The Aurora and Mystic Tickets
 
-A ticket card does nothing on the Switch release. The distribution scripts are in `data/mystery_event_msg.s:200`, but the Switch release grants both
-tickets and both `FLAG_RECEIVED_*` flags on the first Hall of Fame entry
-[post_battle_event_funcs.c:52, `#if REVISION >= 0xA`], so on a completed save the script is a no-op.
-The gallery's `FL - Item AuroraTicket` script tests `FLAG_RECEIVED_AURORA_TICKET` first; past the Hall
-of Fame the delivery man says only "Merci d'utiliser le système CADEAU MYST." and gives nothing. That
-card's `iconSpecies` is `0xFFFF`: any value but `SPECIES_NONE` draws an
-icon, and a species past `SPECIES_UNOWN_B - 1` draws `SPECIES_NONE`'s question mark
-[mystery_gift_show_card.c:466, pokemon_icon.c:1102].
-The Old Sea Map is Emerald-only [mystery_gift.c:30].
+The Switch release grants both tickets and their `FLAG_RECEIVED_*` flags on the first Hall of Fame
+entry [post_battle_event_funcs.c:52, `REVISION >= 0xA`], so a ticket card gives nothing after it. A
+card's `iconSpecies` other than `SPECIES_NONE` draws an icon; past `SPECIES_UNOWN_B - 1` it draws the
+question mark [mystery_gift_show_card.c:466, pokemon_icon.c:1102]. The Old Sea Map is Emerald-only
+[mystery_gift.c:30].
 
 ## Traps
 
-- `charmap.encode` drops unknown characters, newline included. The line break is 0xFE; `mg_server`'s
-  encoder splits on `\n`, joins on 0xFE, and refuses a third line or a line wider than the ROM's
-  longest string in that window ("A WONDER CARD has been received", 31 characters [strings.c:1291]).
-  Window 1 is 28 tiles by 4 [mystery_gift_menu.c:97,524].
+- `charmap.encode` drops unknown characters, newline included. The line break is 0xFE; `mg_server`
+  refuses a third line or one wider than 31 characters [strings.c:1291] (window 28 tiles by 4,
+  [mystery_gift_menu.c:97,524]).
 - A new payload goes into `DUMP_SCRIPTS` and `DECODED_SCRIPTS` in `buffer_script.py` and the
-  launcher's `--dump-file` line, or the offline harness passes while the hardware path is untested.
+  launcher's `--dump-file` line.

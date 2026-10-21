@@ -5,154 +5,100 @@ nav_order: 3
 
 # Reverse-engineering a Switch title
 
-Reading a retail Switch game's code without unpacking it, for a Unity/IL2CPP title (BDSP, 7.3 GB of
-NSPs) and a native C++ one (Sword / Shield, a 13.3 GB XCI).
+This page covers reading a retail Switch game's code in place, for Unity/IL2CPP (BDSP) and native
+C++ (Sword / Shield) titles.
 
 ## Order of work
 
-1. Search published sources for a constant in hand. Code search reaches inside the
-   NintendoClients wiki, including per-game pages its summary tables do not link:
+1. Search published sources for a constant, including the NintendoClients wiki's per-game pages:
 
        gh search code "<a constant, a field name, a class name>" --limit 20
-       gh api repos/kinnay/NintendoClientsWiki/contents --jq '.[].name'
        gh api repos/kinnay/NintendoClientsWiki/contents/<Page>.md --jq .content | base64 -d
 
-   Summary tables give derived values; the per-game, Pia-version and application-data pages give
-   the rule.
-2. Look for the game's code already dumped: a C# recreation (`TeamLumi/opendpr` for BDSP) reads
-   faster than IL2CPP output; a game key finds third-party clients (Sword/Shield's: four LAN-mode
-   clients).
-3. Get executable and metadata of one build; name everything first.
-4. Read the binary to verify transcriptions and find the unwritten (BDSP's `cryptoKeyDataSeed` and
-   its version rule).
-5. Only then search a key space: one input pinned wrong gives a confident negative.
-
-Decrypting a Pia LDN title takes its passphrase, `cryptoKeyDataSeed`, local communication version,
-the advertisement and each sender's MAC ([The Pia layer](pia.md)).
+2. Look for existing decompilations (`TeamLumi/opendpr` for BDSP) and clients sharing the game key.
+3. Name everything in one build's executable and metadata.
+4. Verify in the binary.
+5. Search a key space last: one wrong input gives a confident negative.
 
 ## Getting the executable out
 
 ### From an NSP
 
-An NSP is a PFS0 archive of NCAs; the executable sits near the end of a multi-GB NCA.
-
-1. Parse the PFS0 header directly: hactool's `--listfiles` offsets are relative to the data base.
-2. Decrypt the title key from `<rights id>.tik` (the rights id is the NSP's filename): encrypted key
-   at `+0x180`, rights id at `+0x2A0`, absolute. Its last byte is the key generation *n*, which uses
-   `titlekek_{n-1}`. hactool takes the encrypted key on `--titlekey`; `xci_read.py` reads the
-   ticket itself.
-3. Build a sparse file: `dd` the NCA's head, `truncate -s` to its real size, `dd ... seek_bytes
-   conv=notrunc` the needed ranges. 109 MB on disk stands in for 2.7 GB and passes hactool's bounds
-   checks (`du -h` shows the real size, `ls -l` does not).
+An NSP is a PFS0 of NCAs. The title key is in `<rights id>.tik`: encrypted key at `+0x180`, rights id
+at `+0x2A0`; its last byte *n* selects `titlekek_{n-1}`. A sparse file (`dd` the needed ranges into a
+`truncate`d file) passes hactool's bounds checks.
 
 ### From an XCI
 
-`tools/switch/xci_read.py` walks HFS0 partitions (or an NSP's PFS0), decrypts NCA headers in place
-(AES-128-XTS under `header_key`, big-endian sector tweak) and prints title id, content type, key
-generation and each section's offset, counter and key:
+`tools/switch/xci_read.py` walks HFS0/PFS0, decrypts NCA headers and prints each section's offset,
+counter and key; a cartridge NCA's body key is key area slot 2 under
+`key_area_key_application_<max(crypto_type, crypto_type2) - 1>`.
 
     ./.venv/bin/python tools/switch/xci_read.py <the.xci> --keys prod.keys --type Program
-
-A cartridge NCA has a zero rights id and no ticket: the body key is key area slot 2 under
-`key_area_key_application_<max(crypto_type, crypto_type2) - 1>`. An update's exefs is section 0 of
-its Program NCA, an ordinary CTR PartitionFS:
-
     ./.venv/bin/python tools/switch/xci_read.py <the.xci> --nca <id> --exefs 0 --extract main
 
-Traps: the FS header's `fs_type` is at +0x2 and the hash type at +0x3 (hactool's struct swaps the
-names); the 8-byte section counter is used reversed.
+Traps: `fs_type` is at +0x2 and the hash type at +0x3 (hactool swaps the names); the section counter
+is used reversed.
 
 ### From a RomFS
 
-NCA sections are AES-128-CTR under the title key (counter: the section's CTR value and `offset >> 4`
-big-endian), so any range decrypts alone. `tools/switch/romfs_read.py` walks, greps and extracts
-from a 4.2 GB RomFS off the container, raising unless the header's size field reads `0x50`, where a
-wrong key, offset or counter shows first. hactool aborts on a `prod.keys` line of 34 hex digits and
-segfaults on `--listromfs` over a sparse file missing the tables.
+Sections are AES-128-CTR (counter: section CTR and `offset >> 4` big-endian), so any range decrypts
+alone. `tools/switch/romfs_read.py` walks and extracts, refusing a header whose size field is not
+`0x50`. Trap: hactool aborts on a `prod.keys` line of 34 hex digits and segfaults on `--listromfs`
+over a sparse file.
 
 ## Naming everything first
 
-A retail Unity title has two independent naming layers:
-
-- IL2CPP metadata, the C# surface: `global-metadata.dat` (romfs `Data/Managed/Metadata`) and the
-  executable of the same build give Il2CppDumper every class and method RVA.
-- C++ RTTI, the native surface: `type_info` name pointers and vtable `type_info` pointers are
-  ordinary relocations. `tools/switch/rtti_names.py` finds 279 `nn::pia` classes and 2269 virtual
-  methods in BDSP, 252 and 2036 in Sword/Shield.
-
-The owning class (`LocalProtocol` or `LanProtocol`) tells the LDN session-key derivation from the
-near-identical LAN one. A vtable with holes is a multiple-inheritance group: the holes are the next
-sub-object's offset-to-top and typeinfo.
+- IL2CPP: `global-metadata.dat` plus the same build's executable give Il2CppDumper every C# method.
+- C++ RTTI: `tools/switch/rtti_names.py` names `nn::pia` classes from relocations (279 in BDSP, 252 in
+  Sword/Shield). `LocalProtocol` versus `LanProtocol` separates LDN from LAN key derivation.
 
 ## A constant only in the metadata
 
-A constant `byte[]` default of a plain `[Serializable]` C# class (not a `ScriptableObject`) is
-written by its constructor with `RuntimeHelpers.InitializeArray` over a static field of
-`<PrivateImplementationDetails>`, whose bytes live only in `global-metadata.dat`'s
-field-default-value table. The constructor's ADRP/LDR pair names a metadata-usage slot resolving to
-`Field$<PrivateImplementationDetails>.<HEX>`, the SHA-1 of the data; read the value by field name
-and verify by hashing. BDSP's 16-byte game key seed is stored this way. Native C++ constants are in
-rodata, found by cross-reference.
+A `byte[]` default of a `[Serializable]` C# class lives only in `global-metadata.dat`, as
+`Field$<PrivateImplementationDetails>.<SHA-1>`, reached through `InitializeArray` in the constructor.
+BDSP's game key seed is stored this way.
 
 ## Check which version you dumped
 
-Base game and update are separate NSPs. BDSP's base defines 24 network message classes, 1.3.0
-defines 65; `PosData` went from `Vector3 pos, short rotY` to `ushort posX, ushort posZ, short rotY`
-(16 bytes to 6) and `JoinData` gained two fields and lost its alignment, so a base-dump layout
-decodes a capture into plausible nonsense. Checks:
+BDSP's base defines 24 network messages, 1.3.0 defines 65:
 
-- `strings global-metadata.dat | grep` for a class only one version has: BDSP's base has
-  `NetDataTradeStandbyData` (deleted by the update) and lacks `NetPlayerNameData` (added; 1.3.0's
-  metadata is 12,496,504 bytes).
-- Divide a captured length by the struct size: a 72-byte list of points is 12 of 6, never 16-byte
-  ones.
+| struct | base | 1.3.0 ([the protocol page](bdsp_protocol.md#framing)) |
+|---|---|---|
+| `PosData` | `Vector3 pos, short rotY`, 16 bytes | `ushort posX, ushort posZ, short rotY`, 6 bytes |
+| `JoinData` | two fields fewer, aligned | `byte, byte, byte, short, Vector3`, 17 bytes unaligned |
 
-Constants survive (BDSP's base-metadata key seed decrypts 674 of 674 packets from an updated
-console); re-read anything structural a capture has not confirmed.
+A base-dump layout decodes a 1.3.0 capture into plausible nonsense. `strings global-metadata.dat | grep NetPlayerNameData` finds 1.3.0 only.
+Constants survive an update; structures do not.
 
 ## Reading a game update's RomFS
 
-An update's RomFS is a BKTR section patching the base game's. Two tables at its end, under the
-section's ordinary CTR, in 0x4000-byte buckets keyed by offset (hactool `bktr.c`), decide every byte:
-the relocation table maps a virtual range to the update's section or the base RomFS (`is_patch`);
-the subsection table gives each physical range of the update a counter value replacing bytes 4..8
-of the section counter. `tools/switch/bktr_read.py` composes both into one seekable section:
+An update's RomFS is a BKTR section over the base's; `tools/switch/bktr_read.py` composes its
+relocation and subsection tables:
 
     ./.venv/bin/python tools/switch/bktr_read.py UPDATE.nsp --base BASE.nsp \
         --extract /Data/Managed/Metadata/global-metadata.dat
 
-The base is the Program NCA of the update's title with a CTR RomFS section: an XCI's update
-partition holds system titles' Program NCAs, and the first Program NCA found is one of those.
+Trap: an XCI's update partition holds system titles' Program NCAs; pick the base by the update's title.
 
 ## Finding callers
 
-Scan the image words for `bl` (`100101` plus a signed 26-bit word offset) and the tail call `b`
-(`000101`), which a one-line C# forwarder compiles to: BDSP's
-`ANetData<SelectData>$$SendReliableData` and `ANetData<TransitionData>$$SendReliableData` have no
-`bl` callers and nine `b` ones, in the Union Room's context menus. A method with no branch to it may be
-a delegate registered as an `Action` through an ADRP/ADD pair (`arm64_xref.py`), as with
-`TradeStateModel`'s `WriteSaveData`, `FirstSave` and `SendTradeState`.
+Scan for `bl` and the tail call `b`: BDSP's `ANetData<SelectData>$$SendReliableData` has only `b`
+callers. A method with no branch to it may be a delegate registered through ADRP/ADD
+(`arm64_xref.py`).
 
-Traps: `arm64_xref.function_start` walks back through `udf` padding and can credit a store to the
-preceding function (check the prologue); bounding a function by "N bytes after its entry" runs past
-its `ret` into the next body; `mov w0, #0x80` is an ORR-immediate on ARM64, invisible to a byte
-pattern sweep, so decode constants with a disassembler.
+Traps: `arm64_xref.function_start` can cross `udf` padding into the previous function; bounding a function by "N bytes after entry" can run past its `ret`; `mov w0,
+#0x80` is an ORR-immediate, invisible to a byte sweep.
 
 ## Calling into nnSdk
 
-A call into nnSdk goes through a GOT slot filled by a JUMP_SLOT relocation naming the symbol:
-cross-reference the slot (`tools/switch/nso_imports.py`), then count callers of its one PLT stub.
+An nnSdk call goes through a GOT slot named by a JUMP_SLOT relocation (`tools/switch/nso_imports.py`).
 
 ## The tools
 
-The readers are `pokeldn.switch` (containers and NCAs, RomFS, NSO, Trinity packs); the tools are
-command lines over it, and a program that needs a title's own files reads them through it from the
-user's dump. Besides `xci_read.py`, `romfs_read.py`, `bktr_read.py` and `rtti_names.py` above, all offline:
+All offline, over `pokeldn.switch`:
 
-    tools/switch/nso_read.py     an NSO's three segments decompressed (pure-Python LZ4) at their
-                                 memory offsets: a file offset is an address
-    tools/switch/nso_relocs.py   MOD0 -> dynamic -> relative relocations, RELA and RELR. Vtable slots
-                                 fill at load time, so "who points here" is a relocation question;
-                                 modern titles use RELR, where a RELA-only reader finds nothing
-    tools/switch/arm64_xref.py   ADRP(+ADD|+LDR) cross-references, BL call graph, function starts
-    tools/switch/arm64_dis.py    capstone window disassembly
+    tools/switch/nso_read.py     an NSO's segments decompressed at their memory offsets
+    tools/switch/nso_relocs.py   RELA and RELR relocations (modern titles use RELR)
+    tools/switch/arm64_xref.py   ADRP cross-references, BL call graph, function starts
+    tools/switch/arm64_dis.py    capstone disassembly

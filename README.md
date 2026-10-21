@@ -11,13 +11,12 @@
 
 # pokeldn
 
-Trade with retail Pokémon games on Switch and Switch 2 through an ESP32 board connected to your
+pokeldn trades with retail Pokémon games on Switch and Switch 2 through an ESP32 board connected to a
 computer by USB. Nothing is installed on the console.
 
 The desktop app runs on macOS (Apple silicon), Windows and Linux. The same app runs on Android, with
 the board on the phone's USB port, and on iPhone and iPad, with the board reached over Bluetooth.
-Command-line tools run from source.
-The project also documents the games' local wireless protocols. AI tools helped reverse engineer
+Command-line tools run from source, and the docs describe the games' local wireless protocols. AI tools helped reverse engineer
 those protocols and write parts of the code.
 
 ## Supported games
@@ -39,9 +38,8 @@ BDSP: Brilliant Diamond/Shining Pearl · PLA: Legends Arceus · SV: Scarlet/Viol
 Scarlet/Violet also supports [local Tera Raids](docs/sv_raid.md) and the
 [Union Circle](docs/sv_union_circle.md) as a guest, and Sword/Shield
 [Max Raid Battles and Dynamax Adventures](docs/swsh_raid.md) with a chosen boss or legendary. Event Pokemon arrive through Mystery
-Gift on FRLG and SwSh, and on the other titles as a fresh legal copy of an official gift traded by the
-game's trade host ([Simulated Mystery Gifts](docs/gift_simulated.md)).
-See each game's docs for setup, features and verification coverage.
+Gift on FRLG and SwSh, and elsewhere as an official gift traded by the host
+([Simulated Mystery Gifts](docs/gift_simulated.md)).
 
 ## Get started
 
@@ -65,8 +63,8 @@ On a phone:
   Flash the board once with the **Bluetooth wireless** firmware from the desktop app's Board page; it
   then needs USB only for power ([iOS setup](docs/gui.md#ios-setup)).
 
-See [app setup](docs/gui.md), [first launch](docs/gui.md#first-launch),
-[Windows USB drivers](docs/gui.md#windows-usb-drivers) and [Linux serial ports](docs/gui.md#linux-serial-ports).
+Platform notes: [first launch](docs/gui.md#first-launch), [Windows USB drivers](docs/gui.md#windows-usb-drivers),
+[Linux serial ports](docs/gui.md#linux-serial-ports).
 
 ## Documentation
 

@@ -6,14 +6,11 @@ has_children: true
 
 # Sword and Shield
 
-Pokemon Sword and Shield run C++ game code with protocol-buffer messages, over a generic
-publish/subscribe framework, directly on Pia.
+Pokemon Sword and Shield exchange protocol-buffer messages over a publish/subscribe framework
+running directly on Pia.
 
 Static readings are from a Shield 1.3.2 EUR image (`01008db008c2c000`, update NCA, SDK 7.7.0.0);
-measurements are against a French Sword 1.3.2. The two share their network code; a difference is
-marked where it exists.
-
-A retail Sword has traded with pokeldn in both roles ([Hosting a trade](swsh_trade.md#hosting-a-trade)).
+measurements are against a French Sword 1.3.2. The two share their network code.
 
 | page | contents |
 |---|---|
@@ -27,9 +24,8 @@ A retail Sword has traded with pokeldn in both roles ([Hosting a trade](swsh_tra
 
 Ids, offsets and addresses come from Shield's `main` or the air unless a section names a client.
 `SYNC_ANSWERS` in `pokeldn/swsh/trade.py` is `andyjusa/nxldn-lab`'s reading of a console-to-console
-capture (messages 97 and 60000 match pokeldn's byte for byte). Four clients speak the LAN mode,
-`kwsch/PokePiaSWSH`, `lincoln-lm/swsh-lan-client`, `andyjusa/nxldn-lab`, `Slashcash/PSD`, from the
-Pia station handshake up; none covers LDN or host migration.
+capture (messages 97 and 60000 match pokeldn's byte for byte). `kwsch/PokePiaSWSH`, `lincoln-lm/swsh-lan-client`, `andyjusa/nxldn-lab` and `Slashcash/PSD` speak
+the LAN mode from the Pia station handshake up; none covers LDN or host migration.
 
 ## The field scripts
 
@@ -54,8 +50,7 @@ fills before the script resumes). A call is `PUSH` per argument, right to left, 
 ## Unresolved
 
 - [Player profile](swsh_protocol.md#the-player-profile): which role sample states 3 and 4 stand for
-  in a Pokemon Camp session (`StateCreateSession`, `StateConnect`). `a_wr0301` as the Crown Tundra wild area is read from the numbering; one beacon
-  taken there settles it.
+  in a Pokemon Camp session (`StateCreateSession`, `StateConnect`). `a_wr0301` as the Crown Tundra wild area is read from the numbering only.
 - [Battle Stadium](swsh_protocol.md#the-battle-stadium-block): which save block `0x01430670` reads
   for a stored team record, and what a save team's descriptor holds at `+0x30..+0x135` before the
   `v1/validate` signature replaces `+0x36` (the entry at `[sp+0x28]` after `0x015039f0`).
