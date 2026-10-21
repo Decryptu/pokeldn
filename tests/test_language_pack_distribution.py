@@ -21,6 +21,7 @@ def test_language_choices_follow_installed_plugins_and_partial_overrides(tmp_pat
     from gui.views.settings import SettingsView
     previous = i18n.identity()
     monkeypatch.setattr(paths, "DATA", tmp_path / "app-data")
+    monkeypatch.setattr(settings, "PATH", paths.DATA / "settings.json")
     monkeypatch.setenv("POKELDN_PLUGINS", "")
     monkeypatch.setattr(plugins.metadata, "entry_points", lambda **kwargs: [])
     i18n.select()
