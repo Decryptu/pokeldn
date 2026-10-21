@@ -24,7 +24,7 @@ STUBS = {
     ),
     'save-payload': (
         bytes.fromhex('504b4c44f0b5274827490022884203d20368d2180430f9e7244803689a420ad11e4801681b4a914205d01b4b19601c4c0025256002601f48002828d0214e234830600020b0601a4c002574601e4f381c01381b49091901801f481e492a1c4a4380181e491e4a1f4b00f012f8134f002f05d02f01bf19f86139627a62bb620e48241801350b488542dfd31148b060f0bd3847c04620fc030230fc030230270003c0ff030240fc0302bcff0302bcff03024000000000000000010000000100000000df000000fe030280fe03020100b0b00200b0b00000000000000000000000000000000000000000'),
-        'd512fcc6db3d9b4d2d93ea57dc640db1728f25a1859b3c834e6a067d712b587b',
+        '7ff6fac0a74aba4fd59532eecfd3abb9c8ae4d3219ac5029b57491aeafb92241',
         {'_start': 0, 'entry': 4, 'p_checksum_at': 172, 'p_counter': 160, 'p_filler_end': 168, 'p_filler_start': 164, 'p_hook': 148, 'p_hook_original_at': 152, 'p_magic': 0, 'p_probe_a0': 216, 'p_probe_a0_step': 212, 'p_probe_a1': 220, 'p_probe_a2': 224, 'p_probe_a3': 228, 'p_probe_count': 180, 'p_probe_first': 176, 'p_probe_mark1': 204, 'p_probe_mark2': 208, 'p_probe_num_step': 184, 'p_probe_out': 196, 'p_probe_store': 188, 'p_probe_swi_base': 192, 'p_probe_thunk': 200, 'p_table_entry': 156},
     ),
     'shiny': (
