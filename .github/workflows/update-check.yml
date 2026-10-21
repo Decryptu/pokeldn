@@ -26,6 +26,15 @@ jobs:
           - name: Program Files, administrator path
             folder: C:\Program Files
             flags: --busy --admin
+          # P: is a second NTFS volume the job attaches; the data folder stays on C:.
+          - name: another drive's root
+            folder: P:\.   # a trailing backslash would escape the closing quote
+            flags: --busy
+            drive: P
+          - name: a folder on another drive
+            folder: P:\Games
+            flags: --busy
+            drive: P
     name: windows (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v7
@@ -40,6 +49,12 @@ jobs:
           name: pokeldn-windows-x64.zip
           run-id: ${{ inputs.release_run }}
           github-token: ${{ github.token }}
+      - if: matrix.drive
+        shell: pwsh
+        run: |
+          "create vdisk file=C:\pokeldn-drive.vhdx maximum=2048 type=expandable`nattach vdisk`ncreate partition primary`nformat fs=ntfs quick`nassign letter=${{ matrix.drive }}" | Set-Content drive.txt
+          diskpart /s drive.txt
+          New-Item -ItemType Directory -Force "${{ matrix.folder }}"
       - run: python scripts/check_update.py pokeldn-windows-x64.zip "${{ matrix.folder }}" ${{ matrix.flags }}
 
   linux:
