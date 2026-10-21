@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -19,6 +20,7 @@ EXAMPLE = ROOT / "examples/plugins/language_pack"
 
 def test_language_choices_follow_installed_plugins_and_partial_overrides(tmp_path, monkeypatch):
     from gui.views.settings import SettingsView
+    from gui.views.plugins import PluginsView
     previous = i18n.identity()
     monkeypatch.setattr(paths, "DATA", tmp_path / "app-data")
     monkeypatch.setattr(settings, "PATH", paths.DATA / "settings.json")
@@ -41,8 +43,18 @@ def test_language_choices_follow_installed_plugins_and_partial_overrides(tmp_pat
         assert i18n.text("core.gift.egg.description", species="Player {name}") == "Donne un Œuf contenant Player {name}."
         assert i18n.text("core.plugins.source_count", count=1) == "1 plugin"
         assert i18n.name(i18n.EntityKind.MOVE, 94, game=i18n.Game.SV) == "Psyko"
-        i18n.select()
+        selected.app_language, selected.app_locale = package.id, "fr"
+        view = SimpleNamespace(app=SimpleNamespace(settings=selected))
+        monkeypatch.setattr(plugins, "reload", lambda: [])
+        strings = plugin_store.installed(package.id).folder / "locales/fr/strings.toml"
+        strings.write_text(strings.read_text(encoding="utf-8").replace("Enregistrer", "Sauvegarder"), encoding="utf-8")
+        PluginsView._set_enabled(view, package.id, True)
+        assert i18n.text("core.common.save") == "Sauvegarder"
         plugin_store.remove(package.id)
+        PluginsView._set_enabled(view, package.id, False)
+        assert i18n.identity()[:2] == ("", "en")
+        assert selected.app_language == selected.app_locale == ""
+        assert i18n.text("core.common.save") == "Save"
         assert SettingsView.language_choices(None) == [("", "English")]
     finally:
         i18n.select(previous[0], previous[1])

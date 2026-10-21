@@ -325,7 +325,7 @@ class EncounterPicker:
             self.places.controls = []
             return
         tera = self._number(_ref('core.gui.views.encounter.tera_b28dca38'))
-        names = sorted(place["name"] or f"location {place['location']}" for place in self.scanned
+        names = sorted(place["name"] or tr('core.encounter.location_number', number=place['location']) for place in self.scanned
                        if tera in place["teras"])
         if names:
             self.places.controls = [

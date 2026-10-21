@@ -140,6 +140,8 @@ Language switching validates resources before committing, relabels mounted contr
 cached views, refreshes document search, changes Flet locale/fonts, and preserves selected
 IDs, editable text, focus and running sessions. Failed switches preserve the active language.
 Trainer language and record text are independent from display language.
+Updating the selected language plugin reloads its active locale. Disabling or removing it
+switches the interface and saved language selection back to English.
 
 <a id="validation"></a>
 ## Build and verification

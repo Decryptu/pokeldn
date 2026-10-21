@@ -119,3 +119,29 @@ def test_connected_controller_keeps_its_state_after_switching_language():
         view.render_status(update=False)
         assert label in display_strings(view.status)
         assert view.state == "Connected"
+
+
+@pytest.mark.parametrize("action,key,params", [
+    ("update", "core.plugins.update_notice", {"name": "DemoPlugin", "old_version": "1.0", "version": "2.0"}),
+    ("reinstall", "core.plugins.reinstall_notice", {"version": "2.0"}),
+    ("downgrade", "core.plugins.downgrade_notice", {"old_version": "1.0", "version": "2.0"}),
+])
+def test_plugin_confirmation_notices_relabel_with_the_dialog(action, key, params, monkeypatch):
+    from gui.views.plugins import PluginsView
+    from pokeldn.app import plugin_store
+    monkeypatch.setattr(plugin_store, "trust", lambda package: "unsigned")
+    dialogs = []
+    view = PluginsView.__new__(PluginsView)
+    view.app = SimpleNamespace(page=SimpleNamespace(show_dialog=dialogs.append))
+    package = plugin_store.Package("demo", "DemoPlugin", "2.0", (1, 10))
+    current = SimpleNamespace(name="DemoPlugin", version="1.0", icon="")
+    i18n.select("semantic-test-language", strict=True)
+    view.consent(package, action, current)
+    dialog = dialogs[-1]
+    for selected in ("semantic-test-language", "", "semantic-test-language"):
+        i18n.select(selected, strict=True)
+        localize_controls(dialog)
+        values = display_strings(dialog)
+        assert str(i18n.text(key, **params)) in values
+        if not selected:
+            assert not any(HAN.search(value) for value in values), values

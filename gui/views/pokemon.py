@@ -240,7 +240,7 @@ class PokemonPicker:
                     apply.disabled = False
                     used = sets if self.on_team else sets[:1]
                     problems = [error] if error else [
-                        tr('core.pokemon._6a7768', value0=found.get('species') or f'Set {n}', value1=problem) if len(used) > 1 else problem
+                        tr('core.pokemon._6a7768', value0=found.get('species') or tr('core.pokemon.set_number', number=n), value1=problem) if len(used) > 1 else problem
                         for n, found in enumerate(used, start=1) for problem in found["errors"]]
                     if problems:
                         show(problems, t.RED)

@@ -1,6 +1,6 @@
-from pokeldn.app import i18n
 """The Plugins page: add a .pokeplugin, turn plugins on and off, update and remove them, pick a radio.
 Every install shows the risks and waits for the user's acceptance (docs/plugins.md)."""
+from pokeldn.app import i18n
 from pokeldn.app.i18n import ref as _ref
 from pokeldn.app.i18n import text as tr, ref
 import os
@@ -158,7 +158,7 @@ class PluginsView:
         on = state is not None
         meta = i18n.join(((x for x in (tr('core.plugins.version_label', value0=plugin.version) if plugin.version else "",
                                       tr('core.plugins.author_label', value0=plugin.author) if plugin.author else "",
-                                      f"plugin API {plugins.api_text(plugin.api)}") if x)), " · ")
+                                      tr('core.plugins.api_label', version=plugins.api_text(plugin.api))) if x)), " · ")
         lines: list[ft.Control] = [
             ft.Row([t.text(plugin.name, 14, weight=ft.FontWeight.W_600), self._status(plugin, state)],
                    spacing=10, wrap=True),
@@ -514,8 +514,13 @@ class PluginsView:
     def _set_enabled(self, plugin_id: str, value: bool) -> None:
         s = self.app.settings
         s.plugins = [i for i in s.plugins if i != plugin_id] + ([plugin_id] if value else [])
+        selected = s.app_language == plugin_id
+        if selected and not value:
+            s.app_language, s.app_locale = "", ""
         s.save()
         plugins.reload()
+        if selected:
+            i18n.select(s.app_language, s.app_locale or None)
         if s.radio and radios.radio(s.radio) is None:
             s.radio = ""
             s.save()
@@ -614,11 +619,12 @@ class PluginsView:
         if package.description:
             lines.append(t.text(package.description, 13, t.SOFT))
         version_note = {
-            "update": (f"Updates {current.name if current else ''} from {current.version if current else '?'} "
-                       f"to {package.version}. What it saved is kept.", t.BLUE, "upload"),
-            "reinstall": (f"Version {package.version} is already installed; this replaces its files.", t.MUTED,
+            "update": (tr('core.plugins.update_notice', name=current.name if current else '',
+                          old_version=current.version if current else '?', version=package.version), t.BLUE, "upload"),
+            "reinstall": (tr('core.plugins.reinstall_notice', version=package.version), t.MUTED,
                           "refresh"),
-            "downgrade": (f"Installs {package.version} over the newer {current.version if current else '?'}.",
+            "downgrade": (tr('core.plugins.downgrade_notice', version=package.version,
+                             old_version=current.version if current else '?'),
                           t.AMBER, "warning-diamond"),
             "enable": (tr('core.plugins.this_plugin_was_copied_into_the_plugins_folder_by_hand__25f250'),
                        t.AMBER, "warning-diamond"),

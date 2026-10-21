@@ -1,5 +1,11 @@
 # UTF-8. Stable semantic keys.
 [strings]
+"core.plugins.api_label" = "plugin API {version}"
+"core.plugins.update_notice" = "Updates {name} from {old_version} to {version}. What it saved is kept."
+"core.plugins.reinstall_notice" = "Version {version} is already installed; this replaces its files."
+"core.plugins.downgrade_notice" = "Installs {version} over the newer {old_version}."
+"core.pokemon.set_number" = "Set {number}"
+"core.encounter.location_number" = "location {number}"
 "core.app.add_yourself_to_the_group_sudo_usermod_ag_user_then_log_b0f6cb" = "Add yourself to the {value0} group (sudo usermod -aG {value1} $USER), then log out and back in."
 "core.app.android_allow_usb" = "Allow USB access"
 "core.app.android_bridge_board" = "This board needs a computer"
