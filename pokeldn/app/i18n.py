@@ -22,7 +22,7 @@ def _table(name: str, read, *, formatted=False) -> dict[str, str]:
         raise ValueError("Language pack resources must name a TOML file beside plugin.toml.")
     try:
         values = tomllib.loads(read(name).decode("utf-8"))
-    except (OSError, KeyError, UnicodeError, ValueError) as error:
+    except (OSError, KeyError, UnicodeError, ValueError, RecursionError) as error:
         raise ValueError(f"Language pack {name} does not parse: {error}") from None
     if any(not isinstance(value, str) for value in values.values()):
         raise ValueError("Language pack resources must be quoted keys and text values.")
@@ -32,6 +32,8 @@ def _table(name: str, read, *, formatted=False) -> dict[str, str]:
                 for _, field, spec, _ in string.Formatter().parse(value):
                     if field is not None and (not field.isidentifier() or '{' in spec):
                         raise ValueError("Use named placeholders without attribute or index access.")
+                    if field is not None and re.search(r"\d{4}", spec):
+                        raise ValueError("A placeholder's width or precision is at most 999.")
             except ValueError as error:
                 raise ValueError(f"Language pack has an invalid format string: {error}") from None
     return values
@@ -161,16 +163,20 @@ def message(value: str, _depth=0) -> str:
     return value
 
 
+# English game names to the display language's, for a value that is one name whole; the GUI sets it to
+# PKHeX's lists (gui.localization.game_names).
+names = dict
+
+
 def terms(value: str) -> str:
     """Translate known game terms at a display boundary, never IDs, paths or player input."""
     global _terms_pattern
     table = _pack.resources.get("terms", {}) if _pack else {}
-    if not table:
-        return value
-    if _terms_pattern is None:
+    if table and _terms_pattern is None:
         _terms_pattern = re.compile(r"(?<![\w])(" + "|".join(re.escape(s) for s in sorted(table, key=len, reverse=True))
                                     + r")(?![\w])")
-    return _terms_pattern.sub(lambda match: table[match[0]], value)
+    termed = _terms_pattern.sub(lambda match: table[match[0]], value) if table else value
+    return names().get(value, value) if termed == value and _pack else termed
 
 
 def help_text(tool: str, option: str, default: str) -> str:

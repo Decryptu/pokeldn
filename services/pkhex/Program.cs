@@ -203,6 +203,22 @@ static partial class Program
                     for (var b = 1; b <= blank.MaxBallID; b++)
                         Add(b, strings.balllist[b]);
                     break;
+                case "national":
+                    for (var s = 1; s < strings.specieslist.Length; s++)
+                        Add(s, strings.specieslist[s]);
+                    break;
+                case "abilities":
+                    for (var a = 1; a <= blank.MaxAbilityID; a++)
+                        Add(a, strings.abilitylist[a]);
+                    break;
+                case "natures":
+                    for (var n = 0; n < strings.natures.Length; n++)
+                        Add(n, strings.natures[n]);
+                    break;
+                case "types":
+                    for (var y = 0; y < strings.types.Length; y++)
+                        Add(y, strings.types[y]);
+                    break;
                 default:
                     throw new ArgumentException($"unknown list {list}");
             }

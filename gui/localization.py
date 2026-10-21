@@ -9,6 +9,10 @@ from pokeldn.app import i18n
 from pokeldn.app.i18n import t as tr
 
 SENTENCE = re.compile(r"(?<=[.!?])\s+")
+# PKHeX lists whose names stand alone in module data: raid partners, GTS listings, event Pokemon. A
+# species is applied last so it wins a spelling another list shares.
+NAME_LISTS = ("balls", "types", "natures", "abilities", "moves", "national")
+_game_names: dict[str, dict[str, str]] = {}
 
 
 def date_time(seconds: float) -> str:
@@ -25,6 +29,22 @@ def translate(value: str) -> str:
     if len(sentences) > 1 and any(i18n.message(s) != s for s in sentences):
         return " ".join(translate(s) for s in sentences)
     return i18n.terms(value)
+
+
+def game_names() -> dict[str, str]:
+    """English game names to PKHeX's in the display language, for a value that is one name whole; a
+    pack's terms come first, and a language PKHeX lacks keeps English."""
+    language = i18n.locale()
+    if language not in _game_names:
+        names = {}
+        try:
+            for kind in NAME_LISTS:
+                shown = {n["id"]: n["name"] for n in SERVICE.names("sv", kind)}
+                names.update({n["name"]: shown[n["id"]] for n in pokemon.SERVICE.names("sv", kind) if n["id"] in shown})
+        except pokemon.BuilderError:
+            return {}
+        _game_names[language] = names
+    return _game_names[language]
 
 
 def error_message(error: Exception | str) -> str:
@@ -110,3 +130,4 @@ class DisplayService(pokemon.Service):
 
 
 SERVICE = DisplayService()
+i18n.names = game_names

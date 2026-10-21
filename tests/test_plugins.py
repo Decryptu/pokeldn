@@ -129,9 +129,11 @@ def test_an_unknown_radio_is_refused_before_any_ldn_call(isolated, monkeypatch):
         trio.run(open_factory)
 
 
-def test_a_plugin_toml_that_does_not_parse_runs_no_code(isolated, tmp_path, monkeypatch):
+@pytest.mark.parametrize("toml", ['id = "badtoml"\napi = \n',
+                                  pytest.param("api = " + "[" * 5000 + "]" * 5000, id="deep")])
+def test_a_plugin_toml_that_does_not_parse_runs_no_code(isolated, tmp_path, monkeypatch, toml):
     folder = make(tmp_path, "badtoml", "raise SystemExit('imported')")
-    (folder / "plugin.toml").write_text('id = "badtoml"\napi = \n')
+    (folder / "plugin.toml").write_text(toml)
     monkeypatch.setenv("POKELDN_PLUGINS", str(folder))
     [plugin] = plugins.load()
     assert plugin.error.startswith("plugin.toml:") and not plugin.loaded

@@ -11,7 +11,7 @@ TEMPLATE = ROOT / "pokeldn/app/data/strings.en.toml"
 def extract(root=ROOT):
     strings = {}
     paths = [*sorted((root / "gui").glob("*.py")), *sorted((root / "gui/views").glob("*.py")),
-             root / "pokeldn/app/catalog.py"]
+             root / "pokeldn/app/catalog.py", root / "pokeldn/app/command.py"]
     for path in paths:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):

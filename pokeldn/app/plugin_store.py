@@ -116,7 +116,7 @@ def _read(path: str) -> Package:
             raise PackageError("plugin.toml must sit at the top of the package, beside the plugin's files.")
         try:
             meta = tomllib.loads(archive.read(tomls[0]).decode("utf-8"))
-        except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        except (UnicodeDecodeError, tomllib.TOMLDecodeError, RecursionError) as error:
             raise PackageError(f"plugin.toml does not parse: {error}") from None
         plugin_id = str(meta.get("id", ""))
         if not ID.fullmatch(plugin_id):

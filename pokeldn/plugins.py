@@ -257,7 +257,7 @@ def _read_folder(path: Path) -> Plugin:
     plugin = Plugin(id=path.name, name=path.name, folder=path)
     try:
         meta = tomllib.loads((path / "plugin.toml").read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, RecursionError) as error:
         plugin.error = f"plugin.toml: {error}"
         return plugin
     plugin.id = str(meta.get("id", path.name))

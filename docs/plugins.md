@@ -325,7 +325,11 @@ a translation that fails to format uses English.
 ```bash
 python scripts/extract_strings.py [--check]     # writes pokeldn/app/data/strings.en.toml
 python scripts/pack_plugin.py examples/plugins/pseudo -o pseudo.pokeplugin
+python scripts/check_language_pack.py PACK_FOLDER   # what the pack lacks against this release
 ```
+
+`check_language_pack.py` lists untranslated strings and tool help, keys the release no longer has,
+and translations whose placeholders differ from English; it exits 1 on a placeholder difference.
 
 Tests check the template matches the source and refuse a key with two defaults. A pack starts as a
 translated copy of the template; `examples/plugins/pseudo` is a partial pseudo-locale.
@@ -355,8 +359,10 @@ Paths stay inside the plugin folder. These translate text from game modules, PKH
 message is tried whole in `messages`, then `templates`, then per sentence, then with `terms` replaced
 at word boundaries. A template has 1 to 8 plain named fields separated by literal text, at most 2048
 chars, matched literally, longest first, on messages up to 4096 chars; a field named `term...` or
-`message...` is itself translated, to depth 4. PKHeX names and legality reports follow the locale for
-`ja`, `fr`, `it`, `de`, `es`, `ko`, `zh-Hans`, `zh-Hant` (`zh` with `TW`, `HK`, `MO` is `zh-Hant`).
+`message...` is itself translated, to depth 4. A value that is one species, move, ability, nature,
+type or ball name whole, and that no term covers, takes PKHeX's name. PKHeX names and legality
+reports follow the locale for `ja`, `fr`, `it`, `de`, `es`, `ko`, `zh-Hans`, `zh-Hant` (`zh` with
+`TW`, `HK`, `MO` is `zh-Hant`).
 Translated pages keep the English anchors when heading counts match, else `<a id="NAME"></a>` sets
 one; a front-matter `title` renames a page in the sidebar.
 
@@ -436,7 +442,7 @@ resolves each.
 | `pokeldn.swsh.gift_builder.blank(**changes)`, `record(state)`, `compile(state)`, `describe(state, name)` | form state, 720-byte record, gift, player lines; `ValueError` names a bad field |
 | `pokeldn.swsh.events.load()`, `by_key()`, `gift(key)` | official Sword/Shield event cards |
 | `pokeldn.frlg.gift.builder.KINDS`, `PRESETS`, `PRESET`, `GIVERS`, `CARTRIDGES` | FireRed/LeafGreen kinds, presets, givers, cartridges |
-| `pokeldn.frlg.gift.builder.blank()`, `compile(state)`, `describe(state, name)` | the same for a Wonder Card, News or console code |
+| `pokeldn.frlg.gift.builder.blank()`, `compile(state)`, `describe(state, name)` | the same for a Wonder Card, News or console code; `name` gets a species by its cartridge id |
 | `gui.board.ports()`, `identify(port, blink=)`, `detect_chip(port)` | serial ports and a board's `.firmware`, `.firmware_version`, `.protocol`, `.current` |
 | `gui.board.download_firmware(say=)`, `image_for(kind, chip)`, `image_version(path)`, `flash(port, kind=)` | checked release images and flashing |
 | `pokeldn.app.bank.library()` | the default Bank folder; listing never creates it (1.4) |
