@@ -459,7 +459,7 @@ def _pkhex_names(game, kind, language):
         if game != "frlg" or kind != EntityKind.SPECIES:
             raise
         from pokeldn.frlg.gift import builder
-        return {"version": "frlg-offline", "language": "en", "names": {
+        return {"version": "frlg-offline", "language": "en", "cacheable": False, "names": {
             builder.national_species(number): label for number, label in builder.species_names()}}
     if kind == EntityKind.SPECIES:
         for species, forms in reply.get("form_labels", {}).items():
@@ -485,7 +485,7 @@ def names(kind, *, game):
         return _name_cache[lookup][1]
     provider = _providers.get(game, lambda k, lang: _pkhex_names(game, k, lang))
     overrides = _resources.get("entities", {}).get(game, {})
-    english, localized = {}, {}
+    english, localized, complete = {}, {}, True
     for language, target in (("en", english), (token[1], localized)):
         if language == "en" and target is localized:
             target.update(english)
@@ -493,6 +493,7 @@ def names(kind, *, game):
         try:
             target.update(provider(kind, language))
         except Exception:
+            complete = False
             _diagnostic("name-service-unavailable", (game, kind, language))
     def ids(source):
         values = source.get("names", {})
@@ -521,7 +522,8 @@ def names(kind, *, game):
     if identity() != token:
         return names(kind, game=game)
     version = getattr(pokemon.SERVICE, "name_data_version", version)
-    _name_cache[(version, token, game, kind)] = (version, table)
+    if complete and english.get("cacheable", True) and localized.get("cacheable", True):
+        _name_cache[(version, token, game, kind)] = (version, table)
     return table
 
 

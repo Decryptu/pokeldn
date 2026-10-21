@@ -127,6 +127,19 @@ def test_language_change_during_name_request_cannot_publish_old_labels():
     assert i18n.name(EntityKind.MOVE, 94, game="demo") == "精神强念"
 
 
+def test_temporary_name_service_failure_does_not_cache_english_fallback():
+    available = False
+    def provider(kind, language):
+        if language == "zh-Hans" and not available:
+            raise OSError("temporary failure")
+        return {"version": "v1", "names": {94: "精神强念" if language == "zh-Hans" else "Psychic"}}
+    i18n.register_name_provider("temporary", provider)
+    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    assert i18n.name(EntityKind.MOVE, 94, game="temporary") == "Psychic"
+    available = True
+    assert i18n.name(EntityKind.MOVE, 94, game="temporary") == "精神强念"
+
+
 def test_mounted_controls_relabel_without_changing_input_or_selected_id():
     label = ft.Text(i18n.text("core.common.save"))
     field = ft.TextField(value="Save 皮卡丘 {name} 00123456", hint_text=i18n.text("core.common.save"))
