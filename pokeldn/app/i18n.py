@@ -163,16 +163,20 @@ def message(value: str, _depth=0) -> str:
     return value
 
 
+# English game names to the display language's, for a value that is one name whole; the GUI sets it to
+# PKHeX's lists (gui.localization.game_names).
+names = dict
+
+
 def terms(value: str) -> str:
     """Translate known game terms at a display boundary, never IDs, paths or player input."""
     global _terms_pattern
     table = _pack.resources.get("terms", {}) if _pack else {}
-    if not table:
-        return value
-    if _terms_pattern is None:
+    if table and _terms_pattern is None:
         _terms_pattern = re.compile(r"(?<![\w])(" + "|".join(re.escape(s) for s in sorted(table, key=len, reverse=True))
                                     + r")(?![\w])")
-    return _terms_pattern.sub(lambda match: table[match[0]], value)
+    termed = _terms_pattern.sub(lambda match: table[match[0]], value) if table else value
+    return names().get(value, value) if termed == value and _pack else termed
 
 
 def help_text(tool: str, option: str, default: str) -> str:

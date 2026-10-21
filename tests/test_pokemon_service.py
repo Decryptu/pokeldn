@@ -750,3 +750,21 @@ def test_a_firered_gift_summary_names_its_species_in_the_display_language(servic
     lines = builder.describe(state, lambda kind, n: shown[n] if kind == "species" else f"{kind} #{n}")[1]
     assert lines[:2] == ["Gives a 木守宫 egg", "Gives 皮卡丘, level 9"]
     assert builder.describe(state)[1][:2] == ["Gives a Treecko egg", "Gives Pikachu, level 9"]
+
+
+def test_a_game_name_from_module_data_reads_in_the_display_language(service, display, monkeypatch):
+    import string
+    from types import SimpleNamespace
+    from gui import localization
+    from pokeldn.app import i18n
+    monkeypatch.setattr(localization, "SERVICE", display("zh-Hans"))
+    monkeypatch.setattr(localization, "_game_names", {})
+    monkeypatch.setattr(i18n, "_pack", SimpleNamespace(resources={"terms": {"Calm": "冷静"}, "messages": {}}))
+    monkeypatch.setattr(i18n, "_terms_pattern", None)
+    monkeypatch.setattr(i18n, "_message_rules", [(tuple(string.Formatter().parse("{term0}, level {level}")),
+                                                  "{term0}，{level} 级")])
+    # A raid partner's species, Tera type and move; a pack's own term wins; a sentence is never cut up.
+    assert [localization.translate(v) for v in ("Pawniard", "Steel", "Water Pulse", "Calm")] == \
+        ["驹刀小兵", "钢", "水之波动", "冷静"]
+    assert localization.translate("Moltres, level 70") == "火焰鸟，70 级"
+    assert localization.translate("Return to the menu") == "Return to the menu"

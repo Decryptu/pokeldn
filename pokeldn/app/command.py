@@ -7,6 +7,7 @@ from functools import cache
 from pokeldn import gen9
 from pokeldn.app import events_gallery, gift_builder
 from pokeldn.app.catalog import Field, Tool
+from pokeldn.app.i18n import t as tr
 from pokeldn.app.introspect import flags_of
 from pokeldn.lgpe.session import code_picks
 from pokeldn.sv import raid_partners
@@ -94,10 +95,13 @@ def locked(field: Field, tool: Tool, values: dict) -> str:
     if not chosen or any(v.get("your_ot") is not False for v in chosen):
         return ""
     if any(v.get("handled") for v in chosen):
-        return "This gift is legal only with a handler, which its own trainer's save clears: it goes with your trainer."
+        return tr("command.handled_gift", "This gift is legal only with a handler, which its own trainer's save clears: it goes with your trainer.")
     owners = ", ".join(dict.fromkeys(v["ot"] for v in chosen if v.get("ot")))
-    who = "This gift has its card's own trainer" if len(chosen) == 1 else "These gifts have their cards' own trainers"
-    return f"{who}{f', OT {owners},' if owners else ''} and {'goes' if len(chosen) == 1 else 'go'} as made."
+    if len(chosen) == 1:
+        return (tr("command.own_trainer_ot", "This gift has its card's own trainer, OT {owners}, and goes as made.", owners=owners)
+                if owners else tr("command.own_trainer", "This gift has its card's own trainer and goes as made."))
+    return (tr("command.own_trainers_ot", "These gifts have their cards' own trainers, OT {owners}, and go as made.", owners=owners)
+            if owners else tr("command.own_trainers", "These gifts have their cards' own trainers and go as made."))
 
 
 def _args(field: Field, value, tool: Tool) -> list[str]:
@@ -164,9 +168,9 @@ def encounter_error(value) -> str:
     """Why an encounter field's value cannot go out, or ""."""
     value = value if isinstance(value, dict) else {}
     if not value.get("species"):
-        return "Pick the Pokemon to spawn."
+        return tr("command.pick_spawn", "Pick the Pokemon to spawn.")
     if not 1 <= int(value.get("level") or 0) <= 100:
-        return "The level is 1 to 100."
+        return tr("command.level_range", "The level is 1 to 100.")
     return ""
 
 
@@ -255,14 +259,14 @@ def reward_problem(tool: Tool, values: dict, rows) -> str:
         return ""
     den = reward_den(tool, values)
     if den is None:
-        return "Choose a boss a den holds before choosing rewards."
+        return tr("command.boss_first", "Choose a boss a den holds before choosing rewards.")
     den = dict(den)
     for n, row in enumerate(rows, 1):
         item, quantity = str(row.get("item_id", "")), str(row.get("quantity", ""))
         if not item.isdigit() or int(item) not in den:
-            return f"Reward {n} is not one this den gives."
+            return tr("command.reward_not_den", "Reward {n} is not one this den gives.", n=n)
         if den[int(item)] is not None and quantity != str(den[int(item)]):
-            return f"Reward {n}: this den gives it {den[int(item)]} at a time."
+            return tr("command.reward_quantity_den", "Reward {n}: this den gives it {count} at a time.", n=n, count=den[int(item)])
     return ""
 
 
@@ -282,8 +286,10 @@ def problems(tool: Tool, values: dict) -> list[str]:
             consoles = raid_consoles(tool, values)
             free = raid_partners.slots(consoles)
             if len(picks) > free:
-                errors.append(f"With {consoles} consoles joining, the raid seats "
-                              + (f"{free} partner." if free else "no partner."))
+                errors.append(tr("command.partner_seats", "With {consoles} consoles joining, the raid seats {free} partner.",
+                                 consoles=consoles, free=free) if free else
+                              tr("command.no_partner_seat", "With {consoles} consoles joining, the raid seats no partner.",
+                                 consoles=consoles))
     return errors
 
 
@@ -301,62 +307,63 @@ def code_error(field: Field, value, game: str = "sv") -> str:
     hex digits; a raid reward row names an item and a quantity from 1 to 999; a raid event is in the
     app's event gallery."""
     if field.kind == "raidseed":
-        return "" if re.fullmatch(r"[0-9A-Fa-f]{8}", str(value or "")) else "Enter eight hexadecimal digits."
+        return "" if re.fullmatch(r"[0-9A-Fa-f]{8}", str(value or "")) else tr("command.raid_seed", "Enter eight hexadecimal digits.")
     if field.kind == "lairseed":
-        return "" if re.fullmatch(r"[0-9A-Fa-f]{0,16}", str(value or "")) else "Enter up to sixteen hexadecimal digits."
+        return "" if re.fullmatch(r"[0-9A-Fa-f]{0,16}", str(value or "")) else tr("command.lair_seed", "Enter up to sixteen hexadecimal digits.")
     if field.kind == "encounter":
         return encounter_error(value)
     if field.kind == "raidpartners":
         value = value if isinstance(value, dict) else {}
         picks = list(value.get("picks", ()))
         if len(picks) > raid_partners.HOSTED:
-            return f"A raid seats {raid_partners.HOSTED} partners at most."
+            return tr("command.partners_at_most", "A raid seats {count} partners at most.", count=raid_partners.HOSTED)
         if value.get("progress") and value["progress"] not in raid_partners.STAGES:
-            return "Choose the partners' progress again."
+            return tr("command.partner_progress", "Choose the partners' progress again.")
         stage = (raid_partners.STAGES.index(value["progress"]) if value.get("progress")
                  else raid_partners.SIX_STARS)
         known = {p.trainer for p in raid_partners.pool(stage)}
         if any(name not in known for name in picks):
-            return "A chosen partner is not among this progress's trainers."
+            return tr("command.partner_unknown", "A chosen partner is not among this progress's trainers.")
         return ""
     if field.kind == "raidevent":
         if not value or events_gallery.holds(value, game=game):
             return ""
         if not events_gallery.present(game=game):
-            return "Download the event gallery in Raid event, or choose no event."
-        return "The chosen event is not in the event gallery any more."
+            return tr("command.gallery_missing", "Download the event gallery in Raid event, or choose no event.")
+        return tr("command.event_gone", "The chosen event is not in the event gallery any more.")
     if field.kind == "rewards":
         rows = list(value or ())
         if len(rows) > raid_rewards.rows(game):
-            return f"A raid gives at most {raid_rewards.rows(game)} rewards."
+            return tr("command.rewards_at_most", "A raid gives at most {count} rewards.", count=raid_rewards.rows(game))
         for n, row in enumerate(rows, 1):
             item = str(row.get("item_id", ""))
             quantity = str(row.get("quantity", ""))
             if not item.isascii() or not item.isdigit() or not int(item):
-                return f"Choose an item for reward {n}."
+                return tr("command.reward_item", "Choose an item for reward {n}.", n=n)
             if not quantity.isascii() or not quantity.isdigit() or not 1 <= int(quantity) <= 999:
-                return f"Reward {n} needs a quantity from 1 to 999."
+                return tr("command.reward_quantity", "Reward {n} needs a quantity from 1 to 999.", n=n)
         return ""
     if field.kind == "code":
         value = str(value or "")
         if ((value == "" and not field.default and not field.required)
                 or (len(value) == field.length and value.isdigit())):
             return ""
-        digits = {4: "four", 8: "eight"}.get(field.length, field.length)
-        return (f"{field.label}: all {digits} digits"
-                + ("." if field.default or field.required else ", or none."))
+        digits = {4: tr("command.four", "four"), 8: tr("command.eight", "eight")}.get(field.length, field.length)
+        if field.default or field.required:
+            return tr("command.code_digits", "{label}: all {digits} digits.", label=field.label, digits=digits)
+        return tr("command.code_digits_or_none", "{label}: all {digits} digits, or none.", label=field.label, digits=digits)
     if field.kind == "number" and field.bounds:
         low, high = field.bounds
         value = str(value if value is not None else "").strip()
         if value.isascii() and value.isdigit() and low <= int(value) <= high:
             return ""
-        return f"{field.label}: a whole number from {low:,} to {high:,}."
+        return tr("command.number_range", "{label}: a whole number from {low:,} to {high:,}.", label=field.label, low=low, high=high)
     if field.kind != "linkcode":
         return ""
     try:
         code_picks(str(value or "").split(","))
     except ValueError:
-        return "Pick three Pokemon for the link code."
+        return tr("command.link_code_picks", "Pick three Pokemon for the link code.")
     return ""
 
 
@@ -366,13 +373,15 @@ def missing_offer(tool: Tool, values: dict) -> str:
             continue
         entries = offers(value_of(field, values))[:field.queue] or [{}]
         for n, entry in enumerate(entries, start=1):
-            which = f" for trade {n}" if len(entries) > 1 else ""
+            many = len(entries) > 1
             path = entry.get("file", "")
             if not path and not field.required and len(entries) == 1:
                 continue
             if not path or not os.path.isfile(path):
-                return ("Choose the Mystery Gift Pokemon first." if field.events
-                        else f"Build the Pokemon to offer{which} first.")
+                return (tr("command.choose_gift", "Choose the Mystery Gift Pokemon first.") if field.events else
+                        tr("command.build_offer_n", "Build the Pokemon to offer for trade {n} first.", n=n) if many else
+                        tr("command.build_offer", "Build the Pokemon to offer first."))
             if entry.get("legal") is False:
-                return f"The Pokemon{which} is not legal."
+                return (tr("command.offer_illegal_n", "The Pokemon for trade {n} is not legal.", n=n) if many else
+                        tr("command.offer_illegal", "The Pokemon is not legal."))
     return ""

@@ -359,8 +359,10 @@ Paths stay inside the plugin folder. These translate text from game modules, PKH
 message is tried whole in `messages`, then `templates`, then per sentence, then with `terms` replaced
 at word boundaries. A template has 1 to 8 plain named fields separated by literal text, at most 2048
 chars, matched literally, longest first, on messages up to 4096 chars; a field named `term...` or
-`message...` is itself translated, to depth 4. PKHeX names and legality reports follow the locale for
-`ja`, `fr`, `it`, `de`, `es`, `ko`, `zh-Hans`, `zh-Hant` (`zh` with `TW`, `HK`, `MO` is `zh-Hant`).
+`message...` is itself translated, to depth 4. A value that is one species, move, ability, nature,
+type or ball name whole, and that no term covers, takes PKHeX's name. PKHeX names and legality
+reports follow the locale for `ja`, `fr`, `it`, `de`, `es`, `ko`, `zh-Hans`, `zh-Hant` (`zh` with
+`TW`, `HK`, `MO` is `zh-Hant`).
 Translated pages keep the English anchors when heading counts match, else `<a id="NAME"></a>` sets
 one; a front-matter `title` renames a page in the sidebar.
 
