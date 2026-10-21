@@ -740,3 +740,13 @@ def test_a_long_lived_helper_is_closed_when_the_interpreter_exits(service):
     done = subprocess.run([sys.executable, "-W", "always::ResourceWarning", "-c", script],
                           cwd=Path(__file__).parent.parent, capture_output=True, text=True, timeout=60)
     assert done.returncode == 0 and "ResourceWarning" not in done.stderr, done.stderr
+
+
+def test_a_firered_gift_summary_names_its_species_in_the_display_language(service, display):
+    from pokeldn.frlg.gift import builder
+    shown = {n["id"]: n["name"] for n in display("zh-Hans").names("frlg", "species3")}
+    state = builder.blank()
+    state["steps"] = [{"type": "egg", "species": 277}, {"type": "pokemon", "species": 25, "level": 9}]
+    lines = builder.describe(state, lambda kind, n: shown[n] if kind == "species" else f"{kind} #{n}")[1]
+    assert lines[:2] == ["Gives a 木守宫 egg", "Gives 皮卡丘, level 9"]
+    assert builder.describe(state)[1][:2] == ["Gives a Treecko egg", "Gives Pikachu, level 9"]

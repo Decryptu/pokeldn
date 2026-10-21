@@ -600,19 +600,24 @@ def _where(path):
 def _step_line(step, name):
     kind = step.get("type")
     if kind == "pokemon":
-        return f"Gives {species_name(step.get('species'))}, level {step.get('level') or 5}"
+        return f"Gives {name('species', step.get('species'))}, level {step.get('level') or 5}"
     if kind == "egg":
-        return f"Gives a {species_name(step.get('species'))} egg"
+        return f"Gives a {name('species', step.get('species'))} egg"
     if kind == "item":
         quantity = int(step.get("quantity") or 1)
         return f"Gives {name('item', step.get('item'))}" + (f" x{quantity}" if quantity > 1 else "")
     if kind == "battle":
-        return f"Starts a battle with a wild {species_name(step.get('species'))}, level {step.get('level') or 5}"
+        return f"Starts a battle with a wild {name('species', step.get('species'))}, level {step.get('level') or 5}"
     return f"Says “{str(step.get('text', '')).splitlines()[0] if step.get('text') else ''}”"
 
 
-def describe(state, name=lambda kind, n: f"{kind} #{n}"):
-    """(when it runs, [what happens]) for the summary before sending; `name(kind, id)` names an item."""
+def _name(kind, n):
+    return species_name(n) if kind == "species" else f"{kind} #{n}"
+
+
+def describe(state, name=_name):
+    """(when it runs, [what happens]) for the summary before sending; `name(kind, id)` names an item, or a
+    species by its cartridge id."""
     kind = state.get("kind", "card")
     if kind == "news":
         return "Shown on the Wonder News screen as soon as it is received.", [

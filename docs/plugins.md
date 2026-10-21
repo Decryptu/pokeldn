@@ -440,7 +440,7 @@ resolves each.
 | `pokeldn.swsh.gift_builder.blank(**changes)`, `record(state)`, `compile(state)`, `describe(state, name)` | form state, 720-byte record, gift, player lines; `ValueError` names a bad field |
 | `pokeldn.swsh.events.load()`, `by_key()`, `gift(key)` | official Sword/Shield event cards |
 | `pokeldn.frlg.gift.builder.KINDS`, `PRESETS`, `PRESET`, `GIVERS`, `CARTRIDGES` | FireRed/LeafGreen kinds, presets, givers, cartridges |
-| `pokeldn.frlg.gift.builder.blank()`, `compile(state)`, `describe(state, name)` | the same for a Wonder Card, News or console code |
+| `pokeldn.frlg.gift.builder.blank()`, `compile(state)`, `describe(state, name)` | the same for a Wonder Card, News or console code; `name` gets a species by its cartridge id |
 | `gui.board.ports()`, `identify(port, blink=)`, `detect_chip(port)` | serial ports and a board's `.firmware`, `.firmware_version`, `.protocol`, `.current` |
 | `gui.board.download_firmware(say=)`, `image_for(kind, chip)`, `image_version(path)`, `flash(port, kind=)` | checked release images and flashing |
 | `pokeldn.app.bank.library()` | the default Bank folder; listing never creates it (1.4) |
