@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from pokeldn.pokemon import NATURES
 from pokeldn.swsh import events as OFFICIAL, gift_file, wc8
 
-KINDS = (("pokemon", _ref("core.pokeldn.swsh.gift_builder.pokemon_22464231"), "gift"), ("egg", "Egg", "package"), ("items", "Items", "bulletlist"),
-         ("clothing", _ref("core.pokeldn.swsh.gift_builder.clothing_5bea3ab3"), "shirt"), ("bp", _ref("core.pokeldn.swsh.gift_builder.battle_points_c484f837"), "zap"), ("money", "Money", "coins"))
+KINDS = (("pokemon", _ref("core.pokeldn.swsh.gift_builder.pokemon_22464231"), "gift"), ("egg", _ref("core.gift.step.egg"), "package"), ("items", _ref("core.gift.kind.items"), "bulletlist"),
+         ("clothing", _ref("core.pokeldn.swsh.gift_builder.clothing_5bea3ab3"), "shirt"), ("bp", _ref("core.pokeldn.swsh.gift_builder.battle_points_c484f837"), "zap"), ("money", _ref("core.gift.kind.money"), "coins"))
 MAX_ITEM = 1607          # the 1.3.2 item table; a higher id crashes the bag screen
 MAX_MONEY = 9_999_999    # the kind-5 clamp 0x01438f2c
 TITLE_AT, PAYLOAD_AT = 0x15, 0x20
@@ -83,15 +83,15 @@ PRESETS = (
            blank(gigantamax=True, dynamax_level=10)),
     Preset("egg", _ref("core.pokeldn.swsh.gift_builder.pikachu_egg_db0a4bdd"), _ref("core.pokeldn.swsh.gift_builder.pokemon_22464231"), _ref("core.pokeldn.swsh.gift_builder.an_egg_that_hatches_into_pikachu_7f0e9844"),
            blank(kind="egg", level=1, nickname="")),
-    Preset("master-balls", _ref("core.pokeldn.swsh.gift_builder.three_master_balls_c74548de"), "Items", _ref("core.pokeldn.swsh.gift_builder.three_master_balls_in_the_bag_dbb9a06b"),
+    Preset("master-balls", _ref("core.pokeldn.swsh.gift_builder.three_master_balls_c74548de"), _ref("core.gift.kind.items"), _ref("core.pokeldn.swsh.gift_builder.three_master_balls_in_the_bag_dbb9a06b"),
            blank(kind="items", items=[[1, 3]])),
-    Preset("rare-candies", _ref("core.pokeldn.swsh.gift_builder.ten_rare_candies_6fc8f9d9"), "Items", _ref("core.pokeldn.swsh.gift_builder.ten_rare_candies_in_the_bag_943c500a"),
+    Preset("rare-candies", _ref("core.pokeldn.swsh.gift_builder.ten_rare_candies_6fc8f9d9"), _ref("core.gift.kind.items"), _ref("core.pokeldn.swsh.gift_builder.ten_rare_candies_in_the_bag_943c500a"),
            blank(kind="items", items=[[50, 10]])),
-    Preset("training-kit", _ref("core.pokeldn.swsh.gift_builder.training_kit_076e65c4"), "Items",
+    Preset("training-kit", _ref("core.pokeldn.swsh.gift_builder.training_kit_076e65c4"), _ref("core.gift.kind.items"),
            _ref("core.pokeldn.swsh.gift_builder.rare_candies_exp_candy_xl_pp_max_an_ability_capsule_and_351ae7e6"),
            blank(kind="items", items=[[50, 10], [1128, 5], [53, 3], [645, 1], [795, 3], [796, 1]])),
-    Preset("bp", _ref("core.pokeldn.swsh.gift_builder.10_battle_points_4ef116e9"), "Items", _ref("core.pokeldn.swsh.gift_builder.adds_10_bp_up_to_the_game_s_9999_5169a377"), blank(kind="bp", bp=10)),
-    Preset("money", _ref("core.pokeldn.swsh.gift_builder.pocket_money_0c8a15ef"), "Items", _ref("core.pokeldn.swsh.gift_builder.adds_100_000_to_the_player_s_money_62f1dfa1"),
+    Preset("bp", _ref("core.pokeldn.swsh.gift_builder.10_battle_points_4ef116e9"), _ref("core.gift.kind.items"), _ref("core.pokeldn.swsh.gift_builder.adds_10_bp_up_to_the_game_s_9999_5169a377"), blank(kind="bp", bp=10)),
+    Preset("money", _ref("core.pokeldn.swsh.gift_builder.pocket_money_0c8a15ef"), _ref("core.gift.kind.items"), _ref("core.pokeldn.swsh.gift_builder.adds_100_000_to_the_player_s_money_62f1dfa1"),
            blank(kind="money", money=100000)),
     Preset("pikachu-uniform", _ref("core.pokeldn.swsh.gift_builder.pikachu_uniform_ac84b0e7"), _ref("core.pokeldn.swsh.gift_builder.clothing_5bea3ab3"), _ref("core.pokeldn.swsh.gift_builder.the_pikachu_outfit_in_the_wardrobe_1d6f24ab"),
            blank(kind="clothing", outfits=["pikachu-uniform"])),

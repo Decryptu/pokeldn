@@ -1,5 +1,6 @@
 """Validate semantic call sites, English contracts, bundled packs and documents."""
 import ast
+import re
 from pathlib import Path
 import sys
 import tomllib
@@ -7,6 +8,58 @@ import tomllib
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from pokeldn.app import i18n
+
+
+def check_display_sources():
+    """Audit the providers that do not appear as literal text() calls in GUI source."""
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.app.introspect import flags_of
+    from pokeldn.app import gift_builder
+    from pokeldn.swsh import events
+    errors = []
+    for game in GAMES:
+        for tool in game.tools:
+            for flag in flags_of(tool.script):
+                if flag.help:
+                    key = f"core.help.{tool.key}.{flag.option.lstrip('-')}"
+                    source = flag.help.replace("{", "{{").replace("}", "}}")
+                    if i18n._catalog.get(key) != source:
+                        errors.append(f"{tool.key} {flag.option}: missing or stale English help entry {key}")
+                for value in flag.choices:
+                    key = f"core.choice.{tool.key}.{flag.option.lstrip('-')}.{value.encode().hex()}"
+                    if key not in i18n._catalog:
+                        errors.append(f"{tool.key} {flag.option}: undeclared choice label {value!r}")
+    def reference(identity, value):
+        if value and not isinstance(value, (i18n.TextRef, i18n.DisplayText, i18n.MessageRef)):
+            # Numeric speed indicators are literal units, with no language-dependent words.
+            if not isinstance(value, str) or not re.fullmatch(r"x\d+", value):
+                errors.append(f"{identity}: display metadata must retain a semantic reference")
+    for game in ("frlg", "rse", "swsh"):
+        module = gift_builder.module(game)
+        for code, label in getattr(module, "CARTRIDGES", {}).items():
+            reference(f"{game}.cartridge.{code}", label)
+        for option in module.KINDS:
+            reference(f"{game}.kind.{option[0]}", option[1])
+        for option in getattr(module, "STEPS", ()):
+            reference(f"{game}.step.{option[0]}", option[1])
+        for preset in module.PRESETS:
+            for attr in ("label", "group", "summary", "when"):
+                reference(f"{game}.{preset.key}.{attr}", getattr(preset, attr, ""))
+            for boost in getattr(preset, "members", ()):
+                for attr in ("label", "summary"):
+                    reference(f"{game}.{boost.key}.{attr}", getattr(boost, attr, ""))
+                for option in getattr(boost, "options", ()):
+                    for attr in ("label", "help"):
+                        reference(f"{game}.{boost.key}.{option.key}.{attr}", getattr(option, attr, ""))
+                    for key, label in option.choices:
+                        reference(f"{game}.{boost.key}.{option.key}.{key}", label)
+    for card in events.load():
+        reference(f"swsh.event.{card['key']}.title", card["label"])
+    for group in events.GROUPS:
+        reference(f"swsh.event.group.{group}", events.GROUP_LABELS.get(group))
+        if group not in events.GROUP_LABELS:
+            errors.append(f"swsh.event.group.{group}: undeclared group label")
+    return errors
 
 
 def check(root=ROOT):
@@ -71,6 +124,8 @@ def check(root=ROOT):
             i18n._validate_document(doc_id, spec, lambda p: (base / p).read_bytes())
         except ValueError as exc:
             errors.append(str(exc))
+    if root == ROOT:
+        errors.extend(check_display_sources())
     return errors
 
 

@@ -2,15 +2,16 @@
 preset compiles to a .pokegift the launcher takes with --gift-file --version emerald."""
 
 from dataclasses import dataclass
+from pokeldn.app.i18n import ref as _ref
 
 from pokeldn.frlg.gift import gift_composer as gc
 from pokeldn.rse import constants as em, gift_file, gifts
 
-KINDS = (("card", "Wonder Card", "gift"),)
+KINDS = (("card", _ref("core.pokeldn.frlg.gift.builder.wonder_card_81ebceeb"), "gift"),)
 BUILD = False                       # no "Build your own" form for Emerald yet
-OFFICIAL_GIFTS = "Official Emerald gifts"
-MORE = "More gifts"
-WHEN = "After the card is saved, talk to the delivery man on 2F of any Pokemon Center."
+OFFICIAL_GIFTS = _ref("core.rse.gift.official")
+MORE = _ref("core.rse.gift.more")
+WHEN = _ref("core.rse.gift.when")
 NATIONAL = {410: 386, 250: 250, 151: 151, 235: 235}     # internal icon species -> National Dex
 
 
@@ -60,13 +61,13 @@ def _eon_ticket():
 
 
 PRESETS = (
-    *(Preset(o.key, o.label, OFFICIAL_GIFTS, o.summary, {"kind": "official", "gift": o.key},
+    *(Preset(o.key, _ref(f"core.rse.gift.{o.key}.title"), OFFICIAL_GIFTS, _ref(f"core.rse.gift.{o.key}.description"), {"kind": "official", "gift": o.key},
              species_id=NATIONAL.get(o.icon_species, 0)) for o in gifts.OFFICIAL),
-    Preset("eon-ticket", "Eon Ticket", MORE, "The ferry to Southern Island, where Latias or Latios waits.",
+    Preset("eon-ticket", _ref("core.rse.gift.eon-ticket.title"), MORE, _ref("core.rse.gift.eon-ticket.description"),
            {"kind": "eon-ticket"}, species_id=380),
-    Preset("master-ball", "Master Ball", MORE, "One Master Ball.", {"kind": "composed", "gift": "master-ball"}),
-    Preset("rare-candy", "Rare Candy x5", MORE, "Five Rare Candies.", {"kind": "composed", "gift": "rare-candy"}),
-    Preset("surf-pichu", "Surfing Pichu egg", MORE, "A Pichu egg that hatches knowing Surf.",
+    Preset("master-ball", _ref("core.rse.gift.master-ball.title"), MORE, _ref("core.rse.gift.master-ball.description"), {"kind": "composed", "gift": "master-ball"}),
+    Preset("rare-candy", _ref("core.rse.gift.rare-candy.title"), MORE, _ref("core.rse.gift.rare-candy.description"), {"kind": "composed", "gift": "rare-candy"}),
+    Preset("surf-pichu", _ref("core.rse.gift.surf-pichu.title"), MORE, _ref("core.rse.gift.surf-pichu.description"),
            {"kind": "composed", "gift": "surf-pichu"}, species_id=172),
 )
 PRESET = {p.key: p for p in PRESETS}
@@ -97,4 +98,4 @@ def compile(state):
 def describe(state, name=lambda kind, n: f"{kind} #{n}"):
     """(when it applies, [what happens])."""
     preset = next((p for p in PRESETS if p.state == state), None)
-    return WHEN, [preset.summary if preset else "An Emerald Wonder Card."]
+    return WHEN, [preset.summary if preset else _ref("core.rse.gift.unknown")]

@@ -17,18 +17,17 @@ from pokeldn.frlg.gift.stamp_rally import MysteryGiftDistribution
 from pokeldn.frlg.rom import buffer_script, builds, custom_code
 from pokeldn.frlg.save.species_names import SPECIES
 
-CARTRIDGES = {code: (f"{'FireRed' if build.version == 'firered' else 'LeafGreen'} "
-                     f"({build.language.capitalize()})") for code, build in builds.BUILDS.items()}
+CARTRIDGES = {code: _ref(f"core.frlg.cartridge.{code}") for code in builds.BUILDS}
 KINDS = (("card", _ref("core.pokeldn.frlg.gift.builder.wonder_card_81ebceeb"), "gift"), ("news", _ref("core.pokeldn.frlg.gift.builder.wonder_news_d58adf54"), "book-open"), ("code", _ref("core.pokeldn.frlg.gift.builder.console_code_33f04c21"), "cpu"))
 # (key, who, where, map group, map number, object id); a bound script replaces that person's own.
 GIVERS = (
     ("deliveryman", _ref("core.pokeldn.frlg.gift.builder.the_delivery_man_2949b642"), _ref("core.pokeldn.frlg.gift.builder.any_pokemon_center_after_the_card_is_saved_1f2cd6a9"), None, None, None),
-    ("mom", "Mom", _ref("core.pokeldn.frlg.gift.builder.the_player_s_house_0733cb87"), events.MAP_GROUP_PLAYERS_HOUSE, events.MAP_NUM_PLAYERS_HOUSE,
+    ("mom", _ref("core.gift.giver.mom"), _ref("core.pokeldn.frlg.gift.builder.the_player_s_house_0733cb87"), events.MAP_GROUP_PLAYERS_HOUSE, events.MAP_NUM_PLAYERS_HOUSE,
      events.PLAYERS_HOUSE_OBJECT_MOM),
     ("pallet-man", _ref("core.pokeldn.frlg.gift.builder.the_man_in_pallet_town_6793700c"), _ref("core.pokeldn.frlg.gift.builder.south_of_pallet_town_93a22f7b"), events.MAP_GROUP_PALLET_TOWN,
      events.MAP_NUM_PALLET_TOWN, events.PALLET_TOWN_OBJECT_FAT_MAN),
 )
-STEPS = (("pokemon", _ref("core.pokeldn.frlg.gift.builder.pokemon_22464231")), ("item", "Item"), ("egg", "Egg"), ("battle", _ref("core.pokeldn.frlg.gift.builder.wild_battle_b53d82b0")),
+STEPS = (("pokemon", _ref("core.pokeldn.frlg.gift.builder.pokemon_22464231")), ("item", _ref("core.gift.step.item")), ("egg", _ref("core.gift.step.egg")), ("battle", _ref("core.pokeldn.frlg.gift.builder.wild_battle_b53d82b0")),
          ("message", _ref("core.pokeldn.frlg.gift.builder.message_2f77668a")))
 FULL = "Oh, there is no room!\nPlease make room and come back."
 
@@ -129,7 +128,7 @@ ANNIVERSARY = _ref("core.pokeldn.frlg.gift.builder.10th_anniversary_pokemon_1766
 def _event(name, species_id, summary, group=EVENTS):
     """A fresh copy PKHeX makes at launch [docs/frlg_gift.md, Event Pokemon]."""
     key = "event-" + re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    return Preset(key, name, group, summary, ("--gift", events.GIFT_EVENT_POKEMON, "--event-pokemon", name),
+    return Preset(key, _ref(f"core.frlg.gift.{key}.title"), group, summary, ("--gift", events.GIFT_EVENT_POKEMON, "--event-pokemon", name),
                   species_id=species_id)
 
 
@@ -137,7 +136,7 @@ POKEMON_TOOLS = _ref("core.pokeldn.frlg.gift.builder.change_a_pokemon_34e02aca")
 GAME_CHANGES = _ref("core.pokeldn.frlg.gift.builder.game_changes_b81b90ad")
 MORE_GIFTS = _ref("core.pokeldn.frlg.gift.builder.more_gifts_db70eb44")
 # A card the delivery man turns into a per-frame hook; it stops any game boost [docs/frlg_gift.md].
-STOPS_BOOSTS = " Turns off any game boost that is on."
+STOPS_BOOSTS = _ref("core.gift.boost.stops")
 DELIVERY_MAN = _ref("core.pokeldn.frlg.gift.builder.after_the_card_is_saved_talk_to_the_delivery_man_on_2f__a9f3aa59")
 
 
@@ -195,8 +194,7 @@ R, B, SELECT = "0x100", "0x2", "0x4"
 # L opens the Help System; only R's toggle has a flag the hooks hold off [docs/frlg_rom.md, turbo].
 BUTTONS = ((R, _ref("core.pokeldn.frlg.gift.builder.hold_r_5be9c8e4")), (B, _ref("core.pokeldn.frlg.gift.builder.hold_b_also_runs_ec2b0b51")), (SELECT, _ref("core.pokeldn.frlg.gift.builder.hold_select_also_uses_the_registered_item_c1d02a61")))
 BUTTON_NAME = {R: "R", B: "B", SELECT: "Select"}
-MOM_STEPS = (f'After sending the saved boosts, send "{MOM}" once. After each restart, talk to Mom at home '
-             "in Pallet Town to turn them back on. Send Mom's gift again if you receive another Wonder Card.")
+MOM_STEPS = _message("core.gift.boost.restore", mom=MOM)
 KEEP = Option("keep", _ref("core.pokeldn.frlg.gift.builder.save_boosts_for_later_1aecdbec"), False,
               help=_ref("core.pokeldn.frlg.gift.builder.keep_a_copy_of_these_boosts_in_your_save_dab0a0ea") + MOM_STEPS)
 SPEEDS = (("1", "x1"), ("2", "x2"), ("3", "x3"), ("4", "x4"))
@@ -219,8 +217,8 @@ def _turbo(o):
         params["budget"] = BUDGET
     lines = []
     if speed > 1:
-        how = "all the time" if o["button"] == "always" else f"while {BUTTON_NAME[o['button']]} is held"
-        lines.append(f"{dict(WHERE)[o['where']]} run up to x{speed} {how}")
+        how = _ref("core.gift.boost.always") if o["button"] == "always" else _message("core.gift.boost.held", button=BUTTON_NAME[o['button']])
+        lines.append(_message("core.gift.boost.turbo", where=dict(WHERE)[o['where']], speed=speed, when=how))
     if text:
         lines.append(_ref("core.pokeldn.frlg.gift.builder.text_prints_faster_5a4694d9"))
     return params, lines
@@ -229,12 +227,12 @@ def _turbo(o):
 def _shiny(o):
     return {"slow": int(o["button"], 0), "slow_frames": int(o["slower"])}, [
         _ref("core.pokeldn.frlg.gift.builder.counts_down_to_the_next_shiny_wild_pokemon_in_the_grass_b10a3129"),
-        f"The game runs {dict(SLOWER)[o['slower']]} while {BUTTON_NAME[o['button']]} is held, to hit the frame"]
+        _message("core.gift.boost.shiny", slower=dict(SLOWER)[o['slower']], button=BUTTON_NAME[o['button']])]
 
 
 def _noclip(o):
     return {"hold": int(o["button"], 0)}, [
-        f"Walk through walls, trees and water while {BUTTON_NAME[o['button']]} is held; people still block the way"]
+        _message("core.gift.boost.noclip", button=BUTTON_NAME[o['button']])]
 
 
 def _plain(*lines):
@@ -243,15 +241,15 @@ def _plain(*lines):
 
 BOOST_LIST = (
     Boost("hook-turbo", _ref("core.pokeldn.frlg.gift.builder.speed_up_the_game_108bf789"), _ref("core.pokeldn.frlg.gift.builder.x2_x3_or_x4_in_the_overworld_and_in_battle_and_faster_t_f54d6c59"),
-          "turbo-lite", _turbo, (Option("speed", _ref("core.pokeldn.frlg.gift.builder.game_speed_2e6651c0"), "2", SPEEDS), Option("where", "Where", "both", WHERE),
-                            Option("button", "When", R, (("always", _ref("core.pokeldn.frlg.gift.builder.always_on_044ba8a9")),) + BUTTONS),
+          "turbo-lite", _turbo, (Option("speed", _ref("core.pokeldn.frlg.gift.builder.game_speed_2e6651c0"), "2", SPEEDS), Option("where", _ref("core.gift.boost.where"), "both", WHERE),
+                            Option("button", _ref("core.gift.boost.when"), R, (("always", _ref("core.pokeldn.frlg.gift.builder.always_on_044ba8a9")),) + BUTTONS),
                             Option("text", _ref("core.pokeldn.frlg.gift.builder.faster_text_d6ce51e9"), True, help=_ref("core.pokeldn.frlg.gift.builder.dialogue_prints_several_letters_a_frame_6247dfaa")))),
     Boost("hook-noclip", _ref("core.pokeldn.frlg.gift.builder.walk_through_walls_00607718"), _ref("core.pokeldn.frlg.gift.builder.hold_a_button_to_walk_through_walls_trees_and_water_a6ca9eb2"),
-          "noclip", _noclip, (Option("button", "When", R, BUTTONS),)),
+          "noclip", _noclip, (Option("button", _ref("core.gift.boost.when"), R, BUTTONS),)),
     Boost("hook-noencounter", _ref("core.pokeldn.frlg.gift.builder.no_wild_encounters_4c3abfd8"), _ref("core.pokeldn.frlg.gift.builder.no_grass_water_or_roaming_encounters_4e4a5e7a"), "noencounter",
           _plain(_ref("core.pokeldn.frlg.gift.builder.no_grass_water_or_roaming_encounters_fishing_and_sweet__9b8ab620"))),
     Boost("hook-shiny", _ref("core.pokeldn.frlg.gift.builder.shiny_countdown_e785be46"), _ref("core.pokeldn.frlg.gift.builder.counts_down_to_the_next_shiny_in_the_grass_ea598dd3"), "shiny", _shiny,
-          (Option("button", _ref("core.pokeldn.frlg.gift.builder.slow_the_game_down_a606f821"), R, BUTTONS), Option("slower", "By", "3", SLOWER))),
+          (Option("button", _ref("core.pokeldn.frlg.gift.builder.slow_the_game_down_a606f821"), R, BUTTONS), Option("slower", _ref("core.gift.boost.by"), "3", SLOWER))),
     Boost("hook-ivs", _ref("core.pokeldn.frlg.gift.builder.lead_s_ivs_on_screen_d577b8c0"), _ref("core.pokeldn.frlg.gift.builder.the_lead_pokemon_s_ivs_and_nature_top_right_c3e7b189"), "ivs",
           _plain(_ref("core.pokeldn.frlg.gift.builder.the_lead_pokemon_s_six_ivs_and_its_nature_top_right_of__0cac3a28"))),
     Boost("hook-follower", _ref("core.pokeldn.frlg.gift.builder.pokemon_follower_48ee91f3"), _ref("core.pokeldn.frlg.gift.builder.your_lead_pokemon_walks_behind_you_d91a3e43"), "follower",
@@ -356,7 +354,7 @@ class Boosts:
 
 PRESETS = (
     _card("beast-cutscene", _ref("core.pokeldn.frlg.gift.builder.legendary_beast_6ffe34af"), _ref("core.pokeldn.frlg.gift.builder.two_berries_a_master_ball_and_a_battle_with_the_beast_t_30133f22")),
-    _card("celebi", "Celebi", _ref("core.pokeldn.frlg.gift.builder.a_level_50_celebi_from_the_delivery_man_aac580f1"), 251),
+    _card("celebi", _ref("core.frlg.gift.celebi.title"), _ref("core.pokeldn.frlg.gift.builder.a_level_50_celebi_from_the_delivery_man_aac580f1"), 251),
     _card("master-ball", _ref("core.pokeldn.frlg.gift.builder.master_ball_ac04a988"), _ref("core.pokeldn.frlg.gift.builder.one_master_ball_6055bba9")),
     _card("altering-cave", _ref("core.pokeldn.frlg.gift.builder.altering_cave_6a83ccf4"), _ref("core.pokeldn.frlg.gift.builder.changes_which_pokemon_live_in_altering_cave_15e72483")),
     _card("wish-egg", _ref("core.pokeldn.frlg.gift.builder.wish_egg_5bf7bd6f"), _ref("core.pokeldn.frlg.gift.builder.one_of_six_eggs_that_knows_wish_picked_by_the_console_a573a75a")),
@@ -640,7 +638,7 @@ def describe(state, name=lambda kind, n: f"{kind} #{n}"):
             _message("core.gift.news.title", title=state.get("news", {}).get("title", ""))]
     if kind == "code":
         code = state.get("code", {})
-        target = CARTRIDGES.get(code.get("build"), "any cartridge; call no ROM address")
+        target = CARTRIDGES.get(code.get("build"), _ref("core.gift.code.any_cartridge"))
         return _ref("core.pokeldn.frlg.gift.builder.runs_on_the_console_while_it_receives_inside_the_myster_bb1288df"), [
             _ref("core.pokeldn.frlg.gift.builder.your_arm_code_checked_offline_before_it_is_sent_819c4c2d"), _message("core.gift.code.target", target=target)]
     giver = next((g for g in GIVERS if g[0] == state.get("giver")), GIVERS[0])

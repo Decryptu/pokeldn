@@ -586,6 +586,12 @@ def help_text(tool, option, default):
     return text(key) if key in _catalog else render(default)
 
 
+def choice_text(tool, option, value):
+    """CLI choice identities remain invariant; their labels have an explicit catalog contract."""
+    key = f"core.choice.{tool}.{option.lstrip('-')}.{str(value).encode().hex()}"
+    return text(key) if key in _catalog else str(value)
+
+
 _english = tomllib.loads((DATA / "strings.en.toml").read_text(encoding="utf-8"))
 register_catalog("core", _english.get("strings", {"core." + k: v for k, v in _english.items()}),
                  parameters=_english.get("parameters", {}))

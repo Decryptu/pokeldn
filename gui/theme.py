@@ -56,7 +56,9 @@ def app_theme() -> ft.Theme:
         scrollbar_theme=ft.ScrollbarTheme(thickness=6, radius=3,
                                           thumb_color=ft.Colors.with_opacity(0.2, "#FFFFFF")),
         tooltip_theme=ft.TooltipTheme(decoration=ft.BoxDecoration(bgcolor=HOVER, border_radius=8),
-                                      text_style=ft.TextStyle(color=TEXT, size=12)),
+                                      text_style=ft.TextStyle(color=TEXT, size=12,
+                                          font_family=font_family() or CJK_FONT,
+                                          font_family_fallback=[CJK_FONT])),
     )
 
 

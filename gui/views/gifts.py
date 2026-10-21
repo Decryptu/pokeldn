@@ -249,7 +249,7 @@ class GiftBuilder:
         def render(update=True):
             words = translate(search.value).casefold().split()
             shown = [c for c in cards if (not group["value"] or c["group"] == group["value"])
-                     and all(w in tr('core.gifts._8320f6', value0=translate(c['label']), value1=translate(c['group']), value2=translate(c['summary'])).casefold() for w in words)]
+                     and all(w in tr('core.gifts._8320f6', value0=translate(c['label']), value1=translate(official.GROUP_LABELS.get(c['group'], c['group'])), value2=translate(self._event_summary(c))).casefold() for w in words)]
             tiles.controls = t.grid_rows([self._event_tile(c) for c in shown])
             count.value = tr('core.gifts.of_cards_d600f0', value0=len(shown), value1=len(cards))
             if update:
@@ -265,7 +265,7 @@ class GiftBuilder:
         search.on_change = lambda e: filtered("event_search", search.value)
         count = t.text("", 12, t.MUTED)
         render(update=False)
-        groups = _chips([("", tr('core.gifts.all_a52ace'))] + [(g, translate(g)) for g in official.GROUPS], group["value"],
+        groups = _chips([("", tr('core.gifts.all_a52ace'))] + [(g, translate(official.GROUP_LABELS.get(g, g))) for g in official.GROUPS], group["value"],
                         lambda k: filtered("event_group", k))
         intro = t.text(tr('core.gifts.real_event_cards_from_the_projectpokemon_eventsgallery__1172ec'), 12, t.MUTED)
         listing = ft.Container(ft.Column([tiles], scroll=ft.ScrollMode.AUTO), height=440)
@@ -291,12 +291,21 @@ class GiftBuilder:
     def _event_tile(self, card) -> ft.Control:
         raw = card["record"]
         mon = wc8.read(raw) if raw[wc8.GIFT_KIND_AT] == wc8.GIFT_KIND_POKEMON else {}
-        return self._tile(translate(card["label"]), card["summary"], card["key"] == self.value["event"],
+        return self._tile(translate(card["label"]), self._event_summary(card), card["key"] == self.value["event"],
                           lambda e: self._event(card["key"]),
                           warning=pokemon.HOME_TRACKER_WARNINGS["empty"]
                           if self.module.OFFICIAL.from_home(raw) else "",
                           species_id=mon.get("species", 0), shiny=mon.get("shiny_type") in (2, 3),
                           form=mon.get("form", 0))
+
+    def _event_names(self, record):
+        form = wc8.read(record).get("form", 0) if record[wc8.GIFT_KIND_AT] == wc8.GIFT_KIND_POKEMON else 0
+        return lambda kind, number: (i18n.name(i18n.EntityKind.SPECIES, int(number), game=self.game, form=form)
+                                     if kind == "species" else self.name(kind, number))
+
+    def _event_summary(self, card):
+        _, lines = self.module.OFFICIAL.describe(card["record"], self._event_names(card["record"]))
+        return lines[0] if lines else ""
 
     def _event(self, key) -> None:
         self.value["event"] = key
@@ -721,7 +730,7 @@ class GiftBuilder:
                 record = official.record(key, self.value["event_ids"].get(key))
             except ValueError:
                 record = None                   # the status line says what to fix
-            when, lines = official.describe(record, self.name) if record else ("", [])
+            when, lines = official.describe(record, self._event_names(record)) if record else ("", [])
             if record and official.from_home(record):
                 warnings = [tr('core.gifts._04903a', value0=pokemon.HOME_TRACKER_WARNINGS['empty'], value1=official.HOME_WHY)]
             if record and (shared := official.sharing(key, official.card_id(record))):

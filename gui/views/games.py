@@ -33,7 +33,7 @@ from gui.views.panels import StatusCards, card_control
 from gui.views.sprites import MINI, Sprite
 from gui.views.widgets import CodeBlock, DigitCode, Log, PathField, open_folder
 from gui.localization import SERVICE, display_summary, summary as pokemon_summary, summary_lines, summary_text, translate
-from pokeldn.app.i18n import help_text, text as tr, ref
+from pokeldn.app.i18n import choice_text, help_text, text as tr, ref
 
 EMPTY = "-"   # a dropdown option cannot carry an empty key
 # The Tera Raid host's event fields (pokeldn/app/catalog.py) and the context fields an event narrows.
@@ -620,7 +620,7 @@ class GamesView:
         for flag in sorted(flags, key=lambda f: f.option not in hidden):
             field = hidden.get(flag.option)
             localized = help_text(self.tool.key, flag.option, flag.help)
-            text = " ".join((flag.option, flag.help, localized, field.label, field.help) if field else (flag.option, flag.help, localized))
+            text = " ".join(i18n.render(p) for p in ((flag.option, flag.help, localized, field.label, field.help) if field else (flag.option, flag.help, localized)))
             if query and query not in text.lower():
                 continue
             rows.append(self.flag_row(flag))
@@ -649,7 +649,7 @@ class GamesView:
         if flag.kind == "switch":
             control = t.switch(bool(value), lambda e: store(e.control.value))
         elif flag.kind == "choice":
-            control = ft.Container(t.dropdown([(EMPTY, tr('core.games.default_choice'))] + [(c, translate(c)) for c in flag.choices],
+            control = ft.Container(t.dropdown([(EMPTY, tr('core.games.default_choice'))] + [(c, choice_text(self.tool.key, flag.option, c)) for c in flag.choices],
                                               value or EMPTY,
                                               on_select=lambda e: store("" if e.control.value == EMPTY else e.control.value)),
                                    width=220)
@@ -665,7 +665,7 @@ class GamesView:
         lines = ([bound.help] if bound and bound.help else [help_text(self.tool.key, flag.option, flag.help)])
         if detail:
             lines.append(detail)
-        help_ = t.text("\n".join(l for l in lines if l) or tr('core.games.no_description_06a694'), 12, t.MUTED, max_lines=4,
+        help_ = t.text(i18n.join((l for l in lines if l), "\n") or tr('core.games.no_description_06a694'), 12, t.MUTED, max_lines=4,
                        overflow=ft.TextOverflow.ELLIPSIS)
 
         def toggle(e):

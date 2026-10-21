@@ -160,3 +160,6 @@ updates and sprite downloads. It does not modify the user's normal app settings.
 The checker rejects source-text lookups in application code, undeclared literal keys,
 incorrect named arguments and translations evaluated in module constants. English is
 authoritative; `extract_strings.py --check` validates it without overwriting it from call sites.
+It also checks dynamic display sources: CLI help and choice labels, gift metadata,
+cartridge labels, and bundled event titles and groups. CLI tokens, entity IDs and card
+records retain their original values; localized labels are presentation metadata.

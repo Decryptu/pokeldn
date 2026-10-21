@@ -259,3 +259,54 @@ def test_plugin_catalog_registers_after_a_language_pack_is_selected():
         assert i18n.render(plugin.tools[0][1].name) == "本地化示例"
     finally:
         i18n.unregister_namespace(plugin.id)
+
+
+def test_advanced_help_and_choice_labels_have_semantic_contracts(monkeypatch):
+    from scripts.check_localization import check_display_sources
+    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    assert "训练家" in i18n.help_text("frlg-trade-host", "--language", "untranslated")
+    assert i18n.choice_text("frlg-trade-host", "--language", "english") == "英语"
+    key = "core.help.frlg-trade-host.language"
+    monkeypatch.delitem(i18n._catalog, key)
+    assert any(key in error for error in check_display_sources())
+
+
+def test_gift_metadata_is_translated_without_changing_its_identity():
+    from pokeldn.frlg.gift import builder as frlg
+    from pokeldn.rse import gift_builder as rse
+    from pokeldn.swsh import events, gift_builder as swsh
+    card = events.load()[0]
+    original = events.record(card["key"])
+    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    assert dict((key, i18n.render(label)) for key, label in frlg.STEPS)["item"] == "道具"
+    assert dict((key, i18n.render(label)) for key, label in frlg.STEPS)["egg"] == "蛋"
+    assert "关闭所有" in i18n.render(frlg.STOPS_BOOSTS)
+    assert "妈妈" in i18n.render(frlg.MOM_STEPS)
+    assert "火红（法语）" in [i18n.render(label) for label in frlg.CARTRIDGES.values()]
+    assert i18n.render(rse.PRESET["aurora-ticket"].label) == "极光船票"
+    assert "代欧奇希斯" in i18n.render(rse.PRESET["aurora-ticket"].summary)
+    assert i18n.render(events.GROUP_LABELS["Items"]) == "道具"
+    assert "火焰鸟" in i18n.render(card["label"]) and "国际挑战赛" in i18n.render(card["label"])
+    assert events.record(card["key"]) == original
+    assert dict((key, i18n.render(label)) for key, label, _ in swsh.KINDS)["items"] == "道具"
+
+
+def test_official_swsh_preview_uses_ids_and_form_in_the_current_language():
+    from gui.views.gifts import GiftBuilder
+    from pokeldn.swsh import gift_builder
+    picker = GiftBuilder.__new__(GiftBuilder)
+    picker.game, picker.module = "swsh", gift_builder
+    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    card = gift_builder.OFFICIAL.load()[0]
+    description = i18n.render(picker._event_summary(card))
+    assert "火焰鸟" in description and "伽勒尔" in description and "70" in description
+    i18n.select()
+    assert "Moltres" in i18n.render(picker._event_summary(card))
+
+
+def test_tooltip_theme_uses_the_cjk_font_and_fallback():
+    from gui import theme
+    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    style = theme.app_theme().tooltip_theme.text_style
+    assert style.font_family == theme.CJK_FONT
+    assert theme.CJK_FONT in style.font_family_fallback
