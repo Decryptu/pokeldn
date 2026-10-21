@@ -142,6 +142,30 @@ def font_family() -> str | None:
     return (_pack.resources.get("font_family") or None) if _pack else None
 
 
+def display(value, pack, _depth=0):
+    """Isolated API 1.9 display adapter; semantic parameters never pass through here."""
+    if not value or not pack or _depth >= 4:
+        return value
+    resources = pack.resources
+    messages = resources.get("messages", {})
+    if value in messages:
+        return messages[value]
+    if len(value) <= 4096:
+        for source, target in sorted(resources.get("templates", {}).items(), key=lambda pair: len(pair[0]), reverse=True):
+            matched = _match_template(tuple(string.Formatter().parse(source)), value)
+            if matched is not None:
+                return target.format(**{key: display(part, pack, _depth + 1)
+                    if key.startswith(("term", "message")) else part for key, part in matched.items()})
+        sentences = re.split(r"(?<=[.!?])\s+", value)
+        if len(sentences) > 1 and any(part in messages for part in sentences):
+            return " ".join(display(part, pack, _depth + 1) for part in sentences)
+    terms = resources.get("terms", {})
+    if terms:
+        pattern = re.compile(r"(?<![\w])(" + "|".join(re.escape(s) for s in sorted(terms, key=len, reverse=True)) + r")(?![\w])")
+        return pattern.sub(lambda match: terms[match[0]], value)
+    return value
+
+
 def message(value: str, _depth=0) -> str:
     """Literal legacy/module text, including braces; new app copy should use t with stable keys."""
     if not _pack:
@@ -179,14 +203,15 @@ def help_text(tool: str, option: str, default: str) -> str:
     return table.get(f"{tool}:{option}", message(" ".join(default.split())))
 
 
-def document(file: str, default: str | Path) -> Path:
+def document(file: str, default: str | Path, pack=None) -> Path:
     """Resolve the displayed/searchable Markdown, with per-page fallback and containment checks."""
+    pack = _pack if pack is None else pack
     relative = PurePosixPath("guide.md" if file == "guide" else file)
-    if (_pack and _pack.folder and _pack.resources.get("documents") and not relative.is_absolute()
+    if (pack and pack.folder and pack.resources.get("documents") and not relative.is_absolute()
             and ".." not in relative.parts and "\\" not in file and ":" not in file):
-        root = (_pack.folder / _pack.resources["documents"]).resolve()
+        root = (pack.folder / pack.resources["documents"]).resolve()
         candidate = (root / relative).resolve()
-        if root.is_relative_to(_pack.folder.resolve()) and candidate.is_relative_to(root) and candidate.is_file():
+        if root.is_relative_to(pack.folder.resolve()) and candidate.is_relative_to(root) and candidate.is_file():
             return candidate
     return Path(default)
 

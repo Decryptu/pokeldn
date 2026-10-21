@@ -1,7 +1,7 @@
-from pokeldn.app.i18n import message_ref as _message
-from pokeldn.app.i18n import ref as _ref
 """The app's FireRed/LeafGreen gift builder: a preset, or a gift built from a plain form state (JSON),
 compiled to a .pokegift for every cartridge [docs/gifts.md]."""
+from pokeldn.app.i18n import message_ref as _message
+from pokeldn.app.i18n import ref as _ref
 
 import hashlib
 import copy

@@ -1,8 +1,8 @@
-from pokeldn.app.i18n import message_ref as _message
-from pokeldn.app.i18n import ref as _ref
 """A gift tool's one value: a preset, a built gift or an opened file. Each game's builder module
 (pokeldn.frlg.gift.builder, pokeldn.swsh.gift_builder) supplies KINDS, PRESETS, blank(), compile()
 and describe(); a built gift reaches the launcher as a .pokegift through --gift-file."""
+from pokeldn.app.i18n import message_ref as _message
+from pokeldn.app.i18n import ref as _ref
 
 import importlib
 import os

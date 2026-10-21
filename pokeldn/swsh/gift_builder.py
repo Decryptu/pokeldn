@@ -1,7 +1,7 @@
-from pokeldn.app.i18n import message_ref as _message
-from pokeldn.app.i18n import ref as _ref
 """The app's Sword/Shield gift builder: a plain form state (JSON) -> a sealed WC8 record. Each kind
 mirrors a record a retail Sword listed and redeemed (docs/swsh_gift.md, A card delivered)."""
+from pokeldn.app.i18n import message_ref as _message
+from pokeldn.app.i18n import ref as _ref
 
 import struct
 from dataclasses import dataclass

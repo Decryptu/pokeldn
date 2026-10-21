@@ -149,7 +149,7 @@ python scripts/check_localization.py
 python scripts/build_language_pack.py
 python scripts/preview_language.py --prepare-only
 python scripts/preview_language.py --web 8815
-python -m pytest tests/test_semantic_i18n.py
+python -m pytest tests/test_semantic_i18n.py tests/test_i18n_bilingual.py
 ```
 
 The Chinese pack ships under `pokeldn/app/data/language-packs/zh-Hans`, and Settings always
@@ -163,3 +163,6 @@ authoritative; `extract_strings.py --check` validates it without overwriting it 
 It also checks dynamic display sources: CLI help and choice labels, gift metadata,
 cartridge labels, and bundled event titles and groups. CLI tokens, entity IDs and card
 records retain their original values; localized labels are presentation metadata.
+The bilingual tests render every English/Chinese template, switch each tool's mounted
+advanced controls in both directions, and check ID-based raid, rental and GTS names.
+They also verify that changing display language cannot change a connected controller's state.

@@ -1,8 +1,8 @@
-from pokeldn.app.i18n import message_ref as _message
-from pokeldn.app.i18n import ref as _ref
 """Mystery Gift client scripts the server pushes, and the link game data read back. A script ends in
 CLI_RETURN or CLI_COPY_RECV: the console runs out of its 1024-byte recv buffer and bytes past the
 script are stale. A client script's declared size is 8 bytes per command."""
+from pokeldn.app.i18n import message_ref as _message
+from pokeldn.app.i18n import ref as _ref
 
 from dataclasses import dataclass
 

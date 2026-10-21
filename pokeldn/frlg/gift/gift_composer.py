@@ -1,8 +1,8 @@
-from pokeldn.app.i18n import message_ref as _message
-from pokeldn.app.i18n import ref as _ref
 """Saved state used by compiled gifts: VAR_MYSTERY_GIFT_1 = ordinary/rally-completion stage
 cursor, VAR_MYSTERY_GIFT_2..7 = stamp-slot cursors (0 absent, 1 activated, +1 per stage),
 FLAG_MYSTERY_GIFT_DONE = one-shot."""
+from pokeldn.app.i18n import message_ref as _message
+from pokeldn.app.i18n import ref as _ref
 
 import contextvars
 import re

@@ -89,7 +89,7 @@ class ControllerView:
         self.client: service.Client | None = None
         self.child: Process | None = None
         self.connecting = False
-        self.state = tr('core.controller.not_connected_0303e1')
+        self.state = ref('core.controller.not_connected_0303e1')
         self.board: dict = {}
         self.error = ""
         self.sender = ThreadPoolExecutor(max_workers=1)
@@ -145,7 +145,7 @@ class ControllerView:
     def connect(self, e=None) -> None:
         if self.connecting:
             return
-        self.connecting, self.error, self.state = True, "", tr('core.controller.looking_for_the_board_fff30a')
+        self.connecting, self.error, self.state = True, "", ref('core.controller.looking_for_the_board_fff30a')
         self.render_status()
         threading.Thread(target=self._connect, daemon=True).start()
 
@@ -164,17 +164,17 @@ class ControllerView:
             self.client.call("connect")
             reply = self.client.call("status")
             self.board = {**reply.get("status", {}), "link": reply.get("link", "")}
-            self.state = tr('core.controller.connected_229655')
+            self.state = ref('core.controller.connected_229655')
         except (OSError, service.ServiceError) as error:
             self._drop()
-            self.state = tr('core.controller.not_connected_0303e1')
+            self.state = ref('core.controller.not_connected_0303e1')
             self.error = self.error or error_message(error)
         self.connecting = False
         self.app.ui(self.render_status)
 
     def _child_exit(self, code: int) -> None:
         self._drop()
-        self.state = tr('core.controller.not_connected_0303e1')
+        self.state = ref('core.controller.not_connected_0303e1')
         if code and sys.platform == "darwin" and code in (-6, 134):
             self.error = BLUETOOTH_REFUSED
         self.app.ui(self.render_status)
@@ -182,16 +182,16 @@ class ControllerView:
     def _reconnect(self) -> None:
         """The link dropped (the board lost power moving to the Switch, or went out of range): the
         service finds it again when it advertises."""
-        if self.state == tr('core.controller.connected_229655'):
-            self.board, self.state, self.error = {}, tr('core.controller.board_lost_looking_for_it_again_8278e1'), ""
+        if self.state == ref('core.controller.connected_229655'):
+            self.board, self.state, self.error = {}, ref('core.controller.board_lost_looking_for_it_again_8278e1'), ""
             self.app.ui(self.render_status)
         try:
             self.client.call("connect")
         except (OSError, service.ServiceError):
-            self.state = tr('core.controller.board_lost_looking_for_it_again_is_it_plugged_into_the__43e2fa')
+            self.state = ref('core.controller.board_lost_looking_for_it_again_is_it_plugged_into_the__43e2fa')
             self.app.ui(self.render_status)
             return
-        self.state, self.error = tr('core.controller.connected_229655'), ""
+        self.state, self.error = ref('core.controller.connected_229655'), ""
         self.app.ui(self.render_status)
 
     def _drop(self) -> None:
@@ -206,7 +206,7 @@ class ControllerView:
             except (OSError, service.ServiceError):
                 pass
         self._drop()
-        self.board, self.state = {}, tr('core.controller.not_connected_0303e1')
+        self.board, self.state = {}, ref('core.controller.not_connected_0303e1')
         self.render_status()
 
     def _call(self, op: str, **fields) -> dict | None:
@@ -415,7 +415,7 @@ class ControllerView:
         self.render_editor(update=False)
 
     def render_status(self, update: bool = True) -> None:
-        connected = self.client is not None and self.state == tr('core.controller.connected_229655')
+        connected = self.client is not None and self.state == ref('core.controller.connected_229655')
         lost = self.client is not None and not connected and not self.connecting
         board = self.board or {}
         facts = []

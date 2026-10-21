@@ -10,6 +10,7 @@ import flet as ft
 
 from gui import theme as t
 from gui.localization import translate
+from pokeldn.app import i18n
 from gui.views.sprites import MINI, Sprite
 from pokeldn.swsh import lair, raid_event
 
@@ -42,12 +43,12 @@ class LairSeedPicker:
                                  spacing=8, tight=True)
         self._show(str(value or ""), update=False)
 
-    def _name(self, species: int) -> str:
-        return translate(self.names.get(str(species), f"#{species}"))
+    def _name(self, species: int, form=None) -> str:
+        return i18n.name(i18n.EntityKind.SPECIES, species, game="swsh", form=form)
 
     def _tiles(self, rows) -> ft.Row:
         return ft.Row([ft.Column([Sprite(self.app, row[0], size=MINI, form=row[1]).control,
-                                  t.text(self._name(row[0]), 11, t.SOFT)],
+                                  t.text(self._name(row[0], row[1]), 11, t.SOFT)],
                                  spacing=2, tight=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
                        for row in rows], spacing=8, run_spacing=8, wrap=True)
 

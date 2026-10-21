@@ -22,6 +22,23 @@ FOLDED = "#raid-event-folded"     # the chosen event while the card is folded, s
 CATCH = "--raid-catch-normal"
 
 
+def den_label(den):
+    low, high = den.stars[0], den.stars[-1]
+    stars = tr("core.raid.stars", count=low) if low == high else tr("core.raid.star_range", low=low, high=high)
+    species = i18n.join(i18n.name(i18n.EntityKind.SPECIES, number, game="sv") for number in den.species)
+    return tr("core.raid.den", stars=stars, species=species)
+
+
+def swsh_boss_label(version, stars, area, boss):
+    species = i18n.name(i18n.EntityKind.SPECIES, boss.species, game="swsh", form=boss.form)
+    if boss.gigantamax:
+        species = tr("core.raid.gigantamax_name", species=species)
+    area_key = {"Wild Area": "wild", "Isle of Armor": "armor", "Crown Tundra": "crown"}[area]
+    area = "" if area_key == "wild" else " · " + tr("core.raid.area." + area_key)
+    return tr("core.raid.boss_choice", stars="★" * stars, species=species, level=boss.level,
+              version=tr("core.raid.version." + version), area=area)
+
+
 def day(date: str) -> str:
     when = gallery.date_of(date)
     return i18n.text("core.presentation.date", value=when.timestamp()) if when else tr('core.raid_event.an_unknown_date_df0e68')
@@ -134,7 +151,8 @@ class RaidEventPicker:
         newest = self.view.values.get(ORDER, "newest") != "oldest"
         options = [ft.DropdownOption(key=NONE, text=tr('core.raid_event.no_event_a_standard_raid_562e51'))]
         for entry in (reversed(events) if newest else events):
-            species = tr('core.presentation.list_separator').join(translate(name) for name in entry.species)
+            species = i18n.join(i18n.name(i18n.EntityKind.SPECIES, number, game=self.game, form=form)
+                                for number, form in entry.species_refs) if entry.species_refs else i18n.join(entry.species)
             title = translate(entry.title)
             options.append(ft.DropdownOption(key=entry.key, text=tr('core.raid_event._75414c', value0=title, value1=species), content=ft.Column([
                 t.text(title, 13, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
@@ -180,15 +198,17 @@ class RaidEventPicker:
     def _show_catch(self) -> None:
         """The override under the event, for an event whose bosses a save catches once."""
         event = self.view.raid_event() if self.game == "sv" else None
-        names = [translate(name) for name in raid_event.catch_once(event)] if event is not None else []
+        refs = dict.fromkeys((row["species"], row.get("form", 0)) for row in event.rows
+                             if row["rate"] and row["capture_rate"] == raid_event.CAPTURE_ONCE) if event is not None else ()
+        names = [i18n.name(i18n.EntityKind.SPECIES, number, game="sv", form=form) for number, form in refs]
         self.catch.visible = bool(names)
         if not names:
             return
         field = next(f for f in self.view.tool.fields if f.key == CATCH)
         box = Check(tr('core.raid_event.let_it_be_caught_again_15aa86'), value=bool(self.view.values.get(CATCH)), size=13,
                     on_change=lambda on: self.view.set_value(field, on, rebuild=True))
-        who = (tr('core.raid_event.names_and', value0=', '.join(names[:-1]), value1=names[-1])
-               if len(names) > 1 else "".join(names))
+        who = (tr('core.raid_event.names_and', value0=i18n.join(names[:-1]), value1=names[-1])
+               if len(names) > 1 else names[0])
         self.catch.controls = [box.control, t.text(
             tr('core.raid_event.a_save_can_catch_only_once_checked_a_save_that_already__1b48ec', value0=who), 12, t.MUTED)]
 

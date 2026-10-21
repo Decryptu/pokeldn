@@ -27,6 +27,8 @@ def _read(path) -> tuple[dict, str]:
 
 def document_path(file: str):
     """The language pack's copy of a page, else the English one (pokeldn.app.i18n.document)."""
+    if i18n._pack and not i18n._pack.resources.get("format"):
+        return i18n.document(file, _english(file))
     return i18n.document(document_id(file)).path
 
 
@@ -37,10 +39,17 @@ def document_id(file):
 def document_body(file: str) -> tuple[str, str | None]:
     """A page's Markdown, and for a pack's copy the English page whose anchors its headings keep."""
     path = document_path(file)
+    if i18n._pack and not i18n._pack.resources.get("format"):
+        return _read(path)[1], _read(_english(file))[1] if str(path) != _english(file) else None
     return _read(path)[1], None
 
 
 def page_title(page: "Page") -> str:
+    if i18n._pack and not i18n._pack.resources.get("format"):
+        meta, _ = _read(document_path(page.file))
+        return i18n.render(meta.get("title") or page.title)
+    if document_id(page.file) not in i18n._documents:
+        return page.title
     return i18n.document(document_id(page.file)).title
 
 
@@ -65,6 +74,17 @@ def pages() -> list[Page]:
     """The docs site's navigation: front matter titles, parents and nav_order. A page the site leaves
     out of its navigation (`nav_exclude`, an unreleased title) shows only while preview is enabled."""
     found, shown = [], preview.enabled()
+    if i18n._pack and not i18n._pack.resources.get("format"):
+        for file in sorted(os.listdir(DOCS)):
+            if file.endswith(".md"):
+                meta, _ = _read(os.path.join(DOCS, file))
+                if meta.get("title") and (shown or meta.get("nav_exclude") != "true"):
+                    found.append(Page(file, meta["title"], int(meta.get("nav_order", 99)), meta.get("parent", "")))
+        by_title = {p.title: p for p in found}
+        roots = []
+        for p in sorted(found, key=lambda p: (p.order, p.title)):
+            (by_title[p.parent].children if p.parent in by_title else roots).append(p)
+        return roots
     for document in i18n.documents():
         if document.id == "core.guide.guide" or (not shown and i18n._documents[document.id].get("excluded")):
             continue

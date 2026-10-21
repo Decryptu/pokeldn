@@ -1,8 +1,8 @@
-from pokeldn.app.i18n import message_ref as _message
-from pokeldn.app.i18n import ref as _ref
 """Mystery Gift server script interpreter [decomp:src/mystery_gift_server.c]; we are link player 0.
 run() advances until it blocks and publishes ``action`` as ("send", ident, payload, size),
 ("recv", ident) or ("done", server_msg_id); the caller acknowledges with on_sent()/on_received()."""
+from pokeldn.app.i18n import message_ref as _message
+from pokeldn.app.i18n import ref as _ref
 
 from pokeldn.frlg.gift import ereader_trainer, mg_script, wonder_news
 from pokeldn.frlg.rom import buffer_script, builds, mystery_event

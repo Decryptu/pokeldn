@@ -15,6 +15,7 @@ import flet as ft
 from gui import theme as t
 from gui.views.pokemon import NamePicker
 from gui.views.reward_filter import RewardFilter
+from gui.views.raid_event import den_label
 from gui.views.sprites import MINI, SIZE, Sprite
 from gui.views.widgets import Check, PixelActivity
 from gui.localization import SERVICE, error_message, translate
@@ -171,7 +172,7 @@ def boss_card(app, seed, stars, boss, context, *, compact=False, rewards=None, a
         title.append(t.tinted(t.pixel_icon("sparkles", color="#FFFFFF", tooltip=tr('core.raid_seed.shiny_039a0a')), crystal_colors(context)))
     mark = SIZE_MARKS.get(boss["scale"])
     if mark:
-        title.append(t.tinted(t.pixel_icon(f"{mark.lower()}-mark", color="#FFFFFF", tooltip=translate(f"{mark} mark")),
+        title.append(t.tinted(t.pixel_icon(f"{mark.lower()}-mark", color="#FFFFFF", tooltip=tr("core.raid.mark." + mark.lower())),
                               crystal_colors(context)))
     title.append(stars_row(stars, context))
     accent = t.RED if context["content"] in (_ref('core.gui.views.raid_seed.black_c006c7e3'), "might") else t.BLUE
@@ -181,7 +182,7 @@ def boss_card(app, seed, stars, boss, context, *, compact=False, rewards=None, a
         t.chip(NATURES[boss["nature"]]), t.chip(GENDERS[boss["gender"]]),
         # The compact card keeps to one row: its title's icons tell these.
         *([t.chip(tr('core.raid_seed.shiny_039a0a'), "sparkles", accent)] if shiny and not compact else []),
-        *([t.chip(translate(f"{mark} mark"), f"{mark.lower()}-mark", accent)] if mark and not compact else []),
+        *([t.chip(tr("core.raid.mark." + mark.lower()), f"{mark.lower()}-mark", accent)] if mark and not compact else []),
     ], spacing=6, run_spacing=6, wrap=True)
     where = (tr('core.raid_seed._c00a83', value0=VERSIONS[context['version']], value1=REGIONS[context['map_name']], value2=dict(PROGRESS)[context['progress']], value3=CRYSTALS[context['content']])
              + (tr('core.raid_seed._940234', value0=translate(context['den'])) if context.get("den") else ""))
@@ -319,10 +320,10 @@ class RaidSeedPicker:
             story = choose([("any", tr('core.raid_seed.any_progress_92dec4')),
                             *((key, label) for key, label in PROGRESS if key in stages)], current["progress"])
             crystal = choose(([("any", tr('core.raid_seed.any_den_110e59'))] if len(dens) > 1 else [])
-                             + [(str(d.group), translate(d.label)) for d in dens], str(current["group"]))
+                             + [(str(d.group), den_label(d)) for d in dens], str(current["group"]))
             star_levels = sorted({s for d in dens for s in d.stars})
         species = NamePicker(self.app, "sv", "species", "", lambda _v: changed(),
-                             names=[{"id": s, "name": translate(n)} for s, n in raid_search.species(event)]).control
+                             names=[{"id": s, "name": entity_name(EntityKind.SPECIES, s, game="sv")} for s, _ in raid_search.species(event)]).control
         stars = choose([("any", tr('core.raid_seed.any_stars_c3a446')), *((str(n), tr('core.raid_seed.stars_0dc50f', value0=n)) for n in star_levels)], "any")
         tera = choose([("any", tr('core.raid_seed.any_tera_type_b8f9f7')), *((str(i), n) for i, n in enumerate(TERA_TYPES))], "any")
         nature = choose([("any", tr('core.raid_seed.any_nature_c9ac32')), *((str(i), n) for i, n in enumerate(NATURES))], "any")
@@ -347,7 +348,7 @@ class RaidSeedPicker:
                 size_mark.update()
         if event is not None:
             size_marks(update=False)
-        rank = choose([(key, translate(label)) for key, (label, _, _) in raid_search.OBJECTIVES.items()], "overall")
+        rank = choose([(key, tr("core.raid.search." + key)) for key in raid_search.OBJECTIVES], "overall")
         ivs = [t.field(hint=tr('core.raid_seed.any_d6a7cd'), mono=True, expand=True, text_align=ft.TextAlign.CENTER,
                        content_padding=ft.Padding(4, 8, 4, 8)) for _ in STATS]
         start = t.field(value=self.seed.value if seed_of(self.seed.value) is not None else "00000000",

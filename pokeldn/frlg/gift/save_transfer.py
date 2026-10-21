@@ -1,9 +1,9 @@
-from pokeldn.app.i18n import message_ref as _message
-from pokeldn.app.i18n import ref as _ref
 """Save backup and restore over Mystery Gift: the console sends its whole 128 KiB save chip, or writes
 one onto it and loads it, through asm/save-backup.s and asm/save-restore.s [docs/frlg_gift.md, Save
 backup and restore]. Both servers speak MysteryGiftServer's contract to HostMysteryGiftEngine: run()
 publishes ("send", ident, payload, size), ("recv", ident) or ("done", result)."""
+from pokeldn.app.i18n import message_ref as _message
+from pokeldn.app.i18n import ref as _ref
 
 import json
 import os

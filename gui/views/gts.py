@@ -386,7 +386,9 @@ class GtsView:
 
 
 def wanted_text(wants: gts.Wants) -> str:
-    name = translate(wants.name)
+    from pokeldn.app import i18n
+    name = (translate(wants.name) if i18n._pack and not i18n._pack.resources.get("format") else
+            i18n.name(i18n.EntityKind.SPECIES, wants.species, game="sv"))
     if (wants.min_level, wants.max_level) == (1, 100):
         return name
     return tr('core.presentation.wanted_levels', name=name, low=wants.min_level, high=wants.max_level)

@@ -1,7 +1,7 @@
-from pokeldn.app.i18n import ref as _ref
 """The ledger of what the console sends about itself each Mystery Gift session
 (`MysteryGiftLinkGameData` [decomp:src/mystery_gift.c:361]). Counters are evidence only as a
 difference between sessions of one console; the raw 0x64 bytes are kept for re-parsing."""
+from pokeldn.app.i18n import ref as _ref
 
 import json
 from datetime import datetime

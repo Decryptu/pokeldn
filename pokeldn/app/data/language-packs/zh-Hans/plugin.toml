@@ -1,6 +1,6 @@
 id = "builtin-zh-hans"
 name = "简体中文"
-version = "2.0.1"
+version = "2.0.2"
 api = "1.10"
 locale = "zh-Hans"
 localization_format = 1

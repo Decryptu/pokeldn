@@ -1,6 +1,6 @@
+"""Complete FRLG distributions and cartridge variants in a shared gift file. See docs/gifts.md."""
 from pokeldn.app.i18n import message_ref as _message
 from pokeldn.app.i18n import ref as _ref
-"""Complete FRLG distributions and cartridge variants in a shared gift file. See docs/gifts.md."""
 
 from dataclasses import dataclass
 import struct

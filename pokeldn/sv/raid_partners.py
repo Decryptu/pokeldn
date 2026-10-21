@@ -1,7 +1,7 @@
-from pokeldn.app.i18n import ref as _ref
 """The NPC trainers a Tera Raid seats in the slots no player holds (docs/sv_raid.md, Partners): their
 table, the trainers a partner seed draws from the pool the host's unlock stage picks, and a seed that
 draws the trainers asked for."""
+from pokeldn.app.i18n import ref as _ref
 
 import json
 import os

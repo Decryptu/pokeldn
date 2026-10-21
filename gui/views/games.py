@@ -21,7 +21,7 @@ from pokeldn.app.introspect import flags_of
 from pokeldn.app.paths import SESSION
 from gui.views.event_gifts import EventGiftPicker
 from gui.views.pokemon import NAME_LISTS, LinkCodePicker, NamePicker, OfferQueue, PokemonPicker
-from gui.views.raid_event import FOLDED, RaidEventPicker
+from gui.views.raid_event import FOLDED, RaidEventPicker, den_label, swsh_boss_label
 from gui.views.encounter import EncounterPicker
 from gui.views.raid_partners import RaidPartnersPicker
 from gui.views.raid_seed import RaidSeedPicker
@@ -437,7 +437,7 @@ class GamesView:
                     t.labeled_control(f.label, self.input(f, grouped=True), expand=True)
                     for f in fields[i:i + per_row]], spacing=10, vertical_alignment=ft.CrossAxisAlignment.START)
                     for i in range(0, len(fields), per_row)]
-                if item == tr('core.catalog.console_29a408') and self.tool.key == "frlg-gift":
+                if item == ref('core.catalog.console_29a408') and self.tool.key == "frlg-gift":
                     rows.append(ft.Column([
                         t.text(tr('core.games.game_language_233497'), 12, t.MUTED),
                         t.text(tr('core.games.detected_automatically_ff4f09'), 13, t.TEXT),
@@ -508,7 +508,7 @@ class GamesView:
             event = self.raid_event()
             bosses = swsh_raid_event.hostable(event) if event is not None else []
             options = [(f"{v}:{stars}:{n}:{area}",
-                        f"{'★' * stars} {b.name} · Lv {b.level} · {v.title()}" + (f" · {area}" if area != "Wild Area" else ""))
+                        swsh_boss_label(v, stars, area, b))
                        for v, stars, n, area, b in bosses]
             keys = [k for k, _ in options]
             chosen = value if value in keys else (keys[-1] if keys else "")
@@ -522,7 +522,7 @@ class GamesView:
         if field.kind == "raidden":
             event, context = self.raid_event(), self.raid_context()
             dens = raid_events.dens(event, context["version"]) if event is not None else []
-            control = t.dropdown([(str(d.group), translate(d.label)) for d in dens], str(context.get("group", "")),
+            control = t.dropdown([(str(d.group), den_label(d)) for d in dens], str(context.get("group", "")),
                                  on_select=lambda e: self.set_value(field, e.control.value, rebuild=True))
             control.disabled = len(dens) == 1
             return control
@@ -967,7 +967,7 @@ class SessionPanel:
         if partner.state in ("looking", "waiting"):
             code = partner.code.removeprefix("code ")
             detail = (tr('core.games.anyone_trading_this_game_online_without_a_code_can_be_y_409f57')
-                      if partner.code == tr('core.games.no_code_c08cc4') else tr('core.games.your_partner_enters_the_same_code_c721c6', value0=code))
+                      if partner.code == ref('core.games.no_code_c08cc4') else tr('core.games.your_partner_enters_the_same_code_c721c6', value0=code))
         elif partner.state == "lost":
             detail = tr('core.games.back_out_of_the_trade_on_the_console_start_again_to_fin_0e7c9d')
         elif partner.offer:

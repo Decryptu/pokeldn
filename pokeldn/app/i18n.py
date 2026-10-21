@@ -257,7 +257,7 @@ def read_pack(meta, read):
 
 
 def locale():
-    return _locale
+    return _pack.locale if _pack and not _pack.resources.get("format") else _locale
 
 
 def revision():
@@ -339,7 +339,12 @@ def text(key, **params):
     if english is None:
         _diagnostic("undeclared-key", key)
         return f"⟦{key}⟧"
-    entry, language = _strings.get(key, english), _locale if key in _strings else "en"
+    entry, language = _strings.get(key, english), locale() if key in _strings else "en"
+    if _pack and not _pack.resources.get("format"):
+        from . import i18n_legacy
+        entry = _strings.get(key, _strings.get(key.removeprefix("core."), english))
+        if isinstance(entry, str):
+            entry = i18n_legacy.display(entry, _pack)
     if language == "en" and _locale != "en" and key not in _strings:
         _diagnostic("missing-text", key)
     try:
@@ -417,6 +422,9 @@ def render(value):
         return name(value)
     if isinstance(value, dict) and "$message" in value:
         return render(MessageRef.from_wire(value))
+    if isinstance(value, str) and _pack and not _pack.resources.get("format"):
+        from . import i18n_legacy
+        return i18n_legacy.display(value, _pack)
     return str(value)
 
 
@@ -445,7 +453,14 @@ def register_name_provider(game, provider, *, owner=None):
 
 def _pkhex_names(game, kind, language):
     from pokeldn import pokemon
-    reply = pokemon.SERVICE._ask({"cmd": "name_table", "game": str(game), "kind": str(kind), "display_language": language})
+    try:
+        reply = pokemon.SERVICE._ask({"cmd": "name_table", "game": str(game), "kind": str(kind), "display_language": language})
+    except pokemon.BuilderError:
+        if game != "frlg" or kind != EntityKind.SPECIES:
+            raise
+        from pokeldn.frlg.gift import builder
+        return {"version": "frlg-offline", "language": "en", "names": {
+            builder.national_species(number): label for number, label in builder.species_names()}}
     if kind == EntityKind.SPECIES:
         for species, forms in reply.get("form_labels", {}).items():
             base = reply["names"].get(species)
@@ -496,6 +511,9 @@ def names(kind, *, game):
                 if str(f).isdecimal() and len(str(f)) <= 3 and int(f) <= 255 and isinstance(label, str) and label.strip()}
     by_id, by_form = {**ids(english), **ids(localized)}, {**forms(english), **forms(localized)}
     by_id.update({int(k): v for k, v in overrides.get(str(kind), {}).items()})
+    if _pack and not _pack.resources.get("format"):
+        from . import i18n_legacy
+        by_id = {number: i18n_legacy.display(label, _pack) for number, label in by_id.items()}
     if kind == EntityKind.SPECIES:
         by_form.update({(int(k), 0): v for k, v in overrides.get("species", {}).items()})
         by_form.update(forms({"forms": overrides.get("species_forms", {})}))
@@ -526,7 +544,7 @@ def document(doc_id, default=None):
     if default is not None:
         if _pack and not _pack.resources.get("format"):
             from . import i18n_legacy
-            return i18n_legacy.document(doc_id, default)
+            return i18n_legacy.document(doc_id, default, _pack)
         key = "core.guide." + Path(doc_id).stem
         return document(key).path if key in _resources.get("documents", {}) else Path(default)
     english = _documents.get(doc_id)
@@ -589,6 +607,8 @@ def help_text(tool, option, default):
 def choice_text(tool, option, value):
     """CLI choice identities remain invariant; their labels have an explicit catalog contract."""
     key = f"core.choice.{tool}.{option.lstrip('-')}.{str(value).encode().hex()}"
+    if _pack and not _pack.resources.get("format"):
+        return render(str(value))
     return text(key) if key in _catalog else str(value)
 
 

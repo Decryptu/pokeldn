@@ -24,12 +24,17 @@ def error_message(error):
 
 def summary_text(value):
     # Unstructured imported summaries and player text are opaque.
+    if i18n._pack and not i18n._pack.resources.get("format"):
+        return " · ".join(part if part.startswith("'") else i18n.render(part) for part in value.split(" · "))
     return i18n.render(value)
 
 
 def summary_lines(value):
     parts = summary_text(value).split(" · ")
-    return i18n.join(parts[:2], " · "), i18n.join(parts[2:], " · ")
+    head = 3 if len(parts) > 2 and str(parts[2]) in ("shiny", str(i18n.text("core.presentation.shiny"))) else 2
+    if i18n._pack and not i18n._pack.resources.get("format"):
+        return " · ".join(parts[:head]), " · ".join(parts[head:])
+    return i18n.join(parts[:head], " · "), i18n.join(parts[head:], " · ")
 
 
 def display_summary(value, game=None):
@@ -47,7 +52,7 @@ def display_summary(value, game=None):
                 return summary(value["display"])
             except (OSError, ValueError, pokemon.BuilderError):
                 pass
-    return summary_text(value.get("summary", "") if isinstance(value, dict) else value)
+    return summary_text(value.get("summary", "") if isinstance(value, dict) else getattr(value, "summary", value))
 
 
 def summary(info):

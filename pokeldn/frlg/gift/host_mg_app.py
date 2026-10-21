@@ -1,6 +1,6 @@
+"""Application runtime for hosting one FRLG Mystery Gift distribution."""
 from pokeldn.app.i18n import message_ref as _message
 from pokeldn.app.i18n import ref as _ref
-"""Application runtime for hosting one FRLG Mystery Gift distribution."""
 
 import os
 
