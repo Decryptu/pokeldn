@@ -65,6 +65,10 @@ source comes from `scripts/build_unicorn.py`; run it once.
 ./.venv/bin/python examples/android/build.py --install DEVICE
 ```
 
+On Windows the command is `.venv\Scripts\python.exe examples\android\build.py`. Without
+`ANDROID_HOME` or `ANDROID_SDK_ROOT`, the SDK is looked for where Android Studio installs it
+(`%LOCALAPPDATA%\Android\Sdk` on Windows, `~/Library/Android/sdk` on macOS, `~/Android/Sdk` on Linux).
+
 `build.py` builds the local wheels into `wheels/` (sdists the Android build cannot compile, and
 msgpack without its C extension), the native helpers into `jniLibs/` when they are missing
 (`--native` rebuilds them), the staged sources into `staged/` (`stage.py`: tracked and untracked

@@ -7,9 +7,11 @@ from pathlib import Path
 import shutil
 import subprocess
 
+from build import android_home
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-sdk = Path(os.environ.get('ANDROID_HOME', Path.home() / 'Library/Android/sdk'))
+sdk = Path(android_home())
 ndk = Path(os.environ.get('ANDROID_NDK_HOME') or max((sdk / 'ndk').iterdir()))
 toolchain = next((ndk / 'toolchains/llvm/prebuilt').iterdir())
 libs = HERE / 'jniLibs' / 'arm64-v8a'
