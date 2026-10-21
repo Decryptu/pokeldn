@@ -325,7 +325,11 @@ a translation that fails to format uses English.
 ```bash
 python scripts/extract_strings.py [--check]     # writes pokeldn/app/data/strings.en.toml
 python scripts/pack_plugin.py examples/plugins/pseudo -o pseudo.pokeplugin
+python scripts/check_language_pack.py PACK_FOLDER   # what the pack lacks against this release
 ```
+
+`check_language_pack.py` lists untranslated strings and tool help, keys the release no longer has,
+and translations whose placeholders differ from English; it exits 1 on a placeholder difference.
 
 Tests check the template matches the source and refuse a key with two defaults. A pack starts as a
 translated copy of the template; `examples/plugins/pseudo` is a partial pseudo-locale.

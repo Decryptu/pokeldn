@@ -178,3 +178,19 @@ assert GAMES[0].tools[0].name == "[Trade (Host)]"
         env={**os.environ, "POKELDN_DATA": str(isolated / "child"),
              "POKELDN_PLUGINS": os.pathsep.join((str(folder), str(SAMPLE)))})
     assert result.returncode == 0, result.stderr
+
+
+def test_pack_check_reports_against_this_release(tmp_path):
+    from scripts.check_language_pack import check
+    folder = tmp_path / "pack"
+    folder.mkdir()
+    (folder / "plugin.toml").write_text('id = "checked"\napi = "1.9"\nlocale = "fr"\nstrings = "strings.toml"\n'
+                                        'help = "help.toml"\n')
+    (folder / "strings.toml").write_text('"bank.bank_676c47" = "Banque"\n"gone.key" = "Parti"\n'
+                                         '"games.of_ca6c5e" = "{value0} sur {total}"\n')
+    (folder / "help.toml").write_text('"frlg-gift:--news" = "Nouvelles"\n"frlg-gift:--gone" = "Parti"\n')
+    report = check(folder)
+    assert report["unknown strings"] == ["gone.key"] and report["placeholders differ"] == ["games.of_ca6c5e"]
+    assert "bank.bank_676c47" not in report["missing strings"] and "docs.no_page_matches" in report["missing strings"]
+    assert report["unknown help"] == ["frlg-gift:--gone"]
+    assert "frlg-gift:--news" not in report["missing help"] and "frlg-gift:--gift" in report["missing help"]
