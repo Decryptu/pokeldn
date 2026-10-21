@@ -1,3 +1,5 @@
+from pokeldn.app.i18n import message_ref as _message
+from pokeldn.app.i18n import ref as _ref
 """Application runtime for hosting one FRLG Mystery Gift distribution."""
 
 import os
@@ -63,7 +65,7 @@ def _serves_japanese(app):
 
 
 def _log_advertised_activity(app):
-    menu = "Wonder News" if getattr(app, "ACTIVITY_NOUN", None) == "Wonder News" else "Wonder Cards"
+    menu = _ref("core.pokeldn.frlg.gift.host_mg_app.wonder_news_d58adf54") if getattr(app, "ACTIVITY_NOUN", None) == _ref("core.pokeldn.frlg.gift.host_mg_app.wonder_news_d58adf54") else _ref("core.pokeldn.frlg.gift.host_mg_app.wonder_cards_012636f6")
     japanese = _serves_japanese(app)
     app.info(f"Advertising {menu} for {'Japanese' if japanese else 'non-Japanese'} cartridges. "
              f"On the Switch choose Mystery Gift -> {menu} -> Friend.")
@@ -74,7 +76,7 @@ def _log_advertised_activity(app):
 
 class MysteryGiftHostApplication(HostApplication):
     SUCCESS_RESULTS = (SVR_MSG_CARD_SENT, SVR_MSG_STAMP_SENT, SVR_MSG_GIFT_SENT_1)
-    ACTIVITY_NOUN = "Wonder Card"
+    ACTIVITY_NOUN = _ref("core.pokeldn.frlg.gift.host_mg_app.wonder_card_81ebceeb")
 
     def __init__(self, config, *, distribution=None, plan=None, **kwargs):
         super().__init__(config, **kwargs)
@@ -218,7 +220,7 @@ class MysteryGiftHostApplication(HostApplication):
         species, equal to the national number only up to 251 [wonder_card.py]."""
         icon = int.from_bytes(self.card[2:4], "little")
         species = icon if 1 <= icon <= 251 else None
-        return "Mystery Gift", wonder_card.text_fields(self.card)[0].strip(), species
+        return _ref("core.pokeldn.frlg.gift.host_mg_app.mystery_gift_68b50f5f"), wonder_card.text_fields(self.card)[0].strip(), species
 
     def _show_screen(self):
         title, line, species = self._screen_card()
@@ -273,7 +275,7 @@ class MysteryGiftHostApplication(HostApplication):
             return ("Visiting trainer delivered. On the Switch, go to SEVEN ISLAND and talk to "
                     "the old woman in the house in town to battle it; the Wonder Card's own "
                     "message is with the delivery man in any Pokemon Center.")
-        noun = "Stamp" if result == SVR_MSG_STAMP_SENT else "Wonder Card"
+        noun = "Stamp" if result == SVR_MSG_STAMP_SENT else _ref("core.pokeldn.frlg.gift.host_mg_app.wonder_card_81ebceeb")
         return (f"{noun} delivered. On the Switch, talk to the delivery man "
                 "on the second floor of any Pokemon Center to receive the gift.")
 
@@ -339,7 +341,7 @@ class WonderNewsHostApplication(MysteryGiftHostApplication):
     (the News screen lists nothing else) and the news server script (docs/frlg_gift.md)."""
 
     SUCCESS_RESULTS = (SVR_MSG_NEWS_SENT,)
-    ACTIVITY_NOUN = "Wonder News"
+    ACTIVITY_NOUN = _ref("core.pokeldn.frlg.gift.host_mg_app.wonder_news_d58adf54")
 
     def _build_app_data(self):
         return build_wonder_news_app_data(
@@ -371,7 +373,7 @@ class WonderNewsHostApplication(MysteryGiftHostApplication):
                 "Mystery Gift -> Wonder News -> Friend.")
 
     def _screen_card(self):
-        return "Wonder News", wonder_news.parse(self.distribution.news)["title"].strip(), None
+        return _ref("core.pokeldn.frlg.gift.host_mg_app.wonder_news_d58adf54"), wonder_news.parse(self.distribution.news)["title"].strip(), None
 
     def _success_message(self, result):
         return ("Wonder News delivered. On the Switch it is under Mystery Gift -> Wonder News; "
@@ -484,7 +486,7 @@ class BufferScriptHostApplication(MysteryGiftHostApplication):
                 "Mystery Gift -> Wonder Cards -> Friend.")
 
     def _screen_card(self):
-        return "Mystery Gift", self.config.payload.script, None
+        return _ref("core.pokeldn.frlg.gift.host_mg_app.mystery_gift_68b50f5f"), self.config.payload.script, None
 
     def run(self):
         joined = super().run()
@@ -524,7 +526,7 @@ class SaveTransferHostApplication(MysteryGiftHostApplication):
     def __init__(self, config, *, backup=None, restore=None, resume_dir=None, **kwargs):
         super().__init__(config, **kwargs)
         if (backup is None) == (restore is None):
-            raise ValueError("a save session either backs up or restores")
+            raise ValueError(_message('core.pokeldn.frlg.gift.host_mg_app.a_save_session_either_backs_up_or_restores_e12cbe65'))
         self.backup_path, self.restore_path, self.resume_dir = backup, restore, resume_dir
         self._shown = -1
 
@@ -571,7 +573,7 @@ class SaveTransferHostApplication(MysteryGiftHostApplication):
                 + ". On the Switch choose Mystery Gift -> Wonder Cards -> Friend.")
 
     def _screen_card(self):
-        return "Mystery Gift", "Save backup" if self.backup_path else "Save restore", None
+        return _ref("core.pokeldn.frlg.gift.host_mg_app.mystery_gift_68b50f5f"), "Save backup" if self.backup_path else "Save restore", None
 
     def run(self):
         joined = HostApplication.run(self)
@@ -593,7 +595,7 @@ class SaveTransferHostApplication(MysteryGiftHostApplication):
             print("Save restored. Let the console finish saving; CONTINUE then loads it.")
         elif outcome == "not-restored":
             print("Not restored: the console keeps the save it had.")
-        elif outcome == "refused":
+        elif outcome == _ref("core.pokeldn.frlg.gift.host_mg_app.refused_83c874d3"):
             print("Nothing was read or written: see the log for why.")
         elif self.backup_path and self.resume_dir:
             print("The link dropped before the backup was done. Start it again: it goes on from "

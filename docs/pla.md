@@ -4,6 +4,7 @@ nav_order: 8
 has_children: true
 ---
 
+<a id="legends-arceus"></a>
 # Legends Arceus
 
 Pokemon Legends: Arceus (2022, title id `01001f5010dfa000`) is a native Switch title with Pia
@@ -12,6 +13,7 @@ statically linked into `main`.
 Addresses are offsets into the decompressed `main` of update 1.1.1, as `tools/switch/nso_read.py`
 lays it out (text `0x0..0x32a5690`, rodata from `0x32a6000`, data from `0x401a000`).
 
+<a id="the-wireless-layer"></a>
 ## The wireless layer
 
 | | value |
@@ -47,6 +49,7 @@ The footer is outside the encryption. The encrypt path `0x6f09f4` subtracts the 
 0xFF-pads to the block size, encrypts from buffer `+0x4c`, writes the tag to `+0x1d` via the AES-GCM
 entry `0x6e68d0` with tag length 8 (`mov w4, #8` at `0x6f0b24`), then ORs `0x80` into the version.
 
+<a id="the-receive-path-for-a-breakpoint"></a>
 ## The receive path, for a breakpoint
 
     0x6ff6d8   nn::pia::local::LocalInputStream::vfunc4, the socket read
@@ -56,6 +59,7 @@ entry `0x6e68d0` with tag length 8 (`mov w4, #8` at `0x6f0b24`), then ORs `0x80`
     0x7015b4   LdnBackgroundProcessJob::WaitConnected, the step body a stalled joiner sits in
     0x70c304   LdnProtocol vfunc18, which that step requires to return 0
 
+<a id="the-gate-a-joiner-stops-at"></a>
 ## The gate a joiner stops at
 
 The predicate `0x6f63fc` reads two endpoint slots on the LdnProtocol object, `+0x98` and `+0xb8`
@@ -68,6 +72,7 @@ The predicate `0x6f63fc` reads two endpoint slots on the LdnProtocol object, `+0
 With a joiner connected both hold the console's own address and Pia port and it returns 1; the slots
 are zero only between a teardown and the next join. This gate does not stall a joiner.
 
+<a id="what-a-message-is-routed-by"></a>
 ## What a message is routed by
 
 The dispatch key is the packet's source variable id: a message from a station missing from the
@@ -75,6 +80,7 @@ registry is skipped before its protocol is consulted, and variable ids re-roll e
 flag `0x01` means "skip the source variable id check", for a message sent before the peer knows the
 sender; `bin/pla_host.py` sets it on both of its probes.
 
+<a id="the-net-protocol-measured"></a>
 ## The Net Protocol, measured
 
 A console hosting its own network opens the exchange with `NetUpdateNetworkConnectionStatusMessage`
@@ -158,6 +164,7 @@ Session dispatcher. Sent to destination 0, it draws the join response and the ty
 An emulated console hosting a search leaves with migration about 10 s after a joiner seated that way
 that sends no data exchange record, and returns to its search with no error shown.
 
+<a id="the-packet-crypto"></a>
 ## The packet crypto
 
 | | |
@@ -179,6 +186,7 @@ pointer +8, IV length +0x10, key pointer +0x18, key length +0x20}`: mode 1, IV 1
 
 `pokeldn/ldn/crypto.py` runs the same derivation for the whole 6.16 to 6.42 band.
 
+<a id="the-protocols-above-the-packet"></a>
 ## The protocols above the packet
 
 Pia 6.16 to 6.30 keeps the 5.29 to 5.45 ids below the session layer and replaces the station and
@@ -204,6 +212,7 @@ The console's join request lists its protocol versions:
     Net 0x2c v0   RTT 0x58 v3   Unreliable 0x68 v1   Clone 0x74 v0   Clock 0x77 v0
     Reliable 0x7c v2   BroadcastReliable 0x80 v3   0x81 v3   Session 0x98 v0   Monitoring 0xa4 v0
 
+<a id="the-session-join-request"></a>
 ### The Session join request
 
 A 115-byte Session type-0 message from `ClusterPacketWriter`: the type byte, a protocol count, the
@@ -232,6 +241,7 @@ A location id on the wire is 12 bytes: big-endian u64 constant id, two zero byte
 variable id. Message flags are `0x01` on every repeat. `pokeldn.ldn.pia6.build_session_join`
 reproduces the 115 bytes (`tests/test_pla_session_v11.py`).
 
+<a id="the-session-join-reply"></a>
 ### The Session join reply
 
 The joiner parses the ack at `0x737534` and the join response at `0x7379c0`, dispatched from the
@@ -263,6 +273,7 @@ repeating (about sixteen times a window). The completion flag `JoinMeshJob+0x7c`
 update `0x738740` once one whose sequence reaches `+0x29` is applied; the joiner answers with a
 13-byte Session type 6: type byte, console constant id, two zero bytes, sequence.
 
+<a id="the-type-5-station-list-update"></a>
 ### The type-5 station-list update
 
 `0x7404a8` reassembles the update before `0x73897c` reads it; one fragment carries it all. The
@@ -302,6 +313,7 @@ index 0, join order 0; the first joiner `00 01`, 1, 1. The player record is the 
 `0x738bc0` updates or creates each station by constant id, then sets `JoinMeshJob+0x7c` and sends the
 type 6. A joined console then runs RTT, Clone Clock and the Stream Broadcast Reliable stream.
 
+<a id="sustaining-the-mesh"></a>
 ## Sustaining the mesh
 
 A joined console leaves when the game's DataExchangeStart step times out, 10.2 s after its join request,
@@ -334,6 +346,7 @@ one; its ack, about once a second, carries a host-stream id that climbs while th
 with the destination bitmap bit of the console's station index (bit 1, count 2) is applied; the
 wrong bit is dropped at the sender-station check.
 
+<a id="the-silent-station-check"></a>
 ### The silent-station check
 
 The Session start `0x729d3c` copies the startup setting's `+0x28c` into `SessionProtocol+0xd8`
@@ -346,6 +359,7 @@ names the host treats the host as gone (`0x735b28`). The setting's `+0x28c` read
 (`w9 = 0x2710` at `0x72a09c` on an emulated console hosting a search), as in Z-A. A silent host on the
 box screen draws the partner-left message about 13 s in: 10000 ms and the 3000 ms grace.
 
+<a id="the-games-reader-and-the-pre-handler-phase"></a>
 ## The game's reader and the pre-handler phase
 
 The game polls its reader at `main+0x2ca4f30` (`0x741494`) (365 calls in one measured window): two
@@ -493,6 +507,7 @@ also carries a 22-character account identifier at record +0x60 and a 1 at record
 Game Freak hashes these names with FNV-1a 64 from offset basis `0xcbf29ce484222645`: the skins match
 the eight hashes `0x1348cbc` keys on, and `grid_player` the layout `0x13497fc` opens.
 
+<a id="the-games-reliable-channel"></a>
 ## The game's reliable channel
 
 After the data exchange the trade flow reaches `0x13d5cac`, which tests `[net+0xb8] > 1` on the
@@ -517,6 +532,7 @@ message with one entry and sends the same message back on the same port:
     port 0    key eight zero bytes      body 0100        the host opens it
     port 1    b9 01 01 b9 02 b9 02 00 00 01              the joiner announces the zero key open
 
+<a id="acknowledgement"></a>
 ### Acknowledgement
 
 `ReliableSlidingWindow` (vtable `0xc5b4d98`) builds its acknowledgement in vf12 `0x74ee1c`: the
@@ -573,6 +589,7 @@ acknowledgement (`0x74f1f4..0x74f204`) or the station leaving (event 1, `0x7411c
 station joining zeroes every deadline (`0x74b358`). A console resends forever to a peer that answers
 only with ids past the window.
 
+<a id="the-channel-table-on-port-1"></a>
 ## The channel table on port 1
 
 Port 1 of 0x7c carries the channel table: each station announces which handler keys it has open,
@@ -669,6 +686,7 @@ per key, and leaves a close unanswered: a close sent back erases the console's p
 phase key (harmless within the trade, since nothing polls the peer table), and the standing entry
 serves the next trade ([A second trade in one session](#a-second-trade-in-one-session)).
 
+<a id="the-trade-box"></a>
 ## The trade box
 
 With both channels open, the game's messages cross on port 0 behind the zero key. The receive handler
@@ -729,6 +747,7 @@ apart; the names can: read directly, the nickname is at 0x60 (second block) and 
 0x110 (fourth). Read inverted, both land one block early. The trainer id at 0x0c and the trainer name are the
 player id and name the data exchange carries.
 
+<a id="confirming-the-trade"></a>
 ## Confirming the trade
 
 Trade it sends selector 5 and the counter `[net+0xf8]` on the zero key. The sender `0x26d9770`
@@ -740,6 +759,7 @@ second station to confirm goes on. Selectors 5 and 7 drop a counter below `[net+
 After the confirmation the console announces the phase key open on port 1 (no initialized flag) and
 sends nothing on it until the host announces it too; otherwise the trade screen waits at phase 5.
 
+<a id="the-trade-objects-own-state-machine"></a>
 ## The trade object's own state machine
 
 `[net+0xb8]` is the state step 0x20 tests; the tick `0x26d9094` moves it:
@@ -753,6 +773,7 @@ sends nothing on it until the host announces it too; otherwise the trade screen 
 
 State 5 (offered, both confirmed) leaves the save untouched; the job below carries the trade out.
 
+<a id="the-job-that-carries-the-trade-out"></a>
 ## The job that carries the trade out
 
 The scene polls `0x26d9ea0`: `[net+0xd8]` non-null and that job's state `+0x10` in 6..10.
@@ -833,6 +854,7 @@ save first (`0x26dbd44..0x26dbd90`). The job goes to state 0xe, request 3, failu
 (executor init `0x26dd43c`: phase 0, `+0xb0` 0, save request `+0xb8` 0); an emulated save is
 byte-identical after such a cancel.
 
+<a id="the-trade-restriction"></a>
 ## The trade restriction
 
 The trade restriction is a u64 count of minutes in save block `0x96993D83`, field `+0x70` of the
@@ -911,6 +933,7 @@ state's `common/net` label (table `0x397c158`) goes on `pane_T_info_00` via `0x1
 | `0x300000001` | 3, then matchmaking in 6 | `matching_win_06` | the warning that an interrupted trade blocks trading for a while |
 | `0x400000001` | 4 | `matching_win_02` | at least two tradeable Pokemon are needed |
 
+<a id="the-phase-protocol-and-the-message-only-a-host-sends"></a>
 ## The phase protocol, and the message only a host sends
 
 The job announces phases on key `01 00 00 00 00 00 00 00`, registered when the job is created. The
@@ -936,6 +959,7 @@ Every message a station originates on a port, mirrors included, takes the next i
 sequence. A mirror reusing the peer's id collides once the counts diverge and is acknowledged but
 discarded.
 
+<a id="the-completed-trade"></a>
 ## The completed trade
 
 The console announces 3, 6, 0xb and 0xe in turn; the host answers each with selector 2 and the same
@@ -953,6 +977,7 @@ slots, both ExtraData files.
 The console then sends a fresh selector 2 (whatever the cursor is on), which the host answers with a
 showing, and the phase key close `b9 01 01 b9 02 b9 02 01 00 00`, which it does not answer.
 
+<a id="a-second-trade-in-one-session"></a>
 ## A second trade in one session
 
 A session carries any number of trades: after a completed trade the scene resets the trade object
@@ -1034,6 +1059,7 @@ by..." ("Communication en cours... Veuillez patienter."), put up by the "Trade i
 `0x110a84c`, `0x110ac5c`, `0x110ace4`. `0x1128184(ui, 1)` turns on the cancel prompt (`InputCancel`,
 `0x11281bc`), read only at steps 2 and 7 (`0x110ac00`, `0x110ad4c`).
 
+<a id="what-a-trade-rewrites"></a>
 ## What a trade rewrites
 
 A record traded in comes back as a showing when the cursor reaches it. A received record differs from
@@ -1058,6 +1084,7 @@ plus 0x18 with the ball moved to just after the met date.
 
 `pokeldn/pla/trade_box.py` and `pokemon.py` reproduce a console's bytes.
 
+<a id="choosing-what-to-offer"></a>
 ## Choosing what to offer
 
 The record a host offers is its own to compose. The game reads PKHeX's PA8, and every measured offset
@@ -1101,6 +1128,7 @@ A received record whose encryption constant and personality value the save alrea
 answers. A showing comes on every cursor move, and a cancelled offer is re-offered as `04 01`.
 The second trade repeats message bodies, so deduplicating by body would drop its answers.
 
+<a id="mastered-moves"></a>
 ### Mastered moves
 
 The eight bytes at 0x15d are a bitmap over the 61 moves of the game's mastery list, in its order; a
@@ -1109,6 +1137,7 @@ screen a move draws the scroll when its mastery level (`mastery_la`, per species
 format) is at or under the current level or its bit is set: on a level-13 Chimchar, Swift (20, index
 10) drew it only with its bit set.
 
+<a id="the-stats-the-game-computes"></a>
 ### The stats the game computes
 
 `pokeldn/pla/stats.py` reproduces the stats a trade writes over the tail. Each stat is a growth term, rounded `(sqrt(base) * multiplier + level) / 2.5`, plus a base
@@ -1129,6 +1158,7 @@ PKHeX's copies of the game tables: `personal_la` (0xB0 bytes an entry; 0x21 bit 
 the game, 264 of them), `lvlmove_la.pkl` (a 16-bit BinLinker archive of move halfwords then level
 bytes), `MoveInfo8a`, `Experience`.
 
+<a id="the-clone-clock-and-atomic-protocols"></a>
 ## The Clone Clock and Atomic protocols
 
 This band splits the Clone family into separate protocols, unrelated to the 6.32 clone protocol:
@@ -1149,6 +1179,7 @@ acknowledged-station bitmap written only by a matching-generation kind 2 from a 
 scene creates elements (local announce `0x6e1e48`); kinds 1 and 2 need one pending, and a host kind-0
 announce draws a kind-2 echo that fills no slot.
 
+<a id="reading-and-writing-a-packet"></a>
 ## Reading and writing a packet
 
 `pokeldn/ldn/pia6.py` speaks version 11; the message framing is 5.27 to 6.30's, read unchanged by
@@ -1163,6 +1194,7 @@ encrypt buffer with 0xFF at `0x6f0af8`; `0x6e6cb0` sets the block size to 16.
 communication id and `session_keys(ssid)`. `tests/test_pia6.py` pins the layout, the derivation
 against `crypto.PiaCrypto`, both captured advertisements, and every constant read out of `main`.
 
+<a id="hosting"></a>
 ## Hosting
 
 `bin/pla_host.py` advertises the title, passphrase, scene id and link code;
@@ -1179,6 +1211,7 @@ seconds: one scanning, two to four hosting. An associated joiner stays silent un
 the host sends the Net 0x2C connection request (`host_pia.build_net_probe`'s message at 6.32), every
 500 ms until answered; `--no-net-probe` holds it back.
 
+<a id="joining-a-consoles-network"></a>
 ## Joining a console's network
 
 A joiner owes a hosting console these messages, in a retail joiner's order (Net 0x50 from the
@@ -1235,6 +1268,7 @@ Later acknowledgements put one past the sequence in the first entry's second fie
 `tests/test_pla_joiner.py` plays a scripted host against the joiner; `tests/test_esp32.py` runs it
 across two simulated boards.
 
+<a id="reaching-local-trade-on-the-console"></a>
 ## Reaching local trade on the console
 
     title screen, A -> Jubilife Village, the trading post -> talk to Simona (Trado in French), A
@@ -1252,6 +1286,7 @@ called only by `0x266c740` and `0x266d580` beside the lost-bag DataStore strings
 `ScanOtherData`, `ReturnLB`, `0x266d8dc..0x266dec8`). `0x129751c`, another network-clock caller,
 compares elapsed seconds against 21600.
 
+<a id="the-advertisement"></a>
 ## The advertisement
 
 Scanned from a console on the search screen:
@@ -1277,6 +1312,7 @@ code in the clear:
 
 Code `0000 0000` gives `3030303030303030`, eight NULs, length 8.
 
+<a id="the-link-code-in-the-advertisement"></a>
 ### The link code in the advertisement
 
 The user password is the same code, encrypted by Pia's password setter `0x6fc454`. With transport
@@ -1295,6 +1331,7 @@ The keystream does not change with SSID, channel, code or game restart. `pokeldn
 code against the decoded password). The setter is Pia's, so every title of the band encrypts this way
 ([the wireless layer](ldn.md)).
 
+<a id="retail-notes"></a>
 ## Retail notes
 
 A retail console runs the same chain as an emulated one, with or without a link code, in both roles.
@@ -1303,6 +1340,7 @@ record the save already holds under a new PID and encryption constant. The host 
 file between offers; a flag change needs a restart. A console whose host restarted under it shows
 error 2318-0006 on its next search; leaving the trade menu and searching again clears it.
 
+<a id="leaving"></a>
 ## Leaving
 
 A console quitting the trade runs `nn::pia::session::LeaveMeshJob`: it sends the Session type-3
@@ -1386,6 +1424,7 @@ station and end the run; `--stay-after-leave` keeps the network up, silent, and 
 after a console leaves following a trade. The leave's shape is pinned against the four captured
 console leaves.
 
+<a id="unresolved"></a>
 ## Unresolved
 
 - What fills the 0.4 s between the destructor (3.36 s after step 1 on an emulated station) and the

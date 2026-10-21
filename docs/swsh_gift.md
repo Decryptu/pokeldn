@@ -4,12 +4,14 @@ parent: Sword and Shield
 nav_order: 4
 ---
 
+<a id="the-local-wireless-branch-of-the-mystery-gift-menu"></a>
 # The local-wireless branch of the Mystery Gift menu
 
 Sword and Shield's Mystery Gift menu receives Wonder Cards over local wireless: a distributor
 advertises an LDN network whose advertise data carries the card in fragments. Addresses are Shield
 1.3.2's `main` unless marked Sword; on-air behaviour is measured against retail consoles.
 
+<a id="the-menu"></a>
 ## The menu
 
 The receive-method chooser `StateSelectReceiveDataBase` has one subclass per menu button
@@ -43,6 +45,7 @@ play-record keys `fushigi_net`, `fushigi_serial` and `fushigi_p2p` count receipt
 | 69 | `Via communication sans fil locale` |
 | 72-75 | the top menu: `Recevoir un Cadeau Mystère`, the Wild Area news, the Poké Ball Plus, the Battle Stadium rewards |
 
+<a id="the-apps-state-machine"></a>
 ### The app's state machine
 
 The dispatcher `0x00FE6F80` reads a request object at `app+0x718`: a ready flag at `+0x60`, the next
@@ -75,6 +78,7 @@ The image has no Mystery Gift protocol-buffer module: every `.pb.cc` belongs to 
 framework or to trade, the three battle modules, the raid dens, the underground, the camp,
 `comp_organize` or `btl_spot`.
 
+<a id="the-gift-screens-network"></a>
 ## The gift screen's network
 
 On the local-wireless screen the console advertises its always-on local-play network: local
@@ -96,6 +100,7 @@ Monitor captures with the console hosting on channel 6:
 | 6 | 339 in 70 s | 435 in 70 s | 0 |
 | 11 | 0 | 95 in 90 s | 0 |
 
+<a id="the-mode-byte"></a>
 ### The mode byte
 
 `session_config+0x70` is the local-play mode. `0x01096730` maps it to a Pia scene id and participant
@@ -122,6 +127,7 @@ screen is `0xB9` (0x00 gift, 0xAA trade), meaning unread; the rest is fixed or r
 The LDN `SceneId` reads 60001 on a scanned Link Trade network and 65535 on the gift screen
 ([Taking a seat](swsh_session.md#taking-a-seat)).
 
+<a id="the-pia-mesh-on-the-gift-screen"></a>
 ## The Pia mesh on the gift screen
 
 The mesh on this screen admits no joiner, and a station seated in it by force receives nothing; the
@@ -168,6 +174,7 @@ writes that field with `0x01841490` (`str x1, [x0, #0xb0]`), called at `0x006b47
 filter `0x006b41c0` from slot `0x02616a38`, and clears it with `0x018414a0` (`str xzr`), called at
 `0x006b5340`; both sites are reached from the mode switch `0x006a9af0`.
 
+<a id="the-join-filter-0x006b41c0"></a>
 ### The join filter 0x006b41c0
 
 `manager` is `[0x02610000 + 0x4b0]` and `session` (the game session) is `[manager+0x58]`. The filter
@@ -212,6 +219,7 @@ same filter armed in all three. The raid host advertises `NodeCountMax` 4; the g
 and advertisement `+0xF9` keep their raid values after a raid, so they are mode residue. `manager` is
 byte-identical between the gift screen and a trade host.
 
+<a id="the-transport-check"></a>
 ### The transport check
 
 `0x017bb2e0` runs in `CheckApprovalJoin` before the callback and returns `0xFF` or the reason byte,
@@ -248,6 +256,7 @@ sel 0, bits 0, `+0xC4` 0, `+0xC8` 1, so the first two tests pass. Three more exi
 It returns 2 when `+0xAA` is zero or a preliminary predicate holds, and 4 when `mesh_obj+0x131` is set
 by the type-0x19 event.
 
+<a id="with-a-station-seated"></a>
 ### With a station seated
 
 - Writing 8 to `game_session+0x1F0` on the search screen admits the join at once (148-byte response,
@@ -268,6 +277,7 @@ by the type-0x19 event.
   returned by its scan and filed at `pia_obj+0x3C0`, and none draws a `Connect`, an `OpenStation`, an
   accept-policy call, or a change to the maximum or `+0x3F8`.
 
+<a id="the-receive-job-and-the-importer"></a>
 ## The receive job and the importer
 
 The gfl net manager is `read_u64(read_u64(main+0x0261CBA8))` (vtable `0x025819A0`); a null global is
@@ -317,6 +327,7 @@ bytes) and `0xce07d358` (0x1c bytes): route 3 at an index from record `+0x1c` (a
 half chosen by `+0x1e` and the group chosen by the kind at `+0x11`; route 4 when the u32 at record
 `+0x18` equals the block's first word. Route 0 touches neither block.
 
+<a id="the-card-travels-in-beacon-advertise-data"></a>
 ## The card travels in beacon advertise data
 
 A distributor joins nothing. It advertises a network whose advertise data carries the card, and the
@@ -332,6 +343,7 @@ before any peer, its send gate `+0x2FA` never arms, and a Pia mesh join changes 
 mirrored LDN node count. The core send `0x006C2840` queues at `core+0xF8`. On the send path `0x136`
 is a `memset` length at `0x010F7E00` and the message id comes from the getter `0x010F7050`.
 
+<a id="the-beacon-body-frame"></a>
 ## The beacon body frame
 
 The 0x180 bytes of LDN advertise data are a 0x18-byte header and a 0x168-byte body framed by the
@@ -358,6 +370,7 @@ The builder `0x006c1fa0` zeroes the body, writes the network id at `body+2` with
 `0x006c1830`, copies the payload to `body+5`, and stores the checksum over `body+2`, `0x166` bytes, at
 `body+0`; a missing or oversize payload stores `0xFFFF` instead (`0x006c21d4`).
 
+<a id="the-gate-a-received-beacon-passes"></a>
 ## The gate a received beacon passes
 
 `0x006c1be0` takes one entry object and returns 1 to accept it. On the build path it checks a body
@@ -391,6 +404,7 @@ own body at `conn+0x368`. Two stores alternate through `0x006c5300`.
 which stores it in a message object for the handler at `[gfl_job+0x68]` vtable `+0x38`. A receiver's
 station-information structure is this payload, so its offsets sit 0x1d bytes into the advertise data.
 
+<a id="the-message-the-poll-reassembles"></a>
 ## The message the poll reassembles
 
 Payload byte 0 is the message type. `0x010f6600` builds a typed view for each known type, pointing at
@@ -435,6 +449,7 @@ Traps:
 - With header `+0` non-zero, `job+0x160` stays null and no context list is allocated; with it zero
   the list is allocated and `manager+0x80` takes its first stamp.
 
+<a id="what-a-record-must-carry"></a>
 ## What a record must carry
 
 | offset | size | field |
@@ -501,6 +516,7 @@ Kind: 1 to 5 dispatch through `0x02067620`; anything else returns success with n
 3 and 5 (`0x010b5fd8`) keep the word at `+0x20` in header `+0x30` and build nothing. Kind 1 goes to
 `0x010b58f0`, kind 2 copies its item pairs, kind 4 goes to `0x010b5bb0`.
 
+<a id="the-pokemon-a-kind-1-record-carries"></a>
 ## The Pokemon a kind-1 record carries
 
 `0x010b58f0` parses the record; the builder `0x010b6110` receives length 0x2D0 at its three call
@@ -573,6 +589,7 @@ agree; a retail Sword showed and gave a male for 0 and a female for 1. The app a
 `bin/swsh_gift_host.py` draw the gender once when the card is built, as the game draws it (female when `r + 1 < ratio`, `r` below 253, the species' personal ratio from PKHeX);
 `--set gender=3` restores the game's own rolls.
 
+<a id="a-card-delivered-by-beacon-end-to-end"></a>
 ## A card delivered by beacon, end to end
 
 A 720-byte record split into three fragments and served from a synthesised beacon reaches the
@@ -592,6 +609,7 @@ A sealed kind-3 record is listed, confirmed and saved. The screen shows the titl
 `+0x11`, the quantity from the word at `+0x20`, and 1 January 2070 for a zeroed date; with a zero
 identifier it delivers nothing.
 
+<a id="a-card-delivered-to-a-retail-console"></a>
 ## A card delivered to a retail console
 
 `bin/swsh_gift_host.py` delivers a card to a retail Sword over LDN. A retail Sword lists a card only
@@ -670,6 +688,7 @@ id in bits 0-14, count in bits 15-29, bit 30 the new-item flag. The save block i
 | 7 | Ingredients | 100 |
 | 8 | Key | 64 |
 
+<a id="official-event-cards"></a>
 ## Official event cards
 
 The desktop app's Official events mode offers 189 cards from projectpokemon EventsGallery
@@ -692,6 +711,7 @@ The PKHeX check takes a Gigantamax factor on a species whose evolution has a Gig
 cards 1641 and 1642 gave it to Bulbasaur and Squirtle, and on Melmetal, which Max Soup leaves alone
 (`CanGigantamax` in `services/pkhex/Program.cs`); any other species is refused.
 
+<a id="pokemon-home"></a>
 ### Pokemon HOME
 
 Pokemon HOME gave its gifts into its own boxes, not as Wonder Cards. The group holds the community's
@@ -718,6 +738,7 @@ The flags at `+0x10` set how often a console takes a card ([What the menu refuse
 
 Two Pokemon cards carry a version mask of 1 or 2 and are skipped by the other version.
 
+<a id="cards-that-share-an-id"></a>
 ### Cards that share an id
 
 Different distributions reused card ids. Once a save has taken a once-per-id card (flag bit 0), it
@@ -742,6 +763,7 @@ accept the changed record. A once-per-id card's id stays in 1..2047, because the
 bound ([What the menu refuses](#what-the-menu-refuses)). The command line does the same with
 `--gift-file FILE --patch 0x08=0200`. No retail console has received a card with a changed id yet.
 
+<a id="clothing"></a>
 ## Clothing
 
 A kind-4 record carries twelve pairs of u32 from `+0x20`, a category then an index: the first six
@@ -777,6 +799,7 @@ clothing cards:
 
 Every official clothing card carries title 36 or 38 and flag bit 0 (once per card id).
 
+<a id="what-the-menu-refuses"></a>
 ## What the menu refuses
 
 Before redeeming a selected card, `0x01014a60` reads the kind `card[+0x7c]` (`0x01014bcc`),
@@ -875,6 +898,7 @@ ratios 0, 254 and 255 force male, female and genderless (table `0x1c4d2d0`); on 
 requested 2 becomes 0 (`0x7774d8`). The builder turns record gender 3 into 0xFF, random
 (`0x010b62ac`).
 
+<a id="the-cards-date"></a>
 ## The card's date
 
 The first eight bytes of the record are the date the album shows, a little-endian u64 bitfield of an
@@ -912,6 +936,7 @@ fallback gives those files a date over local wireless as well. Exported files ke
 date, and cards already stored in the console's album are unchanged. The Pokemon's own met date
 is separate from the album date.
 
+<a id="where-the-album-keeps-a-card"></a>
 ## Where the album keeps a card
 
 The album is save block `0x112D5141` (PKHeX's `KMysteryGift`), `0x17C8` bytes, loaded by
@@ -945,6 +970,7 @@ A slot is the `0x68`-byte header the importer fills from the record:
 Zeroing a slot's `+0x0C..+0x62` removes the card from the album; items it delivered stay in `MyItem`
 (`0x1177C2C4`).
 
+<a id="the-per-frame-update-that-drains-the-store"></a>
 ## The per-frame update that drains the store
 
 `0x010f65a0` is the gfl net manager's per-frame update, called with the manager from `0x0261cba8`.

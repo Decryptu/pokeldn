@@ -1,3 +1,5 @@
+from pokeldn.app.i18n import message_ref as _message
+from pokeldn.app.i18n import ref as _ref
 """Mystery Gift client scripts the server pushes, and the link game data read back. A script ends in
 CLI_RETURN or CLI_COPY_RECV: the console runs out of its 1024-byte recv buffer and bytes past the
 script are stale. A client script's declared size is 8 bytes per command."""
@@ -65,7 +67,7 @@ def client_script(*commands):
         else:
             instr, param = command
         if not 0 <= instr <= 0xFFFFFFFF or not 0 <= param <= 0xFFFFFFFF:
-            raise ValueError("client script fields must fit in u32")
+            raise ValueError(_message('core.pokeldn.frlg.gift.mg_script.client_script_fields_must_fit_in_u32_4077596c'))
         out += instr.to_bytes(4, "little") + param.to_bytes(4, "little")
     return bytes(out)
 
@@ -252,7 +254,7 @@ CARD_STAT_NUM_STAMPS = 3
 CARD_STAT_MAX_STAMPS = 4
 CARD_STAT_NAMES = {
     CARD_STAT_BATTLES_WON: "battles won", CARD_STAT_BATTLES_LOST: "battles lost",
-    CARD_STAT_NUM_TRADES: "trades", CARD_STAT_NUM_STAMPS: "stamps collected",
+    CARD_STAT_NUM_TRADES: _ref("core.pokeldn.frlg.gift.mg_script.trades_4e5f021c"), CARD_STAT_NUM_STAMPS: "stamps collected",
     CARD_STAT_MAX_STAMPS: "max stamps",
 }
 
@@ -270,7 +272,7 @@ def card_stat(data, stat):
         return len(data.stamps)
     if stat == CARD_STAT_MAX_STAMPS:
         return data.max_stamps
-    raise ValueError(f"unknown Wonder Card stat {stat}")
+    raise ValueError(_message('core.pokeldn.frlg.gift.mg_script.unknown_wonder_card_stat_value0_ed8a55d1', value0=stat))
 
 
 # [decomp:src/mystery_gift.c:388]
@@ -278,9 +280,9 @@ HAS_NO_CARD = 0
 HAS_SAME_CARD = 1
 HAS_DIFF_CARD = 2
 
-_VERSION_NAMES = {VERSION_CODE_FIRERED: "FireRed", VERSION_CODE_LEAFGREEN: "LeafGreen"}
+_VERSION_NAMES = {VERSION_CODE_FIRERED: _ref("core.pokeldn.frlg.gift.mg_script.firered_7d9d1bdf"), VERSION_CODE_LEAFGREEN: _ref("core.pokeldn.frlg.gift.mg_script.leafgreen_578f944d")}
 # The game code's first three letters name the game for every Gen III title (docs/rse.md).
-GAME_NAMES = {b"AXV": "Ruby", b"AXP": "Sapphire", b"BPE": "Emerald", b"BPR": "FireRed", b"BPG": "LeafGreen"}
+GAME_NAMES = {b"AXV": "Ruby", b"AXP": _ref("core.pokeldn.frlg.gift.mg_script.sapphire_d142d3dd"), b"BPE": _ref("core.pokeldn.frlg.gift.mg_script.emerald_af1ccb31"), b"BPR": _ref("core.pokeldn.frlg.gift.mg_script.firered_7d9d1bdf"), b"BPG": _ref("core.pokeldn.frlg.gift.mg_script.leafgreen_578f944d")}
 # Emerald fills +0x0C and +0x10 with gift-type bits, not a version [pokeemerald mystery_gift.c:342-363].
 EMERALD_GIFT_TYPE_1 = 1 << 2
 EMERALD_GIFT_TYPE_2 = 1 << 9
@@ -313,7 +315,7 @@ class LinkGameData:
     def version_name(self):
         # FireRed and LeafGreen keep the version code they send; Emerald sends gift-type bits there.
         other = GAME_NAMES.get(bytes(self.game_code[:3]))
-        if other in ("Ruby", "Sapphire", "Emerald"):
+        if other in ("Ruby", _ref("core.pokeldn.frlg.gift.mg_script.sapphire_d142d3dd"), _ref("core.pokeldn.frlg.gift.mg_script.emerald_af1ccb31")):
             return other
         return _VERSION_NAMES.get(self.version_code & 0x0F, f"version {self.version_code}")
 
@@ -370,7 +372,7 @@ def parse_link_game_data(payload):
     payload = bytes(payload)
     if len(payload) < GAME_DATA_SIZE:
         raise ValueError(
-            f"link game data is {len(payload)} bytes, expected {GAME_DATA_SIZE}")
+            _message('core.pokeldn.frlg.gift.mg_script.link_game_data_is_value0_bytes_expected_value1_ea99d921', value0=len(payload), value1=GAME_DATA_SIZE))
 
     def u16(off):
         return int.from_bytes(payload[off:off + 2], "little")
@@ -534,7 +536,7 @@ def client_script_dump_memory(blocks=1, leads=0):
     payloads received and run first; 1 block and no leads is CLIENT_SCRIPT_DUMP_MEMORY exactly."""
     blocks = int(blocks)
     if not 1 <= blocks <= MAX_DUMP_BLOCKS:
-        raise ValueError(f"a session carries 1..{MAX_DUMP_BLOCKS} blocks, asked for {blocks}")
+        raise ValueError(_message('core.pokeldn.frlg.gift.mg_script.a_session_carries_1_value0_blocks_asked_for_valu_7eb195b5', value0=MAX_DUMP_BLOCKS, value1=blocks))
     if blocks == 1 and not leads:
         return CLIENT_SCRIPT_DUMP_MEMORY
     body = []
@@ -550,6 +552,5 @@ def client_script_dump_memory(blocks=1, leads=0):
         CLI_COPY_RECV,
     )
     if len(script) > 1024:
-        raise ValueError(f"{blocks} blocks is a {len(script)}-byte client script; the console runs "
-                         "it out of a 1024-byte recv buffer")
+        raise ValueError(_message('core.pokeldn.frlg.gift.mg_script.value0_blocks_is_a_value1_byte_client_script_the_68ddf460', value0=blocks, value1=len(script)))
     return script

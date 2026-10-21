@@ -1,6 +1,8 @@
 ---
 title: Plugins
+has_children: true
 ---
+<a id="plugins"></a>
 # Plugins
 
 A plugin adds tools, games and radios to pokeldn without changing it, and can join or host an LDN
@@ -14,6 +16,7 @@ Code: `pokeldn/plugins.py` (the loader and the API), `pokeldn/app/plugin_store.p
 Two examples are a base to start from: `examples/plugins/hello` is the smallest plugin, one tool in
 two files; `examples/plugins/test_kit` uses every part of the API.
 
+<a id="installing-a-plugin"></a>
 ## Installing a plugin
 
 1. Open **Plugins** at the bottom of the side menu.
@@ -33,6 +36,7 @@ names it. Removing a plugin asks whether to delete what it saved as well.
 A plugin runs as Python inside pokeldn, with the same access to files, keys, the network and the
 board. Nothing in a package runs before it is installed and turned on.
 
+<a id="sources"></a>
 ### Sources
 
 A source is a JSON listing of plugins that someone publishes. The Plugins page's **Sources** tab
@@ -82,6 +86,7 @@ python scripts/plugin_source.py my-plugin-1.0.0.pokeplugin -o pokeldn-source.jso
 
 An entry already listed at a higher version is kept.
 
+<a id="guardrails"></a>
 ### Guardrails
 
 Two checks stop the obvious harm. Neither is a sandbox: a plugin written to get around them can.
@@ -103,8 +108,10 @@ While a plugin's code is on the call stack, in the app and in every run, an audi
 Code with no plugin on its call stack, pokeldn's own included, is never refused; pokeldn code a
 plugin calls is. A plugin that needs a refused action asks the player to do it.
 
+<a id="making-a-plugin"></a>
 ## Making a plugin
 
+<a id="the-folder"></a>
 ### The folder
 
     my-plugin/
@@ -114,6 +121,7 @@ plugin calls is. A plugin that needs a refused action asks the player to do it.
         icon.png           optional, shown on the Plugins page and the Games page
         mylib_common.py    optional, any module the scripts share
 
+<a id="plugintoml"></a>
 ### plugin.toml
 
 ```toml
@@ -132,6 +140,7 @@ module = "plugin"           # optional; the module holding register()
 exclude = ["tests"]         # optional; folders and files pack_plugin.py leaves out of the package
 ```
 
+<a id="pluginpy"></a>
 ### plugin.py
 
 `register(api)` runs when the plugin is turned on, in the app and in every run the app starts.
@@ -152,6 +161,7 @@ def register(api):
     ))
 ```
 
+<a id="a-tools-script"></a>
 ### A tool's script
 
 The app imports the script to read its options for the Advanced tab, then runs it as its own child
@@ -210,6 +220,7 @@ popup.cancel(asked)                     # no use for the answer any more: the po
 Give shared modules a name no other package uses (`mylib_common`, not `utils`): the plugin's folder
 is added to Python's search path.
 
+<a id="what-a-plugin-can-import"></a>
 ### What a plugin can import
 
 The released app carries its own Python 3.13 and no `pip`. A plugin can import:
@@ -225,6 +236,7 @@ A package with compiled code (`numpy`, `Pillow`) works only from source runs whe
 Test a plugin in a released app before publishing it: the Plugin Test Kit's self-test runs the same
 way there.
 
+<a id="fields"></a>
 ### Fields
 
 A `Field` is one input on the tool's Basic tab; the app passes its value after its flag.
@@ -237,6 +249,7 @@ A `Field` is one input on the tool's Basic tab; the app passes its value after i
 | `switch` | an on/off switch | `--flag` when on |
 | `file` | a file chooser, `exts=("bin",)` | `--flag PATH` |
 
+<a id="what-a-plugin-keeps"></a>
 ### What a plugin keeps
 
 An update replaces the plugin's folder. Settings, caches and anything else meant to last go in
@@ -244,6 +257,7 @@ An update replaces the plugin's folder. Settings, caches and anything else meant
 data folder's `plugin-data/<id>`, kept across updates and deleted on removal only if the player
 asks.
 
+<a id="a-library-17"></a>
 ### A library (1.7)
 
 A plugin that keeps files the player looks after (backups, downloads) names a library in
@@ -269,6 +283,7 @@ key for a positional field whose label is translated. A tool's `fixed` arguments
 folder), `{stamp}` (the run's start time) and, from 1.7, `{keys}` (the `prod.keys` file Settings names).
 A script whose parser takes `--keys` receives that file's path even without the token.
 
+<a id="status-cards-18"></a>
 ### Status cards (1.8)
 
 A run leaves cards at the top of its tool's page, above the fields, and notes on its library's files.
@@ -305,6 +320,7 @@ panel.annotate("Game 1.0.2.nsp", state="ok", text="Every signature checks", imag
 A call outside these limits raises ValueError in the script; a `[panel]` line the app cannot read is
 shown in the session's output.
 
+<a id="a-game-of-its-own"></a>
 ### A game of its own
 
 ```python
@@ -314,6 +330,7 @@ api.add_game(Game("my-game", "My game", "Mine", "", (tool_one, tool_two)), icon=
 `Game(key, name, short, doc, tools)`; the game's section lists its tools in order, under the built-in
 games. `api.add_tool("my-game", tool)` adds more to it.
 
+<a id="a-radio"></a>
 ### A radio
 
 A radio carries the wireless messages in place of the ESP32 board. `api.add_radio(scheme, install,
@@ -340,6 +357,7 @@ def register(api):
 interface. The app runs a plugin radio as `POKELDN_RADIO=myradio:` with an empty argument; from the
 command line the argument is what follows the colon.
 
+<a id="ldn-networks-17"></a>
 ### LDN networks (1.7)
 
 `pokeldn.ldn.network` joins or hosts an LDN network for a plugin and hands it the radio's IPv4 stack.
@@ -369,6 +387,7 @@ with network.join(COMM_ID, keys=args.keys, password=PASSPHRASE, name="My game") 
 
 A transfer over the board runs at about 0.5 MB/s; report it with `pokeldn.progress.show`.
 
+<a id="a-battle-server"></a>
 ### A battle server
 
 A battle server runs a raid battle for a host launcher, so the console and the program's Pokemon
@@ -395,6 +414,7 @@ def register(api):
     api.add_battle_server("sv", "mine", MyServer, "My raid battle")
 ```
 
+<a id="packing-and-testing"></a>
 ### Packing and testing
 
 ```bash
@@ -420,6 +440,7 @@ POKELDN_PLUGINS=~/my-plugin python gui/main.py
 error and the other plugins still load. A plugin can also ship as a Python package with an entry
 point in the `pokeldn.plugins` group naming the module that holds `register`.
 
+<a id="signing"></a>
 ### Signing
 
 `--key FILE` signs the package with the author's Ed25519 key, made in `FILE` the first time, and
@@ -439,6 +460,7 @@ else's, and anyone holding it can sign as the author. Publish the fingerprint on
 so players can compare it with the one the install screen shows. The first install cannot prove who
 the author is; signing proves that later versions come from the same one.
 
+<a id="updates"></a>
 ### Updates
 
 `updates` in `plugin.toml` names where newer versions are published:
@@ -454,7 +476,15 @@ Plugins page's refresh is pressed. A newer version turns the Plugins menu entry 
 screen with its signature check. Nothing installs without the player's acceptance. HTTP is accepted
 for `127.0.0.1` and `localhost` only, to test a release locally.
 
+<a id="language-packs-15"></a>
 ## Language packs (1.5)
+
+**Semantic localization (API 1.10, resource format 1)** uses English catalogs, stable
+namespaced keys, entity IDs, versioned document metadata and live language switching.
+See [Localization API and resource format](localization.md) for the package schema,
+interfaces, plugin registration and validation commands. Simplified Chinese is bundled
+and can also be installed as a data-only package. The API 1.5/1.9 formats below remain
+available through the compatibility adapter.
 
 A language pack is a data-only folder plugin. Its `name` is the display name in Settings,
 App language. Its `locale` is a language tag; the saved selection identifies the plugin by `id`.
@@ -500,6 +530,7 @@ Copy the template into a separate plugin repository and translate its values; om
 maintenance. The partial pseudo-locale in `examples/plugins/pseudo` brackets selected strings and
 leaves others to exercise fallback. Examples are excluded from desktop packages.
 
+<a id="additional-resources-19"></a>
 ### Additional resources (1.9)
 
 A pack at API 1.9 can name these optional files and folder beside `plugin.toml`. A 1.5 pack stays
@@ -550,6 +581,7 @@ What a record, a file or another app reads stays English: file names, bank and q
 listings, settings, the session log (its `[app]` lines are shown translated), radio script output and
 `[done]` lines. Trainer language, in Settings, still sets the language of the Pokemon the app builds.
 
+<a id="the-plugin-test-kit"></a>
 ## The Plugin Test Kit
 
 `examples/plugins/test_kit`, packed with `scripts/pack_plugin.py`, adds:
@@ -562,6 +594,7 @@ listings, settings, the session log (its `[app]` lines are shown translated), ra
 | FireRed & LeafGreen | Hello from a plugin | a plugin tool among the built-in ones |
 | Radio | Test Kit radio | installs and carries nothing; a session started with it says so |
 
+<a id="versions"></a>
 ## Versions
 
 The plugin API has a major and a level, written `1.1`. A plugin's `api` names the lowest version it
@@ -589,7 +622,9 @@ or a downgrade.
 | 1.7 | `pokeldn.ldn.network`, `pokeldn.ldn.radio_lost`, `library` and `api.library`, `pokeldn.popup.choose`, `pokeldn.progress`, the `{keys}` token |
 | 1.8 | `pokeldn.panel`, `library_sort` |
 | 1.9 | language-pack messages, templates, terms, tool help, documents and font preference |
+| 1.10 | semantic text and structured messages, entity name tables, document metadata, live switching and resource format 1 |
 
+<a id="the-api-version-1"></a>
 ## The API, version 1
 
 | name | what it is |
@@ -617,6 +652,7 @@ or a downgrade.
 This table and the next one are the supported surface. Anything else a plugin imports from pokeldn
 can change in any release.
 
+<a id="the-program-surface-13-bank-added-in-14-language-packs-in-15"></a>
 ## The program surface (1.3, Bank added in 1.4, language packs in 1.5)
 
 A plugin, or a separate program built on a pokeldn checkout (a touchscreen front end, a script), can
@@ -659,6 +695,7 @@ A launcher run, from the app or from `python -m pokeldn`, is one process: stop i
 own PID, then SIGTERM after 15 s. Never match launchers by name (`pkill -f`): that also ends a run
 another program started.
 
+<a id="bank-integrations-14"></a>
 ## Bank integrations (1.4)
 
 An external Python frontend uses `pokeldn.app.bank`, the same module the desktop Bank uses. It owns

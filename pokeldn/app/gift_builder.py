@@ -1,3 +1,5 @@
+from pokeldn.app.i18n import message_ref as _message
+from pokeldn.app.i18n import ref as _ref
 """A gift tool's one value: a preset, a built gift or an opened file. Each game's builder module
 (pokeldn.frlg.gift.builder, pokeldn.swsh.gift_builder) supplies KINDS, PRESETS, blank(), compile()
 and describe(); a built gift reaches the launcher as a .pokegift through --gift-file."""
@@ -11,9 +13,9 @@ from pokeldn.app.paths import SESSION
 GAMES = {"frlg-gift": "frlg", "rse-gift": "rse", "swsh-gift": "swsh"}
 MODULES = {"frlg": "pokeldn.frlg.gift.builder", "rse": "pokeldn.rse.gift_builder",
            "swsh": "pokeldn.swsh.gift_builder"}
-MODES = (("preset", "Use a preset", "gift"), ("event", "Official events", "book-open"),
-         ("build", "Build your own", "sliders-horizontal"), ("file", "Open a file", "folder"),
-         ("save", "Your save", "save"))
+MODES = (("preset", _ref("core.pokeldn.app.gift_builder.use_a_preset_d033b148"), "gift"), ("event", _ref("core.pokeldn.app.gift_builder.official_events_3376f045"), "book-open"),
+         ("build", _ref("core.pokeldn.app.gift_builder.build_your_own_8887e9d9"), "sliders-horizontal"), ("file", _ref("core.pokeldn.app.gift_builder.open_a_file_3b31f677"), "folder"),
+         ("save", _ref("core.pokeldn.app.gift_builder.your_save_cecf5755"), "save"))
 # The save mode backs the console's save up into the library or restores one from it [docs/frlg_gift.md].
 SAVE_GAMES = ("frlg",)
 SAVE_ACTIONS = ("backup", "restore")
@@ -61,6 +63,11 @@ def normalized(game, value):
     value["save"].setdefault("file", "")
     if not isinstance(value.get("build"), dict):
         value["build"] = builder.blank()
+    if game == "frlg":
+        value["build"] = builder.entity_state(value["build"])
+        if value.get("entity_schema") != 1 and value.get("icon") is not None:
+            value["icon"] = builder.national_species(int(value["icon"] or 0))
+        value["entity_schema"] = 1
     return value
 
 
@@ -96,7 +103,7 @@ def _built_state(game, value):
     if value["mode"] == "event":
         return {}
     if value["mode"] == "build":
-        return value["build"]
+        return module(game).cartridge_state(value["build"]) if game == "frlg" else value["build"]
     if value["mode"] == "preset":
         preset = module(game).PRESET[value["preset"]]
         return None if preset.args else preset.state
@@ -118,22 +125,21 @@ def save_problem(value):
     if chosen["action"] != "restore":
         return ""
     if not chosen["file"]:
-        return "Choose the save to put on the console."
+        return _message('core.pokeldn.app.gift_builder.choose_the_save_to_put_on_the_console_6d6b37da')
     try:
         with open(chosen["file"], "rb") as handle:
             if not sav.describe(handle.read()).sound:
-                return "This save has no whole copy of a game in it."
+                return _message('core.pokeldn.app.gift_builder.this_save_has_no_whole_copy_of_a_game_in_it_685d19b0')
     except (OSError, sav.SaveError) as exc:
         return str(exc)
     if not chosen.get("anyway"):
         from pokeldn.app import saves
         check = saves.cached_check(chosen["file"])     # the save panel reads it off the UI thread
         if check is None:
-            return "Checking the save's party with PKHeX..."
+            return _message('core.pokeldn.app.gift_builder.checking_the_save_s_party_with_pkhex_ee5be54e')
         illegal = check["illegal"]
         if illegal:
-            return (f"PKHeX finds {', '.join(illegal)} in this save's party not legal. Fix it in the "
-                    "editor, or turn on Restore anyway.")
+            return (_message('core.pokeldn.app.gift_builder.pkhex_finds_value0_in_this_save_s_party_not_lega_9998237a', value0=', '.join(illegal)))
     return ""
 
 
@@ -155,13 +161,14 @@ def compile(tool, value):
     game = GAMES[tool.key]
     value = normalized(game, value)
     if value["mode"] == "save":
-        raise ValueError("A save backup or restore sends no gift.")
+        raise ValueError(_ref("core.pokeldn.app.gift_builder.a_save_backup_or_restore_sends_no_gift_5bba20f7"))
     if value["mode"] == "file":
         if not value["file"]:
-            raise ValueError("Open a gift file, or choose a preset.")
+            raise ValueError(_ref("core.pokeldn.app.gift_builder.open_a_gift_file_or_choose_a_preset_16f01e30"))
         gift = gifts.load(value["file"], game=game)
         if value.get("icon") is not None:
-            gift = gifts.adapter(game).with_icon(gift, value["icon"])
+            icon = module(game).internal_species(value["icon"]) if game == "frlg" else value["icon"]
+            gift = gifts.adapter(game).with_icon(gift, icon)
         return gift
     if value["mode"] == "event":
         return module(game).OFFICIAL.gift(value["event"], value["event_ids"].get(value["event"]))
@@ -194,5 +201,6 @@ def problem(tool, value) -> str:
     try:
         compile(tool, value)
     except (OSError, ValueError) as exc:
-        return str(exc)
+        from pokeldn.app.i18n import error_ref
+        return error_ref(exc)
     return ""

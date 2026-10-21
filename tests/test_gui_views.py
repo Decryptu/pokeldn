@@ -865,7 +865,7 @@ def test_official_gift_icons_follow_the_record_and_keep_selection(monkeypatch, s
 
 
 @pytest.mark.parametrize("game,key,initial,changed,national", [
-    ("frlg", "species", 25, 409, 385), ("frlg", "icon", 251, 277, 252),
+    ("frlg", "species", 25, 385, 385), ("frlg", "icon", 251, 252, 252),
     ("swsh", "species", 25, 146, 146),
 ])
 def test_custom_gift_previews_follow_species_form_and_shiny_edits(monkeypatch, game, key, initial,
@@ -884,7 +884,7 @@ def test_custom_gift_previews_follow_species_form_and_shiny_edits(monkeypatch, g
     monkeypatch.setattr(view_module, "NamePicker", lambda *a, **kw: SimpleNamespace(control=ft.Container()))
     builder = view_module.GiftBuilder.__new__(view_module.GiftBuilder)
     builder.game, builder.app, builder.previews = game, None, []
-    builder.value = {"build": {"kind": "pokemon", key: initial}}
+    builder.value = {"build": {"kind": "pokemon", "entity_schema": 1, key: initial}}
     builder.commit = lambda rebuild=False: None
     field = builder.name_field("Pokemon", "species", key, preview=True)
     builder.edit(key, changed)
@@ -1148,15 +1148,15 @@ def test_the_raid_partners_card_shows_its_progress_s_pool_and_seats_two_at_most(
                                                ui=lambda work: None))
     picker = RaidPartnersPicker(view, field)
     assert (picker.stage, picker.default, len(picker.pool)) == (1, 4, 16)
-    assert values["--raid-partner"]["picks"] == ["Ava"]
+    assert values["--raid-partner"]["picks"] == ["1"]
     assert picker._summary() == "Ava, one drawn · 3-star raids"
     picker._pick("Zoe")
-    assert values["--raid-partner"]["picks"] == ["Ava", "Zoe"]
+    assert values["--raid-partner"]["picks"] == ["1", "14"]
     picker = RaidPartnersPicker(view, field)
     picker._pick("Eli")
-    assert values["--raid-partner"]["picks"] == ["Ava", "Zoe"]
+    assert values["--raid-partner"]["picks"] == ["1", "14"]
     picker._pick("Ava")
-    assert values["--raid-partner"]["picks"] == ["Zoe"]
+    assert values["--raid-partner"]["picks"] == ["14"]
     picker._progress(SimpleNamespace(control=SimpleNamespace(value="6star")))
     assert values["--raid-partner"]["progress"] == ""
     picker = RaidPartnersPicker(view, field)
@@ -1182,9 +1182,9 @@ def test_each_console_joining_takes_a_partner_s_slot():
                            app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
                                                ui=lambda work: None))
     picker = RaidPartnersPicker(view, field)
-    assert (picker.free, values["--raid-partner"]["picks"], picker._summary()) == (1, ["Eli"], "Eli")
+    assert (picker.free, values["--raid-partner"]["picks"], picker._summary()) == (1, ["9"], "Eli")
     picker._pick("Gianna")
-    assert values["--raid-partner"]["picks"] == ["Eli"]
+    assert values["--raid-partner"]["picks"] == ["9"]
     assert not [e for e in command.problems(tool, values) if "consoles joining" in e]
     values["--raid-players"] = "3"
     assert "With 3 consoles joining, the raid seats no partner." in command.problems(tool, values)
@@ -1446,6 +1446,7 @@ def gift_picker(monkeypatch, value=None, view=None):
                                    set_value=lambda field, value: saved.append(value))
     view.app = app
     app.settings.save = lambda: saved.append(dict(view.values))
+    view.event_gift_pickers = []
     control = GamesView.input(view, tool.fields[0])
     work.pop()()
     return control, lambda: work.pop()(), asked, saved
@@ -1477,7 +1478,7 @@ def test_the_mystery_gift_card_finds_an_event_pokemon_and_offers_a_fresh_copy(mo
     control, run, asked, saved = gift_picker(monkeypatch)
     assert asked == [("sv", GIFT_TRAINER)]
     assert {"Gavin’s Palafin Gift", "Palafin · Lv 50 · Tera Water · Mystic Water",
-            "OT Gavin · 13 Apr 2023", "Your OT · 17 Nov 2022",
+            "OT Gavin · Apr 13, 2023", "Your OT · Nov 17, 2022",
             "3 of 3 event Pokemon, newest first"} <= set(gift_texts(control))
     for typed, count in (("gavin haze", 1), ("tera flying 2022", 1), ("shiny", 0)):
         gift_search(control, typed)
@@ -1584,7 +1585,8 @@ def test_a_gifts_form_reaches_its_browser_queue_and_session_preview(monkeypatch)
     run()
     assert saved[-1][0]["form_id"] == 1 and "423-east" in asked
     panel = SimpleNamespace(offered_entries=lambda: saved[-1], offered=None, traded=0,
-                            offering=ft.Container(), app=SimpleNamespace(settings=SimpleNamespace(sprites=False)))
+                            offering=ft.Container(), app=SimpleNamespace(settings=SimpleNamespace(sprites=False)),
+                            games=SimpleNamespace(game=SimpleNamespace(key="sv")))
     for entries in (saved[-1], saved[-1] * 2):
         panel.offered_entries = lambda: entries
         asked.clear()

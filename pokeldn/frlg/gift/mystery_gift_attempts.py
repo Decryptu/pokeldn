@@ -1,3 +1,4 @@
+from pokeldn.app.i18n import message_ref as _message
 import csv
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +16,7 @@ def append_attempt(directory, *, received_result, trainer=None, now=None):
     """``trainer_ot`` is the low 16 bits of the trainer ID as five decimal digits; a failed early
     join leaves both identity columns blank."""
     if type(received_result) is not bool:
-        raise ValueError("received_result must be a bool")
+        raise ValueError(_message('core.pokeldn.frlg.gift.mystery_gift_attempts.received_result_must_be_a_bool_4006e9c2'))
     now = now or datetime.now().astimezone()
     path = daily_attempt_path(directory, now=now)
     path.parent.mkdir(parents=True, exist_ok=True)

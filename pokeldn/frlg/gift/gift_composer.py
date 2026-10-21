@@ -1,3 +1,5 @@
+from pokeldn.app.i18n import message_ref as _message
+from pokeldn.app.i18n import ref as _ref
 """Saved state used by compiled gifts: VAR_MYSTERY_GIFT_1 = ordinary/rally-completion stage
 cursor, VAR_MYSTERY_GIFT_2..7 = stamp-slot cursors (0 absent, 1 activated, +1 per stage),
 FLAG_MYSTERY_GIFT_DONE = one-shot."""
@@ -342,7 +344,7 @@ class DeliveryStage:
 
     def __init__(self, *positional_actions, actions=None, condition=None):
         if actions is not None and positional_actions:
-            raise TypeError("pass DeliveryStage actions positionally or by keyword, not both")
+            raise TypeError(_message('core.pokeldn.frlg.gift.gift_composer.pass_deliverystage_actions_positionally_or_by_ke_5c337e7a'))
         selected = actions if actions is not None else positional_actions
         if (actions is None and len(selected) == 1
                 and isinstance(selected[0], (tuple, list))):
@@ -815,7 +817,7 @@ class _FieldScriptBuilder:
 
     def label(self, name):
         if name in self.labels:
-            raise GiftValidationError("compiler", f"duplicate label {name!r}")
+            raise GiftValidationError(_message('core.pokeldn.frlg.gift.gift_composer.compiler_e996bb0e'), f"duplicate label {name!r}")
         self.labels[name] = len(self.code)
 
     def emit(self, data):
@@ -1532,7 +1534,7 @@ __all__ = [
     "AllOf", "AnyOf", "BattleLegendary", "BattlePokemon", "DeliveryPlan",
     "DeliveryStage",
     "Exit", "FlagSet", "GiftSpec", "GiftValidationError", "GiveEgg", "GiveItem",
-    "GivePokemon", "MapPosition", "Message", "ReadSpecial", "RelativeToPlayer",
+    "GivePokemon", "MapPosition", _ref("core.pokeldn.frlg.gift.gift_composer.message_2f77668a"), "ReadSpecial", "RelativeToPlayer",
     "SetVar", "AddVar", "GiveRandomEgg",
     "ShowSprite",
     "Not", "RequireSpecialResult", "SHARE_ALWAYS", "SHARE_NEVER", "SHARE_ONCE",

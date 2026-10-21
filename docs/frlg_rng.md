@@ -4,10 +4,12 @@ parent: FireRed and LeafGreen
 nav_order: 5
 ---
 
+<a id="grngvalue-reading-it-predicting-it-and-aiming-it"></a>
 # gRngValue: reading it, predicting it, and aiming it
 
 Everything here was measured on French FireRed, BPRF software version 0x0A.
 
+<a id="the-generator"></a>
 ## The generator
 
 ```c
@@ -38,6 +40,7 @@ distance always exists and is evidence only when small (odds N / 2<sup>32</sup>)
 `gRngValue` and `gSpecialVar_0x8000` are link-time globals and never move. A save-block address
 moves: `SetSaveBlocksPointers` re-rolls a 4-aligned offset on every battle and load [load_save.c:75].
 
+<a id="the-rate-exactly-2-turns-per-frame"></a>
 ## The rate: exactly 2 turns per frame
 
 `ScrCmd_delay` resumes after exactly N frames [scrcmd.c:651]. `--gift rng-rate-probe` reads
@@ -56,6 +59,7 @@ The probe measures a locked player during `delay` (`lock=False` measures unlocke
 ordinary overworld play are even. A count comes from two readings (`distance`) or the resulting
 Pokemon (`recover_wild_state`); one turn is about 8 ms, so hand-timed seconds do not determine it.
 
+<a id="where-the-seed-comes-from-and-why-it-cannot-be-carried"></a>
 ## Where the seed comes from, and why it cannot be carried
 
 ```c
@@ -93,6 +97,7 @@ Timing START cannot choose a seed. Timer 1 runs at F/1 and a frame is 280,896 cy
 reads would all be multiples of `gcd(280896 mod 65536, 65536) = 64`. Recovered seeds `0xB8C0`,
 `0x3742`, `0x8E94`, `0x1376` are 0, 2, 20, 54 mod 64: the read has sub-frame jitter.
 
+<a id="reading-a-pokemon-back-into-the-state-that-made-it"></a>
 ## Reading a Pokemon back into the state that made it
 
 `GenerateWildMon` calls `CreateMonWithNature(..., USE_RANDOM_IVS, Random() % NUM_NATURES)`
@@ -120,6 +125,7 @@ state in 2<sup>32</sup> has that PID on its next two draws:
 
 A mon's PID and IVs are checked against the six stats on its summary screen before any RNG claim.
 
+<a id="the-scripted-battle"></a>
 ## The scripted battle
 
 ```
@@ -144,6 +150,7 @@ PREDICTED   PID 0x026F38B2   nature 17   IVs 31/23/27/18/30/30   shiny
 ACTUAL      PID 0x026F38B2   nature 17   IVs 31/23/27/18/30/30   shiny
 ```
 
+<a id="a-mon-predicted-from-a-seed-nobody-set"></a>
 ### A mon predicted from a seed nobody set
 
 A script that writes nothing reads the live state, prints it, generates a mon, and prints it again:
@@ -161,6 +168,7 @@ offset zero.
 because the player is the OT [pokemon.c:1796], 2 for the IVs [:1836,1845]. The extra 2 (one frame of
 overworld consumption) land after the generation.
 
+<a id="the-seed-reading-npc"></a>
 ## The seed-reading NPC
 
 `--gift rng-seed-reader`, flag id 1015. Six commands, installed once as a RAM script by `initramscript`
@@ -201,6 +209,7 @@ Bind to the player's mother (group 4, map 0, object 1): `MOVEMENT_TYPE_FACE_LEFT
 hidden, a step from the player. Both Pallet Town object events are `MOVEMENT_TYPE_WANDER_AROUND`
 [data/maps/PalletTown/map.json] and walk off mid-countdown.
 
+<a id="how-precisely-a-human-can-press-a"></a>
 ## How precisely a human can press A
 
 Four presses by one player against a target 30.00 s ahead, read off the seed-printing NPC:
@@ -221,6 +230,7 @@ random encounters. A miss is measured exactly. `pokeldn/frlg/rom/rng_countdown.p
 the countdown; `--aimed-at STATE` turns a miss into a signed frame count. This remains the route when
 the RAM script slot holds a Wonder Card.
 
+<a id="the-stub-that-does-the-search"></a>
 ## The stub that does the search
 
 `--gift rng-shiny-hunt`, `pokeldn/frlg/rom/native_script.py`, `asm/field/shiny-seek.s`. Each stub on
@@ -256,6 +266,7 @@ the same bytes serve FireRed and LeafGreen. It writes one word, `gRngValue`. The
 exhaustion `gRngValue` is untouched and the encounter is ordinary. Every stub runs under unicorn
 before staging (`tests/test_native_script.py`) and its answer is checked against `rng_countdown`.
 
+<a id="a-ram-script-may-not-come-back-from-a-battle"></a>
 ### A RAM script may not come back from a battle
 
 `CB2_InitBattle` and `InitOverworldBgs` call `MoveSaveBlocks_ResetHeap` [battle_main.c:614,
@@ -277,6 +288,7 @@ The fix starts the battle from outside the save block, in ten bytes [`rng_script
 `ScriptContext_RunScript` calls `UnlockPlayerFieldControls()` when a script stops [script.c:335], so
 the `end` returns control. No RAM script may rely on a save-block address across a battle or map load.
 
+<a id="choosing-the-nature-and-the-ivs"></a>
 ## Choosing the nature and the IVs
 
 `--gift rng-mon-hunt`, `asm/field/mon-seek.s`, flag id 1019. All four draws are tested: the
@@ -306,6 +318,7 @@ searches.
 returns in two instructions, the divisor is its own loop counter, the IV floors carry a terminator bit
 at 30, and both fields shift to bits 27..31 so a five-bit comparison is unsigned.
 
+<a id="the-payload-in-the-script-body"></a>
 ## The payload in the script body
 
 `setptr` spends six script bytes per code byte (opcode, immediate, 4-byte address): about 162 bytes
@@ -337,6 +350,7 @@ The trampoline tail-branches (`bx r0`, `lr` untouched), so the payload's `pop {r
 `ScrCmd_callnative`'s caller. It first checks `ramScript.data.magic` is `RAM_SCRIPT_MAGIC` = 51
 [script.c:12]; on a wrong offset it returns and the encounter is ordinary.
 
+<a id="alignment-to-four-bytes"></a>
 ### Alignment to four bytes
 
 THUMB `ldr rN, [pc, #imm]` and `adr` use `Align(PC, 4)`. Two bytes off, the branch lands and the code
@@ -345,6 +359,7 @@ runs but every pool word is read two bytes late. Four-byte alignment holds: `off
 it so. `native_script.emulate_body_script` catches a misalignment by walking the real script bytes
 (the 36 `setptr`s, the `callnative`, the trampoline's `gSaveBlock1Ptr` read, the branch into the body).
 
+<a id="proving-the-size-rather-than-the-jump"></a>
 ### Proving the size rather than the jump
 
 A shiny result confirms the jump but not the delivered size. `asm/field/mon-seek-far.s` is followed by non-zero filler to
@@ -352,6 +367,7 @@ byte 995; the stub sums it and searches only on a match. `InitRamScript` zero-fi
 [`ClearRamScript`, script.c:495], so a short delivery leaves `gRngValue` alone. `--gift
 rng-mon-hunt-far` carries 196 bytes of stub and 559 of filler.
 
+<a id="searching-so-the-stray-draw-cannot-move-the-answer"></a>
 ## Searching so the stray draw cannot move the answer
 
 `asm/field/mon-seek-both.s` (232 bytes, `--gift rng-mon-hunt-both`, flag id 1001) tests the floors at
@@ -384,6 +400,7 @@ State 0x4FB97B07 predicts the PID exactly, with the IVs from Method 4 (SPEED 21,
       Method 2 (stray)  20/ 9/25/21/ 3/ 1
       Method 4          25/10/30/21/ 3/ 1   <- the mon that appeared
 
+<a id="where-a-hunt-writes-its-report"></a>
 ## Where a hunt writes its report
 
 `asm/field/mon-seek-log.s` (288 bytes, `--gift rng-mon-hunt-log`, flag id 1002) writes
@@ -408,6 +425,7 @@ survives the battle (`MoveSaveBlocks_ResetHeap` copies the blocks) and reaches f
 `CYCLES_PER_INSTRUCTION_FROM_EWRAM` is 3. The observed time is a stopwatch reading and search times
 are exponentially distributed; an underestimate only makes the freeze ceiling refuse sooner.
 
+<a id="leafgreen"></a>
 ## LeafGreen
 
 The stubs run unported: every literal is a link-time IWRAM word or a constant identical on LeafGreen,

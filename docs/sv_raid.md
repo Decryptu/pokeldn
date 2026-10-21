@@ -4,6 +4,7 @@ parent: Scarlet and Violet
 nav_order: 1
 ---
 
+<a id="tera-raids"></a>
 # Tera Raids
 
 A local Tera Raid is a Scarlet/Violet session of up to four stations on LDN scene 7. The host runs
@@ -15,6 +16,7 @@ AI partner. Addresses are offsets into the decompressed `main` of Scarlet 4.0.0,
 retail Scarlet measured here runs; Violet 4.0.0 has the same code at the same offsets
 ([docs/sv.md](sv.md)).
 
+<a id="hosting"></a>
 ## Hosting
 
 The host advertises scene 7, four participants and Link Code 4970. The console joins from
@@ -46,6 +48,7 @@ In raid mode the host differs from a trade host in what it addresses and when:
 The opening's 0x7C, 0x81 port 5 and 0x80 port 2 messages repeat every 0.25 s until acknowledged,
 and every ack the host sends declares the lowest unacknowledged sequence of the stream.
 
+<a id="several-consoles"></a>
 ### Several consoles
 
 `--raid-players N` (1 to 3, the app's "Consoles joining") seats up to three consoles in one lobby,
@@ -142,6 +145,7 @@ A random player id of the form `10 00` and fourteen random bytes drew no type 6 
 console; the anonymous id `00000000000000010000000000000000` (`pia_connect.DEFAULT_PLAYER_ID`) seated
 it.
 
+<a id="the-lobby"></a>
 ## The lobby
 
 A raid message is a game message on 0x80 port 0: a u16 handler key, a kind byte, a step byte
@@ -280,6 +284,7 @@ The Net 0x50 is the trade host's property body (`NET_PROPERTY_BODY`) with sequen
 id, byte 27 set to 7 and the host's 132 application bytes at +38, zlib-compressed under message flags
 0x31. Sent uncompressed under 0x31, it drew no 0x51.
 
+<a id="the-battle-bootstrap"></a>
 ## The battle bootstrap
 
 Message 0x2f carries a 0xaa0-byte record, LZ4-compressed (the block format alone, `pokeldn.sv.lz4`):
@@ -391,6 +396,7 @@ Chosen rewards go under subject 0 with no bonus rows, so a guest receives
 every one. A retail console awarded a row rewritten to Quick Ball x500, with the other
 rows cleared and one bonus row left, as written.
 
+<a id="partners"></a>
 ## Partners
 
 Every console fills the participant slots no lobby member holds with the same NPC trainers, drawn
@@ -523,6 +529,7 @@ RaidPoint:
 | 0 | 3, 4 | Samantha (Weavile), Zoe (Mudsdale) |
 | 0xaf05b3d1838735c0 | 4 | Eli (Gardevoir), Ava (Toxapex) |
 
+<a id="favoured-partners"></a>
 ### Favoured partners
 
 Raiders rate ten partners of the stage 3 and 4 pool (Serebii's level 80) above the rest.
@@ -550,6 +557,7 @@ Sources, read 2026-10-11: Amiibo Doctor's Tera Raid NPC Partners Tier List (June
 seven-star event guides (Skeledirge, Goodra, Dragonite); Smogon's seven-star raid threads
 (Porygon2, Glimmora, Annihilape and others).
 
+<a id="the-seed"></a>
 ## The seed
 
 A raid is drawn from a 32-bit seed and the console's state: version, region (Paldea, Kitakami,
@@ -591,6 +599,7 @@ values are zero. The bootstrap's boss record and the RaidPoint summary carry the
 the effort values, the RaidPoint's `+0x2c` the capture level: a black boss built from `09F3E337`
 (Scarlet, Paldea) equals a French retail Scarlet's but for the nickname and language.
 
+<a id="event-raids"></a>
 ## Event raids
 
 A Poke Portal News delivery holds five files: `raid_enemy_array`, `fixed_reward_item_array`,
@@ -719,6 +728,7 @@ at seeds `00000001`, `12345678`, `9ABCDEF0`, `DEADBEEF`, `52E6B438` and `0000F00
 encryption constant, IVs, ability number, gender, nature, height, weight and scale that
 `boss_fields` draws for the gallery's record of it.
 
+<a id="finding-a-seed"></a>
 ## Finding a seed
 
 The app's raid seed field shows the boss and rewards the seed gives in the tool's context, and Find
@@ -728,6 +738,7 @@ size mark and IV ranges. It ranks the results by a score of the boss's stats (HP
 its defenses, either defense alone, its better attacking stat, or its total) or by the rewards
 wanted (Most desired rewards, below). One result per species is kept unless a species is chosen.
 
+<a id="size-marks"></a>
 ### Size marks
 
 PKHeX allows the Mini mark on a Pokemon that has been in Scarlet or Violet at scale 0 and the Jumbo
@@ -744,6 +755,7 @@ scale is drawn after the height and weight (`boss_fields`):
 `raid_search.size_marks` names the marks an event's bosses of the chosen crystal, stars and species
 can take, and the finder greys out the others.
 
+<a id="wanted-rewards"></a>
 ### Wanted rewards
 
 Its Rewards section, folded until opened, wants rewards: rows of an item and the least quantity a
@@ -767,6 +779,7 @@ rank; the items after those only want their least. Five items fit in every raid 
 Exp. Candy L has 59 totals, the most of any item), and a black crystal ranks four herbas, patches or
 caps and four materials.
 
+<a id="the-helpers-scan"></a>
 ### The helper's scan
 
 The PKHeX helper scans the seeds over every core (`services/pkhex/RaidScan.cs`, packed and sent by
@@ -807,6 +820,7 @@ Measured on an Apple M4 (10 cores), the helper warm:
 | every seed of Scarlet's Paldea black crystal, two Bitter Herba Mystica then two Ability Patches ranked, one boss per species | 20.9 s |
 | every seed of that crystal, wanting the Jumbo mark | 3.3 s |
 
+<a id="the-battle-between-consoles"></a>
 ## The battle between consoles
 
 Measured between two emulated Scarlet 4.0.0, one hosting a 4-star crystal and one joining from the
@@ -835,6 +849,7 @@ from the host's action blocks with the same builder and compares size and bytes 
 mismatch goes to `0xf5bfd4`, the receive-timeout handler. A station that hosts a battle has to produce
 the queue Scarlet's own engine produces from the same state.
 
+<a id="which-station-runs-the-server"></a>
 ### Which station runs the server
 
 The battle server is the first entry of the port-2 member list, the list every console builds from
@@ -877,6 +892,7 @@ at battle start (`0xfa52b0`, `0xfa5314`). Its own code is the code of the first 
 its own station (`0xd5f3b4`), and the Lua's slot loop (`0.4455` @1206..@1248) has no break, so the
 last matching entry sets the console's slot.
 
+<a id="the-battles-random-numbers"></a>
 ### The battle's random numbers
 
 Every random draw of a round comes from one xoroshiro128+ object of 0x28 bytes (vtable `0x4500bd0`):
@@ -910,6 +926,7 @@ A draw adds `s0 + s1` and steps the state; the count rises by one per call, not 
 
 Many round functions inline the step instead of calling these.
 
+<a id="damage-and-draws-per-move"></a>
 ### Damage and draws per move
 
 Measured on oracle battles of random Pokemon against standard raids (233 battles, 29 with every draw
@@ -939,6 +956,7 @@ bootstrap](#the-battle-bootstrap)): of the oracle battles won, 78 at one star, 8
 four ended after exactly 5, 5, 8 and 12 times the record's HP in `0x37 (2, 2, damage)`; the others took
 less, through the shield and moves with their own rules.
 
+<a id="a-move-in-the-round-queue"></a>
 ### A move in the round queue
 
 In a round's queue a battler's move is one run of commands. A battler's client position is 0 to 3 for
@@ -1007,6 +1025,7 @@ after a Dark hit, Gale Wings' priority), unless the corpus measured that ability
 when the battle holds an ability that acts on switching in (Intimidate lowers the attacker's Attack
 before the first round).
 
+<a id="actions"></a>
 ### Actions
 
 A round's action header (the request block, 0x238 bytes) is five 0x70-byte blocks, one per client
@@ -1054,6 +1073,7 @@ the block built from the type-6 command of its acting slot (10 of 10 records who
 wire; the boss's own slot-1 blocks have none: [The boss's actions](#the-bosss-actions)). The rounds of four emulated sessions,
 run from their actions alone, give the console's 20576-byte bodies outside those bytes.
 
+<a id="the-server-command-queue"></a>
 ### The server command queue
 
 A type-0x15 record's queue (+0x23c of the body, its length at +0x238) is a run of commands. A
@@ -1104,6 +1124,7 @@ from emulated Scarlet 4.0.0 servers and the type-0x15 records between two emulat
 all, decodes to its last byte and encodes back to the same bytes.
 The 0xcf groups seen so far are zero-filled.
 
+<a id="the-battle-start-body"></a>
 ### The battle-start body
 
 Message 0x11's body is a command queue with no length word ([The server command queue](#the-server-command-queue)).
@@ -1140,6 +1161,7 @@ one with `0xca (0, 752, F, item, 0xffff0000)`; with no item among the foes it ha
 Hyper Cutter, Klutz, Light Metal, Moxie, Poison Touch and Wind Power have no start event. Built this
 way, 420 of 554 oracle start bodies are equal and none differ.
 
+<a id="the-servers-messages"></a>
 ### The server's messages
 
 Every message the server sends is one step of `0x113bad8(server, kind, destination)`:
@@ -1162,6 +1184,7 @@ message of a given step. A link's messages reach the wire as a battle-start fram
 slot): u16 key 0x7b, u32 setup `+0x2c`, u32 1, u32 the slot, u32 the length, then the message. The code
 that drains a link onto the network was not located.
 
+<a id="the-bosss-actions"></a>
 ### The boss's actions
 
 The raid boss's extra actions wait in a list of four (u8 kind at +0x5c + 8i, u32 value at +0x60 + 8i,
@@ -1203,6 +1226,7 @@ Between two emulated Scarlet 4.0.0, a 4-star boss with the profile (3 Sunny Day 
 kind 4 value 0 alone (no 0x47, a 0x51 sent with it), then after a guest's attack 0x47 and kind 1 with kind
 4 value 2, then 0x47 and kind 1 again. The 75 percent action ran inside the slot-0 round that crossed it.
 
+<a id="the-battle-timer"></a>
 ### The battle timer
 
 The battle timer is a 0x28-byte object at the server context's +0x38 (the per-frame machine's and every
@@ -1230,6 +1254,7 @@ integer division, is P or less: on a 300 s timer the 80 percent trigger fires wi
 of running time. In the served battle below the timer started when the last station's answer to message
 0x11 reached the server, and the 80 percent action went out 58.1 s later.
 
+<a id="the-battles-end"></a>
 ### The battle's end
 
 After a round whose result byte is 7 (`0x16e4ff0`), the server runs, in order:
@@ -1275,6 +1300,7 @@ Between two emulated consoles the guest received 0x25 (an empty queue) 40 ms aft
 the boss out, 0x29 with the body `00 00 01 00 01 00` once every station answered 0x25, and 0x49 once every
 station answered 0x29.
 
+<a id="the-battle-timer-running-out"></a>
 ### The battle timer running out
 
 At the top of every frame it runs, the per-frame machine (`0xf6d538`) reads the battle timer with the
@@ -1316,6 +1342,7 @@ One revival round queued `3 (5, 277)`, `cb`, `3d (4)`, `16 (4, 0, 0, 113)`, `5e`
 `98 (4, 0, 0, 1)`, `20 (5, 0x12)`, `25`, `c7`, `cb`, `c8`. The test checks `Server` against the game's
 messages for this battle too.
 
+<a id="the-servers-flow"></a>
 ### The server's flow
 
 On the console the steps are jobs: Wild::Setup first, ServerRequest (`0x138d178`, message 5 to one
@@ -1403,6 +1430,7 @@ one is byte for byte the console's outside the header's unwritten bytes and the 
 Under unicorn, the game's own code for every lifted step leaves the same pages through the whole served
 battle.
 
+<a id="reproducing-a-round"></a>
 ### Reproducing a round
 
 A round is replayed exactly under unicorn from an emulated console halted at the builder
@@ -1516,6 +1544,7 @@ A weak-handle entry is 0x20 bytes: u64 id (u32 index | u32 generation << 32), +8
 +0x10 the object, u16 +0x18 weak count, u16 +0x1a strong count, u32 +0x1c state (-1 freed, -2 live).
 Blocks hold 0x400 entries (`0xc1adec`); freed ids go to a `deque<u32>` grown by `0xb44724`.
 
+<a id="the-servers-flow-measured"></a>
 ### The server's flow, measured
 
 These hold for an oracle server over the scripted console of [Serving the battle](#serving-the-battle),
@@ -1533,6 +1562,7 @@ battles that the players won:
 | a time-up | 0x2b with the body `00 00 00 00 02 00` (63 of 233 battles) |
 | the notice 0x46 | one for each frame on which a job starts, or on which, with no job running, a round's answer (0x16) is read |
 
+<a id="serving-the-battle"></a>
 ### Serving the battle
 
 `bin/sv_host.py --raid-serve [NAME]` keeps the network through the battle and serves it from the
@@ -1560,6 +1590,7 @@ so the local stations leave it unanswered. A failure (the server raising, or fai
 the serving and hands the network over as a host without the flag does; the console then fails over
 and fights its own battle ([Which station runs the server](#which-station-runs-the-server)).
 
+<a id="joining"></a>
 ## Joining
 
 `bin/sv_join.py --raid-pokemon FILE` joins a scene-7 network and takes part as a guest. The
@@ -1579,6 +1610,7 @@ tool runs it. `pokeldn.sv.raid.RaidGuest` and the joiner do, in order:
 Against a retail host the guest appeared in the lobby under the trainer name, became ready and let
 the host start; its Pokemon stayed in the battle.
 
+<a id="unresolved"></a>
 ## Unresolved
 
 - What the `chance(0)` draws before some stat-drop secondaries stand for, when the target is not

@@ -4,6 +4,7 @@ parent: The wireless layer
 nav_order: 1
 ---
 
+<a id="the-pia-layer"></a>
 # The Pia layer
 
 Pia is Nintendo's peer-to-peer session middleware, on UDP port 12345 in every title examined. Every
@@ -20,8 +21,10 @@ datagram begins with the magic `32 AB 98 64`. The Pia version decides the header
 Unless a section names another build, `0x01...` addresses are Shield 1.3.2's decompressed `main`
 (as `tools/switch/nso_read.py` lays it out) and `main.bin 0x01...` addresses are BDSP 1.3.0's.
 
+<a id="packet-headers"></a>
 ## Packet headers
 
+<a id="version-9-pia-527-545"></a>
 ### Version 9 (Pia 5.27-5.45)
 
 From `nn::pia::common::Packet::Header`; the parser byte-swaps three fields with `rev`.
@@ -36,6 +39,7 @@ From `nn::pia::common::Packet::Header`; the parser byte-swaps three fields with 
     0x18  8  AES-GCM tag, truncated from 16
     0x20     ciphertext: the plaintext padded to a multiple of 16
 
+<a id="version-4"></a>
 ### Version 4
 
 From the deserializer `0x01774730`, which requires more than 0x1f bytes (`cmp w2, #0x1f; b.hi`):
@@ -64,6 +68,7 @@ Sending 0 in both, as the console does, passes every path. The initializer `0x01
 `0x01774b60`, `0x01774d00` check `(byte & 0x7f) == 4` (BDSP: the same with 9). Below the header,
 version 4 shares version 9's session key and IV, and its framing plus one field.
 
+<a id="version-11-what-a-receiver-drops-scarlet-400"></a>
 ### Version 11: what a receiver drops (Scarlet 4.0.0)
 
 `0x6e9744` accepts or drops a whole packet before any protocol reads it; a dropped packet is lost
@@ -84,6 +89,7 @@ address, during a join, no packet id is checked. No check reads the footer's ids
 (`0x6b6b38`) numbers destination-1 packets from one counter (`0x696d04`) and packets to one
 variable id from a per-recipient counter (`0x696ce4`); both skip 0.
 
+<a id="message-framing"></a>
 ## Message framing
 
 A Pia payload carries one or more messages, each opening with a presence byte saying which header
@@ -135,6 +141,7 @@ stepped over unread; the packet tail is `0xFF`. `pia4.parse_packet()` resolves t
 `pia4.parse_messages()` returns each header as sent. A walk is correct when consumed bytes plus
 `0xFF` padding account for every packet's whole plaintext.
 
+<a id="compression"></a>
 ### Compression
 
 A payload may be a zlib stream, flagged per message in the message flags: 0x20 in 5.27-5.45, 0x10
@@ -146,6 +153,7 @@ header claiming a payload of 0x6260. Over 2835 version-4 messages, `flags & 0x10
 decompressibility exactly (256 set, all valid; 2579 clear, none). A zlib stream's first two bytes,
 read as a big-endian halfword, are a multiple of 31.
 
+<a id="the-footer"></a>
 ### The footer
 
 A packet sent to more than one console carries a footer: one big-endian halfword per recipient, the
@@ -154,6 +162,7 @@ ciphertext is `data[0x20 : len(data) - footer_size]` (`pokeldn/ldn/pia5.cipherte
 footer left in fails authentication with no other symptom. When only some packets authenticate,
 group the failures by footer size first.
 
+<a id="session-keys"></a>
 ## Session keys
 
 One session-key implementation per network type, in separate classes:
@@ -167,6 +176,7 @@ One session-key implementation per network type, in separate classes:
 "The SSID or random values seeded with the session parameter", in published prose, names two
 implementations; the class name says which one a capture used.
 
+<a id="the-game-key"></a>
 ### The game key
 
     key = cryptoKeyDataSeed                     the game's own 16-byte constant
@@ -179,6 +189,7 @@ A published per-game key is this value for one game version and differs from the
 bytes 1, 3, 7 and 12 (`ldn_game_key()`). Sword/Shield's key is a 16-byte ASCII literal loaded with
 one `ldp` and used unchanged, with no seed and no version substitution.
 
+<a id="the-ldn-session-key"></a>
 ### The LDN session key
 
 For Pia 5.9-5.45:
@@ -192,6 +203,7 @@ SEAD, Nintendo's standard-library RNG, seeds its state by `s[i] = (prev ^ (prev 
 `pia5.ldn_session_key()`). For Pia 6.16+ (FireRed) the session key is AES of the SSID under the game
 key ([The wireless layer](ldn.md#hosting-for-an-emulator)).
 
+<a id="the-aes-gcm-iv"></a>
 ### The AES-GCM IV
 
 For Pia 5.27-5.45 and version 4 (`ldn_nonce_crc()`, `gcm_iv()`):
@@ -204,6 +216,7 @@ The source MAC is not in the packet; the rest comes from the capture or the adve
 plaintext is padded with `0xFF` to a multiple of 16, known plaintext that tests a candidate key in
 one AES block.
 
+<a id="the-protocols"></a>
 ## The protocols
 
 From `GetProtocolId` (vfunc4 on every `nn::pia` protocol object, a two-word body), read over the
@@ -228,6 +241,7 @@ RTTI vtables.
 BDSP registers nine: 0x14 v2, 0x18 v3, 0x1c v0, 0x24 v0, 0x58 v3, 0x68 v1, 0x7c v3, 0x94 v1, 0xa4
 v0. Mesh version 3 pins the library to Pia 5.30-5.45, reliable version 3 to 5.31-5.43.
 
+<a id="joining-a-mesh"></a>
 ### Joining a mesh
 
 A station joins through the update session (0x24), the connection request (0x14) and the join
@@ -239,6 +253,7 @@ ack id big-endian. The ack id is the message's last four bytes whatever its
 length (`size - 4` with a borrow check; 0 under four bytes). `pokeldn/ldn/mesh_protocol.ack_for()`.
 A host acks a join request before sending the join response; the receiver acks every copy.
 
+<a id="leaving-a-session-pia-6"></a>
 ### Leaving a session (Pia 6)
 
 `Session::LeaveAsync` starts `LeaveSessionJob`, whose first step, LeaveSessionJob::LeaveMesh, starts
@@ -259,6 +274,7 @@ at `0x37a2eb9` in Arceus, `0x174e53` in the GBA app). Its other steps are WaitLe
 WaitLeaveMeshWithHostMigration, WaitHostMigrated, MeshCleanup and DisconnectNetwork, and in 6.39
 also WaitDisconnectNetwork, SendMonitoringData and CompleteProcess.
 
+<a id="the-local-protocol-0x24"></a>
 ## The Local Protocol (0x24)
 
 The host broadcasts an update session (type 0x11) about every 100 ms until every station acks it:
@@ -276,6 +292,7 @@ Eight nine-byte node slots and one byte. The Pia message header is big-endian, t
 little-endian, a local address inside them big-endian. `pokeldn/ldn/local_protocol.py` parses it and
 version 4's.
 
+<a id="the-ack"></a>
 ### The ack
 
 The ack (type 0x21) is 20 bytes, from `LocalAckMessage::Serialize` (`main.bin 0x016bc0f4`): `1` at
@@ -294,12 +311,14 @@ slots at `this+0x188` (stride 0x40) comparing 16 bytes of address at +8 and the 
 client's variable id feeds the IV (low byte of the source variable id), so it must be stable within a
 run and non-zero.
 
+<a id="the-mesh-station-protocol-0x14"></a>
 ## The Mesh Station Protocol (0x14)
 
 The dispatcher indexes a seven-entry table with byte 0 minus one (version 4: `0x017c5f50`, table
 `0x02081804`; BDSP: `0x0154e848`, table `0x3e6b38f`): connection request and response,
 disconnection request and response, ack, relay connection request and response.
 
+<a id="the-version-9-connection-request"></a>
 ### The version-9 connection request
 
 Checked in order:
@@ -339,6 +358,7 @@ refusal.
 Sizes from the binary: ack 8 bytes (`0x0154fa2c`), denial 15 (`0x015501ec`), disconnection response
 1 (`0x0154ea60`).
 
+<a id="the-version-4-connection-request"></a>
 ### The version-4 connection request
 
 The handler `0x017c62a0` reads a different message on the same protocol:
@@ -380,6 +400,7 @@ handler reads no ack state: the type-5 handler (`0x017c6034`) only clears the id
 table (`0x017d5770`), and the console's connection job (`0x017afa70`) finishes on either the ack or
 the station reaching state 5. A retail Sword read 12 of 12 responses sent without the ack.
 
+<a id="what-a-connection-response-must-satisfy-to-be-read"></a>
 ### What a connection response must satisfy to be read
 
 Types 2 and 7 reach handler `0x017c6e70` (entries `0x017c5fb4` and `0x017c60c0`, table
@@ -433,6 +454,7 @@ The nat-flags byte at [1] of the console's request varies between connections an
 the joiner controls (both readings of each tried over 26 connections). What writes it is unknown; its
 record is filled by the station-location parser `0x0185ee20`.
 
+<a id="the-mesh-protocol-0x18"></a>
 ## The Mesh Protocol (0x18)
 
 `MeshProtocol::vfunc9` (the receive slot) takes byte [0] minus one, bounded at 0x80, through a table
@@ -467,6 +489,7 @@ the full 556 bytes with unused seats zeroed, so walk the `entries` byte
 (`mesh_protocol.parse_update_mesh()`). The 5.31-5.45 join order counts joins since the mesh was created: after three
 successive connections from one machine it read 0 for the host and 3 for the client at index 1.
 
+<a id="host-migration"></a>
 ### Host migration
 
 A station named next host must answer. Mesh messages on 0x18 port 1 arrive under the reliable
@@ -496,6 +519,7 @@ Responses go to the new host (`0x017c3250`, called by `0x017ca1a0`). That statio
 `build_migration_finish`, `parse_migration_finish`. None of the four published Sword/Shield
 clients handles migration; between two consoles the named station answers it.
 
+<a id="the-rtt-protocol-0x58"></a>
 ## The RTT protocol (0x58)
 
 The host times each station from its entry into the mesh (no wiki page covers this). Version 9's
@@ -520,8 +544,10 @@ BDSP addresses: id and version `0x015ada10`/`0x015ada18`, size (`mov w0, #0xd`) 
 serialise/parse `0x015ada24`/`0x015ad54c`, update `0x015acd90`, answer builder `0x015ad024`, target
 check `0x015ad000`, sample ring `0x015ad058`.
 
+<a id="the-reliable-sliding-window-0x7c"></a>
 ## The reliable sliding window (0x7c)
 
+<a id="version-9-pia-529-543"></a>
 ### Version 9 (Pia 5.29-5.43)
 
     0x0  1  flags     1 application data, 2 message start, 4 message end, 8 is initialized,
@@ -552,6 +578,7 @@ sender still waits on. `ack id` is one more than the highest sequence received.
 `pokeldn/ldn/reliable5.build_ack_message()` reproduces it byte for byte. A data message with sequence 0 draws
 no ack; sequence 1 draws the ack.
 
+<a id="what-the-receiver-discards-in-silence"></a>
 ### What the receiver discards in silence
 
 The receive path checks one message against the port's window and copies the payload into a slot:
@@ -610,6 +637,7 @@ are discarded at `0x6f03cc` with an ack: an emulated Scarlet station discarded a
 `(8, 8)` and never delivered them. An ack carries the sender's own lowest unacknowledged sequence, in the
 header and in the entry's second halfword.
 
+<a id="who-a-window-sends-to-pia-6"></a>
 ### Who a window sends to (Pia 6)
 
 A `ReliableSlidingWindow`'s destinations are station pointers at window `+0x40`, by station index,
@@ -641,6 +669,7 @@ sets a station's header destination bit (`0x6f22f8`..`0x6f230c`) after checking 
 falling back to the caller's mask (`0x6f2360`..`0x6f2370`). A bit in an ack shows the window
 registered the station, nothing about messages sent to it.
 
+<a id="version-4-1"></a>
 ### Version 4
 
 One header class serves 0x7C and 0x80: `nn::pia::transport::ReliableSlidingWindow::MessageHeader`
@@ -698,6 +727,7 @@ window (401 messages sent against a window at 97), which then stops acking.
 Growing sequence ids over a fixed `lowest_pending` mean a growing backlog; measure `lowest_pending`
 per message and retransmits per sequence id.
 
+<a id="protocol-0x80-the-broadcast-reliable-window"></a>
 ## Protocol 0x80, the broadcast reliable window
 
 `nn::pia::transport::BroadcastReliableProtocol` (vfunc4 `0x0184d880` returns 0x80), a different
@@ -707,6 +737,7 @@ station constant id over the 0x260 ack payload (version 9's bitmap rule would gi
 one slot per station the mesh can hold, by station index: a console fills 0..7 with the real ack id
 and leaves 8..31 zero, 8 being `max_total` from the join response.
 
+<a id="protocol-0x81-the-stream-broadcast-reliable-transfer-pia-6"></a>
 ## Protocol 0x81, the stream broadcast reliable transfer (Pia 6)
 
 `StreamBroadcastReliableProtocol` moves one fixed-size block from a station to every station that
@@ -759,6 +790,7 @@ The state at `+0x78` (`0x6f53b0`): a receive goes from 5 to 6 when `+0xba` reach
 (`0x6f5460`); a send from 2 to 3 when an entry of `[+0x98]` equals `+0xa4` and the window reports
 sequence `+0xb8` acknowledged (`0x6e7128`, `0x6f54e4`), and to 0xC with no matching entry.
 
+<a id="protocol-0x84-the-reliable-broadcast-transfer"></a>
 ## Protocol 0x84, the reliable broadcast transfer
 
 `nn::pia::transport::ReliableBroadcastProtocol` carries Sword/Shield's trade snapshot:
@@ -775,6 +807,7 @@ limit measured).
 `pokeldn/ldn/broadcast4.py`. A console sends its own transfer on port 0 and acks the peer's on port
 1.
 
+<a id="unresolved"></a>
 ## Unresolved
 
 - What a retail Sword reads at `[0x37]` of a 17-byte connection response, 38 bytes past the message
@@ -783,6 +816,7 @@ limit measured).
 - Which error code a live refusal hands to the waiting context (`0x01769720`); no reader of it past a zero test
   was found.
 
+<a id="credits"></a>
 ## Credits
 
 The header version table, the session-key derivations and the nonce layouts come from the

@@ -2,6 +2,7 @@
 title: Command-line usage
 ---
 
+<a id="command-line-usage"></a>
 # Command-line usage
 
 Run commands from the repository root. Source tools need Python 3.11+, Switch `prod.keys`
@@ -28,6 +29,7 @@ Trade tools need the .NET 10 SDK for the PKHeX helper. Install the bundled LDN l
 See [radio settings and diagnostics](hardware_esp32.md#running). Config files and default output
 paths resolve against the working directory. Each entry point accepts `--help`.
 
+<a id="firered-and-leafgreen"></a>
 ## FireRed and LeafGreen
 
 Unlock the Direct Corner on the console and prepare at least two `.pk3` party members.
@@ -116,6 +118,7 @@ checksum, writes the sector back and bumps a counter so the game loads it. It ed
   --flash-patch-offset 0x00 --flash-patch-hex cac9c5bfc6bec8ff --write-unsafe
 ```
 
+<a id="lets-go-pikachu-and-eevee"></a>
 ## Let's Go Pikachu and Eevee
 
 The trade screen alternates hosting and scanning, so pokeldn can host or join. Both send a kind-1
@@ -138,6 +141,7 @@ Console: Communiquer, Communication locale, Échange, link code Pikachu ×3, wai
 screen. For an emulated console over the LAN, use `lgpe_host.py --ip-host --our-ip IP`. See
 [Let's Go](lgpe.md).
 
+<a id="sword-and-shield"></a>
 ## Sword and Shield
 
 Console: Y-Comm → Link Trade → local communication, A on both messages, wait on the search screen.
@@ -174,6 +178,7 @@ Mystery Gift → receive a gift → via local wireless.
 are checked against the item table; an id with no row is accepted and then aborts the game when its
 bag row is shown. See [Mystery Gift](swsh_gift.md).
 
+<a id="brilliant-diamond-and-shining-pearl"></a>
 ## Brilliant Diamond and Shining Pearl
 
 pokeldn joins the console's Union Room as a character. Console: any Pokémon Center → 2F → left
@@ -210,6 +215,7 @@ trade emote (Y → communication menu → trade Pokémon):
 the last offered again. `--password 00000000` hosts a room
 entered with that password. See [Brilliant Diamond and Shining Pearl](bdsp.md).
 
+<a id="legends-arceus"></a>
 ## Legends Arceus
 
 A console hosting a trade runs it with the station that joins, or hands that station the host role
@@ -232,6 +238,7 @@ the console shows or offers, its cursor included. A repeated `--trade-box-record
 session, the last offered again. `pokeldn.pla.pokemon` reads, writes and `build`s a record from 376
 zero bytes; `pokeldn.pla.stats` computes stats and size. See [Legends Arceus](pla.md).
 
+<a id="scarlet-and-violet"></a>
 ## Scarlet and Violet
 
 The offline Link Trade search alternates scanning and hosting, so pokeldn hosts (`bin/sv_host.py`) or
@@ -263,6 +270,7 @@ story progress.
 leaves as the battle starts and its Pokémon stays to fight beside the console's. The app's two
 Tera Raid tools carry the flags; see [Tera Raids](sv_raid.md).
 
+<a id="legends-z-a"></a>
 ## Legends Z-A
 
 The Link Trade search alternates hosting and scanning, so pokeldn joins or hosts. Console: Link Trade →
@@ -285,6 +293,7 @@ B when finished; the host closes when the console leaves.
 (nine-byte header, 344-byte record, one trailing byte); `pokeldn.gen9.build` composes the record
 because Z-A's layout is Scarlet's. See [Legends Z-A](za.md).
 
+<a id="diagnostics"></a>
 ## Diagnostics
 
 - `tools/ldn/ldn_scan.py` lists discoverable LDN networks; `esp32_sniff.py` makes a second board an

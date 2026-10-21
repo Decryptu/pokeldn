@@ -4,12 +4,14 @@ parent: Brilliant Diamond and Shining Pearl
 nav_order: 2
 ---
 
+<a id="bdsps-own-protocol-and-controlling-a-character"></a>
 # BDSP's own protocol, and controlling a character
 
 Inside the Pia payloads BDSP runs a typed protocol. `Dpr.NetworkUtils.NetDataParser` in
 `TeamLumi/opendpr`, a decompiled C# recreation of the game, lists every message: an `ANetData<T>`
 with a one-byte `DataID` around a plain struct `T`.
 
+<a id="framing"></a>
 ## Framing
 
     0x0  1  data id
@@ -58,6 +60,7 @@ change.
 The marshaller does not clear its buffer: a fixed field carries heap residue past its value
 ([the trading page](bdsp_trade.md)). The ids are nibble-grouped; no low nibble reaches 0xA.
 
+<a id="what-has-been-on-the-air"></a>
 ## What has been on the air
 
 A console left alone in the room sends four of the 65 (the receiver drops looped-back broadcasts):
@@ -76,6 +79,7 @@ A 0x23 can sit behind a presence byte 0x00 (1505 of the copies counted) and is r
 that takes 0x00 as a message ([Message framing](pia.md#message-framing)). Every payload (over
 eight thousand) is a well-formed message whose length accounts exactly for its bytes.
 
+<a id="the-messages-the-console-repeats"></a>
 ## The messages the console repeats
 
 `NetJoinData` is a player's arrival, the whole of `JoinData`:
@@ -119,6 +123,7 @@ base game's handler [base main 0x01fd4600] answers the same six, 0x22 then named
 `NetDataTradeStandbyData`. A request arrives on the stream its answer uses: all 4333 for 0x23 on the
 reliable one, all 55 for 0x04 on the unreliable one.
 
+<a id="compression"></a>
 ### Compression
 
 The reliable header's flag 0x10 marks a zlib stream. The sender decides it by size:
@@ -138,6 +143,7 @@ unflagged ones shrinks under it. A join and a one-record 0x22 list go raw; the a
 (read raw it looks like a `NetBonusStart`), a record (0x14) and a ball capsule (0x15) shrink. A
 receiver never has to compress; `bin/bdsp_connect.py` inflates on the flag.
 
+<a id="senders-of-the-other-opaque-messages"></a>
 ### Senders of the other opaque messages
 
 From the callers of each `ANetData<T>.SendReliableData` in 1.3.0:
@@ -152,6 +158,7 @@ From the callers of each `ANetData<T>.SendReliableData` in 1.3.0:
 | 0x42 | `NetPlayerNameData` | `UgNetworkManager$$SendOnJoinNewPlayer`, `SendPlayerNameData` |
 | 0x54 | `NetSecretBaseUpdate` | no reliable sender; `netdata.py` names it |
 
+<a id="the-unreliable-stream"></a>
 ### The unreliable stream
 
 It carries three messages:
@@ -168,6 +175,7 @@ The console retransmits a reliable message until an ack covers it, measured five
 ack two beyond its last sequence is ignored. `bin/bdsp_connect.py` acks at the last sequence plus
 one once the console has acknowledged the client's own data.
 
+<a id="sending-messages-the-game-acts-on"></a>
 ## Sending messages the game acts on
 
 The reliable sequence id is shared with the console's own sends, and a message below the id its
@@ -184,12 +192,14 @@ until the game restarted, and one that had been moved was removed when its stati
 The removal path on a departure is not traced (`OpcManager$$RemoveCharacter` [0x02279ee4] takes a
 station index).
 
+<a id="the-character-record"></a>
 ## The character record
 
 `OpcManager.CharaData` is
 `{int stationIndex, string assetName, int colorId, int avatarId, int sexId, int cassetVersion}`, keyed
 by station (`RemoveCharacter(int stationIndex)`).
 
+<a id="the-model"></a>
 ### The model
 
 `OpcManager.CreateCharaData(ANetData<JoinData>)` builds the record from the join, and `avatarId`
@@ -217,6 +227,7 @@ the player used it.
 `NetDataTranerCardData` (0x05, 75 bytes: `fashionId`, `bodyType`, `genderid`, ...) feeds
 `UnionOpcManager.CreateTranerCard()`; a received one draws nothing on screen in the Union Room.
 
+<a id="the-state-byte"></a>
 ### The state byte
 
 `StateData` is `{byte state, byte isRecruiment}`, `state` an `OpcState.OnlineState`:
@@ -268,6 +279,7 @@ the state every two seconds, as the console does.
 `OnlinePlayerCharacter$$IsCanTalkState` [0x02277af0]: the player can talk to states 1, 3 to 8 and 17
 to 21, never to 0, 2 or 9 to 16.
 
+<a id="walking"></a>
 ### Walking
 
 The console's own `NetPosData` comes every 0.410 s spanning 0.935 units (`room.POS_PERIOD`,
@@ -282,6 +294,7 @@ stride cross it and leave through the far wall, `--room-walk-steps 8` stays insi
 A trade needs no walk: a retail console completed two trades with a client character that sent no
 `NetPosData` (`--room-walk-steps 0`, the default on the trade path).
 
+<a id="being-talked-to"></a>
 ## Being talked to
 
 A player with an emote up stays in place until someone interacts, and the player's own A press does
@@ -313,6 +326,7 @@ The talk waits on the 0x64; unanswered, the player's character stays frozen.
 
 Dropping the station releases a parked greeting; B did not reliably leave one.
 
+<a id="the-console-approaching"></a>
 ### The console approaching
 
 `UnionRoomManager$$MyUpdate` [1.3.0 main 0x01e49fb0] handles the A press [0x01e4a644] only when the
@@ -383,6 +397,7 @@ reaching a console that has not pressed A on a trade recruiter since its `UnionS
 built reads through null (0x01e53c4c); the other transition types have the same shape on their own
 models.
 
+<a id="the-name-in-the-greeting"></a>
 ### The name in the greeting
 
 The greeting, its speaker label and the battle ladder's "is choosing" line name a character by its
@@ -469,6 +484,7 @@ and appends a full stop. The texts, from the 1.3.0 RomFS `Message/<language>` bu
 | simp_chinese | `帕尔.` | `戴亚.` |
 | trad_chinese | `帕爾.` | `戴亞.` |
 
+<a id="talkstate-and-the-value-that-crashes-the-game"></a>
 ### talkState, and the value that crashes the game
 
 `TalkState` is `{CHECK = 0, GREETING = 1, NONE = 2}`; the parked console waits in `GREETING`.
@@ -498,6 +514,7 @@ below:
 0x15) and wait; only the partner's (`StartRecodeTradeFlow`, `StartBallDecoTradeFlow`) writes the
 save.
 
+<a id="record-mixing"></a>
 ### Record mixing
 
 The console recruits with "Échanger des données" in the Y menu (state byte 5). When the client walks
@@ -524,6 +541,7 @@ within one record (0 and 1 in a captured one). `RECORD`, `RANDOM_SEED` and `RECO
 `DPData`) marshal at pack 4, the `TvRecode*` structs at pack 8; no padding results at these field
 sizes.
 
+<a id="the-battle-ladder"></a>
 ### The battle ladder
 
 A battle ("Combattre", state byte 3 while recruiting) runs a ladder; the recruiting console waits on
@@ -589,6 +607,7 @@ the null path.
 
 Never send 0x08 unless the console's own 0x04 says state 3 with `isRecruiment` 1.
 
+<a id="the-grand-underground"></a>
 ### The Grand Underground
 
 The Underground advertises the same `local_communication_id` under scene id 12608; the same session
@@ -664,6 +683,7 @@ asset bundles and the root files of the 1.3.0 RomFS, none has `UnionRoomManager`
 
 `bin/bdsp_connect.py --inject-file PATH` sends each new `ID:HEX` line of the file reliably.
 
+<a id="ball-capsules"></a>
 ### Ball capsules
 
 The console recruits with "Déco Capsule" (state byte 7). It sends `NetDataTransitionData{7, 0}`,

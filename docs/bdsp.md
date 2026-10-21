@@ -4,6 +4,7 @@ nav_order: 5
 has_children: true
 ---
 
+<a id="brilliant-diamond-and-shining-pearl"></a>
 # Brilliant Diamond and Shining Pearl
 
 Brilliant Diamond and Shining Pearl are built in Unity by ILCA, with IL2CPP game code directly on
@@ -12,6 +13,7 @@ Pia.
 Measured against a French Shining Pearl, version 1.3.0, in the Union Room (Pokemon Center 2F, the
 left attendant, the plain "yes") and in the Grand Underground.
 
+<a id="status"></a>
 ## Status
 
 Working on retail hardware:
@@ -31,6 +33,7 @@ Working on retail hardware:
 - Record mixing and a battle lobby, up to the console's record and its six chosen Pokemon.
 - A character walking on the Grand Underground floor, and the console's secret base read out.
 
+<a id="pages"></a>
 ## Pages
 
 | page | contents |
@@ -39,6 +42,7 @@ Working on retail hardware:
 | [The game protocol](bdsp_protocol.md) | the 65 messages BDSP speaks, the Union Room, and controlling a character |
 | [Trading](bdsp_trade.md) | the trade flow, the PB8, the save, and the disconnect penalty |
 
+<a id="unresolved"></a>
 ## Unresolved
 
 - A substituted greeting name on a console's screen

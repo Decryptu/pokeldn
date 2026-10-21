@@ -9,7 +9,7 @@ from gui import theme as t
 from gui.views.widgets import MarkdownDocument, heading_sections
 from pokeldn.app import i18n, preview
 from pokeldn.app.paths import ROOT
-from pokeldn.app.i18n import t as tr
+from pokeldn.app.i18n import text as tr, ref
 
 DOCS = os.path.join(ROOT, "docs")
 GUIDE = os.path.join(ROOT, "gui", "guide.md")
@@ -27,21 +27,21 @@ def _read(path) -> tuple[dict, str]:
 
 def document_path(file: str):
     """The language pack's copy of a page, else the English one (pokeldn.app.i18n.document)."""
-    return i18n.document(file, _english(file))
+    return i18n.document(document_id(file)).path
+
+
+def document_id(file):
+    return file if file.startswith("core.guide.") else "core.guide." + os.path.splitext(file)[0]
 
 
 def document_body(file: str) -> tuple[str, str | None]:
     """A page's Markdown, and for a pack's copy the English page whose anchors its headings keep."""
     path = document_path(file)
-    if os.path.samefile(path, _english(file)):
-        return _read(path)[1], None
-    return _read(path)[1], _read(_english(file))[1]
+    return _read(path)[1], None
 
 
 def page_title(page: "Page") -> str:
-    path = document_path(page.file)
-    title = page.title if os.path.samefile(path, _english(page.file)) else _read(path)[0].get("title", page.title)
-    return i18n.message(title)
+    return i18n.document(document_id(page.file)).title
 
 
 @dataclass
@@ -65,13 +65,11 @@ def pages() -> list[Page]:
     """The docs site's navigation: front matter titles, parents and nav_order. A page the site leaves
     out of its navigation (`nav_exclude`, an unreleased title) shows only while preview is enabled."""
     found, shown = [], preview.enabled()
-    for name in sorted(os.listdir(DOCS)):
-        if name.endswith(".md"):
-            with open(os.path.join(DOCS, name), encoding="utf-8") as f:
-                meta, _ = split_front_matter(f.read())
-            if meta.get("title") and (shown or meta.get("nav_exclude") != "true"):
-                found.append(Page(name, meta["title"], int(meta.get("nav_order", 99)), meta.get("parent", "")))
-    by_title = {p.title: p for p in found}
+    for document in i18n.documents():
+        if document.id == "core.guide.guide" or (not shown and i18n._documents[document.id].get("excluded")):
+            continue
+        found.append(Page(document.id.rsplit(".", 1)[1] + ".md", document.title, document.order, document.parent))
+    by_title = {document_id(p.file): p for p in found}
     roots = []
     for p in sorted(found, key=lambda p: (p.order, p.title)):
         (by_title[p.parent].children if p.parent in by_title else roots).append(p)
@@ -154,7 +152,7 @@ class DocsView:
         self.open_parents: set[str] = set()
         self.query = ""
         self.sections: list[Section] | None = None
-        self.search_field = t.field(hint=tr('docs.search_the_docs', 'Search the docs'),
+        self.search_field = t.field(hint=tr('core.docs.search_the_docs'),
                                     prefix_icon=ft.Container(t.pixel_icon("search", color=t.FAINT),
                                                              width=40, alignment=ft.Alignment.CENTER),
                                     on_change=self._search, on_submit=self._submit)
@@ -163,20 +161,25 @@ class DocsView:
         self.scroll = ft.ListView([ft.Container(self.markdown.control, width=860)], padding=ft.Padding(32, 24, 32, 32),
                                   expand=True)
         self.panes = t.Panes(
-            (tr('docs.pane_pages', 'Pages'), "bulletlist", t.panel(ft.Column([
-                t.panel_header(tr('docs.docs_7af023', 'Docs'), t.icon_button("external-link",
+            (tr('core.docs.pane_pages'), "bulletlist", t.panel(ft.Column([
+                t.panel_header(tr('core.docs.docs_7af023'), t.icon_button("external-link",
                                                      lambda e: self.app.page.run_task(self.app.open_url, SITE),
-                                                     tr('docs.open_the_docs_website_a6f6df', 'Open the docs website'))),
+                                                     tr('core.docs.open_the_docs_website_a6f6df'))),
                 ft.Container(self.search_field, padding=ft.Padding(8, 0, 8, 4)),
                 t.fade(self.nav),
             ], spacing=0, expand=True), width=t.SIDEBAR_WIDTH)),
-            (tr('docs.pane_read', 'Read'), "book-open", t.surface(t.fade(self.scroll), radius=20, expand=True)))
+            (tr('core.docs.pane_read'), "book-open", t.surface(t.fade(self.scroll), radius=20, expand=True)))
         self.control = self.panes.control
         self.show("guide", update=False)
 
     def enter(self, doc: str = "", **_) -> None:
         if doc:
             self.show(doc, update=False)
+
+    def localize(self):
+        self.sections = None
+        self.tree = pages()
+        self.show(self.file, update=False)
 
     def show(self, file: str, update: bool = True) -> None:
         self.file = file
@@ -194,8 +197,8 @@ class DocsView:
         if len(self.query.strip()) >= 2:
             self.nav.controls = self.result_rows()
             return
-        rows = [self.row(tr('docs.start_here_2adc96', 'Start here'), "guide", 0)]
-        rows.append(ft.Container(t.text(tr('docs.documentation_c20592', 'Documentation'), 11, t.FAINT, weight=ft.FontWeight.W_600),
+        rows = [self.row(i18n.document("core.guide.guide").title, "guide", 0)]
+        rows.append(ft.Container(t.text(tr('core.docs.documentation_c20592'), 11, t.FAINT, weight=ft.FontWeight.W_600),
                                  padding=ft.Padding(10, 14, 8, 4)))
 
         def walk(items, depth):
@@ -219,13 +222,13 @@ class DocsView:
 
     def results(self) -> list[Section]:
         if self.sections is None:   # built on the first search: every page is read once
-            self.sections = index(self.tree, tr('docs.start_here_2adc96', 'Start here'))
+            self.sections = index(self.tree, i18n.document("core.guide.guide").title)
         return search(self.sections, self.query)
 
     def result_rows(self) -> list[ft.Control]:
         found, words = self.results(), self.query.lower().split()
         if not found:
-            return [ft.Container(t.text(tr('docs.no_page_matches', 'No page matches.'), 13, t.MUTED),
+            return [ft.Container(t.text(tr('core.docs.no_page_matches'), 13, t.MUTED),
                                  padding=ft.Padding(10, 12, 8, 8))]
         return [ft.Container(ft.Column([
             t.text(s.heading, 13, t.TEXT, weight=ft.FontWeight.W_600, max_lines=2),

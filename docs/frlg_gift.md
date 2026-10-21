@@ -4,12 +4,14 @@ parent: FireRed and LeafGreen
 nav_order: 2
 ---
 
+<a id="mystery-gift"></a>
 # Mystery Gift
 
 The Mystery Gift menu needs no Pokemon Center. A console on the Wonder Cards screen accepts a Wonder
 Card, a delivery script, Wonder News, a visiting Battle Tower trainer, and a Pokemon straight into the
 party. The Mystery Event VM and native ARM code are on [Code on the console](frlg_rom.md).
 
+<a id="the-session"></a>
 ## The session
 
 The console's client boots with `{CLI_RECV, MG_LINKID_CLIENT_SCRIPT}, {CLI_COPY_RECV}`
@@ -31,6 +33,7 @@ FireRed's two ROM server scripts.
 The host issues one LinkPlayer block request, waits for the console's valid block, sends its own,
 then waits for the standby barrier.
 
+<a id="framing-rules"></a>
 ### Framing rules
 
 Size 0 means 1024: `MysteryGiftLink_InitSend` [mystery_gift_link.c:55] expands it to
@@ -46,6 +49,7 @@ the console model takes up to 13 frames per block with nothing dropped, 16 befor
 dropped block leaves the console waiting forever. Stalls while the console sends follow
 [the mirror rule](frlg_link.md#row-one-of-the-parents-table-is-the-consoles-own-command-mirrored-back).
 
+<a id="modules"></a>
 ### Modules
 
 Under `pokeldn/frlg/gift/` unless stated:
@@ -65,6 +69,7 @@ Under `pokeldn/frlg/gift/` unless stated:
 | `pokeldn/frlg/save/save_inject.py` | save injection with card, RAM-script and sector checksums |
 | `bin/frlg_mg_host.py` | the CLI |
 
+<a id="running-it"></a>
 ## Running it
 
     (them) Mystery Gift -> Wonder Cards (Recevoir) -> Friend (Ami), wait on the search screen
@@ -78,6 +83,7 @@ console needs a new run. `tests/test_mystery_gift_flow.py` models the block-rece
 and one client command per frame; `tests/test_mystery_gift_end_to_end.py` adds an impaired
 Reliable/RFU path.
 
+<a id="what-the-link-can-carry"></a>
 ## What the link can carry
 
 Three of the 22 client instructions [include/mystery_gift_client.h:18] execute something:
@@ -88,6 +94,7 @@ Three of the 22 client instructions [include/mystery_gift_client.h:18] execute s
 | `CLI_RUN_MEVENT_SCRIPT` (15) | runs a Mystery Event bytecode script, a second VM with its own 17-opcode table |
 | `CLI_RUN_BUFFER_SCRIPT` (21) | `func = (void *)gDecompressionBuffer; func(&param, gSaveBlock2Ptr, gSaveBlock1Ptr)`; up to 1024 bytes of ARM executed with both save-block pointers |
 
+<a id="the-one-ram-script-slot"></a>
 ## The one RAM script slot
 
 A console holds a Wonder Card or a bound RAM script, never both. `ValidateSavedWonderCard` checks the
@@ -112,6 +119,7 @@ The slot's checksum (`ramScript.checksum`, SaveBlock1 + 0x361C) is `CalcCRC16Wit
 slot whose CRC covers only 999 bytes is wiped by `GetRamScript` the first time its object is talked to
 [script.c:526].
 
+<a id="the-gift-catalogue"></a>
 ## The gift catalogue
 
 `--gift NAME`; `--help` lists flag ids (1000..1019). Only the held card matters: the same id means
@@ -139,6 +147,7 @@ slot whose CRC covers only 999 bytes is wiped by `GetRamScript` the first time i
 
 A console already holding the card takes a Mystery Event gift alone, with no prompt.
 
+<a id="the-legendary-beast"></a>
 ### The legendary beast
 
 A deliveryman cutscene gives the Lansat and Liechi Berries, then a Master Ball, then starts a wild
@@ -152,12 +161,14 @@ level-65 legendary beast battle chosen by the save's starter:
 
 The saved script stays, so the event repeats.
 
+<a id="porygon-tm-gift"></a>
 ### Porygon TM gift
 
 A Porygon-icon card, a Clefairy sprite three tiles to the player's right facing west, TM29 Psychic
 then TM46 Thief, with separate delivery checkpoints so retrying Thief cannot duplicate Psychic.
 Default flag id 1007; the viewer shows `7` top right (`flag_id % 100`).
 
+<a id="the-stamp-rally"></a>
 ### The Stamp Rally
 
 Two events share one `SUN AND MOON RALLY` card (Claydol icon, two stamp slots, displayed number `6`,
@@ -192,6 +203,7 @@ live-host-only. `IsStampInMetadata` [mystery_gift.c:272] rejects a stamp whose i
 collides (maximum 7). `CLI_SAVE_STAMP` writes only `cardMetadata.stampData` [mystery_gift.c:307],
 avoiding the card wipe of `CLI_SAVE_CARD`.
 
+<a id="altering-cave"></a>
 ### Altering Cave
 
 The official script [data/mystery_event_msg.s:325]: `addvar VAR_ALTERING_CAVE_WILD_SET, 1`, a wrap
@@ -212,6 +224,7 @@ FireRed).
 | 3 | Houndour | | 8 | Smeargle |
 | 4 | Teddiursa | | | |
 
+<a id="distribution-eggs"></a>
 ### Distribution eggs
 
 Three Japanese distributions, ported from the bytes GB-Link-Switch-LDN carries (`web/js/gift/official.js`).
@@ -228,6 +241,7 @@ original scripts set them. A full party refuses before the draw and the card sta
 The summary screen shows "Drôle d'ŒUF de POKéMON obtenu dans un bel endroit." for met location 0xFF or
 the fateful-encounter bit [pokemon_summary_screen.c:2799].
 
+<a id="event-pokemon"></a>
 ### Event Pokemon
 
 `--gift event-pokemon --event-pokemon NAME` sends a fresh copy of a Gen 3 distribution: PKHeX.Core
@@ -248,6 +262,7 @@ gift client's 23-case `Client_Run` switch have the same layout on all twelve car
 `tests/test_frlg_english_cartridges.py` runs the card's script through each cartridge's own
 `RunMysteryEventScript` (status 2 and the record in the party; status 3 and nothing on a full party).
 
+<a id="gb-link-team-cards"></a>
 ### GB-Link Team cards
 
 The GB-Link Team's custom Wonder Cards (GB-Link-Switch-LDN `cards/`, GPL-3.0) are a Wonder Card plus a
@@ -301,6 +316,7 @@ with `0x0800071D` kept at `0x0203FBFC`.
 `colosseum-pikachu` and `ageto-celebi` carry their Japanese trainer names, which a European cartridge
 draws as dots; PKHeX reports all four event Pokemon legal.
 
+<a id="the-battle-count-card"></a>
 ### The Battle Count Card
 
 `MysteryEventScript_BattleCard` [data/mystery_event_msg.s:162] reads `GET_CARD_BATTLES_WON` through
@@ -328,6 +344,7 @@ battle returns through `CB2_ReturnToField` and counts nothing; only
 A `CARD_TYPE_GIFT` card stays at zero even when armed. The wireless club's trade centre goes through
 `union_room.c`'s `Task_StartActivity`, the only builder that writes the flag id at offset 96.
 
+<a id="the-visiting-trainer"></a>
 ### The visiting trainer
 
 `CLI_RECV_EREADER_TRAINER` (18, ident `MG_LINKID_EREADER_TRAINER` = 26) copies the buffer into
@@ -354,6 +371,7 @@ counts as success, so the console saves.
 `--gift visiting-trainer` sends card, RAM script and trainer in one session: no card → all three; the
 same card → the trainer alone, no toss prompt; another card → the toss prompt, then all three.
 
+<a id="wonder-news"></a>
 ## Wonder News
 
 The Mystery Gift menu is {Wonder Cards, Wonder News} x {Wireless Communication, Friend}.
@@ -395,6 +413,7 @@ console holding news shows it: A, then Receive). Message order of one session (a
     ident 16  sClientScript_NewsReceived
     ident 20  READY_END                              -> SVR_MSG_NEWS_SENT
 
+<a id="the-questionnaire-as-a-password-gate"></a>
 ## The questionnaire as a password gate
 
 `SVR_CHECK_QUESTIONNAIRE` compares the four Poke Mart questionnaire words in order
@@ -418,6 +437,7 @@ for AKWAKWAK FURAX AEROBLAST POURQUOI: `EC_GROUP_POKEMON` indexes by species (Go
 `EC_GROUP_MOVE_1` by move id (Aeroblast, 177), and the English table is right about MISC/37 and wrong
 about FEELINGS/60. See [the French Easy Chat vocabulary](frlg_rom_map.md#the-french-easy-chat-vocabulary).
 
+<a id="what-the-console-volunteers-about-itself"></a>
 ## What the console volunteers about itself
 
 Every session's `MysteryGiftLinkGameData` carries the Easy Chat profile and the card stats
@@ -427,6 +447,7 @@ and prints what moved since that console's last one; `tools/frlg/game_data_read.
 counter is evidence only as a difference on the same card flag id. The ledger names every word id
 the French Easy Chat table lacks.
 
+<a id="save-backup-and-restore"></a>
 ## Save backup and restore
 
 A Wonder Cards, Friend session copies the console's whole 128 KiB save chip to the host, or writes a
@@ -439,12 +460,14 @@ The app runs both from the Mystery Gift tool's Your save tab ([Your saves](gui.m
 Both run on all twelve cartridges. Two build addresses are patched into the payloads; the rest of
 the save layout is shared ([Save backup and restore](frlg_rom_map.md#save-backup-and-restore)).
 
+<a id="the-token-coding"></a>
 ### The token coding
 
 Both directions carry chip bytes as tokens: a byte `n < 0x80` is followed by `n + 1` literal bytes;
 a byte `n >= 0x80` by one byte repeated `n - 0x80 + 3` times. A run of three or more is taken whole,
 at most 130; a literal stretch is at most 128. A save is mostly `0x00` and `0xFF` runs.
 
+<a id="backup"></a>
 ### Backup
 
 The client script repeats `CLI_LOAD_TOSS_RESPONSE, CLI_RUN_BUFFER_SCRIPT, CLI_SEND_LOADED` up to 32
@@ -469,6 +492,7 @@ The session ends on `CLI_MSG_BUFFER_FAILURE` after a 64-byte message, so the con
 does not save [mystery_gift_menu.c:1379]. A backup cut short is kept on the host by game code and
 trainer id; the next backup of that console sets `first` to where it stopped.
 
+<a id="restore"></a>
 ### Restore
 
 1. The first message is the whole 620-byte image. `install` copies it to `gDecompressionBuffer + 0x400`,
@@ -501,6 +525,7 @@ SaveBlock1 is 40 bytes shorter, which a zero-filled sector does not show in its 
 layout is read from the language byte (`+0x12`) of the player's own Pokemon, those whose OT ID is the
 trainer's. A refusal writes nothing.
 
+<a id="what-is-measured"></a>
 ### What is measured
 
 Offline, against the scripted console (`tests/test_save_transfer.py`): the backup returns the chip
@@ -521,6 +546,7 @@ encryption key `LoadGameSave` re-rolls.
 A second restore put a French FireRed save on the same English cartridge. It ended on the success
 message, and CONTINUE loaded the French game into the overworld.
 
+<a id="authoring-gifts"></a>
 ## Authoring gifts
 
 `pokeldn.frlg.gift.gift_composer` builds cards and deliveryman scripts from immutable `WonderGift`
@@ -549,6 +575,7 @@ The compiler shows `intro_message`, resumes the stages from `VAR_MYSTERY_GIFT_1`
 `FLAG_MYSTERY_GIFT_DONE` and the card receipt flag. A later visit shows `completed_message`;
 `GiftSpec(repeatable=True)` resets the cursor instead.
 
+<a id="stages-and-conditions"></a>
 ### Stages and conditions
 
 Each `DeliveryStage` is one checkpoint: a failed reward re-offers that stage and skips the successful
@@ -571,11 +598,13 @@ DeliveryStage(RequireSpecialResult(SPECIAL_HAS_ALL_KANTO_MONS, 1, "Finish the KA
               GivePokemon(251, level=50))
 ```
 
+<a id="writing-the-players-save"></a>
 ### Writing the player's save
 
 `SetVar(variable, value)` emits `setvar` (0x16) and `AddVar(variable, value)` emits `addvar` (0x17),
 both restricted to a saved var (0x4000..0x40FF) or a special var (0x8000..0x8011).
 
+<a id="battles"></a>
 ### Battles
 
 `BattleLegendary` emits `setwildbattle`, `special StartLegendaryBattle`, then `end` without
@@ -585,6 +614,7 @@ script may not come back from a battle](frlg_rng.md#a-ram-script-may-not-come-ba
 Battles are prohibited in a stamp-slot path, including a rally's shared middle; conditional battle
 stages are allowed as terminal alternatives.
 
+<a id="sharing"></a>
 ### Sharing
 
 `GiftSpec.shareable` maps to the Wonder Card `sendType` bits:
@@ -595,6 +625,7 @@ stages are allowed as terminal alternatives.
 | `"once"` | can be shared once; the receiving game flips the card to not shareable |
 | `"always"` | can continue to be shared after receipt |
 
+<a id="fateful-encounter-marking"></a>
 ### Fateful-encounter marking
 
 `GivePokemon(..., fateful_encounter=True)` (and `GiveEgg`) emits the official Surf Pichu pair:
@@ -610,6 +641,7 @@ The summary screen's fateful-encounter line comes from the met location alone
 [pokemon_summary_screen.c:2665, ORed at :2799]. `modernFatefulEncounter` is bit 31 of the
 ribbon word at Misc+0x08 [include/pokemon.h:40-82]; `mon.decode_mon` reads it from a party dump.
 
+<a id="initramscript-in-the-composer"></a>
 ### `initramscript` in the composer
 
 `gift_composer.build_bound_script(actions)` compiles composer actions into the field script
@@ -618,6 +650,7 @@ interpreter and `ramScript` slot, so items, mons, sprites and battles all work. 
 cursor or receipt flag: the script ends in `end` and reruns whole, so a once-only effect needs its own
 `SetVar` or condition.
 
+<a id="registration-and-validation"></a>
 ### Registration and validation
 
 ```python
@@ -633,6 +666,7 @@ battle placement, virtual pointers and the 995-byte RAM-script limit, naming the
 example-rally.event.slots[1].delivery.post_stages[0].actions[1]: battles are not allowed in stamp-slot delivery plans
 ```
 
+<a id="static-tools"></a>
 ## Static tools
 
 ```bash
@@ -646,8 +680,10 @@ rebuilds the card CRC, RAM-script CRC and sector checksum, and saves `<save>.gif
 overwrites). `--make-artifact` writes a deterministic `.ram.lst` under `artifacts/` (bytes, decoded
 instructions, checksums, targets, stage summary).
 
+<a id="closed-paths"></a>
 ## Closed paths
 
+<a id="wireless-communication-joyspot"></a>
 ### Wireless Communication (JoySpot)
 
 Blocked at the RFU serial-number gate. Both paths reach the same gift conversation:
@@ -696,11 +732,13 @@ scene brute force, multi-variable combinations. It reopens on bridge evidence as
 `partner[].serialNo` from anything advertisable, or a capture of an advertisement a Switch treats as a
 wonder distributor. The block costs the zero-button path and the four-berry Wonder News reward.
 
+<a id="the-e-reader-itself"></a>
 ### The e-Reader itself
 
 Trainer Tower sets and `CEReaderTool_SaveTrainerTower`: `ereader_screen.c` opens
 `gLinkType = LINKTYPE_EREADER_FRLG` over the GBA serial link, not the wireless adapter.
 
+<a id="the-aurora-and-mystic-tickets"></a>
 ### The Aurora and Mystic Tickets
 
 A ticket card does nothing on the Switch release. The distribution scripts are in `data/mystery_event_msg.s:200`, but the Switch release grants both
@@ -713,6 +751,7 @@ icon, and a species past `SPECIES_UNOWN_B - 1` draws `SPECIES_NONE`'s question m
 [mystery_gift_show_card.c:466, pokemon_icon.c:1102].
 The Old Sea Map is Emerald-only [mystery_gift.c:30].
 
+<a id="traps"></a>
 ## Traps
 
 - `charmap.encode` drops unknown characters, newline included. The line break is 0xFE; `mg_server`'s

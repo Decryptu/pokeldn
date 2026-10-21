@@ -4,6 +4,7 @@ parent: FireRed and LeafGreen
 nav_order: 3
 ---
 
+<a id="running-code-on-the-console"></a>
 # Running code on the console
 
 The Mystery Gift client runs code sent to it through two interpreters: `CLI_RUN_MEVENT_SCRIPT`
@@ -13,6 +14,7 @@ Neither needs a glitch, a prepared save or any setup; the console stays on its M
 Addresses on this page are French FireRed, cartridge BPRF, software version 0x0A. LeafGreen's are on
 [LeafGreen](frlg_leafgreen.md); the tables are on [The ROM map](frlg_rom_map.md).
 
+<a id="the-mystery-event-vm"></a>
 # The Mystery Event VM
 
 A separate interpreter [src/mystery_event_script.c] with its own 17-command table
@@ -21,6 +23,7 @@ script compiles to. `pokeldn/frlg/rom/mystery_event.py` assembles every command
 (`MysteryEventScript.blob()` holds the data, the assembler resolves pointers). Every opcode is
 verified on retail hardware.
 
+<a id="the-command-table"></a>
 ## The command table
 
 | # | command | operands after the opcode byte | returns | effect |
@@ -43,6 +46,7 @@ verified on retail hardware.
 | 15 | `checksum` | u32, ptr, ptr | TRUE | status 1 if `CalcByteArraySum` over the range does not match |
 | 16 | `crc` | u32, ptr, ptr | TRUE | the same with `CalcCRC16` |
 
+<a id="checkcompat-is-optional"></a>
 ## `checkcompat` is optional
 
 `checkcompat` opens every official script and gates the language and version masks (the decomp's
@@ -66,6 +70,7 @@ while (MEventScript_Run(&ret));
 console's 1024-byte `client->recvBuffer`: an operand of N is N bytes into what was sent. `checkcompat`
 is the one command the assembler allows code after.
 
+<a id="the-return-channel"></a>
 ## The return channel
 
 `MEventScript_Run` writes the status into `client->param` [mystery_event_script.c:75];
@@ -95,6 +100,7 @@ which the event's writes are lost at reset; `CLIENT_SCRIPT_MEVENT_DONE` therefor
 `CLI_MSG_CARD_RECEIVED` even with no card. `CLI_MSG_BUFFER_SUCCESS` (13), the other success exit,
 prints the 64 bytes `CLI_COPY_MSG` pushed.
 
+<a id="the-probe-script"></a>
 ### The probe script
 
 `--gift mystery-event-probe` is harmless: `givenationaldex` is a no-op once the National Dex is on,
@@ -112,6 +118,7 @@ and `checksum` only reads.
 
 `checksum` is terminal and keeps the earlier status on a match. A retail FireRed answers 42.
 
+<a id="givepokemon"></a>
 ## `givepokemon`
 
 `pokeldn/frlg/save/mevent_pokemon.py` builds the payload: a 100-byte encrypted party mon, then the
@@ -134,6 +141,7 @@ Traps the builder enforces:
 - the party tail is derived; a zero tail reads back as level 0;
 - the held item and the mail's `itemId` must agree: `GiveMailToMon2` sets the held item from the mail.
 
+<a id="initramscript"></a>
 ## `initramscript`
 
 `initramscript 3, 0, 2` binds a field script to group 3, map 0, object 2, the fat man in south Pallet
@@ -149,6 +157,7 @@ It costs the Wonder Card ([the one RAM script slot](frlg_gift.md#the-one-ram-scr
 log "holding no Wonder Card" until the next ordinary card takes the slot back. The object loses its
 own script while bound: bound to a static encounter's object, the script replaces the encounter.
 
+<a id="traps"></a>
 ## Traps
 
 - `setenigmaberry` cannot set the item effect. `struct ReceivedEnigmaBerry` [berry.c:944] is 1322
@@ -169,6 +178,7 @@ own script while bound: bound to a static encounter's object, the script replace
   `additionalPhrases` (SaveBlock1 + 0x2F10, one more Easy Chat word) and `enigmaBerry` (+0x30EC). The
   `VAR_ENIGMA_BERRY_AVAILABLE` it sets is read nowhere else in FRLG.
 
+<a id="how-it-is-wired"></a>
 ## How it is wired
 
 - `pokeldn/frlg/rom/mystery_event.py`: opcodes, assembler, disassembler (`describe`), and `run()`,
@@ -180,6 +190,7 @@ own script while bound: bound to a static encounter's object, the script replace
   `SVR_READ_MEVENT_STATUS`; the status lands in `server.mevent_status` and the host log.
 - `pokeldn/frlg/gift/gift_composer.py`: `WonderGift.mevent` validates assembled bytes.
 
+<a id="native-arm-code"></a>
 # Native ARM code
 
 ```c
@@ -207,6 +218,7 @@ static u32 Client_RunBufferScript(struct MysteryGiftClient * client)
 
 `gDecompressionBuffer` is at 0x0201C000 (measured by `anchors`). Payloads are position independent.
 
+<a id="the-build"></a>
 ## The build
 
 The app's Mystery Gift builder assembles ARM source with the same toolchain
@@ -242,6 +254,7 @@ serves an emulated console over the LAN with no radio and no keys. Never SIGTERM
 
     until ls DUMP.bin >/dev/null 2>&1; do sleep 2; done
 
+<a id="where-a-payload-can-live"></a>
 ## Where a payload can live
 
 A buffer script is re-copied every frame, so nothing it writes into its own image survives. Code that
@@ -277,6 +290,7 @@ its rebuild). The boot rebuilds nothing above 0x0203B0E8. Nothing between two bo
 0x0203FC00..0x02040000: a marker there persists across the title screen, a reload, menus, a save, a
 map change, a battle and a PC box, and a soft reset (A+B+START+SELECT) clears it.
 
+<a id="the-per-frame-hook"></a>
 ## The per-frame hook
 
 `gIntrTable` is at 0x03002720 on the French cartridge; entry 4, the V-blank handler, holds `VBlankIntr`
@@ -303,6 +317,7 @@ Entries 1 and 7 differ from the template as the decomp predicts while wireless r
 keep their wireless values after a session until a reset. The game writes entry 4 only in
 `InitIntrHandlers`, which re-runs only on a soft reset.
 
+<a id="code-that-outlives-the-session"></a>
 ### Code that outlives the session
 
 A twenty-byte stub in the staging area, installed in entry 4, runs every frame in every game state
@@ -338,6 +353,7 @@ restart. A soft reset ends it: `InitIntrHandlers` rewrites entry 4 [main.c:339] 
 reads zero, then 0x0800071D). Mystery Gift is reachable only after a boot, which clears EWRAM, so a payload that
 must be present without a fresh session needs its installer in the save.
 
+<a id="re-arming-it-after-a-reset"></a>
 ### Re-arming it after a reset
 
 `--gift resident-hook` sends a Wonder Card whose Mystery Event script `initramscript`s a field script
@@ -365,6 +381,7 @@ an emulator).
 The script rebuilds the code on every arming, so the code is bounded by a script body: 162 bytes
 staged, or about 755 appended after the last command and reached with a trampoline.
 
+<a id="a-payload-larger-than-a-script-body"></a>
 ### A payload larger than a script body
 
 `asm/field/save-loader.s`, 64 bytes, is all the RAM script stages whatever the payload weighs: it reads
@@ -395,6 +412,7 @@ one session ([`save-write`](#save-write)). At the full
 The staged copy equals the save except the hook's fifth word, and every arming stages the same bytes
 (verified on an emulator, where the counter ran at 60.0 a second).
 
+<a id="calling-the-wrapper"></a>
 ### Calling the wrapper
 
 The GBA code reaches the Switch emulator through Sloop syscalls: 23 between
@@ -411,6 +429,7 @@ leaves nothing else to read:
 `swi 0x54`, `svc_CommsAllowedByParentalControls` [sloopsvc.c:182], returns non-zero on a console
 with no parental controls.
 
+<a id="the-dispatcher-the-sloop-syscall-boundary"></a>
 #### The dispatcher: the Sloop syscall boundary
 
 The dispatcher is at `main + 0x057014`, its jump table at `main + 0x17D7F6`. It admits
@@ -461,6 +480,7 @@ emulator at `0xFF8` (`main+0x573F8`), and the save is untouched:
 The log labels `0x0855D3F8` as
 `gba-app:0x573f8`, which puts the `main` base at 0x08506000.
 
+<a id="swi-0x52-and-swi-0x55-the-memory-bus"></a>
 #### `swi 0x52` and `swi 0x55`: the memory bus
 
 0x52 has a handler the decomp lacks, at `main + 0x05728C`:
@@ -538,6 +558,7 @@ instructions incrementing a counter.
 Bound a handler by its own control flow: several carry an out-of-line continuation after the last
 table entry, which bounding by the next handler's start misattributes.
 
+<a id="the-flash-sector-path"></a>
 ### The flash sector path
 
 `swi 0x48` and `swi 0x56` share a handler at `main + 0x057084`, continuation at `main + 0x057364`.
@@ -613,6 +634,7 @@ Mystery Gift session is durable once the session ends in a success message, whic
 [mystery_gift_menu.c:1379]; after any other result, and from the resident hook, it waits for the next
 save.
 
+<a id="the-breakpoint-hooks"></a>
 ### The breakpoint hooks
 
 The wrapper's GBA CPU object has 256 hook slots at `cpu + 0x170`, one per `bkpt` immediate. The ARM
@@ -650,6 +672,7 @@ original instruction. At the `Sio32IDMain` patch (`0x081E1696`) it resolves gues
 [librfu_sio32id.c]. A `bkpt #0x52` at any other address re-keys the second record (the `0x081E187C`
 patch) to itself for the rest of the session.
 
+<a id="the-record-resolver-main--0x03e850"></a>
 #### The record resolver (`main + 0x03E850`)
 
 The hook `main + 0x05499C` writes the `bkpt` itself into `insn`, then calls the virtual function at
@@ -698,6 +721,7 @@ byte at `fold(r0) + 1`; a payload that executes a `bkpt #0x52` anywhere else exe
 guest's regions: it can write `0x8001` two constant bytes up to 11 bytes past any region's
 backing allocation, including the 16 MB ROM copy's.
 
+<a id="what-follows-the-rom-buffer-the-sloop-component"></a>
 #### What follows the ROM buffer: the Sloop component
 
 The ROM objects' mask (`+0x34`) is `0x1ffffff` while the cartridge occupies `0x1000000` bytes, so
@@ -744,6 +768,7 @@ a soft reset, so the next wireless menu reports "L'adaptateur sans fil GBA n'est
 byte survives a soft reset; relaunching, or
 `swi 0x40`, restores it. It is read per frame: `swi 0x41` then `swi 0x40` in one payload is harmless.
 
+<a id="the-chain-from-a-bkpt-to-the-resolver"></a>
 #### The chain from a bkpt to the resolver
 
 An NSO's vtable slots hold unrelocated addends in the file; the loader adds the image base
@@ -766,6 +791,7 @@ A store over the component's first ten bytes is therefore consumed at slot `+0x9
 target is `buffer_data + fold + 0xA`, the fold being the selected region's slot 9
 ([`swi 0x52` and `swi 0x55`: the memory bus](#swi-0x52-and-swi-0x55-the-memory-bus)).
 
+<a id="what-a-plant-over-a-seam-does"></a>
 #### What a plant over a seam does
 
 With `fold = size - 0xB` (in range) the write pair is `(size-1, size)`: the region's last byte
@@ -802,6 +828,7 @@ through the debugger instead, that pointer stayed in place for five minutes with
 running and the process alive. No code site in the image writes a wrapper object's header after
 init.
 
+<a id="every-placement-a-one-write-plant-can-make"></a>
 #### Every placement a one-write plant can make
 
 A plant writes one of two byte patterns on the neighbour: `80` on its first byte (the region's
@@ -883,6 +910,7 @@ plant is inert in that state, not repaired: no code site restores the vtable. Th
 cartridge copy is process-lifetime state as well: the wireless menu then reports the adapter as
 not connected, and a full relaunch re-applies the wrapper's load-time patches.
 
+<a id="where-the-boundary-stands"></a>
 ### Where the boundary stands
 
 The guest paths examined on this page include a store past a region's backing: the resolver's `0x8001` strh at `fold + 0xA`; a planted pointer's consumers
@@ -909,6 +937,7 @@ dispatcher](#the-pia-session-message-dispatcher)). The following [wire-parsing s
 traces the statically linked `PiaCommon-6_42_1` path from the UDP socket to the session queue;
 that trace is not an exhaustive validation of its length checks or all message handlers.
 
+<a id="the-remaining-syscalls"></a>
 #### The remaining syscalls
 
 Handler addresses are `main + 0x05706C + entry * 4` from the jump table at `main + 0x17D7F6`. The last
@@ -977,6 +1006,7 @@ advertisement record. `component + 0x605360`'s readers are the activity diff
 `main + 0x058698` (through `component + 0x6050E0`) and `svc_SetActivity`'s setter
 `main + 0x058B40`; both compare or store the activity code.
 
+<a id="the-advertisement-record"></a>
 #### The advertisement record
 
 The `swi 0x47` handler assembles the 24-byte RFU record the advertisement carries from the guest's
@@ -1155,6 +1185,7 @@ the host. The reports as Ryujinx's `prepo` prints them:
 | `network`, one per link session | `Flavor` 66, `Trainer` (the 32-bit trainer id), `Zone` (the link activity, 21 `ACTIVITY_WONDER_CARD` for Mystery Gift), `Duration`, `Players`, `Slot`, `Rtt` |
 | `game`, at exit | `Flavor`, `TimeStamp`, `Trainer`, `Gender`, `Duration`, `Badges` (a bitmask), `TotalBadges`, `HallOfFame`, `TotalHallOfFame`, `CompleteRegionalPokedex`, `RegionalPokedexCnt`, `RegionalPokedexCap`, `CompleteNationalPokedex`, `NationalPokedexCnt`, `NationalPokedexCap`, `Distributed`, `LinkExchange`, `LinkBattle`, `MonsNo1..5` and `MonsNoNLevel`, `Money`, `CommsError` |
 
+<a id="what-the-play-reports-are-built-from"></a>
 ### What the play reports are built from
 
 The game report is parsed from the flash image. `main + 0x05A280` finds the newest slot by the sector
@@ -1216,6 +1247,7 @@ In FireRed and LeafGreen both flags are set by the tickets' Mystery Event script
 [mystery_event_msg.s:222,281] and by the Switch release's Hall of Fame grant
 [post_battle_event_funcs.c:58]; a save carried over with its Hall of Fame already entered reports 0.
 
+<a id="the-bad-word-filter"></a>
 ### The bad-word filter
 
 `swi 0x4D`, handler `main + 0x0571FC`, resolves `r0` as a GBA address, requires 256 bytes behind it,
@@ -1241,6 +1273,7 @@ runs from that buffer into a `0x200`-byte buffer at `sp + 0x10` ([main + 0x855F1
 the dispatcher's own `0x310`-byte frame (`sp + 0x210` and `sp + 0x310`); the copy reaches
 neither the saved registers nor past the frame. The replacement byte is the constant `0xA1`.
 
+<a id="the-wrappers-own-scan-pipeline"></a>
 ### The wrapper's own scan pipeline
 
 The wrapper scans networks with `nn::ldn::Scan` through its own PLT (`main + 0x160B70`;
@@ -1284,6 +1317,7 @@ component initializers. The same idiom forms the manager class's pointer (slot `
 `main + 0x7E244`, `0x7E4D0`) and the session class's (slot `main + 0x1D2770`; `main + 0xB7D24`,
 `0xB7E78`).
 
+<a id="the-pia-session-message-dispatcher"></a>
 ### The Pia session-message dispatcher
 
 The wrapper's native Pia session receive is a type switch at `main + 0xB9FC0`. A chain of nodes is
@@ -1325,6 +1359,7 @@ vtable pointer comes from the relocated slot `main + 0x1D27B0`). The Pia library
 statically linked in `main` (the image carries `SDK MW+Nintendo+PiaCommon-6_42_1-Release` and the
 session job names).
 
+<a id="the-pia-librarys-own-wire-parsing"></a>
 ### The Pia library's own wire parsing
 
 `main` links the whole Pia 6.42.1 stack (the image carries the `SDK MW+Nintendo+...` release
@@ -1465,6 +1500,7 @@ vtable pointer from the relocated slot `main + 0x1D2808`) carries the three-byte
 8-byte-plus-u16 values at `+0x100`/`+0x108` and `+0x110`/`+0x118`, a state byte at `+0x123` and a
 flag at `+0xD8`.
 
+<a id="repointing-the-consoles-outgoing-message"></a>
 ## Repointing the console's outgoing message
 
 `r0` is `&client->param`, so `struct MysteryGiftClient` [include/mystery_gift_client.h:71] sits at
@@ -1497,8 +1533,10 @@ the body CRC and the console reports "erreur de connexion". `buffer_script.build
 refuses any range overlapping it; dump around it, or use `rng-trace`, which returns it through the
 4-byte channel. Any other volatile region has to be found the same way.
 
+<a id="the-payloads"></a>
 ## The payloads
 
+<a id="trainer-id-probe"></a>
 ### `trainer-id-probe`
 
 24 bytes, read only. The console already sent its `playerTrainerId` in the
@@ -1519,6 +1557,7 @@ line means the client script shape is wrong or the call was never reached. A 7-c
 terminator overwrites `playerTrainerId[0]` in the game data [mystery_gift.c:364]; the host then
 compares the top three bytes.
 
+<a id="save-dump-and-memory-dump"></a>
 ### `save-dump` and `memory-dump`
 
 `memory-dump` takes an absolute address. `save-dump` reads either save block at any offset through r1
@@ -1530,6 +1569,7 @@ and r2, on any build. Up to 1024 bytes a run; `MGL_Receive` rejects more [myster
 They reach `SaveBlock1.playerParty` at 0x0038, `money` at 0x0290 XORed with
 `SaveBlock2.encryptionKey` at 0xF20, the bag, flags and vars, and IWRAM (`gRngValue`).
 
+<a id="memory-dump-multi-and-memory-dump-scatter"></a>
 ### `memory-dump-multi` and `memory-dump-scatter`
 
 `MG_LINK_BUFFER_SIZE` caps a message, not a session. The client runs a script of commands from its
@@ -1566,6 +1606,7 @@ The readability guard checks each scatter block. The blocks arrive end to end in
 `--dump-scatter A,B,C` lets `script_read.dumps` place each at its base, tagged `<run>[0]`, `<run>[1]`,
 ... `--dump-blocks 1` returns `CLIENT_SCRIPT_DUMP_MEMORY` byte for byte.
 
+<a id="anchors"></a>
 ### `anchors`
 
 Writes eleven words into `client->sendBuffer` and widens `link->sendSize` to 44; no repoint is needed,
@@ -1586,6 +1627,7 @@ Words 4-5 change on every battle and load [load_save.c:75]; words 3 and 6-9 depe
 Word 1 anchors a decomp call site; word 10 equal to word 6 confirms the struct offsets. The buffers are 0x410 apart (1024 bytes plus a 16-byte block header), as `malloc.c`
 describes. `buffer_script.describe_anchors` prints all eleven with its consistency checks.
 
+<a id="save-write"></a>
 ### `save-write`
 
 Copies its payload tail into the block, then points `link->sendBuffer` at the destination, so the
@@ -1609,6 +1651,7 @@ inside the span, and none of SaveBlock1. Nothing in the game writes `filler_B20`
 persists across saves (ten generations measured), Mystery Events, Wonder Cards, soft resets and play
 (256 bytes unchanged over a minute of play in which 1456 bytes of SaveBlock1 moved).
 
+<a id="memory-scan"></a>
 ### `memory-scan`
 
 Takes a 32-bit needle and a range. Each call scans its budget of 32-byte blocks, writes the cursor back
@@ -1638,6 +1681,7 @@ saying where to resume. The answer is always 528 bytes, so `len(dump) == buffer_
 repoint. `found` counts every match, `hits` holds the first 64. `ldmia` sees only word-aligned
 matches: a needle never word-aligned for the real stride returns zero.
 
+<a id="table-scan"></a>
 ### `table-scan`
 
 Finds a table by shape: every maximal run of `runlen` words each exactly `delta` above its
@@ -1664,6 +1708,7 @@ until a script has run, so the scan must follow a Mystery Event gift in the same
 `--table-delta 0x358` (214 entries) finds the field script context, whose `cmdTable` is the known
 `gScriptCmdTable`.
 
+<a id="rom-checksum"></a>
 ### `rom-checksum`
 
 Sums a range in up to 128 blocks, one sum per block, so the host names the blocks of the cartridge
@@ -1704,6 +1749,7 @@ The host logs each block's range, both sums and `SAME` or `DIFF`, then
 `rom-checksum: N of M blocks differ from <image>`. The image is `config.REFERENCE_ROMS[game code]`, or
 `--sum-reference` for every build. Blocks past the image are listed and not counted.
 
+<a id="rng-trace"></a>
 ### `rng-trace`
 
 Samples a word once a frame and calls a ROM function between the two reads of each sample
@@ -1716,6 +1762,7 @@ The call is `mov lr, pc; bx r2`: pc reads as the instruction after the `bx`, bit
 callee returns to ARM state. On retail FireRed every sample of a `Random` trace follows the LCG (96
 of 96 in the trace measured). Results are on [the RNG](frlg_rng.md).
 
+<a id="string-gather"></a>
 ### `string-gather`
 
 Given the address of the first pointer, a stride and a count, copies each string pointed at, up to
@@ -1729,6 +1776,7 @@ answer is 776 bytes: four header words, up to 760 bytes of strings. It never tru
 does not fit ends the run and `next` names it. `--gather-maxlen` (default 64) bounds a pointer that is
 not a string.
 
+<a id="create-mon"></a>
 ### `create-mon`
 
 ```c
@@ -1776,6 +1824,7 @@ never predicted. Three fields measure the console:
 `CreateMon`: `CREATE_MON_ARG_MODEL` writes the eight arguments into the destination,
 `create_mon_copy_model(source)` copies 100 prepared bytes.
 
+<a id="create-mon-append"></a>
 #### `--create-mon-append`
 
 It writes `gPlayerParty`, not the save block's party:
@@ -1814,6 +1863,7 @@ with `SetMonData(mon, MON_DATA_MAIL, &MAIL_NONE)` [pokemon.c:1737], so offset 0x
 `gPlayerParty` is 0x02024280 and `gPlayerPartyCount` 0x02024025: the one 4-aligned window of an
 EWRAM dump that decodes as checksummed `struct Pokemon`s.
 
+<a id="call"></a>
 ### `call`
 
 An address, up to eight argument words, the returned `r0`, and one address read either side of the
@@ -1834,6 +1884,7 @@ nothing (`gRngValue = seed` [random.c:15]), so the watch word is the evidence. O
 already read as code. `tests/test_buffer_script.py` runs the console's own `SeedRng` bytes through the
 payload under unicorn, and the eight-argument path with powers of two.
 
+<a id="flash-write"></a>
 ### `flash-write`
 
 Composes a 4 KB sector in EWRAM and writes it to flash with [`swi 0x48`](#the-flash-sector-path),
@@ -1854,6 +1905,7 @@ checksum and lays down id, checksum, signature and counter. The status word is t
 `gSaveCounter` at write time: both advance on every save, and a gift session that ends in a success
 message saves [mystery_gift_menu.c:1379].
 
+<a id="sloop-svc"></a>
 ### `sloop-svc`
 
 Up to eight Sloop syscalls in one session with host-chosen operands, answered through a result block.
@@ -1877,6 +1929,7 @@ records (thunk word, `r0..r3` after), and the data as the last call left it. Val
 0x49..0x4B, 0x4D, 0x4E, 0x50..0x54, 0x58..0x60) go as they are; 0x48, 0x56, 0x4C and 0x55 are refused;
 the rest, and `--svc-bkpt`, need `--write-unsafe`; `--svc-bkpt` refuses `#0x52`.
 
+<a id="install-resident"></a>
 ### `install-resident`
 
 Copies a resident THUMB hook to `0x0203FC00` and installs it in `gIntrTable[4]` in one session. It runs
@@ -1900,6 +1953,7 @@ must not overlap its code or pass `0x02040000`. REG_IME is cleared around the co
 chain to that word and refuse with `0xBAD0BAD0` when it is empty. The answer is the handler found:
 `0x0800071D` on a clean install. One hook is resident at a time; all share the 1 KB at `0x0203FC00`.
 
+<a id="turbo"></a>
 #### `turbo`
 
 `asm/resident/turbo.s` runs `VBlankIntr`, then in an idle frame the overworld's callbacks `field` more
@@ -1956,6 +2010,7 @@ finds it, one word a frame for 32 frames, and freezes when `watch` (`gEnemyParty
 walking in grass on an emulator: two `Random` calls a frame, and from the previous frame's seed the
 nature roll is the fifth call (`VBlankIntr`'s [main.c:412], the frame's own, slot, level, nature).
 
+<a id="shiny-ivs-noencounter"></a>
 #### `shiny`, `ivs`, `noencounter`
 
 `shiny` (`asm/resident/shiny.s`) counts down to the next shiny wild roll. `VBlankIntr` calls `Random`
@@ -1981,6 +2036,7 @@ the call is made only in an idle overworld frame.
 `DisableWildEncounters` (`0x08085FAC`) is its only other writer. Grass, water and roamer encounters
 stop; fishing and Sweet Scent take their own paths.
 
+<a id="noclip"></a>
 #### `noclip`
 
 `noclip` (`asm/resident/noclip.s`, 304 bytes) lets the player walk through walls while every button
@@ -2006,6 +2062,7 @@ cartridge's own `MapGridGetCollisionAt` and `MapGridGetElevationAt`.
 Measured on mGBA with the French cartridge in Pallet Town: walking south, the player stops at the
 fence without R and passes six tiles through it with R held; an object event still stops it.
 
+<a id="follower"></a>
 #### `follower`
 
 `asm/resident/follower.s` walks the lead Pokemon one tile behind the player as a real object event,
@@ -2081,6 +2138,7 @@ jump, the talk script, the removal under a menu.
 [sprite.c:487], which `ResetSpriteData` sets to 64 [sprite.c:297] and which reads 64 in the overworld
 (`0x02021B44`): an entry above 64 written by a hook stays on screen until a screen resets its sprites.
 
+<a id="verified"></a>
 #### Verified
 
 | hook | retail French FireRed, ESP32 radio (each install answers `0x0800071D`) | emulator |
@@ -2102,6 +2160,7 @@ Every hook runs on LeafGreen with one address changed: `m4aSoundMain` is `0x081D
 The builders take `version=`, the host `--version leafgreen`. Verified on an emulated LeafGreen:
 turbo and `shiny`, music intact.
 
+<a id="several-hooks-at-once"></a>
 ### Several hooks at once
 
 Every hook calls the handler it replaced as a function (`bl` to a `bx r3` on `p_original`) and
@@ -2124,6 +2183,7 @@ passes, gates, hold and budget with no overlay and no RNG history, 356 bytes aga
 frame test runs on it (`tests/test_turbo_lite.py`); a frame through a chain runs each hook and
 `VBlankIntr` once (`tests/test_resident_chain.py`).
 
+<a id="install-kept"></a>
 ### `install-kept`
 
 `asm/install-kept.s`, 192 bytes, installs the hook kept in `filler_B20` as `install-resident`
@@ -2137,6 +2197,7 @@ answer at a word in the image. The last two words are patched per cartridge: `&g
 
     IP_HOST --buffer-script install-kept --version firered
 
+<a id="a-resident-hook-kept-in-the-save"></a>
 ### A resident hook kept in the save
 
 Any resident hook can live in `filler_B20` and be installed again by talking to MOM after a boot, with
@@ -2186,6 +2247,7 @@ MOM's body script on a booted console: a flipped byte, a missing second write, a
 A new Wonder Card undoes the binding: `SaveWonderCard` calls `ClearSavedWonderCardAndRelated`, which
 calls `ClearRamScript` [mystery_gift.c:172, 160]. `filler_B20` stays as written.
 
+<a id="call-chain"></a>
 ### `call-chain`
 
 Up to sixteen steps in order in one frame, one answer word per step.
@@ -2245,10 +2307,12 @@ the value `SaveBlock1 + 0x3434` holds in the same frame.
 Never call a warp or message worker from a buffer script: the Mystery Gift menu has no overworld. They
 belong to a [field stub](frlg_rng.md#the-payload-in-the-script-body).
 
+<a id="writing-a-sector-the-game-will-load"></a>
 ## Writing a sector the game will load
 
 Everything below was measured on the emulator.
 
+<a id="the-checksum-covers-the-ids-chunk"></a>
 ### The checksum covers the id's chunk
 
 `CalculateChecksum(data, size)` sums `size` bytes as little-endian u32 words and folds
@@ -2266,6 +2330,7 @@ game-written sector is zero past its chunk and summing all 3968 bytes gives the 
 composed sector with data past its chunk is rejected. Fill only the chunk. When the id is decided on the console, fill at most 2000
 bytes, the smallest chunk: one checksum is then valid for any id.
 
+<a id="where-an-id-lives-and-which-sector-carries-the-slots-counter"></a>
 ### Where an id lives, and which sector carries the slot's counter
 
 A slot is 14 sectors; the game alternates between two slots and rotates ids [decomp:src/save.c:174]:
@@ -2298,6 +2363,7 @@ carry a lower one (thirteen at 129 and one at 131 beat fourteen at 130).
 
 IWRAM, French build. After a load `gLastWrittenSector` describes the adopted slot.
 
+<a id="the-band-the-sessions-own-save-will-not-write"></a>
 ### The band the session's own save will not write
 
 A full save assigns the previous pair, advances `gLastWrittenSector` and `gSaveCounter`, then writes
@@ -2308,6 +2374,7 @@ the session's save writes the other one. To be adopted,
 a sector sits at band position 13 with counter `gSaveCounter + 2`, one above the session's
 `gSaveCounter + 1`. The id at position 13 is `(13 - gLastWrittenSector) % 14`, derived on the console.
 
+<a id="composing-a-sector-from-a-ram-snapshot"></a>
 ### Composing a sector from a RAM snapshot
 
 The save routine serializes at save time, so SaveBlock2's live contents differ from what it would
@@ -2325,6 +2392,7 @@ write. Every checksum passes and `gDamagedSaveSectors` stays 0 in both cases bel
 A normal save writes all fourteen sectors at once, so key and ciphertext move together; a partial
 write must preserve that.
 
+<a id="reading-flash-a-64-kib-window-over-a-128-kib-chip"></a>
 ### Reading flash: a 64 KiB window over a 128 KiB chip
 
 `swi 0x48` addresses the chip linearly. A guest load sees a 64 KiB aperture at `0x0E000000`, and a
@@ -2358,6 +2426,7 @@ body bytes come from is unknown. `build_memory_dump` and its two siblings
 refuse any span touching `0x0E000000..0x0FFFFFFF`. `flash-read` copies the sector into EWRAM with
 `ldrb` and sends the copy, which returns the sector exactly.
 
+<a id="changing-one-field-of-a-real-save"></a>
 ### Changing one field of a real save
 
 `flash-patch` reads a sector a real save wrote, changes one field and writes it back, so the key and
@@ -2374,6 +2443,7 @@ changes only sector A's field and checksum and sector B's counter; the load adop
 bad checksum, money and overworld unchanged, and the key copies and map view are those the game
 wrote.
 
+<a id="the-chain-end-to-end"></a>
 ### The chain, end to end
 
 Measured on the emulated console: a buffer script composes a sector from the live globals, `swi 0x48`
@@ -2381,6 +2451,7 @@ writes it, the game's next save commits the image, and the next load adopts the 
 `gDamagedSaveSectors` clean. The delivered pattern (distinct from the loader's pre-test pattern, which
 appears nowhere) reads back in EWRAM, 500 consecutive words at each of two sites.
 
+<a id="reading-the-save"></a>
 # Reading the save
 
 A Mystery Gift session reads the live save: the secret ID, and every party Pokemon's PID, IVs and
@@ -2389,6 +2460,7 @@ SaveBlock2 from offset 0 (name, gender, TID, SID, play time) or of SaveBlock1 co
 party Pokemon's nature, IVs and EVs) through `pokeldn.frlg.save.readout`, and a `trainer-id-probe`
 answer as TID and SID.
 
+<a id="trainer-id-and-secret-id"></a>
 ## Trainer ID and secret ID
 
 SaveBlock2 offset 0 holds the player name, gender, the 32-bit trainer id and the play time
@@ -2408,6 +2480,7 @@ nowhere and sent in no link message.
 
 A TID that disagrees with the trainer card means a bad read.
 
+<a id="the-party"></a>
 ## The party
 
 SaveBlock1 0x34 is `playerPartyCount`, then `playerParty[6]` at 0x38, 100 bytes each [global.h:772]:

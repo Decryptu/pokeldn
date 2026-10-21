@@ -1,7 +1,9 @@
+from pokeldn.app import i18n
 """The Union Circle - Encounters card: the wild Pokemon pokeldn spawns in the host's world, crafted from
 what a shared spawn's record carries (docs/sv_union_circle.md, Crafted encounters). With Legal encounters
 only, the species, level and Tera Type keep to what PKHeX's wild slots give, and the card lists every
 location where PKHeX accepts the spawn caught. The value is a dict (pokeldn.app.command.encounter_args)."""
+from pokeldn.app.i18n import ref as _ref
 import threading
 
 import flet as ft
@@ -11,7 +13,7 @@ from gui.localization import SERVICE, error_message
 from gui.views.pokemon import STATS, NamePicker, pokemon_header
 from gui.views.sprites import Sprite
 from gui.views.widgets import PixelActivity
-from pokeldn.app.i18n import t as tr
+from pokeldn.app.i18n import text as tr, ref
 from pokeldn.sv import wild
 
 RANDOM = "-"
@@ -36,26 +38,24 @@ class EncounterPicker:
         self.info = None            # wild.species of the chosen species and form
         self.scanned = None         # wild.scan of the spawn as last checked
         self.check_token = 0
-        self.sprite = Sprite(self.app, int(self.value.get("species") or 0), bool(self.value.get("shiny")),
+        self.sprite = Sprite(self.app, int(self.value.get("species") or 0), bool(self.value.get('shiny')),
                              form=int(self.value.get("form") or 0))
         self.legal = t.switch(bool(self.value.get("legal")), self._legal)
         self.species = t.dropdown([], None, on_select=self._species, enable_filter=True, editable=True,
-                                  menu_height=320, hint_text=tr('encounter.loading_species_ef998d', 'Loading species...'),
+                                  menu_height=320, hint_text=tr('core.encounter.loading_species_ef998d'),
                                   disabled=True)
-        self.species.trailing_icon = PixelActivity(tr('encounter.loading_species_90a6a5', 'Loading species'))
-        self.shiny = t.switch(bool(self.value.get("shiny")), self._shiny)
+        self.species.trailing_icon = PixelActivity(tr('core.encounter.loading_species_90a6a5'))
+        self.shiny = t.switch(bool(self.value.get('shiny')), self._shiny)
         self.details = ft.Column(spacing=10)
         self.places = ft.Column(spacing=4)
-        top = ft.Row([t.labeled_control(tr('encounter.species_56205e', 'Species'), self.species, expand=True),
-                      t.labeled_control(tr('encounter.shiny_039a0a', 'Shiny'), ft.Container(
+        top = ft.Row([t.labeled_control(tr('core.encounter.species_56205e'), self.species, expand=True),
+                      t.labeled_control(tr('core.encounter.shiny_039a0a'), ft.Container(
                           self.shiny, width=64, height=t.CONTROL_HEIGHT, alignment=ft.Alignment.CENTER))],
                      spacing=10, vertical_alignment=ft.CrossAxisAlignment.START)
         self.control = ft.Column([
-            ft.Row([t.text(tr('encounter.legal_encounters_only_6d37c0', 'Legal encounters only'), 13, expand=True), self.legal],
+            ft.Row([t.text(tr('core.encounter.legal_encounters_only_6d37c0'), 13, expand=True), self.legal],
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            t.text(tr('encounter.offers_only_what_the_game_s_own_wild_pokemon_can_be_and_456583',
-                      "Offers only what the game's own wild Pokemon can be, and spawns it only while you stand "
-                      "where PKHeX finds it legal once caught."), 12, t.MUTED),
+            t.text(tr('core.encounter.offers_only_what_the_game_s_own_wild_pokemon_can_be_and_456583'), 12, t.MUTED),
             pokemon_header(self.sprite.control, [top, self.details]),
             self.places,
         ], spacing=10)
@@ -84,8 +84,8 @@ class EncounterPicker:
             self.value["form"] = form = info["forms"][0]["id"] if info["forms"] else 0
         if self.value.get("gender") not in genders(info["gender"]):
             self.value["gender"] = genders(info["gender"])[0]
-        if self.value.get("tera") is None:
-            self.value["tera"] = info["types"][0]
+        if self.value.get('tera') is None:
+            self.value['tera'] = info["types"][0]
         if not self.value.get("legal") or self.table is None:
             return
         levels = self.table.levels(species, form)
@@ -123,12 +123,12 @@ class EncounterPicker:
         def show():
             self.species.trailing_icon = t.pixel_icon("chevron-down", color=t.MUTED)
             if error:
-                self.species.hint_text = tr('encounter.unavailable_ca1844', 'Unavailable')
+                self.species.hint_text = tr('core.encounter.unavailable_ca1844')
                 self.places.controls = [t.text(error, 12, t.RED)]
                 self.control.update()
                 return
             self.species.disabled = False
-            self.species.hint_text = tr('encounter.search_a_species_1ea995', 'Search a species')
+            self.species.hint_text = tr('core.encounter.search_a_species_1ea995')
             self._fill_species()
             self._load_species()
         self.app.ui(show)
@@ -182,8 +182,8 @@ class EncounterPicker:
             self._draw_places()
             self.places.update()
             return
-        self.places.controls = [ft.Row([PixelActivity(tr('encounter.checking_0dfe1d', 'Checking')),
-                                        t.text(tr('encounter.pkhex_is_checking_where_this_pokemon_is_legal_5a24ff', 'PKHeX is checking where this Pokemon is legal...'),
+        self.places.controls = [ft.Row([PixelActivity(tr('core.encounter.checking_0dfe1d')),
+                                        t.text(tr('core.encounter.pkhex_is_checking_where_this_pokemon_is_legal_5a24ff'),
                                                12, t.MUTED)], spacing=8)]
         self.places.update()
         spawn = self.spawn()
@@ -200,8 +200,8 @@ class EncounterPicker:
                 before = self.teras()
                 self.scanned = found
                 offered = self.teras()
-                if self._number("tera") not in offered:
-                    self.value["tera"] = offered[0]
+                if self._number(_ref('core.gui.views.encounter.tera_b28dca38')) not in offered:
+                    self.value['tera'] = offered[0]
                     self._save(redraw=False)
                 if offered != before:       # a redraw would take the focus from a field being typed in
                     self._draw()
@@ -215,7 +215,7 @@ class EncounterPicker:
         ivs = self.value.get("ivs") or ""
         parts = ivs.split("/") if ivs else []
         return {"species": self._number("species"), "form": self._number("form"), "level": self._number("level"),
-                "tera": self._number("tera"), "shiny": bool(self.value.get("shiny")),
+                'tera': self._number(_ref('core.gui.views.encounter.tera_b28dca38')), 'shiny': bool(self.value.get('shiny')),
                 "nature": self.value.get("nature"), "gender": self.value.get("gender"),
                 "scale": self.value.get("scale"), "ability": self.value.get("ability"),
                 "item": self.value.get("item") or None,
@@ -226,44 +226,42 @@ class EncounterPicker:
 
     def _draw(self) -> None:
         info = self.info
-        self.sprite.show(self._number("species"), bool(self.value.get("shiny")), update=False,
+        self.sprite.show(self._number("species"), bool(self.value.get('shiny')), update=False,
                          form=self._number("form"))
         if info is None:
-            self.details.controls = [t.text(tr('encounter.pick_a_species_981ca3', 'Pick a species.'), 12, t.MUTED)]
+            self.details.controls = [t.text(tr('core.encounter.pick_a_species_981ca3'), 12, t.MUTED)]
             return
         species, form = self._number("species"), self._number("form")
         legal = bool(self.value.get("legal")) and self.table is not None
         if legal and not self.forms():
-            self.details.controls = [t.text(tr('encounter.no_wild_slot_gives_this_species_pick_another_or_turn_of_06cce5', 'No wild slot gives this species: pick another, or '
-                                                                       'turn off Legal encounters only.'), 12, t.RED)]
+            self.details.controls = [t.text(tr('core.encounter.no_wild_slot_gives_this_species_pick_another_or_turn_of_06cce5'), 12, t.RED)]
             return
         first = []
         if len(self.forms()) > 1:
-            first.append(self._choice(tr('encounter.form_2e0e96', 'Form'), "form",
+            first.append(self._choice(tr('core.encounter.form_2e0e96'), "form",
                                       [(str(f["id"]), f["name"]) for f in self.forms()], reload=True))
         if legal:
             levels = self.table.levels(species, form)
-            first.append(self._choice(tr('encounter.level_170930', 'Level'), "level", [(str(n), str(n)) for n in levels]))
+            first.append(self._choice(tr('core.encounter.level_170930'), "level", [(str(n), str(n)) for n in levels]))
         else:
-            first.append(self._entry(tr('encounter.level_170930', 'Level'), "level", 1, 100, width=90))
+            first.append(self._entry(tr('core.encounter.level_170930'), "level", 1, 100, width=90))
         teras = self.teras()
-        first.append(self._choice(tr('encounter.tera_type_f65f71', 'Tera Type'), "tera", [(str(n), self.table.types[n]) for n in teras]))
-        second = [self._choice(tr('encounter.nature_c71ce8', 'Nature'), "nature",
+        first.append(self._choice(tr('core.encounter.tera_type_f65f71'), _ref('core.gui.views.encounter.tera_b28dca38'), [(str(n), self.table.types[n]) for n in teras]))
+        second = [self._choice(tr('core.encounter.nature_c71ce8'), "nature",
                                [(str(n["id"]), n["name"]) for n in info["natures"]], random=True)]
         if len(genders(info["gender"])) > 1:
-            second.append(self._choice(tr('encounter.gender_a04630', 'Gender'), "gender",
-                                       [(str(MALE), tr('encounter.male_03f8c1', 'Male')), (str(FEMALE), tr('encounter.female_e8cca8', 'Female'))]))
+            second.append(self._choice(tr('core.encounter.gender_a04630'), "gender",
+                                       [(str(MALE), tr('core.encounter.male_03f8c1')), (str(FEMALE), tr('core.encounter.female_e8cca8'))]))
         abilities = info["abilities"]
-        second.append(self._choice(tr('encounter.ability_9c40ae', 'Ability'), "ability", [
-            (str(a["slot"]), a["name"] + (tr('encounter.hidden_b8bab1', ' (hidden)') if a["slot"] == 2 else ""))
+        second.append(self._choice(tr('core.encounter.ability_9c40ae'), "ability", [
+            (str(a["slot"]), a["name"] + (tr('core.encounter.hidden_b8bab1') if a["slot"] == 2 else ""))
             for a in abilities], random=True))
-        third = [t.labeled_control(tr('encounter.held_item_6af4a4', 'Held item'), NamePicker(
+        third = [t.labeled_control(tr('core.encounter.held_item_6af4a4'), NamePicker(
                      self.app, "sv", "item", str(self.value.get("item") or ""), self._item).control, expand=True),
-                 self._entry(tr('encounter.scale_0_255_e4b57a', 'Scale (0-255)'), "scale", 0, 255, width=130, empty=True)]
+                 self._entry(tr('core.encounter.scale_0_255_e4b57a'), "scale", 0, 255, width=130, empty=True)]
         self.details.controls = [ft.Row(first, spacing=10), ft.Row(second, spacing=10), ft.Row(third, spacing=10),
                                  self._ivs(),
-                                 t.text(tr('encounter.empty_means_random_each_iv_0_to_31_as_the_game_draws_a__3e6ed1', 'Empty means random: each IV 0 to 31, as the '
-                                                                     'game draws a wild one.'), 12, t.FAINT)]
+                                 t.text(tr('core.encounter.empty_means_random_each_iv_0_to_31_as_the_game_draws_a__3e6ed1'), 12, t.FAINT)]
 
     def _choice(self, label: str, key: str, options: list[tuple[str, str]], random: bool = False,
                 reload: bool = False) -> ft.Control:
@@ -278,7 +276,7 @@ class EncounterPicker:
             self._save()
             self._check()
         if random:
-            options = [(RANDOM, tr('encounter.random_67bc48', 'Random'))] + options
+            options = [(RANDOM, tr('core.encounter.random_67bc48'))] + options
         return t.labeled_control(label, t.dropdown(options, RANDOM if current is None else str(current),
                                                    on_select=picked, menu_height=320), expand=True)
 
@@ -316,7 +314,7 @@ class EncounterPicker:
         for at, (_, name) in enumerate(STATS):
             boxes.append(t.labeled_control(name, t.field(value=parts[at], hint="-", mono=True, digits=True, limit=2,
                                                          on_change=lambda e, at=at: changed(e, at)), expand=True))
-        return ft.Column([t.text(tr('encounter.ivs_all_six_or_empty_227216', 'IVs (all six, or empty)'), 12, t.MUTED),
+        return ft.Column([t.text(tr('core.encounter.ivs_all_six_or_empty_227216'), 12, t.MUTED),
                           ft.Row(boxes, spacing=6)], spacing=4)
 
     def _draw_places(self, error: str = "") -> None:
@@ -326,17 +324,17 @@ class EncounterPicker:
         if not self.value.get("legal") or self.scanned is None:
             self.places.controls = []
             return
-        tera = self._number("tera")
+        tera = self._number(_ref('core.gui.views.encounter.tera_b28dca38'))
         names = sorted(place["name"] or f"location {place['location']}" for place in self.scanned
                        if tera in place["teras"])
         if names:
             self.places.controls = [
-                t.text(tr('encounter.pkhex_accepts_it_caught_at_count_location_s_91683c', 'PKHeX accepts it caught at {count} location(s):', count=len(names)),
+                t.text(tr('core.encounter.pkhex_accepts_it_caught_at_count_location_s_91683c', count=len(names)),
                        12, t.MUTED),
-                t.text(" · ".join(names), 13, t.TEXT)]
+                t.text(i18n.join((names), " · "), 13, t.TEXT)]
             return
         problems = sorted({p for place in self.scanned for p in place["problems"]})
-        self.places.controls = [t.text(tr('encounter.pkhex_accepts_it_caught_nowhere_45f7f3', 'PKHeX accepts it caught nowhere.'), 12, t.RED),
+        self.places.controls = [t.text(tr('core.encounter.pkhex_accepts_it_caught_nowhere_45f7f3'), 12, t.RED),
                                 *[t.text(p, 12, t.MUTED) for p in problems[:4]]]
 
     # Events
@@ -351,7 +349,7 @@ class EncounterPicker:
         encounters only, its first type as its Tera Type, and random or empty values below."""
         self.value["species"] = int(e.control.value)
         self.value["form"] = 0
-        for key in ("tera", "nature", "gender", "ability", "scale", "item", "ivs"):
+        for key in (_ref('core.gui.views.encounter.tera_b28dca38'), "nature", "gender", "ability", "scale", "item", "ivs"):
             self.value.pop(key, None)
         if self.value.get("legal"):
             self.value.pop("level", None)
@@ -365,7 +363,7 @@ class EncounterPicker:
         self._check()
 
     def _shiny(self, e) -> None:
-        self.value["shiny"] = bool(e.control.value)
-        self.sprite.show(self._number("species"), self.value["shiny"], form=self._number("form"))
+        self.value['shiny'] = bool(e.control.value)
+        self.sprite.show(self._number("species"), self.value['shiny'], form=self._number("form"))
         self._save(redraw=False)
         self._check()

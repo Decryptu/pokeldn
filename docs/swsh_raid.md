@@ -4,6 +4,7 @@ parent: Sword and Shield
 nav_order: 5
 ---
 
+<a id="max-raid-battles"></a>
 # Max Raid Battles
 
 A local Max Raid Battle is a Sword/Shield session of up to four stations on LDN scene 60006. The
@@ -12,6 +13,7 @@ host opens it from a den with "Invite Others"; a guest finds it in its Y-Comm li
 battle on 0x7C. `bin/swsh_connect.py --scene 60006 --raid-join --offer-slot N` takes a guest seat
 in a console's lobby; the lobby shows it with the chosen Pokemon.
 
+<a id="the-network"></a>
 ## The network
 
 | field | value |
@@ -29,6 +31,7 @@ The den lobby's code sits among `View_NestHole`, `StateGuestReady` and `StateHos
 A guest's Y-Comm list leaves out a raid whose advertisement carries the guest's own device id and
 account uid ([The den record](#the-den-record)).
 
+<a id="the-lobby-messages"></a>
 ## The lobby messages
 
 Every lobby message is id 2000, `net_contents.nesthole.protocol_buffers.NestholeAsyncDataHolder`
@@ -54,6 +57,7 @@ The boss record carries the boss in full: species, level, moves, IVs and PID. In
 raids, the den's raid generator applied to the BattleSeed value gives neither the boss's
 encryption constant nor its PID. What the seed feeds is unread.
 
+<a id="the-guests-sequence"></a>
 ## The guest's sequence
 
 Recorded between two emulated Shields, a whole raid won:
@@ -70,6 +74,7 @@ Recorded between two emulated Shields, a whole raid won:
 Against a retail Sword host, a guest that stops after BattleReady with byte 8 set leaves the host's
 player on "Connexion en cours" after the host's own ready, ending in error 2-ALZAA-0016.
 
+<a id="the-battle"></a>
 ## The battle
 
 The host runs the battle; a guest answers on 0x7C. `pokeldn/swsh/raid_battle.py` is the guest's side,
@@ -99,6 +104,7 @@ same serial, type and tag, length 4 and four zero bytes, except:
 Types seen from a host: 0x01, 0x0d, 0x07 (123 bytes), 0x0e, 0x02, 0x10 (47 bytes), 0x09 (the turn's
 log, zlib, 0.4 to 2.4 KB), 0x04, 0x11 and 0x0a after the guest's Pokemon fainted, 0x21 at the end.
 
+<a id="which-station-serves"></a>
 ### Which station serves
 
 The server is the station whose ServerVersion record wins a table each console keeps; neither the
@@ -117,6 +123,7 @@ A console's client id is its position in BattleStart among the lobby's members (
 `0x10253bc`). Removing a station clears its slot and reruns the choice (`0x8b3f70`), and every console
 holds a standby server it promotes once IsServer turns true (`0x7f838c`, `0x7f87f0`).
 
+<a id="the-action"></a>
 ### The action
 
 The 88-byte action is eleven 8-byte entries. Only entry 2 changed between four moves of one guest:
@@ -136,6 +143,7 @@ guest could not act sent entry 2 as zero. `raid_battle.action(move, target)` bui
 The 0x7C acknowledgement carries 32 slots; only slot 0 tracks the guest's stream, the others hold
 stale ids (34460 seen). A resend gated on the maximum over slots never resends.
 
+<a id="the-den-record"></a>
 ## The den record
 
 A den host's advertisement describes its raid; a guest's Y-Comm entry builder (`0x00fa1560`) reads it.
@@ -162,6 +170,7 @@ holding the boss, or zeroes it.
 A guest drops a station whose device id and account uid (`0x1F` to `0x3E`) both equal its own
 (`0x0111b160`).
 
+<a id="the-boss-record"></a>
 ### The boss record
 
 A guest checks BossPokemon and Rewards before it sends its started BattleReady (`0x01030d14`, state
@@ -193,6 +202,7 @@ Torkoal at level 7), the party HP stat and current HP are the plain HP stat time
 `(150 + 5 * Dynamax level) / 100`, rounded down; the other five stats are plain. The Dynamax level is
 at `+0x90`, the ability slot bit at `+0x16` bits 0 to 2, and the experience is the level's least.
 
+<a id="hosting"></a>
 ## Hosting
 
 `bin/swsh_host.py --raid-boss PK8 --raid-console-serves` hosts a den lobby a console joins from its
@@ -230,6 +240,7 @@ With `--raid-console-serves` the joined console serves the battle and the host a
 An emulated Shield guest and a retail Sword each served a whole raid this way, won it and received
 the host's Rewards, then sent the mesh leave request.
 
+<a id="several-consoles"></a>
 ### Several consoles
 
 Up to three consoles share one hosted lobby (`raid_host.RaidParty`). The host starts the battle once
@@ -248,6 +259,7 @@ The guests connect to each other directly: station connection requests, each oth
 Shield guests joined one hosted lobby, readied and fought a raid served by the first to its
 ten-turn end (command 0x1e), then both sent the mesh leave request.
 
+<a id="event-raids"></a>
 ## Event raids
 
 A Wild Area Event is a BCAT delivery of den encounter and reward tables, one numbered index per
@@ -322,6 +334,7 @@ Without `--raid-stars` or `--raid-event-boss` the host lists what it takes. `--r
 the table's version (the advertisement's by default), `--raid-area` the den area, `--raid-event-drops
 all` every drop; `--raid-reward` rows replace the event's.
 
+<a id="dynamax-adventures"></a>
 ## Dynamax Adventures
 
 A Dynamax Adventure (Max Lair, `chika` in the binary) over local communication matches when every
@@ -358,6 +371,7 @@ of 31 and the others random, a random nature, ability slot 1 or 2, gender, PID a
 constant; OT Scientist, Poke Ball, met at level 65. Both recorded rentals' party stats follow from
 their IVs and nature at level 65 with no Dynamax bonus.
 
+<a id="the-lobby-holder-id-7000"></a>
 ### The lobby holder, id 7000
 
 Measured between two emulated Shields, a whole adventure won. A record that names a player starts
@@ -382,6 +396,7 @@ joining; BattleReady with byte 8 set; then from the host BattleStart, BattleSeed
 RentalPokemonSeed, PlayerNumber, BattleReady with byte 12 set and BigBossFixed; then each player's
 SelectPokemon.
 
+<a id="the-adventure-holder-id-8000"></a>
 ### The adventure holder, id 8000
 
 | field | name | size | content |
@@ -399,6 +414,7 @@ Fields 2, 5, 7, 8, 9 and 13 were not sent. Each guest sends its own WaySelect, T
 RaidCapture and RaidWant; the host answers with its own and one for each computer partner, then the
 result. When one player left after the win, the other emulator showed error 2618-0006.
 
+<a id="hosting-an-adventure"></a>
 ### Hosting an adventure
 
 `bin/swsh_host.py --lair-legendary SPECIES [--lair-seed N]` (`pokeldn/swsh/lair_host.py`) advertises a
@@ -430,6 +446,7 @@ code, a host that closed its network without MIGRATION_START left the guest on e
 the rental screen (2 of 2); with the handover the guest left the network 0.1 s after
 MIGRATION_START and its adventure went on. With no code, both leaves went on.
 
+<a id="the-adventure-seed"></a>
 ### The adventure seed
 
 The adventure's Pokemon are the rows of RomFS `bin/appli/chika/data_table/underground_exploration_poke.bin`,
@@ -461,6 +478,7 @@ is unknown.
 ChikaRentalPokemonSeed gives none of these. A Jolteon a guest swapped for was not among the ten
 encounters of its seed; which encounters a path meets is unknown.
 
+<a id="leaving"></a>
 ## Leaving
 
 Once its player leaves the reward screens, a retail Sword host closes the network with
@@ -468,6 +486,7 @@ START_HOST_MIGRATION every 0.33 s for 10 s, as after a link trade ([Leaving](sws
 A guest that does not leave holds the host's player frozen in the overworld until the timeout;
 `--leave-with-host` leaves on the first one.
 
+<a id="unresolved"></a>
 ## Unresolved
 
 - Whether a console that is not the Pia host would publish framework objects 0 to 7; in every

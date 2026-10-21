@@ -3,7 +3,7 @@
 The old app closes its window once this one is up (update.READY); this one closes once the new app
 has opened (it removes update.OUTCOME). docs/gui.md (Updates).
 """
-from pokeldn.app.i18n import t as tr
+from pokeldn.app.i18n import text as tr, ref
 import os
 import threading
 from pathlib import Path
@@ -49,8 +49,8 @@ def run(new: Path, target: Path, pid: int, version: str) -> int:
             page.window.resizable = page.window.maximizable = False
             page.add(ft.Row([
                 ft.ProgressRing(width=24, height=24, stroke_width=3, color=t.BLUE),
-                ft.Column([t.text(tr('updating.updating_pokeldn_to_79e623', 'Updating pokeldn to {value0}', value0=version), 15, weight=ft.FontWeight.W_600),
-                           t.text(tr('updating.pokeldn_opens_again_in_a_moment_b63bb9', 'pokeldn opens again in a moment.'), 12, t.MUTED)], spacing=4, tight=True),
+                ft.Column([t.text(tr('core.updating.updating_pokeldn_to_79e623', value0=version), 15, weight=ft.FontWeight.W_600),
+                           t.text(tr('core.updating.pokeldn_opens_again_in_a_moment_b63bb9'), 12, t.MUTED)], spacing=4, tight=True),
             ], spacing=18, vertical_alignment=ft.CrossAxisAlignment.CENTER, expand=True))
             page.run_task(page.window.center)
             shown.append(page)

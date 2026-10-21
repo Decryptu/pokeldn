@@ -31,7 +31,7 @@ def __getattr__(name):
 
 # docs/plugins.md, Versions: a removal or a change of meaning raises the major, an addition the level.
 API_VERSION = 1                    # the major this pokeldn serves
-API_LEVEL = 9                      # 1.9 language-pack resources; docs/plugins.md, Versions
+API_LEVEL = 10                     # 1.10 semantic localization and resource format 1
 API_OLDEST = 1                     # an older major is refused
 DEPRECATED: dict[int, str] = {}    # a served major due for removal -> the release that drops it
 ENTRY_POINT_GROUP = "pokeldn.plugins"
@@ -90,6 +90,24 @@ class API:
     def __init__(self, plugin: Plugin):
         self.plugin = plugin
         self.folder = plugin.folder
+
+    def register_localization(self, english: dict, *, parameters=None) -> None:
+        """Declare this plugin's complete English namespace (API 1.10)."""
+        from pokeldn.app import i18n
+        i18n.register_catalog(self.plugin.id, english, parameters=parameters)
+
+    def register_documents(self, documents: dict) -> None:
+        from pokeldn.app import i18n
+        if self.folder is None:
+            raise ValueError("Document resources need a plugin folder.")
+        i18n.register_documents(self.plugin.id, documents, self.folder)
+
+    def register_names(self, game: str, provider: Callable) -> None:
+        """Register a name provider for a game this plugin owns (API 1.10)."""
+        if game not in {entry.key for entry in self.plugin.games}:
+            raise ValueError("A name provider must belong to a game registered by this plugin.")
+        from pokeldn.app import i18n
+        i18n.register_name_provider(game, provider, owner=self.plugin.id)
 
     @property
     def library(self) -> Path:
@@ -282,7 +300,7 @@ def _read_folder(path: Path) -> Plugin:
             plugin.library_sort = meta["library_sort"]
         else:
             plugin.error = f"plugin.toml's library_sort is one of {', '.join(SORTS)}"
-    if "locale" in meta or "strings" in meta:
+    if "locale" in meta or "strings" in meta or "localization_format" in meta:
         from pokeldn.app.i18n import read_pack, read_resources
         def read_resource(name):
             resource = (path / name).resolve()
@@ -292,7 +310,7 @@ def _read_folder(path: Path) -> Plugin:
         try:
             plugin.translations = read_pack(meta, read_resource)
             plugin.resources = read_resources(meta, read_resource)
-            plugin.locale = meta["locale"]
+            plugin.locale = meta.get("locale") or next(iter(plugin.resources.get("locales", {})), "")
         except ValueError as error:
             plugin.error = str(error)
     return plugin
@@ -373,6 +391,9 @@ def load() -> list[Plugin]:
             plugin.loaded = True
         except (Exception, SystemExit) as error:   # a broken plugin never takes the program down
             plugin.error = f"{type(error).__name__}: {error}"
+            from pokeldn.app import i18n
+            if plugin.id != "core":
+                i18n.unregister_namespace(plugin.id)
             plugin.tools.clear()
             plugin.games.clear()
             plugin.radios.clear()
@@ -482,6 +503,10 @@ def _reset() -> None:
     """Forgets every loaded plugin; for tests."""
     global _done
     from pokeldn import plugin_guard
+    from pokeldn.app import i18n
+    for plugin_id in _loaded:
+        if plugin_id != "core":
+            i18n.unregister_namespace(plugin_id)
     _done = False
     _loaded.clear()
     _radios.clear()

@@ -66,12 +66,14 @@ static partial class Program
                 {
                     "species" => Species(game),
                     "names" => Names(game, (string)request["list"]!),
+                    "name_table" => NameTable(game, (string)request["kind"]!),
                     "options" => Options(game, request),
                     "gender_ratio" => GenderRatio(game, request),
                     "make" => Make(game, request),
                     "paste" => Paste(game, request),
                     "check" => Check(game, Convert.FromBase64String((string)request["data"]!), request),
                     "owner" => Owner(game, Convert.FromBase64String((string)request["data"]!)),
+                    "identity" => Identity(game, Convert.FromBase64String((string)request["data"]!)),
                     "gift" => Gift(Convert.FromBase64String((string)request["data"]!)),
                     "events" => Events(),
                     "event" => Event(game, request),
@@ -87,13 +89,16 @@ static partial class Program
                     "wild_areas" => Wild.AreasReply(strings),
                     "wild_legal" => Wild.LegalReply(request, strings, Plain),
                     "wild_species" => Wild.SpeciesReply(request, strings),
-                    var other => throw new ArgumentException($"unknown command {other}"),
+                    var other => throw LocalizedError.Make("core.pkhex.unknown_command_value0_d5248f40", new JsonObject { ["value0"] = System.Text.Json.Nodes.JsonValue.Create(other) }, message => new ArgumentException(message)),
                 };
                 reply["ok"] = true;
+                reply["name_data_version"] = typeof(GameInfo).Assembly.GetName().Version?.ToString() ?? "unknown";
             }
             catch (Exception e)
             {
                 reply = new JsonObject { ["ok"] = false, ["error"] = e.Message };
+                if (e.Data["localization"] is JsonObject message)
+                    reply["message"] = message.DeepClone();
             }
             Console.WriteLine(reply.ToJsonString());
         }
@@ -204,16 +209,69 @@ static partial class Program
                         Add(b, strings.balllist[b]);
                     break;
                 default:
-                    throw new ArgumentException($"unknown list {list}");
+                    throw LocalizedError.Make("core.pkhex.unknown_list_value0_70ea6935", new JsonObject { ["value0"] = System.Text.Json.Nodes.JsonValue.Create(list) }, message => new ArgumentException(message));
             }
             return new JsonObject { ["names"] = names };
+        }
+
+        // Complete naming tables. Availability remains in Names/Options, never inferred from a label.
+        JsonObject NameTable(Game game, string kind)
+        {
+            var names = new JsonObject();
+            var forms = new JsonObject();
+            var formLabels = new JsonObject();
+            void Add(int id, string label)
+            {
+                if (!string.IsNullOrWhiteSpace(label) && label != "???")
+                    names[id.ToString()] = label;
+            }
+            var values = kind switch
+            {
+                "species" => strings.specieslist,
+                "move" => strings.movelist,
+                "item" => strings.GetItemStrings(game.Context, game.Versions[0]),
+                "ability" => strings.abilitylist,
+                "type" => strings.types,
+                "nature" => strings.natures,
+                "ball" => strings.balllist,
+                _ => throw LocalizedError.Make("core.pkhex.unknown_entity_kind_value0_367f5998", new JsonObject { ["value0"] = System.Text.Json.Nodes.JsonValue.Create(kind) }, message => new ArgumentException(message)),
+            };
+            for (var id = 0; id < values.Length; id++)
+                Add(id, values[id]);
+            if (kind == "species")
+                for (ushort species = 1; species <= game.Table.MaxSpeciesID; species++)
+                {
+                    var labels = FormConverter.GetFormList(species, strings.types, strings.forms, game.Context);
+                    var entries = new JsonObject();
+                    var suffixes = new JsonObject();
+                    var count = Math.Max(1, (int)game.Table[species].FormCount);
+                    for (var form = 0; form < count; form++)
+                    {
+                        var suffix = form < labels.Length ? labels[form] : "";
+                        if (form == 0 || !string.IsNullOrEmpty(suffix))
+                        {
+                            entries[form.ToString()] = form == 0 ? values[species] : $"{values[species]} ({suffix})";
+                            suffixes[form.ToString()] = suffix;
+                        }
+                    }
+                    forms[species.ToString()] = entries;
+                    formLabels[species.ToString()] = suffixes;
+                }
+            return new JsonObject
+            {
+                ["version"] = typeof(GameInfo).Assembly.GetName().Version?.ToString() ?? "unknown",
+                ["names"] = names,
+                ["forms"] = forms,
+                ["form_labels"] = formLabels,
+                ["language"] = displayLanguage,
+            };
         }
 
         // What the offer options can ask of this species in this game; the GUI shows only what is listed.
         JsonObject Options(Game game, JsonObject request)
         {
             var species = checked((ushort)(int)request["species"]!);
-            var first = FirstForm(game, species) ?? throw new ArgumentException("This species is absent from the selected game.");
+            var first = FirstForm(game, species) ?? throw LocalizedError.Make("core.pkhex.this_species_is_absent_from_the_selected_game_062f3edf", new JsonObject {  }, message => new ArgumentException(message));
             var form = checked((byte)((int?)request["form"] ?? first));
             if (!game.Table.IsPresentInGame(species, form))
                 form = first;
@@ -287,7 +345,7 @@ static partial class Program
             if ((string?)request["version"] is { Length: > 0 } v)
             {
                 if (!Enum.TryParse<GameVersion>(v, out var chosen) || !versions.Contains(chosen))
-                    throw new ArgumentException("This version is incompatible with the selected game.");
+                    throw LocalizedError.Make("core.pkhex.this_version_is_incompatible_with_the_selected_game_ea3425a7", new JsonObject {  }, message => new ArgumentException(message));
                 // "only_version": the trainer's own game alone, as a gift made for a receiving player (docs/gift_simulated.md).
                 versions = (bool?)request["only_version"] ?? false ? [chosen] : [chosen, .. versions.Where(x => x != chosen)];
             }
@@ -301,10 +359,10 @@ static partial class Program
         JsonObject Make(Game game, JsonObject request)
         {
             var species = checked((ushort)(int)request["species"]!);
-            var first = FirstForm(game, species) ?? throw new ArgumentException("This species is absent from the selected game.");
+            var first = FirstForm(game, species) ?? throw LocalizedError.Make("core.pkhex.this_species_is_absent_from_the_selected_game_062f3edf", new JsonObject {  }, message => new ArgumentException(message));
             var level = (int?)request["level"] ?? 0;
             if (level < 0 || level > 100)
-                throw new ArgumentException("Level must be between 0 and 100.");
+                throw LocalizedError.Make("core.pkhex.level_must_be_between_0_and_100_21293fd6", new JsonObject {  }, message => new ArgumentException(message));
             var shiny = (bool?)request["shiny"] ?? false;
             var nickname = (string?)request["nickname"] ?? "";
             var wish = Wish.From(request["options"] as JsonObject);
@@ -334,10 +392,10 @@ static partial class Program
             }
             var form = wish.Form.Value;
             if (!game.Table.IsPresentInGame(species, form))
-                throw new ArgumentException("This form is absent from the selected game.");
+                throw LocalizedError.Make("core.pkhex.this_form_is_absent_from_the_selected_game_573ca465", new JsonObject {  }, message => new ArgumentException(message));
             // SetNickname cuts a longer name without saying so; the record would not carry what was asked.
             if (nickname.Length > game.Blank().MaxStringLengthNickname)
-                throw new ArgumentException($"A nickname is at most {game.Blank().MaxStringLengthNickname} characters in this game.");
+                throw LocalizedError.Make("core.pkhex.a_nickname_is_at_most_value0_characters_in_this_game_e37b75d7", new JsonObject { ["value0"] = System.Text.Json.Nodes.JsonValue.Create(game.Blank().MaxStringLengthNickname) }, message => new ArgumentException(message));
             var (versions, trainer) = Trainer(game, request);
             var blank = game.Blank();
             blank.Species = species;
@@ -651,10 +709,26 @@ static partial class Program
             if (game.Context == EntityContext.Gen7b && data.Length == 0xE8)
                 data = [.. data, .. new byte[0x104 - data.Length]];
             var pk = EntityFormat.GetFromBytes(data, game.Context)
-                     ?? throw new InvalidDataException($"{data.Length} bytes are not a Pokemon of this game.");
+                     ?? throw LocalizedError.Make("core.pkhex.value0_bytes_are_not_a_pokemon_of_this_game_f47f66a7", new JsonObject { ["value0"] = System.Text.Json.Nodes.JsonValue.Create(data.Length) }, message => new InvalidDataException(message));
             if (pk.GetType() != game.Blank().GetType())
-                throw new InvalidDataException($"Expected {game.Blank().GetType().Name}, received {pk.GetType().Name}.");
+                throw LocalizedError.Make("core.pkhex.expected_value0_received_value1_cd13236c", new JsonObject { ["value0"] = System.Text.Json.Nodes.JsonValue.Create(game.Blank().GetType().Name), ["value1"] = System.Text.Json.Nodes.JsonValue.Create(pk.GetType().Name) }, message => new InvalidDataException(message));
             return pk;
+        }
+
+        // Read stable display identities without rebuilding or running legality analysis.
+        JsonObject Identity(Game game, byte[] data)
+        {
+            var pk = Parse(game, data);
+            return new JsonObject
+            {
+                ["entity_schema"] = 1,
+                ["species_id"] = pk.Species, ["form_id"] = pk.Form,
+                ["nature_id"] = (int)pk.StatAlignment, ["ability_id"] = pk.Ability,
+                ["held_item_id"] = pk.HeldItem, ["ball_id"] = (int)pk.Ball,
+                ["move_ids"] = new JsonArray(pk.Moves.Where(m => m != 0).Select(m => (JsonNode?)(int)m).ToArray()),
+                ["level"] = pk.CurrentLevel, ["shiny"] = pk.IsShiny,
+                ["nickname"] = pk.Nickname, ["is_nicknamed"] = pk.IsNicknamed,
+            };
         }
 
         // Whose a Pokemon is, read with no legality check, for a gift made for the save that offers it
@@ -664,7 +738,7 @@ static partial class Program
         {
             var pk = Parse(game, data);
             if (!pk.ChecksumValid)
-                throw new InvalidDataException("The Pokemon checksum is invalid.");
+                throw LocalizedError.Make("core.pkhex.the_pokemon_checksum_is_invalid_719106b8", new JsonObject {  }, message => new InvalidDataException(message));
             return new JsonObject
             {
                 ["species"] = pk.Species,
@@ -687,9 +761,9 @@ static partial class Program
         {
             var pk = Parse(game, data);
             if (!game.Table.IsPresentInGame(pk.Species, pk.Form))
-                throw new InvalidDataException("This species or form is absent from the selected game.");
+                throw LocalizedError.Make("core.pkhex.this_species_or_form_is_absent_from_the_selected_gam_476851cd", new JsonObject {  }, message => new InvalidDataException(message));
             if (!pk.ChecksumValid)
-                throw new InvalidDataException("The Pokemon checksum is invalid.");
+                throw LocalizedError.Make("core.pkhex.the_pokemon_checksum_is_invalid_719106b8", new JsonObject {  }, message => new InvalidDataException(message));
             if (request["fields"] is JsonObject fields)
                 foreach (var (name, value) in fields)
                 {
@@ -704,19 +778,19 @@ static partial class Program
                         case "level":
                             var level = (int)value!;
                             if (level < pk.CurrentLevel || level > 100)
-                                throw new ArgumentException($"The level goes from {pk.CurrentLevel} to 100: a Pokemon never loses levels.");
+                                throw LocalizedError.Make("core.pkhex.the_level_goes_from_value0_to_100_a_pokemon_never_lo_a116bc79", new JsonObject { ["value0"] = System.Text.Json.Nodes.JsonValue.Create(pk.CurrentLevel) }, message => new ArgumentException(message));
                             pk.CurrentLevel = (byte)level;
                             break;
                         case "moves":
                             var moves = ((JsonArray)value!).Select(m => (ushort)(int)m!).Where(m => m != 0).ToArray();
                             if (moves.Length == 0)
-                                throw new ArgumentException("A Pokemon knows at least one move.");
+                                throw LocalizedError.Make("core.pkhex.a_pokemon_knows_at_least_one_move_6b3a6d26", new JsonObject {  }, message => new ArgumentException(message));
                             pk.SetMoves(moves);
                             pk.HealPP();
                             Permit(pk);
                             break;
                         case "held_item": pk.HeldItem = (int)value!; break;
-                        default: throw new ArgumentException($"Unsupported edit {name}.");
+                        default: throw LocalizedError.Make("core.pkhex.unsupported_edit_value0_6e0e8edf", new JsonObject { ["value0"] = System.Text.Json.Nodes.JsonValue.Create(name) }, message => new ArgumentException(message));
                     }
                 }
             string? note = null;
@@ -778,7 +852,7 @@ static partial class Program
                     return (null, null, source.Form == 0 ? $"{strings.specieslist[source.Species]} is not in that game."
                                                          : $"This form of {strings.specieslist[source.Species]} is not in that game.");
                 pk = EntityConverter.ConvertToType(source, to.Blank().GetType(), out var result)
-                     ?? throw new InvalidDataException($"PKHeX has no transfer route ({result}).");
+                     ?? throw LocalizedError.Make("core.pkhex.pkhex_has_no_transfer_route_value0_6a516c87", new JsonObject { ["value0"] = System.Text.Json.Nodes.JsonValue.Create(result) }, message => new InvalidDataException(message));
                 if (!emptyTracker && pk is IHomeTrack { HasTracker: false } home)
                     home.Tracker = MadeTracker(tracker);
                 // The bank's owner receives it in the new game, as HOME hands it to the save it is moved into.
@@ -850,7 +924,7 @@ static partial class Program
             else if (FileUtil.TryGetPKM(data, out var pk, Path.GetExtension(name)))
                 found.Add(Imported(request, pk, ""));
             else
-                throw new InvalidDataException("PKHeX reads neither a Pokemon nor a game save in this file.");
+                throw LocalizedError.Make("core.pkhex.pkhex_reads_neither_a_pokemon_nor_a_game_save_in_thi_eff8c4a5", new JsonObject {  }, message => new InvalidDataException(message));
             return reply;
         }
 
@@ -886,7 +960,7 @@ static partial class Program
         (string Game, PKM Pokemon, LegalityAnalysis Legality, JsonArray Notes) Banked(JsonObject request, PKM source)
         {
             if (!source.ChecksumValid)
-                throw new InvalidDataException("The Pokemon checksum is invalid.");
+                throw LocalizedError.Make("core.pkhex.the_pokemon_checksum_is_invalid_719106b8", new JsonObject {  }, message => new InvalidDataException(message));
             source.ResetPartyStats();
             source.RefreshChecksum();
             foreach (var (key, game) in games)
@@ -1104,7 +1178,7 @@ static partial class Program
                 });
             }
             if (sets.Count == 0)
-                throw new ArgumentException("The text holds no Pokemon set.");
+                throw LocalizedError.Make("core.pkhex.the_text_holds_no_pokemon_set_892d32b8", new JsonObject {  }, message => new ArgumentException(message));
             return new JsonObject { ["sets"] = sets };
         }
 
@@ -1139,7 +1213,7 @@ static partial class Program
             var language = (int?)request["language"] ?? 0;
             var matches = Gen3Events().Where(e => EventName(e) == name).ToList();
             if (matches.Count == 0)
-                throw new ArgumentException($"No Gen 3 event is named {name}.");
+                throw LocalizedError.Make("core.pkhex.no_gen_3_event_is_named_value0_6bc88012", new JsonObject { ["value0"] = System.Text.Json.Nodes.JsonValue.Create(name) }, message => new ArgumentException(message));
             var encounter = matches.FirstOrDefault(e => e.Language == language)
                             ?? matches.FirstOrDefault(e => e.Language == (byte)LanguageID.English) ?? matches[0];
             var trainer = new SimpleTrainerInfo(GameVersion.FR)
@@ -1158,7 +1232,7 @@ static partial class Program
                     break;
             }
             if (!la.Valid)
-                throw new InvalidDataException($"PKHeX made an illegal {name}: {la.Report(displayLanguage)}");
+                throw LocalizedError.Make("core.pkhex.pkhex_made_an_illegal_value0_value1_20f3a910", new JsonObject { ["value0"] = System.Text.Json.Nodes.JsonValue.Create(name), ["value1"] = System.Text.Json.Nodes.JsonValue.Create(la.Report(displayLanguage)) }, message => new InvalidDataException(message));
             return new JsonObject
             {
                 ["data"] = Convert.ToBase64String(game.Write(pk)),
@@ -1181,7 +1255,7 @@ static partial class Program
                 EntityContext.Gen8b => EncounterEvent.MGDB_G8B,
                 EntityContext.Gen9 => EncounterEvent.MGDB_G9,
                 EntityContext.Gen9a => EncounterEvent.MGDB_G9A,
-                _ => throw new ArgumentException("PKHeX has no Mystery Gift Pokemon for this game."),
+                _ => throw LocalizedError.Make("core.pkhex.pkhex_has_no_mystery_gift_pokemon_for_this_game_de22319f", new JsonObject {  }, message => new ArgumentException(message)),
             };
             var seen = new HashSet<string>();
             foreach (var gift in table.Where(g => g.IsEntity && !g.IsEgg))
@@ -1245,8 +1319,12 @@ static partial class Program
                     ["ot"] = YourOT(pk, trainer) ? "" : pk.OriginalTrainerName,
                     ["language"] = pk.Language == trainer.Language ? 0 : pk.Language,
                     ["ball"] = strings.balllist[pk.Ball],
+                    ["ball_id"] = (int)pk.Ball,
                     ["held_item"] = pk.HeldItem == 0 ? "" : items[pk.HeldItem],
+                    ["held_item_id"] = pk.HeldItem,
                     ["moves"] = moves,
+                    ["move_ids"] = new JsonArray(pk.Moves.Where(m => m != 0).Select(m => (JsonNode?)(int)m).ToArray()),
+                    ["tera_type_id"] = gift is ITeraTypeReadOnly type ? (int)type.TeraType : null,
                     ["legal"] = Accepted(pk, la) && refused.Length == 0,
                     ["refused"] = refused,
                     ["home_tracker"] = TrackerState(pk, la),
@@ -1269,7 +1347,7 @@ static partial class Program
         {
             var key = (string)request["key"]!;
             var gift = GiftEvents(game).FirstOrDefault(e => e.Key == key).Gift
-                       ?? throw new ArgumentException($"PKHeX has no Mystery Gift Pokemon {key} for this game.");
+                       ?? throw LocalizedError.Make("core.pkhex.pkhex_has_no_mystery_gift_pokemon_value0_for_this_ga_9f996acf", new JsonObject { ["value0"] = System.Text.Json.Nodes.JsonValue.Create(key) }, message => new ArgumentException(message));
             var (versions, trainer) = Trainer(game, request);
             var (pk, la) = MakeGift(gift, versions, trainer);
             var refused = "";
@@ -1454,34 +1532,34 @@ static partial class Program
         JsonObject Gift(byte[] data)
         {
             if (data.Length != WC8.Size)
-                throw new InvalidDataException("A WC8 record must contain 720 bytes.");
+                throw LocalizedError.Make("core.pkhex.a_wc8_record_must_contain_720_bytes_79f3e4a3", new JsonObject {  }, message => new InvalidDataException(message));
             var card = new WC8(data);
             var held = GiftItems();
             bool ValidItem(int item) => item == 0 || held.Contains((ushort)item);
             if (card.IsEntity)
             {
                 if (!PersonalTable.SWSH.IsPresentInGame(card.Species, card.Form))
-                    throw new InvalidDataException("This species or form is absent from Sword/Shield.");
+                    throw LocalizedError.Make("core.pkhex.this_species_or_form_is_absent_from_sword_shield_5f5a4ee2", new JsonObject {  }, message => new InvalidDataException(message));
                 var blank = new PK8();
                 var dummied = MoveInfo.GetDummiedMovesHashSet(EntityContext.Gen8);
                 ushort[] moves = [card.Move1, card.Move2, card.Move3, card.Move4,
                                   card.RelearnMove1, card.RelearnMove2, card.RelearnMove3, card.RelearnMove4];
                 foreach (var move in moves)
                     if (move > blank.MaxMoveID || MoveInfo.IsDummiedMove(dummied, move))
-                        throw new InvalidDataException("This move is unavailable in Sword/Shield.");
+                        throw LocalizedError.Make("core.pkhex.this_move_is_unavailable_in_sword_shield_d416db2e", new JsonObject {  }, message => new InvalidDataException(message));
                 if (card.Level > 100 || card.Ball > blank.MaxBallID || !ValidItem(card.HeldItem))
-                    throw new InvalidDataException("Invalid gift level, ball or held item.");
+                    throw LocalizedError.Make("core.pkhex.invalid_gift_level_ball_or_held_item_2259656c", new JsonObject {  }, message => new InvalidDataException(message));
                 if (data[0x243] > 3 || (data[0x246] > 24 && data[0x246] != 255) ||
                     data[0x247] > 4 || data[0x248] > 4 || data[0x24A] > 10)
-                    throw new InvalidDataException("Invalid gift gender, nature, ability, shininess or Dynamax level.");
+                    throw LocalizedError.Make("core.pkhex.invalid_gift_gender_nature_ability_shininess_or_dyna_407ba48b", new JsonObject {  }, message => new InvalidDataException(message));
                 if (data[0x24B] > 1 || (data[0x24B] == 1 && !CanGigantamax(card.Species, card.Form)))
-                    throw new InvalidDataException("Neither this species nor its evolutions have a Gigantamax form.");
+                    throw LocalizedError.Make("core.pkhex.neither_this_species_nor_its_evolutions_have_a_gigan_6227cdc8", new JsonObject {  }, message => new InvalidDataException(message));
             }
             else if (card.IsItem)
             {
                 for (var i = 0; i < 6; i++)
                     if (!ValidItem(card.GetItem(i)) || (card.GetItem(i) != 0 && card.GetQuantity(i) is < 1 or > 999))
-                        throw new InvalidDataException("Invalid gift item or quantity; bag items only, up to 999.");
+                        throw LocalizedError.Make("core.pkhex.invalid_gift_item_or_quantity_bag_items_only_up_to_9_ec0a57f4", new JsonObject {  }, message => new InvalidDataException(message));
             }
             else if (card.CardType == WC8.GiftType.Clothing)
             {
@@ -1492,16 +1570,16 @@ static partial class Program
                     var category = BitConverter.ToUInt32(data, 0x20 + 8 * i);
                     var index = BitConverter.ToUInt32(data, 0x24 + 8 * i);
                     if (index != uint.MaxValue && (category > 14 || index > 1023))
-                        throw new InvalidDataException("Invalid clothing category or index.");
+                        throw LocalizedError.Make("core.pkhex.invalid_clothing_category_or_index_90cbbc7d", new JsonObject {  }, message => new InvalidDataException(message));
                 }
             }
             else if (data[0x11] == 5)
             {
                 if (BitConverter.ToUInt32(data, 0x20) is < 1 or > 9_999_999)
-                    throw new InvalidDataException("Money is 1 to 9,999,999.");
+                    throw LocalizedError.Make("core.pkhex.money_is_1_to_9_999_999_bc1e2b13", new JsonObject {  }, message => new InvalidDataException(message));
             }
             else if (card.CardType != WC8.GiftType.BP)
-                throw new InvalidDataException("Supported WC8 gifts are Pokemon, bag items, BP, clothing and money.");
+                throw LocalizedError.Make("core.pkhex.supported_wc8_gifts_are_pokemon_bag_items_bp_clothin_cce78a7b", new JsonObject {  }, message => new InvalidDataException(message));
             return new JsonObject { ["valid"] = true };
         }
 
@@ -1511,7 +1589,7 @@ static partial class Program
         {
             var data = Convert.FromBase64String((string)request["data"]!);
             return SaveUtil.GetSaveFile(new Memory<byte>(data), "") as SAV3FRLG
-                   ?? throw new InvalidDataException("This is not a FireRed or LeafGreen save PKHeX can read.");
+                   ?? throw LocalizedError.Make("core.pkhex.this_is_not_a_firered_or_leafgreen_save_pkhex_can_re_f73db353", new JsonObject {  }, message => new InvalidDataException(message));
         }
 
         JsonObject SaveRead(Game game, JsonObject request)
@@ -1567,13 +1645,13 @@ static partial class Program
                         case "name":
                             var ot = ((string)value!).Trim();
                             if (ot.Length == 0 || ot.Length > (sav.Japanese ? 5 : 7))
-                                throw new ArgumentException($"A trainer name is 1 to {(sav.Japanese ? 5 : 7)} characters.");
+                                throw LocalizedError.Make("core.pkhex.a_trainer_name_is_1_to_value0_characters_ed5474e7", new JsonObject { ["value0"] = System.Text.Json.Nodes.JsonValue.Create((sav.Japanese ? 5 : 7)) }, message => new ArgumentException(message));
                             sav.OT = ot;
                             break;
                         case "gender": sav.Gender = checked((byte)(int)value!); break;
                         case "money": sav.Money = Math.Min(checked((uint)(long)value!), (uint)sav.MaxMoney); break;
                         case "coins": sav.Coin = Math.Min(checked((uint)(long)value!), (uint)sav.MaxCoins); break;
-                        default: throw new ArgumentException($"Unsupported edit {name}.");
+                        default: throw LocalizedError.Make("core.pkhex.unsupported_edit_value0_6e0e8edf", new JsonObject { ["value0"] = System.Text.Json.Nodes.JsonValue.Create(name) }, message => new ArgumentException(message));
                     }
             if (request["party"] is JsonArray wanted)
             {
@@ -1588,15 +1666,15 @@ static partial class Program
                     else
                     {
                         var pk = EntityFormat.GetFromBytes(Convert.FromBase64String((string)o["data"]!), EntityContext.Gen3) as PK3
-                                 ?? throw new InvalidDataException("A party Pokemon is not a Gen 3 Pokemon.");
+                                 ?? throw LocalizedError.Make("core.pkhex.a_party_pokemon_is_not_a_gen_3_pokemon_045a0ca5", new JsonObject {  }, message => new InvalidDataException(message));
                         if (!pk.ChecksumValid)
-                            throw new InvalidDataException("A party Pokemon's checksum is invalid.");
+                            throw LocalizedError.Make("core.pkhex.a_party_pokemon_s_checksum_is_invalid_c07e5c2a", new JsonObject {  }, message => new InvalidDataException(message));
                         pk.ResetPartyStats();
                         party.Add(pk);
                     }
                 }
                 if (party.Count is 0 or > 6)
-                    throw new ArgumentException("A party holds one to six Pokemon.");
+                    throw LocalizedError.Make("core.pkhex.a_party_holds_one_to_six_pokemon_f5ad3420", new JsonObject {  }, message => new ArgumentException(message));
                 sav.PartyData = party;
             }
             var reply = SaveRead(game, new JsonObject { ["data"] = Convert.ToBase64String(sav.Write(default).Span) });
@@ -1628,8 +1706,11 @@ static partial class Program
                 ["trainer_id"] = pk.DisplayTID,
                 ["secret_id"] = pk.DisplaySID,
                 ["nature"] = strings.natures[(int)pk.StatAlignment],
+                ["nature_id"] = (int)pk.StatAlignment,
                 ["ball"] = strings.balllist[pk.Ball],
+                ["ball_id"] = (int)pk.Ball,
                 ["ability"] = game.Context == EntityContext.Gen9a ? "" : strings.abilitylist[pk.Ability],
+                ["ability_id"] = pk.Ability,
                 ["held_item"] = pk.HeldItem == 0 ? "" : strings.GetItemStrings(game.Context, game.Versions[0])[pk.HeldItem],
                 ["held_item_id"] = pk.HeldItem,
                 ["moves"] = moves,
@@ -1711,15 +1792,15 @@ record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effor
         var ivs = Read("ivs");
         var effort = Read("effort");
         if (ivs.Any(v => v > 31) || effort.Any(v => v > 252))
-            throw new ArgumentException("An IV is at most 31 and an effort value at most 252.");
+            throw LocalizedError.Make("core.pkhex.an_iv_is_at_most_31_and_an_effort_value_at_most_252_3b1db597", new JsonObject {  }, message => new ArgumentException(message));
         if (Number("nature") is < 0 or > 24)
-            throw new ArgumentException("Unknown nature.");
+            throw LocalizedError.Make("core.pkhex.unknown_nature_492f8dd0", new JsonObject {  }, message => new ArgumentException(message));
         if (Number("friendship") is < 0 or > 255)
-            throw new ArgumentException("Friendship is at most 255.");
+            throw LocalizedError.Make("core.pkhex.friendship_is_at_most_255_accf1fd3", new JsonObject {  }, message => new ArgumentException(message));
         ushort[] moves = o?["moves"] is JsonArray list
             ? [.. list.Select(m => checked((ushort)(int)m!)).Where(m => m != 0).Distinct()] : [];
         if (moves.Length > 4)
-            throw new ArgumentException("A Pokemon knows at most four moves.");
+            throw LocalizedError.Make("core.pkhex.a_pokemon_knows_at_most_four_moves_b5db1800", new JsonObject {  }, message => new ArgumentException(message));
         return new Wish(Number("nature") is { } n ? (Nature)n : null, Number("ability"),
             Number("gender") is { } g ? (Gender)g : null, ivs, effort,
             Number("held_item"), Number("ball") is { } b ? checked((byte)b) : null,

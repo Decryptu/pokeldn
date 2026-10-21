@@ -1,0 +1,2957 @@
+[documents."core.guide.bdsp"]
+title = "晶灿钻石／明亮珍珠"
+path = "locales/zh-Hans/docs/bdsp.md"
+[[documents."core.guide.bdsp".sections]]
+id = "brilliant-diamond-and-shining-pearl"
+title = "晶灿钻石和明亮珍珠"
+level = 1
+[[documents."core.guide.bdsp".sections]]
+id = "status"
+title = "状态"
+level = 2
+[[documents."core.guide.bdsp".sections]]
+id = "pages"
+title = "相关页面"
+level = 2
+[[documents."core.guide.bdsp".sections]]
+id = "unresolved"
+title = "未解决"
+level = 2
+[documents."core.guide.bdsp_protocol"]
+title = "游戏协议"
+path = "locales/zh-Hans/docs/bdsp_protocol.md"
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "bdsps-own-protocol-and-controlling-a-character"
+title = "BDSP自己的协议，并控制一个字符"
+level = 1
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "framing"
+title = "框架"
+level = 2
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "what-has-been-on-the-air"
+title = "正在播出的内容"
+level = 2
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "the-messages-the-console-repeats"
+title = "游戏机重复的消息"
+level = 2
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "compression"
+title = "压缩"
+level = 3
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "senders-of-the-other-opaque-messages"
+title = "其他不透明消息的发送者"
+level = 3
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "the-unreliable-stream"
+title = "不可靠的流"
+level = 3
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "sending-messages-the-game-acts-on"
+title = "发送游戏所作用的消息"
+level = 2
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "the-character-record"
+title = "人物记录"
+level = 2
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "the-model"
+title = "模型"
+level = 3
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "the-state-byte"
+title = "状态字节"
+level = 3
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "walking"
+title = "步行"
+level = 3
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "being-talked-to"
+title = "正在与人交谈"
+level = 2
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "the-console-approaching"
+title = "游戏机即将来临"
+level = 3
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "the-name-in-the-greeting"
+title = "问候语中的名字"
+level = 3
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "talkstate-and-the-value-that-crashes-the-game"
+title = "talkState，以及导致游戏崩溃的值"
+level = 3
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "record-mixing"
+title = "录制混音"
+level = 3
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "the-battle-ladder"
+title = "战斗天梯"
+level = 3
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "the-grand-underground"
+title = "地下大洞窟"
+level = 3
+[[documents."core.guide.bdsp_protocol".sections]]
+id = "ball-capsules"
+title = "球形胶囊"
+level = 3
+[documents."core.guide.bdsp_session"]
+title = "加入流程与 Pia 层"
+path = "locales/zh-Hans/docs/bdsp_session.md"
+[[documents."core.guide.bdsp_session".sections]]
+id = "joining-a-bdsp-session-and-what-is-under-the-encryption"
+title = "加入BDSP会话，以及加密的内容"
+level = 1
+[[documents."core.guide.bdsp_session".sections]]
+id = "the-advertisement"
+title = "广告"
+level = 2
+[[documents."core.guide.bdsp_session".sections]]
+id = "the-passphrase"
+title = "密码"
+level = 2
+[[documents."core.guide.bdsp_session".sections]]
+id = "taking-a-seat"
+title = "入座"
+level = 2
+[[documents."core.guide.bdsp_session".sections]]
+id = "what-is-on-the-wire"
+title = "电线上有什么"
+level = 2
+[[documents."core.guide.bdsp_session".sections]]
+id = "the-key-hierarchy"
+title = "关键层次结构"
+level = 2
+[[documents."core.guide.bdsp_session".sections]]
+id = "where-the-seed-lives"
+title = "种子生活的地方"
+level = 3
+[[documents."core.guide.bdsp_session".sections]]
+id = "the-published-key-is-the-seed-derived"
+title = "发布的密钥是种子，派生的"
+level = 3
+[[documents."core.guide.bdsp_session".sections]]
+id = "the-session-key"
+title = "会话密钥"
+level = 3
+[[documents."core.guide.bdsp_session".sections]]
+id = "the-gcm-nonce"
+title = "GCM 随机数"
+level = 3
+[[documents."core.guide.bdsp_session".sections]]
+id = "the-local-protocol-decoded"
+title = "本地协议，已解码"
+level = 2
+[[documents."core.guide.bdsp_session".sections]]
+id = "the-ack"
+title = "确认"
+level = 3
+[[documents."core.guide.bdsp_session".sections]]
+id = "joining-the-mesh"
+title = "加入网格"
+level = 2
+[[documents."core.guide.bdsp_session".sections]]
+id = "the-session-protocol-0x94"
+title = "会话协议 (0x94)"
+level = 3
+[[documents."core.guide.bdsp_session".sections]]
+id = "hosting"
+title = "托管"
+level = 2
+[[documents."core.guide.bdsp_session".sections]]
+id = "leaving"
+title = "离开"
+level = 2
+[[documents."core.guide.bdsp_session".sections]]
+id = "measurement-methods"
+title = "测量方法"
+level = 2
+[documents."core.guide.bdsp_trade"]
+title = "联合房间交换"
+path = "locales/zh-Hans/docs/bdsp_trade.md"
+[[documents."core.guide.bdsp_trade".sections]]
+id = "the-bdsp-trade"
+title = "BDSP 交换"
+level = 1
+[[documents."core.guide.bdsp_trade".sections]]
+id = "the-message-sequence"
+title = "消息序列"
+level = 2
+[[documents."core.guide.bdsp_trade".sections]]
+id = "the-trade-state-machine"
+title = "交换状态机"
+level = 2
+[[documents."core.guide.bdsp_trade".sections]]
+id = "box-phases-and-the-messages-that-reset-a-round"
+title = "盒子阶段，以及重置回合的消息"
+level = 3
+[[documents."core.guide.bdsp_trade".sections]]
+id = "the-security-phase"
+title = "安全阶段"
+level = 2
+[[documents."core.guide.bdsp_trade".sections]]
+id = "who-leads-the-rarer-pokemon"
+title = "谁领先：稀有的宝可梦"
+level = 3
+[[documents."core.guide.bdsp_trade".sections]]
+id = "the-completed-trade"
+title = "已完成的交换"
+level = 2
+[[documents."core.guide.bdsp_trade".sections]]
+id = "the-pokemon"
+title = "宝可梦"
+level = 2
+[[documents."core.guide.bdsp_trade".sections]]
+id = "what-the-console-does-to-a-received-pokemon"
+title = "游戏机对收到的宝可梦做了什么"
+level = 2
+[[documents."core.guide.bdsp_trade".sections]]
+id = "duplicate-detection"
+title = "重复检测"
+level = 3
+[[documents."core.guide.bdsp_trade".sections]]
+id = "the-disconnect-penalty"
+title = "断开连接惩罚"
+level = 2
+[documents."core.guide.frlg"]
+title = "火红／叶绿"
+path = "locales/zh-Hans/docs/frlg.md"
+[[documents."core.guide.frlg".sections]]
+id = "firered-and-leafgreen"
+title = "火红和叶绿"
+level = 1
+[[documents."core.guide.frlg".sections]]
+id = "what-works"
+title = "已验证的功能"
+level = 2
+[[documents."core.guide.frlg".sections]]
+id = "pages"
+title = "相关页面"
+level = 2
+[[documents."core.guide.frlg".sections]]
+id = "the-two-cartridges"
+title = "两种卡带"
+level = 2
+[[documents."core.guide.frlg".sections]]
+id = "rules-that-hold-across-all-of-it"
+title = "贯穿所有内容的规则"
+level = 2
+[documents."core.guide.frlg_gift"]
+title = "神秘礼物"
+path = "locales/zh-Hans/docs/frlg_gift.md"
+[[documents."core.guide.frlg_gift".sections]]
+id = "mystery-gift"
+title = "神秘礼物"
+level = 1
+[[documents."core.guide.frlg_gift".sections]]
+id = "the-session"
+title = "会议"
+level = 2
+[[documents."core.guide.frlg_gift".sections]]
+id = "framing-rules"
+title = "框架规则"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "modules"
+title = "模块"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "running-it"
+title = "运行它"
+level = 2
+[[documents."core.guide.frlg_gift".sections]]
+id = "what-the-link-can-carry"
+title = "链接可以携带什么"
+level = 2
+[[documents."core.guide.frlg_gift".sections]]
+id = "the-one-ram-script-slot"
+title = "一个 RAM 脚本槽"
+level = 2
+[[documents."core.guide.frlg_gift".sections]]
+id = "the-gift-catalogue"
+title = "礼品目录"
+level = 2
+[[documents."core.guide.frlg_gift".sections]]
+id = "the-legendary-beast"
+title = "传说中的神兽"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "porygon-tm-gift"
+title = "多边兽TM礼物"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "the-stamp-rally"
+title = "集邮活动"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "altering-cave"
+title = "改变洞穴"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "distribution-eggs"
+title = "分发蛋"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "event-pokemon"
+title = "活动宝可梦"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "gb-link-team-cards"
+title = "GB-Link 团队卡"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "the-battle-count-card"
+title = "战斗计数卡"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "the-visiting-trainer"
+title = "客座训练家"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "wonder-news"
+title = "神奇新闻"
+level = 2
+[[documents."core.guide.frlg_gift".sections]]
+id = "the-questionnaire-as-a-password-gate"
+title = "问卷作为密码门"
+level = 2
+[[documents."core.guide.frlg_gift".sections]]
+id = "what-the-console-volunteers-about-itself"
+title = "游戏机自愿介绍自己的内容"
+level = 2
+[[documents."core.guide.frlg_gift".sections]]
+id = "save-backup-and-restore"
+title = "存档备份与还原"
+level = 2
+[[documents."core.guide.frlg_gift".sections]]
+id = "the-token-coding"
+title = "标记编码"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "backup"
+title = "备份"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "restore"
+title = "还原"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "what-is-measured"
+title = "已验证的内容"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "authoring-gifts"
+title = "创作礼物"
+level = 2
+[[documents."core.guide.frlg_gift".sections]]
+id = "stages-and-conditions"
+title = "阶段和条件"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "writing-the-players-save"
+title = "写入玩家的保存"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "battles"
+title = "战斗"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "sharing"
+title = "分享"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "fateful-encounter-marking"
+title = "命中注定的相遇标记"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "initramscript-in-the-composer"
+title = "`initramscript` 在作曲家中"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "registration-and-validation"
+title = "注册和验证"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "static-tools"
+title = "静态工具"
+level = 2
+[[documents."core.guide.frlg_gift".sections]]
+id = "closed-paths"
+title = "封闭路径"
+level = 2
+[[documents."core.guide.frlg_gift".sections]]
+id = "wireless-communication-joyspot"
+title = "无线通信（JoySpot）"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "the-e-reader-itself"
+title = "电子阅读器本身"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "the-aurora-and-mystic-tickets"
+title = "极光和神秘门票"
+level = 3
+[[documents."core.guide.frlg_gift".sections]]
+id = "traps"
+title = "陷阱"
+level = 2
+[documents."core.guide.frlg_host"]
+title = "主机实现"
+path = "locales/zh-Hans/docs/frlg_host.md"
+[[documents."core.guide.frlg_host".sections]]
+id = "host-implementation"
+title = "主机实现"
+level = 1
+[[documents."core.guide.frlg_host".sections]]
+id = "components-and-ownership"
+title = "组件和所有权"
+level = 2
+[[documents."core.guide.frlg_host".sections]]
+id = "startup-and-session-establishment"
+title = "启动和会话建立"
+level = 2
+[[documents."core.guide.frlg_host".sections]]
+id = "trade-and-room-exit-lifecycle"
+title = "交换和退出房间的生命周期"
+level = 2
+[[documents."core.guide.frlg_host".sections]]
+id = "shutdown-and-cleanup"
+title = "关闭和清理"
+level = 2
+[[documents."core.guide.frlg_host".sections]]
+id = "trainer-profile-propagation"
+title = "训练家档案传播"
+level = 2
+[[documents."core.guide.frlg_host".sections]]
+id = "failure-handling"
+title = "失败处理"
+level = 2
+[[documents."core.guide.frlg_host".sections]]
+id = "extending-the-host"
+title = "扩展主机"
+level = 2
+[[documents."core.guide.frlg_host".sections]]
+id = "source-map"
+title = "源图"
+level = 2
+[documents."core.guide.frlg_leafgreen"]
+title = "叶绿"
+path = "locales/zh-Hans/docs/frlg_leafgreen.md"
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "leafgreen-and-the-two-cartridges-offset-map"
+title = "叶绿与两种卡带的偏移映射"
+level = 1
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "the-measured-addresses"
+title = "测量的地址"
+level = 2
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "the-delta-by-region"
+title = "各地址区段的偏移量"
+level = 2
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "the-boundaries"
+title = "边界"
+level = 3
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "measurement-methods"
+title = "测量方法"
+level = 2
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "paired-constants"
+title = "成对常量"
+level = 3
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "a-pointer-as-the-needle"
+title = "用指针作为扫描特征"
+level = 3
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "making-a-needle-where-there-is-no-symbol"
+title = "在没有符号的地方做一根针"
+level = 3
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "literal-pools-which-are-free-pointer-tables"
+title = "文字池，即空闲指针表"
+level = 3
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "dumping-both-cartridges-at-the-same-address"
+title = "将两个卡带转储到同一地址"
+level = 3
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "reading-a-leafgreen-dump-against-firereds-tables"
+title = "阅读火红桌子上的叶绿转储"
+level = 2
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "the-overworld-and-a-shiny-mewtwo"
+title = "主世界，还有异色超梦"
+level = 2
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "a-dumped-region-must-not-move"
+title = "转储区域不得移动"
+level = 2
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "the-english-build"
+title = "英文构建"
+level = 2
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "the-offset-french-address-to-english-address"
+title = "偏移量：法语地址到英语地址"
+level = 3
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "the-control"
+title = "控制"
+level = 3
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "the-english-pairs-own-delta-map"
+title = "英语版两种卡带的偏移映射"
+level = 3
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "traps"
+title = "陷阱"
+level = 3
+[[documents."core.guide.frlg_leafgreen".sections]]
+id = "unusable-references"
+title = "不可用的引用"
+level = 2
+[documents."core.guide.frlg_link"]
+title = "连接协议"
+path = "locales/zh-Hans/docs/frlg_link.md"
+[[documents."core.guide.frlg_link".sections]]
+id = "the-gba-link-and-what-runs-on-it"
+title = "GBA 链接及其上运行的内容"
+level = 1
+[[documents."core.guide.frlg_link".sections]]
+id = "the-rfu-link-layer"
+title = "RFU链路层"
+level = 1
+[[documents."core.guide.frlg_link".sections]]
+id = "one-child-slot-per-parent-poll"
+title = "每个父节点轮询一个子节点槽"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "row-one-of-the-parents-table-is-the-consoles-own-command-mirrored-back"
+title = "父节点的表第一行是游戏机自己的命令，镜像回来"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "a-tile-step-is-exactly-16-link-updates"
+title = "一个图块步骤正好是 16 次链接更新"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "the-players-inputs-are-not-always-transmitted"
+title = "玩家的输入并不总是被传输"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "the-seat-is-a-mutual-barrier"
+title = "座位是相互的屏障"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "what-a-real-child-sends-end-to-end"
+title = "真正的子节点发送的是什么，端到端"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "both-sides-advance-only-when-they-have-heard-from-the-peer"
+title = "双方只有在听到对方的消息后才能前进"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "post-seat-standby-gate-and-walk-out"
+title = "座位后备用门和走出去"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "leaving-the-room"
+title = "离开房间"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "quiet-gate"
+title = "静默门限"
+level = 3
+[[documents."core.guide.frlg_link".sections]]
+id = "cancel-after-a-trade"
+title = "交换后取消"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "one-sided-cancel-returns-both-sides-to-the-menu"
+title = "单侧取消将两侧返回菜单"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "version-and-language-on-the-link"
+title = "连接中的版本与语言"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "the-emulator-can-close-the-link-on-its-own"
+title = "模拟器可以自行关闭链接"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "the-wireless-layer-as-this-game-exercises-it"
+title = "无线层，正如这个游戏所练习的那样"
+level = 1
+[[documents."core.guide.frlg_link".sections]]
+id = "the-advertised-rate-set"
+title = "广告费率设置"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "the-console-as-a-pia-child"
+title = "游戏机作为 Pia 子节点"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "leaving-the-pia-session"
+title = "离开 Pia 会话"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "behaviour"
+title = "802.11 行为"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "the-pia-header-nonce-is-a-counter-the-console-enforces"
+title = "Pia 标头随机数是游戏机强制执行的计数器"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "carry-forward"
+title = "结转"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "the-consoles-acknowledgement-lag-is-a-512-ms-metronome"
+title = "游戏机的确认延迟是 512 毫秒节拍器"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "the-ident-25-stall-a-hole-plus-an-unbounded-backlog"
+title = "ident-25 停滞：一个漏洞加上无限的积压"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "transmission-phase-deaths-after-the-card"
+title = "传送阶段死亡卡后"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "datagrams-held-between-the-socket-and-the-air"
+title = "套接字和空气之间保存的数据报"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "the-union-room"
+title = "联合房间"
+level = 1
+[[documents."core.guide.frlg_link".sections]]
+id = "getting-listed-the-advertised-activity-byte"
+title = "列出：广告活动字节"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "the-connect-inunionroom-exactly-and-alone"
+title = "连接：IN_UNION_ROOM，完全独立"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "no-parent-ni-and-the-five-frame-rule"
+title = "无父节点NI，以及五框规则"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "what-the-console-does-once-connected"
+title = "连接后游戏机会做什么"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "the-trading-board"
+title = "交换板"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "chat"
+title = "聊天"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "the-link-battle-urbattle-0x41"
+title = "链接战 (UR_BATTLE 0x41)"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "master-election"
+title = "大师选举"
+level = 3
+[[documents."core.guide.frlg_link".sections]]
+id = "the-link-buffer-protocol"
+title = "链接缓冲区协议"
+level = 3
+[[documents."core.guide.frlg_link".sections]]
+id = "two-rules-not-visible-in-the-decomp"
+title = "两条规则在 decomp 中不可见"
+level = 3
+[[documents."core.guide.frlg_link".sections]]
+id = "the-pace-is-the-rfu-vblank-budget"
+title = "节奏是 RFU VBlank 预算"
+level = 3
+[[documents."core.guide.frlg_link".sections]]
+id = "what-two-real-consoles-put-on-the-air"
+title = "两个真正的游戏机播出了什么"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "host-tick-rate-and-the-consoles-output-rate"
+title = "主机节拍率和游戏机的输出率"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "the-cable-club-colosseum"
+title = "连接俱乐部斗兽场"
+level = 1
+[[documents."core.guide.frlg_link".sections]]
+id = "what-decides-whether-a-colosseum-run-counts"
+title = "是什么决定了罗马斗兽场跑步是否算数"
+level = 2
+[[documents."core.guide.frlg_link".sections]]
+id = "two-host-side-constraints"
+title = "两个主机端约束"
+level = 1
+[documents."core.guide.frlg_rng"]
+title = "随机数生成器"
+path = "locales/zh-Hans/docs/frlg_rng.md"
+[[documents."core.guide.frlg_rng".sections]]
+id = "grngvalue-reading-it-predicting-it-and-aiming-it"
+title = "gRngValue：读取它、预测它并瞄准它"
+level = 1
+[[documents."core.guide.frlg_rng".sections]]
+id = "the-generator"
+title = "生成器"
+level = 2
+[[documents."core.guide.frlg_rng".sections]]
+id = "the-rate-exactly-2-turns-per-frame"
+title = "速率：每帧正好 2 圈"
+level = 2
+[[documents."core.guide.frlg_rng".sections]]
+id = "where-the-seed-comes-from-and-why-it-cannot-be-carried"
+title = "种子从哪里来，为什么不能携带"
+level = 2
+[[documents."core.guide.frlg_rng".sections]]
+id = "reading-a-pokemon-back-into-the-state-that-made-it"
+title = "将宝可梦读回到创建它时的状态"
+level = 2
+[[documents."core.guide.frlg_rng".sections]]
+id = "the-scripted-battle"
+title = "脚本化的战斗"
+level = 2
+[[documents."core.guide.frlg_rng".sections]]
+id = "a-mon-predicted-from-a-seed-nobody-set"
+title = "一个由无人设置的种子预测的 mon"
+level = 3
+[[documents."core.guide.frlg_rng".sections]]
+id = "the-seed-reading-npc"
+title = "读种子的 NPC"
+level = 2
+[[documents."core.guide.frlg_rng".sections]]
+id = "how-precisely-a-human-can-press-a"
+title = "人类按 A 的精确度如何"
+level = 2
+[[documents."core.guide.frlg_rng".sections]]
+id = "the-stub-that-does-the-search"
+title = "执行搜索的存根"
+level = 2
+[[documents."core.guide.frlg_rng".sections]]
+id = "a-ram-script-may-not-come-back-from-a-battle"
+title = "RAM 脚本可能无法从战斗中返回"
+level = 3
+[[documents."core.guide.frlg_rng".sections]]
+id = "choosing-the-nature-and-the-ivs"
+title = "选择性格和 IV"
+level = 2
+[[documents."core.guide.frlg_rng".sections]]
+id = "the-payload-in-the-script-body"
+title = "脚本主体中的书签"
+level = 2
+[[documents."core.guide.frlg_rng".sections]]
+id = "alignment-to-four-bytes"
+title = "与四个字节对齐"
+level = 3
+[[documents."core.guide.frlg_rng".sections]]
+id = "proving-the-size-rather-than-the-jump"
+title = "证明大小而不是跳跃"
+level = 3
+[[documents."core.guide.frlg_rng".sections]]
+id = "searching-so-the-stray-draw-cannot-move-the-answer"
+title = "进行搜索，以便杂散绘制无法移动答案"
+level = 2
+[[documents."core.guide.frlg_rng".sections]]
+id = "where-a-hunt-writes-its-report"
+title = "狩猎记录报告的地方"
+level = 2
+[[documents."core.guide.frlg_rng".sections]]
+id = "leafgreen"
+title = "叶绿"
+level = 2
+[documents."core.guide.frlg_rom"]
+title = "游戏机代码"
+path = "locales/zh-Hans/docs/frlg_rom.md"
+[[documents."core.guide.frlg_rom".sections]]
+id = "running-code-on-the-console"
+title = "在游戏机上运行代码"
+level = 1
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-mystery-event-vm"
+title = "神秘事件虚拟机"
+level = 1
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-command-table"
+title = "命令表"
+level = 2
+[[documents."core.guide.frlg_rom".sections]]
+id = "checkcompat-is-optional"
+title = "`checkcompat` 可选"
+level = 2
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-return-channel"
+title = "返回通道"
+level = 2
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-probe-script"
+title = "探测脚本"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "givepokemon"
+title = "`givepokemon`"
+level = 2
+[[documents."core.guide.frlg_rom".sections]]
+id = "initramscript"
+title = "`initramscript`"
+level = 2
+[[documents."core.guide.frlg_rom".sections]]
+id = "traps"
+title = "陷阱"
+level = 2
+[[documents."core.guide.frlg_rom".sections]]
+id = "how-it-is-wired"
+title = "接线方式"
+level = 2
+[[documents."core.guide.frlg_rom".sections]]
+id = "native-arm-code"
+title = "原生 ARM 代码"
+level = 1
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-build"
+title = "构建"
+level = 2
+[[documents."core.guide.frlg_rom".sections]]
+id = "where-a-payload-can-live"
+title = "载荷可驻留的位置"
+level = 2
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-per-frame-hook"
+title = "每帧钩子"
+level = 2
+[[documents."core.guide.frlg_rom".sections]]
+id = "code-that-outlives-the-session"
+title = "超出会话寿命的代码"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "re-arming-it-after-a-reset"
+title = "重置后重新装备"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "a-payload-larger-than-a-script-body"
+title = "大于脚本体的载荷"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "calling-the-wrapper"
+title = "调用包装器"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-dispatcher-the-sloop-syscall-boundary"
+title = "调度程序：Sloop 系统调用边界"
+level = 4
+[[documents."core.guide.frlg_rom".sections]]
+id = "swi-0x52-and-swi-0x55-the-memory-bus"
+title = "`swi 0x52` 和 `swi 0x55`：内存总线"
+level = 4
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-flash-sector-path"
+title = "闪存扇区路径"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-breakpoint-hooks"
+title = "断点挂钩"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-record-resolver-main--0x03e850"
+title = "记录解析器 (`main + 0x03E850`)"
+level = 4
+[[documents."core.guide.frlg_rom".sections]]
+id = "what-follows-the-rom-buffer-the-sloop-component"
+title = "ROM 缓冲区之后是：Sloop 组件"
+level = 4
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-chain-from-a-bkpt-to-the-resolver"
+title = "从 bkpt 到解析器的链"
+level = 4
+[[documents."core.guide.frlg_rom".sections]]
+id = "what-a-plant-over-a-seam-does"
+title = "跨分配边界的指针植入效果"
+level = 4
+[[documents."core.guide.frlg_rom".sections]]
+id = "every-placement-a-one-write-plant-can-make"
+title = "单次写入可形成的全部植入位置"
+level = 4
+[[documents."core.guide.frlg_rom".sections]]
+id = "where-the-boundary-stands"
+title = "边界所在"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-remaining-syscalls"
+title = "剩余的系统调用"
+level = 4
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-advertisement-record"
+title = "广播记录"
+level = 4
+[[documents."core.guide.frlg_rom".sections]]
+id = "what-the-play-reports-are-built-from"
+title = "比赛报告的依据是什么"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-bad-word-filter"
+title = "坏词过滤器"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-wrappers-own-scan-pipeline"
+title = "包装器自己的扫描管道"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-pia-session-message-dispatcher"
+title = "Pia 会话消息调度器"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-pia-librarys-own-wire-parsing"
+title = "Pia 库自身的线缆数据解析"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "repointing-the-consoles-outgoing-message"
+title = "重新指向游戏机的传出消息"
+level = 2
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-payloads"
+title = "有效负载"
+level = 2
+[[documents."core.guide.frlg_rom".sections]]
+id = "trainer-id-probe"
+title = "`trainer-id-probe`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "save-dump-and-memory-dump"
+title = "`save-dump` 和 `memory-dump`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "memory-dump-multi-and-memory-dump-scatter"
+title = "`memory-dump-multi` 和 `memory-dump-scatter`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "anchors"
+title = "`anchors`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "save-write"
+title = "`save-write`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "memory-scan"
+title = "`memory-scan`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "table-scan"
+title = "`table-scan`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "rom-checksum"
+title = "`rom-checksum`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "rng-trace"
+title = "`rng-trace`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "string-gather"
+title = "`string-gather`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "create-mon"
+title = "`create-mon`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "create-mon-append"
+title = "`--create-mon-append`"
+level = 4
+[[documents."core.guide.frlg_rom".sections]]
+id = "call"
+title = "`call`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "flash-write"
+title = "`flash-write`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "sloop-svc"
+title = "`sloop-svc`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "install-resident"
+title = "`install-resident`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "turbo"
+title = "`turbo`"
+level = 4
+[[documents."core.guide.frlg_rom".sections]]
+id = "shiny-ivs-noencounter"
+title = "`shiny`, `ivs`, `noencounter`"
+level = 4
+[[documents."core.guide.frlg_rom".sections]]
+id = "noclip"
+title = "`noclip`"
+level = 4
+[[documents."core.guide.frlg_rom".sections]]
+id = "follower"
+title = "`follower`"
+level = 4
+[[documents."core.guide.frlg_rom".sections]]
+id = "verified"
+title = "已验证"
+level = 4
+[[documents."core.guide.frlg_rom".sections]]
+id = "several-hooks-at-once"
+title = "一次多个钩子"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "install-kept"
+title = "`install-kept`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "a-resident-hook-kept-in-the-save"
+title = "保存在保存中的常驻钩子"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "call-chain"
+title = "`call-chain`"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "writing-a-sector-the-game-will-load"
+title = "写入游戏将加载的扇区"
+level = 2
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-checksum-covers-the-ids-chunk"
+title = "校验和覆盖了 id 的块"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "where-an-id-lives-and-which-sector-carries-the-slots-counter"
+title = "id 所在的位置以及槽计数器所在的扇区"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-band-the-sessions-own-save-will-not-write"
+title = "会话自己保存的乐队不会写入"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "composing-a-sector-from-a-ram-snapshot"
+title = "从 RAM 快照组成一个扇区"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "reading-flash-a-64-kib-window-over-a-128-kib-chip"
+title = "读取闪存：128 KiB 芯片上的 64 KiB 窗口"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "changing-one-field-of-a-real-save"
+title = "更改真实保存的一个字段"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-chain-end-to-end"
+title = "链，端到端"
+level = 3
+[[documents."core.guide.frlg_rom".sections]]
+id = "reading-the-save"
+title = "读取保存的内容"
+level = 1
+[[documents."core.guide.frlg_rom".sections]]
+id = "trainer-id-and-secret-id"
+title = "训练家ID和里ID"
+level = 2
+[[documents."core.guide.frlg_rom".sections]]
+id = "the-party"
+title = "队伍"
+level = 2
+[documents."core.guide.frlg_rom_map"]
+title = "ROM 映射"
+path = "locales/zh-Hans/docs/frlg_rom_map.md"
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "the-rom-map"
+title = "ROM 映射"
+level = 1
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "the-cartridge-image"
+title = "卡带图像"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "ewram-is-at-the-same-addresses-in-both-builds"
+title = "EWRAM 在两个版本中位于相同的地址"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "the-english-cartridges"
+title = "英文卡带"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "the-bios-wrappers"
+title = "BIOS 包装器"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "the-first-anchor"
+title = "第一个锚点"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "the-four-function-tables"
+title = "四个函数表"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "gspecialvars-found-by-shape"
+title = "`gSpecialVars`，通过形状找到"
+level = 3
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "gscriptcmdtable"
+title = "`gScriptCmdTable`"
+level = 3
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "gspecials-and-gstdscripts"
+title = "`gSpecials` 和 `gStdScripts`"
+level = 3
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "gmysteryeventscriptcmdtable-via-a-live-struct"
+title = "`gMysteryEventScriptCmdTable`，通过实时结构"
+level = 3
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "from-a-table-entry-to-the-function-behind-it"
+title = "从表项到其背后的函数"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "naming-300-workers-offline"
+title = "命名 300 名离线工人"
+level = 3
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "two-mixed-image-hazards"
+title = "两种混合图像危险"
+level = 3
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "what-is-measured"
+title = "测量什么"
+level = 3
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "save-backup-and-restore"
+title = "存档备份与还原"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "reading-the-consoles-scripts"
+title = "阅读游戏机的脚本"
+level = 1
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "the-conditional-macros"
+title = "条件宏"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "naming-the-operands"
+title = "命名操作数"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "following-a-script-to-what-it-reaches"
+title = "遵循脚本达到的目的"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "the-species-table"
+title = "种类表"
+level = 1
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "finding-createmon-from-it"
+title = "从中找到`CreateMon`"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "the-spanish-firered-cartridge"
+title = "西班牙语版《火红》卡带"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "the-french-easy-chat-vocabulary"
+title = "法语 Easy Chat 词汇"
+level = 1
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "the-slot-problem"
+title = "插槽问题"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "finding-the-table"
+title = "查找表"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "what-the-table-says"
+title = "表中内容"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "using-it"
+title = "使用它"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "the-international-revision-0x0a-cartridges"
+title = "修订号 0x0A 的国际版卡带"
+level = 2
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "japanese-layout"
+title = "日语版布局"
+level = 3
+[[documents."core.guide.frlg_rom_map".sections]]
+id = "retail-verification"
+title = "实机验证"
+level = 3
+[documents."core.guide.gift_simulated"]
+title = "模拟神秘礼物"
+path = "locales/zh-Hans/docs/gift_simulated.md"
+[[documents."core.guide.gift_simulated".sections]]
+id = "simulated-mystery-gifts"
+title = "模拟神秘礼物"
+level = 1
+[[documents."core.guide.gift_simulated".sections]]
+id = "the-gifts"
+title = "礼物列表"
+level = 2
+[[documents."core.guide.gift_simulated".sections]]
+id = "saves-a-card-reached"
+title = "卡片覆盖的存档"
+level = 3
+[[documents."core.guide.gift_simulated".sections]]
+id = "homes-gifts"
+title = "HOME 礼物"
+level = 3
+[[documents."core.guide.gift_simulated".sections]]
+id = "the-copy-a-trade-offers"
+title = "交换提供的副本"
+level = 2
+[[documents."core.guide.gift_simulated".sections]]
+id = "made-for-the-receiving-player"
+title = "按接收玩家生成"
+level = 2
+[[documents."core.guide.gift_simulated".sections]]
+id = "whose-save-it-is"
+title = "识别存档训练家"
+level = 3
+[[documents."core.guide.gift_simulated".sections]]
+id = "the-trade"
+title = "交换流程"
+level = 3
+[[documents."core.guide.gift_simulated".sections]]
+id = "other-games"
+title = "其他游戏"
+level = 2
+[documents."core.guide.gifts"]
+title = "神秘礼物文件"
+path = "locales/zh-Hans/docs/gifts.md"
+[[documents."core.guide.gifts".sections]]
+id = "mystery-gift-files"
+title = "神秘礼物文件"
+level = 1
+[[documents."core.guide.gifts".sections]]
+id = "desktop-app"
+title = "桌面应用程序"
+level = 2
+[[documents."core.guide.gifts".sections]]
+id = "command-line"
+title = "命令行"
+level = 2
+[[documents."core.guide.gifts".sections]]
+id = "console-code"
+title = "控制台代码"
+level = 3
+[[documents."core.guide.gifts".sections]]
+id = "native-formats"
+title = "原生格式"
+level = 3
+[[documents."core.guide.gifts".sections]]
+id = "version-2"
+title = "版本 2"
+level = 2
+[[documents."core.guide.gifts".sections]]
+id = "implementation"
+title = "执行"
+level = 2
+[documents."core.guide.hardware"]
+title = "硬件与设置"
+path = "locales/zh-Hans/docs/hardware.md"
+[[documents."core.guide.hardware".sections]]
+id = "hardware-and-setup"
+title = "硬件和设置"
+level = 1
+[[documents."core.guide.hardware".sections]]
+id = "pages"
+title = "相关页面"
+level = 2
+[documents."core.guide.hardware_adapters"]
+title = "适配器"
+path = "locales/zh-Hans/docs/hardware_adapters.md"
+[[documents."core.guide.hardware_adapters".sections]]
+id = "wi-fi-adapters"
+title = "Wi-Fi 适配器"
+level = 1
+[[documents."core.guide.hardware_adapters".sections]]
+id = "windows-usb-wi-fi-through-ldnrs"
+title = "通过 ldnrs 使用 Windows USB Wi-Fi"
+level = 2
+[[documents."core.guide.hardware_adapters".sections]]
+id = "tested-cards"
+title = "测试卡"
+level = 2
+[[documents."core.guide.hardware_adapters".sections]]
+id = "host-modes"
+title = "主机模式"
+level = 2
+[[documents."core.guide.hardware_adapters".sections]]
+id = "the-tp-link-archer-t3u"
+title = "TP-Link Archer T3U"
+level = 2
+[[documents."core.guide.hardware_adapters".sections]]
+id = "keep-networkmanager-off-the-adapter-itself"
+title = "让 NetworkManager 远离适配器本身"
+level = 3
+[[documents."core.guide.hardware_adapters".sections]]
+id = "disable-the-drivers-usb-3-mode-switch"
+title = "禁用驱动程序的 USB 3 模式开关"
+level = 3
+[[documents."core.guide.hardware_adapters".sections]]
+id = "bring-the-adapter-interface-down-before-a-run"
+title = "在运行前关闭适配器接口"
+level = 3
+[[documents."core.guide.hardware_adapters".sections]]
+id = "verify"
+title = "核实"
+level = 3
+[documents."core.guide.hardware_pad"]
+title = "手柄开发板"
+path = "locales/zh-Hans/docs/hardware_pad.md"
+[[documents."core.guide.hardware_pad".sections]]
+id = "controller-board"
+title = "手柄开发板"
+level = 1
+[[documents."core.guide.hardware_pad".sections]]
+id = "which-boards"
+title = "支持的开发板"
+level = 2
+[[documents."core.guide.hardware_pad".sections]]
+id = "the-usb-side"
+title = "USB 端"
+level = 2
+[[documents."core.guide.hardware_pad".sections]]
+id = "cabling"
+title = "接线"
+level = 2
+[[documents."core.guide.hardware_pad".sections]]
+id = "the-bluetooth-side"
+title = "蓝牙端"
+level = 2
+[[documents."core.guide.hardware_pad".sections]]
+id = "the-serial-side"
+title = "串口端"
+level = 2
+[[documents."core.guide.hardware_pad".sections]]
+id = "the-bluetooth-classic-side"
+title = "经典蓝牙端"
+level = 2
+[[documents."core.guide.hardware_pad".sections]]
+id = "macros"
+title = "宏"
+level = 2
+[[documents."core.guide.hardware_pad".sections]]
+id = "the-host-side"
+title = "电脑端"
+level = 2
+[[documents."core.guide.hardware_pad".sections]]
+id = "flashing-again"
+title = "再次刷写"
+level = 2
+[[documents."core.guide.hardware_pad".sections]]
+id = "build"
+title = "构建"
+level = 2
+[[documents."core.guide.hardware_pad".sections]]
+id = "unresolved"
+title = "尚未验证"
+level = 2
+[documents."core.guide.hardware_raspberry_pi"]
+title = "树莓派主机"
+path = "locales/zh-Hans/docs/hardware_raspberry_pi.md"
+[[documents."core.guide.hardware_raspberry_pi".sections]]
+id = "raspberry-pi-4-mystery-gift-host"
+title = "Raspberry Pi 4 神秘礼物主机"
+level = 1
+[[documents."core.guide.hardware_raspberry_pi".sections]]
+id = "first-deployment"
+title = "第一次部署"
+level = 2
+[[documents."core.guide.hardware_raspberry_pi".sections]]
+id = "configuration-and-switch-keys"
+title = "配置和切换键"
+level = 2
+[[documents."core.guide.hardware_raspberry_pi".sections]]
+id = "verify-and-run"
+title = "验证并运行"
+level = 2
+[[documents."core.guide.hardware_raspberry_pi".sections]]
+id = "mt7601u-adapter-with-the-custom-ap-driver"
+title = "带有自定义 AP 驱动程序的 MT7601U 适配器"
+level = 3
+[[documents."core.guide.hardware_raspberry_pi".sections]]
+id = "deploying-changes"
+title = "部署变更"
+level = 2
+[documents."core.guide.hardware_switch_keys"]
+title = "树莓派上的 Switch 密钥"
+path = "locales/zh-Hans/docs/hardware_switch_keys.md"
+[[documents."core.guide.hardware_switch_keys".sections]]
+id = "installing-switch-keys-on-the-raspberry-pi"
+title = "在 Raspberry Pi 上安装 Switch 键"
+level = 1
+[[documents."core.guide.hardware_switch_keys".sections]]
+id = "install-locally-on-the-pi"
+title = "在 Pi 上本地安装"
+level = 2
+[[documents."core.guide.hardware_switch_keys".sections]]
+id = "scp-through-an-ssh-alias"
+title = "通过 SSH 别名进行 SCP"
+level = 2
+[documents."core.guide.index"]
+title = "首页"
+path = "locales/zh-Hans/docs/index.md"
+[[documents."core.guide.index".sections]]
+id = "pokeldn"
+title = "pokeldn"
+level = 1
+[[documents."core.guide.index".sections]]
+id = "targets"
+title = "支持的游戏与功能"
+level = 2
+[[documents."core.guide.index".sections]]
+id = "sections"
+title = "文档章节"
+level = 2
+[[documents."core.guide.index".sections]]
+id = "credits"
+title = "致谢"
+level = 2
+[documents."core.guide.ldn"]
+title = "无线通信层"
+path = "locales/zh-Hans/docs/ldn.md"
+[[documents."core.guide.ldn".sections]]
+id = "the-wireless-layer"
+title = "无线层"
+level = 1
+[[documents."core.guide.ldn".sections]]
+id = "the-two-secrets"
+title = "两个秘密"
+level = 2
+[[documents."core.guide.ldn".sections]]
+id = "discovery"
+title = "发现"
+level = 2
+[[documents."core.guide.ldn".sections]]
+id = "the-advertisements-application-data"
+title = "广告的应用数据"
+level = 2
+[[documents."core.guide.ldn".sections]]
+id = "hosting-for-an-emulator"
+title = "模拟器托管"
+level = 2
+[[documents."core.guide.ldn".sections]]
+id = "a-stations-broadcasts"
+title = "某电台的广播"
+level = 2
+[[documents."core.guide.ldn".sections]]
+id = "channels"
+title = "频道"
+level = 2
+[documents."core.guide.lgpe"]
+title = "Let's Go! 皮卡丘／伊布"
+path = "locales/zh-Hans/docs/lgpe.md"
+[[documents."core.guide.lgpe".sections]]
+id = "lets-go-pikachu-and-eevee"
+title = "Let's Go！ 皮卡丘和伊布"
+level = 1
+[[documents."core.guide.lgpe".sections]]
+id = "pages"
+title = "相关页面"
+level = 2
+[[documents."core.guide.lgpe".sections]]
+id = "what-works"
+title = "什么有效"
+level = 2
+[[documents."core.guide.lgpe".sections]]
+id = "unresolved"
+title = "未解决"
+level = 2
+[documents."core.guide.lgpe_session"]
+title = "Let's Go 卡带与会话"
+path = "locales/zh-Hans/docs/lgpe_session.md"
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-cartridge-its-keys-and-the-session"
+title = "卡带、其密钥和会话"
+level = 1
+[[documents."core.guide.lgpe_session".sections]]
+id = "what-the-title-is-built-from"
+title = "标题是根据什么构建的"
+level = 2
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-ldn-passphrase"
+title = "LDN 密码"
+level = 2
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-pia-game-key"
+title = "Pia 游戏密钥"
+level = 2
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-pia-header"
+title = "Pia 头"
+level = 2
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-message-framing"
+title = "消息框架"
+level = 2
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-session-key"
+title = "会话密钥"
+level = 2
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-link-code"
+title = "链接代码"
+level = 2
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-local-protocol-measured"
+title = "本地协议，测量"
+level = 2
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-station-protocol-for-a-mesh-join"
+title = "站协议，用于网状连接"
+level = 2
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-connection-response-a-station-sends"
+title = "站发送的连接响应"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "joining-the-mesh"
+title = "加入网格"
+level = 2
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-rtt-protocol-0x58-version-3"
+title = "RTT 协议 (0x58)，版本 3"
+level = 2
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-sync-clock-protocol-0x1c"
+title = "同步时钟协议（0x1C）"
+level = 2
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-reliable-protocol-0x7c-where-the-games-data-is"
+title = "可靠协议（0x7C），其中游戏数据为"
+level = 2
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-clone-protocol-0x73"
+title = "克隆协议 (0x73)"
+level = 2
+[[documents."core.guide.lgpe_session".sections]]
+id = "clock-sync-the-first-two-seconds"
+title = "时钟同步，前两秒"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "participate"
+title = "参加"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "clone-elements"
+title = "克隆元素"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-clone-0-pair"
+title = "克隆0对"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-games-messages-on-the-reliable-protocol"
+title = "可靠协议上的游戏消息"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "what-gates-the-games-own-first-message"
+title = "是什么控制了游戏自己的第一条消息"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "hosting-a-retail-console-to-its-trade-screen"
+title = "在其交换屏幕上托管实机"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-two-clone-records-a-trade-walks"
+title = "两个克隆人记录一次交换行走"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-trade-animation"
+title = "交换动画"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-commit-and-the-trade-lock"
+title = "提交和交换锁"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-trade-dispatcher"
+title = "交换调度员"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-battle-scenes-channel"
+title = "战斗场景频道"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "what-a-hosted-trade-puts-in-the-save"
+title = "托管交换可以节省什么"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "a-joiner-leaving"
+title = "A 加入方离开"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "a-host-leaving"
+title = "A 主机离开"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-wait-before-leaving"
+title = "出发前的等待"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "what-a-host-does-with-a-joiner-that-holds-no-clone-data"
+title = "主机对不包含克隆数据的加入方有何作用"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "past-the-gate"
+title = "过了门"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-state-machine-above-the-gate"
+title = "门上面的状态机"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-second-publisher-and-its-mode-word"
+title = "第二个出版商及其模式词"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-sequence-a-take-over-has-to-carry"
+title = "接管必须执行的顺序"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "the-take-over-exchange-a-joiner-runs-once-per-clone"
+title = "每个克隆的接管交换 a 加入方运行一次"
+level = 3
+[[documents."core.guide.lgpe_session".sections]]
+id = "what-the-announces-destination-field-decides"
+title = "公告的目的地字段决定什么"
+level = 3
+[documents."core.guide.online"]
+title = "在线交换"
+path = "locales/zh-Hans/docs/online.md"
+[[documents."core.guide.online".sections]]
+id = "online-trade"
+title = "在线交换"
+level = 1
+[[documents."core.guide.online".sections]]
+id = "the-room"
+title = "房间"
+level = 2
+[[documents."core.guide.online".sections]]
+id = "the-relays"
+title = "中继"
+level = 2
+[[documents."core.guide.online".sections]]
+id = "stored-events"
+title = "存储事件"
+level = 3
+[[documents."core.guide.online".sections]]
+id = "meeting"
+title = "匹配"
+level = 2
+[[documents."core.guide.online".sections]]
+id = "the-channel"
+title = "通道"
+level = 2
+[[documents."core.guide.online".sections]]
+id = "what-crosses"
+title = "传输内容"
+level = 2
+[[documents."core.guide.online".sections]]
+id = "in-a-launcher"
+title = "启动器中的流程"
+level = 2
+[[documents."core.guide.online".sections]]
+id = "the-gts"
+title = "GTS"
+level = 2
+[[documents."core.guide.online".sections]]
+id = "unresolved"
+title = "尚未解决"
+level = 2
+[documents."core.guide.pia"]
+title = "Pia 层"
+path = "locales/zh-Hans/docs/pia.md"
+[[documents."core.guide.pia".sections]]
+id = "the-pia-layer"
+title = "Pia层"
+level = 1
+[[documents."core.guide.pia".sections]]
+id = "packet-headers"
+title = "数据包头"
+level = 2
+[[documents."core.guide.pia".sections]]
+id = "version-9-pia-527-545"
+title = "版本 9（Pia 5.27-5.45）"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "version-4"
+title = "版本 4"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "version-11-what-a-receiver-drops-scarlet-400"
+title = "版本 11：接收方丢弃的内容（朱 4.0.0）"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "message-framing"
+title = "消息框架"
+level = 2
+[[documents."core.guide.pia".sections]]
+id = "compression"
+title = "压缩"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "the-footer"
+title = "页脚"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "session-keys"
+title = "会话密钥"
+level = 2
+[[documents."core.guide.pia".sections]]
+id = "the-game-key"
+title = "游戏钥匙"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "the-ldn-session-key"
+title = "LDN 会话密钥"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "the-aes-gcm-iv"
+title = "AES-GCM IV"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "the-protocols"
+title = "协议"
+level = 2
+[[documents."core.guide.pia".sections]]
+id = "joining-a-mesh"
+title = "加入网格"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "leaving-a-session-pia-6"
+title = "离开会话 (Pia 6)"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "the-local-protocol-0x24"
+title = "本地协议（0x24）"
+level = 2
+[[documents."core.guide.pia".sections]]
+id = "the-ack"
+title = "确认"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "the-mesh-station-protocol-0x14"
+title = "Mesh Station 协议 (0x14)"
+level = 2
+[[documents."core.guide.pia".sections]]
+id = "the-version-9-connection-request"
+title = "版本 9 连接请求"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "the-version-4-connection-request"
+title = "版本 4 连接请求"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "what-a-connection-response-must-satisfy-to-be-read"
+title = "连接响应必须满足什么条件才能被读取"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "the-mesh-protocol-0x18"
+title = "网格协议 (0x18)"
+level = 2
+[[documents."core.guide.pia".sections]]
+id = "host-migration"
+title = "主机迁移"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "the-rtt-protocol-0x58"
+title = "RTT协议（0x58）"
+level = 2
+[[documents."core.guide.pia".sections]]
+id = "the-reliable-sliding-window-0x7c"
+title = "可靠的推拉窗（0x7c）"
+level = 2
+[[documents."core.guide.pia".sections]]
+id = "version-9-pia-529-543"
+title = "版本 9（Pia 5.29-5.43）"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "what-the-receiver-discards-in-silence"
+title = "接收者默默丢弃的东西"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "who-a-window-sends-to-pia-6"
+title = "窗口发送给谁 (Pia 6)"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "version-4-1"
+title = "版本 4"
+level = 3
+[[documents."core.guide.pia".sections]]
+id = "protocol-0x80-the-broadcast-reliable-window"
+title = "协议0x80，广播可靠窗口"
+level = 2
+[[documents."core.guide.pia".sections]]
+id = "protocol-0x81-the-stream-broadcast-reliable-transfer-pia-6"
+title = "协议0x81，流广播可靠传输（Pia 6）"
+level = 2
+[[documents."core.guide.pia".sections]]
+id = "protocol-0x84-the-reliable-broadcast-transfer"
+title = "协议0x84，可靠的广播传输"
+level = 2
+[[documents."core.guide.pia".sections]]
+id = "unresolved"
+title = "未解决"
+level = 2
+[[documents."core.guide.pia".sections]]
+id = "credits"
+title = "学分"
+level = 2
+[documents."core.guide.pla"]
+title = "传说 阿尔宙斯"
+path = "locales/zh-Hans/docs/pla.md"
+[[documents."core.guide.pla".sections]]
+id = "legends-arceus"
+title = "传说 阿尔宙斯"
+level = 1
+[[documents."core.guide.pla".sections]]
+id = "the-wireless-layer"
+title = "无线层"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "the-receive-path-for-a-breakpoint"
+title = "断点的接收路径"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "the-gate-a-joiner-stops-at"
+title = "a 加入方停止的门"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "what-a-message-is-routed-by"
+title = "消息的路由方式"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "the-net-protocol-measured"
+title = "网络协议，测量"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "the-packet-crypto"
+title = "数据包加密"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "the-protocols-above-the-packet"
+title = "数据包上面的协议"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "the-session-join-request"
+title = "会话加入请求"
+level = 3
+[[documents."core.guide.pla".sections]]
+id = "the-session-join-reply"
+title = "会话加入回复"
+level = 3
+[[documents."core.guide.pla".sections]]
+id = "the-type-5-station-list-update"
+title = "5 类电台列表更新"
+level = 3
+[[documents."core.guide.pla".sections]]
+id = "sustaining-the-mesh"
+title = "维持网格"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "the-silent-station-check"
+title = "静默站检查"
+level = 3
+[[documents."core.guide.pla".sections]]
+id = "the-games-reader-and-the-pre-handler-phase"
+title = "游戏的读取器和预处理程序阶段"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "the-games-reliable-channel"
+title = "游戏可靠渠道"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "acknowledgement"
+title = "致谢"
+level = 3
+[[documents."core.guide.pla".sections]]
+id = "the-channel-table-on-port-1"
+title = "端口1上的通道表"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "the-trade-box"
+title = "交换盒"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "confirming-the-trade"
+title = "确认交易"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "the-trade-objects-own-state-machine"
+title = "交换对象自己的状态机"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "the-job-that-carries-the-trade-out"
+title = "执行交换的工作"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "the-trade-restriction"
+title = "交换限制"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "the-phase-protocol-and-the-message-only-a-host-sends"
+title = "阶段协议，只有主机发送的消息"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "the-completed-trade"
+title = "已完成的交换"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "a-second-trade-in-one-session"
+title = "一次会话中的第二次交换"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "what-a-trade-rewrites"
+title = "交换重写"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "choosing-what-to-offer"
+title = "选择提供什么"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "mastered-moves"
+title = "掌握动作"
+level = 3
+[[documents."core.guide.pla".sections]]
+id = "the-stats-the-game-computes"
+title = "游戏计算的统计数据"
+level = 3
+[[documents."core.guide.pla".sections]]
+id = "the-clone-clock-and-atomic-protocols"
+title = "克隆时钟和原子协议"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "reading-and-writing-a-packet"
+title = "读写数据包"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "hosting"
+title = "托管"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "joining-a-consoles-network"
+title = "加入游戏机网络"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "reaching-local-trade-on-the-console"
+title = "在游戏机上进行本地交易"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "the-advertisement"
+title = "广告"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "the-link-code-in-the-advertisement"
+title = "广告中的链接代码"
+level = 3
+[[documents."core.guide.pla".sections]]
+id = "retail-notes"
+title = "零售笔记"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "leaving"
+title = "离开"
+level = 2
+[[documents."core.guide.pla".sections]]
+id = "unresolved"
+title = "未解决"
+level = 2
+[documents."core.guide.rse"]
+title = "红宝石、蓝宝石与绿宝石"
+path = "locales/zh-Hans/docs/rse.md"
+[[documents."core.guide.rse".sections]]
+id = "ruby-sapphire-and-emerald"
+title = "红宝石、蓝宝石与绿宝石"
+level = 1
+[[documents."core.guide.rse".sections]]
+id = "why-the-gba-application-is-expected-to-run-them"
+title = "为什么预计 GBA 应用能够运行它们"
+level = 2
+[[documents."core.guide.rse".sections]]
+id = "what-each-game-can-do-over-the-link"
+title = "各游戏的连接功能"
+level = 2
+[[documents."core.guide.rse".sections]]
+id = "identifiers"
+title = "标识符"
+level = 2
+[[documents."core.guide.rse".sections]]
+id = "joining-a-host"
+title = "加入主机"
+level = 2
+[[documents."core.guide.rse".sections]]
+id = "trade"
+title = "交换"
+level = 2
+[[documents."core.guide.rse".sections]]
+id = "mystery-gift"
+title = "神秘礼物"
+level = 2
+[[documents."core.guide.rse".sections]]
+id = "gifts"
+title = "礼物"
+level = 3
+[[documents."core.guide.rse".sections]]
+id = "the-save"
+title = "存档"
+level = 2
+[[documents."core.guide.rse".sections]]
+id = "emerald-link-features-pokeldn-lacks"
+title = "pokeldn 尚未支持的绿宝石连接功能"
+level = 2
+[[documents."core.guide.rse".sections]]
+id = "unresolved"
+title = "尚未解决"
+level = 2
+[documents."core.guide.sv"]
+title = "朱／紫"
+path = "locales/zh-Hans/docs/sv.md"
+[[documents."core.guide.sv".sections]]
+id = "scarlet-and-violet"
+title = "朱和紫"
+level = 1
+[[documents."core.guide.sv".sections]]
+id = "the-wireless-layer"
+title = "无线层"
+level = 2
+[[documents."core.guide.sv".sections]]
+id = "what-a-searching-console-advertises"
+title = "搜索游戏机的广告内容"
+level = 2
+[[documents."core.guide.sv".sections]]
+id = "the-protocols-the-game-runs"
+title = "游戏运行的协议"
+level = 2
+[[documents."core.guide.sv".sections]]
+id = "net-0x11-the-station-list"
+title = "网0x11，电台列表"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "the-eleven-streams"
+title = "十一条溪流"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "the-pia-message-flags"
+title = "Pia 消息标志"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "rtt"
+title = "实时传输时间"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "the-records"
+title = "记录"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "the-retail-acknowledgement-and-a-flood-of-retransmits"
+title = "零售确认和大量转发"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "a-msdu-frames-in-a-capture"
+title = "捕获中的 A-MSDU 帧"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "the-link-code"
+title = "链接代码"
+level = 2
+[[documents."core.guide.sv".sections]]
+id = "where-the-code-is"
+title = "代码在哪里"
+level = 2
+[[documents."core.guide.sv".sections]]
+id = "the-session-protocol"
+title = "会话协议"
+level = 2
+[[documents."core.guide.sv".sections]]
+id = "the-session-join-request"
+title = "会话加入请求"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "the-seat-and-the-identity-flood-above-it"
+title = "座位和上面的身份信息"
+level = 2
+[[documents."core.guide.sv".sections]]
+id = "the-flag-that-makes-the-host-count-an-acknowledgement"
+title = "使主机算作确认的标志"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "the-first-record-on-a-stream-carries-initialized"
+title = "流中的第一个记录带有 INITIALIZED"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "hosting-for-a-console"
+title = "游戏机托管"
+level = 2
+[[documents."core.guide.sv".sections]]
+id = "lowest-pending-and-the-gap-at-5-and-6"
+title = "最低待定金额以及 5 和 6 的差距"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "the-games-own-protocol-from-a-pair"
+title = "游戏自己的协议，来自一对"
+level = 2
+[[documents."core.guide.sv".sections]]
+id = "port-2-the-announcement-the-join-and-the-answer"
+title = "端口 2：公告、加入和答案"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "the-trade-job-that-sends-the-announcement"
+title = "发送公告的交换作业"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "opening-the-channel"
+title = "打开频道"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "the-trade"
+title = "交换"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "a-confirmation-sent-before-the-stations-own-offer"
+title = "电台自己的提议之前发送的确认"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "several-trades-in-one-seat"
+title = "一席多交易"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "the-first-game-message-and-what-it-carries"
+title = "第一条游戏消息及其携带的内容"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "the-record-a-trade-message-carries"
+title = "交换消息携带的记录"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "composed-records"
+title = "合成记录"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "what-a-joiner-sends-in-order"
+title = "加入方按顺序发送的内容"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "the-joiners-side-of-the-trade"
+title = "交换的加入方一方"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "what-a-trade-rewrites"
+title = "交换改写了什么"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "joining-a-searching-console-a-trade-and-what-decides-the-seat"
+title = "加入搜索游戏机：一次交换，以及什么决定了座位"
+level = 3
+[[documents."core.guide.sv".sections]]
+id = "what-decides-a-seat"
+title = "座位由什么决定"
+level = 4
+[[documents."core.guide.sv".sections]]
+id = "leaving"
+title = "离开"
+level = 2
+[[documents."core.guide.sv".sections]]
+id = "unresolved"
+title = "未解决"
+level = 2
+[documents."core.guide.sv_raid"]
+title = "太晶团体战"
+path = "locales/zh-Hans/docs/sv_raid.md"
+[[documents."core.guide.sv_raid".sections]]
+id = "tera-raids"
+title = "太晶团体战"
+level = 1
+[[documents."core.guide.sv_raid".sections]]
+id = "hosting"
+title = "主持团体战"
+level = 2
+[[documents."core.guide.sv_raid".sections]]
+id = "several-consoles"
+title = "多台游戏机"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "the-lobby"
+title = "大厅"
+level = 2
+[[documents."core.guide.sv_raid".sections]]
+id = "the-battle-bootstrap"
+title = "战斗初始化数据"
+level = 2
+[[documents."core.guide.sv_raid".sections]]
+id = "partners"
+title = "NPC 搭档"
+level = 2
+[[documents."core.guide.sv_raid".sections]]
+id = "favoured-partners"
+title = "推荐搭档"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "the-seed"
+title = "种子"
+level = 2
+[[documents."core.guide.sv_raid".sections]]
+id = "event-raids"
+title = "活动团体战"
+level = 2
+[[documents."core.guide.sv_raid".sections]]
+id = "finding-a-seed"
+title = "查找种子"
+level = 2
+[[documents."core.guide.sv_raid".sections]]
+id = "size-marks"
+title = "体型证章"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "wanted-rewards"
+title = "所需奖励"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "the-helpers-scan"
+title = "辅助程序扫描"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "the-battle-between-consoles"
+title = "游戏机之间的对战"
+level = 2
+[[documents."core.guide.sv_raid".sections]]
+id = "which-station-runs-the-server"
+title = "运行对战服务端的站点"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "the-battles-random-numbers"
+title = "对战随机数"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "damage-and-draws-per-move"
+title = "每次招式的伤害与随机抽取"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "a-move-in-the-round-queue"
+title = "回合队列中的招式"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "actions"
+title = "行动"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "the-server-command-queue"
+title = "服务端命令队列"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "the-battle-start-body"
+title = "对战开始正文"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "the-servers-messages"
+title = "服务器消息"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "the-bosss-actions"
+title = "首领的行动"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "the-battle-timer"
+title = "对战计时器"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "the-battles-end"
+title = "对战结束"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "the-battle-timer-running-out"
+title = "对战计时耗尽"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "the-servers-flow"
+title = "服务器流程"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "reproducing-a-round"
+title = "复现回合"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "the-servers-flow-measured"
+title = "服务器流程实测"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "serving-the-battle"
+title = "提供对战服务"
+level = 3
+[[documents."core.guide.sv_raid".sections]]
+id = "joining"
+title = "加入团体战"
+level = 2
+[[documents."core.guide.sv_raid".sections]]
+id = "unresolved"
+title = "尚未解决"
+level = 2
+[documents."core.guide.switch_re"]
+title = "Switch 游戏逆向分析"
+path = "locales/zh-Hans/docs/switch_re.md"
+[[documents."core.guide.switch_re".sections]]
+id = "reverse-engineering-a-switch-title"
+title = "对 Switch 标题进行逆向工程"
+level = 1
+[[documents."core.guide.switch_re".sections]]
+id = "order-of-work"
+title = "工作顺序"
+level = 2
+[[documents."core.guide.switch_re".sections]]
+id = "getting-the-executable-out"
+title = "获取可执行文件"
+level = 2
+[[documents."core.guide.switch_re".sections]]
+id = "from-an-nsp"
+title = "来自 NSP"
+level = 3
+[[documents."core.guide.switch_re".sections]]
+id = "from-an-xci"
+title = "来自 XCI"
+level = 3
+[[documents."core.guide.switch_re".sections]]
+id = "from-a-romfs"
+title = "来自 RomFS"
+level = 3
+[[documents."core.guide.switch_re".sections]]
+id = "naming-everything-first"
+title = "首先命名所有内容"
+level = 2
+[[documents."core.guide.switch_re".sections]]
+id = "a-constant-only-in-the-metadata"
+title = "仅在元数据中的常量"
+level = 2
+[[documents."core.guide.switch_re".sections]]
+id = "check-which-version-you-dumped"
+title = "检查你转储的版本"
+level = 2
+[[documents."core.guide.switch_re".sections]]
+id = "reading-a-game-updates-romfs"
+title = "读取游戏更新的 RomFS"
+level = 2
+[[documents."core.guide.switch_re".sections]]
+id = "finding-callers"
+title = "寻找来电者"
+level = 2
+[[documents."core.guide.switch_re".sections]]
+id = "calling-into-nnsdk"
+title = "调用nnSdk"
+level = 2
+[[documents."core.guide.switch_re".sections]]
+id = "the-tools"
+title = "工具"
+level = 2
+[documents."core.guide.swsh"]
+title = "剑／盾"
+path = "locales/zh-Hans/docs/swsh.md"
+[[documents."core.guide.swsh".sections]]
+id = "sword-and-shield"
+title = "剑和盾"
+level = 1
+[[documents."core.guide.swsh".sections]]
+id = "sources"
+title = "来源"
+level = 2
+[[documents."core.guide.swsh".sections]]
+id = "the-field-scripts"
+title = "字段脚本"
+level = 2
+[[documents."core.guide.swsh".sections]]
+id = "unresolved"
+title = "未解决"
+level = 2
+[documents."core.guide.swsh_gift"]
+title = "神秘礼物菜单"
+path = "locales/zh-Hans/docs/swsh_gift.md"
+[[documents."core.guide.swsh_gift".sections]]
+id = "the-local-wireless-branch-of-the-mystery-gift-menu"
+title = "神秘礼物菜单的本地无线分支"
+level = 1
+[[documents."core.guide.swsh_gift".sections]]
+id = "the-menu"
+title = "菜单"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "the-apps-state-machine"
+title = "应用程序的状态机"
+level = 3
+[[documents."core.guide.swsh_gift".sections]]
+id = "the-gift-screens-network"
+title = "礼物屏幕的网络"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "the-mode-byte"
+title = "模式字节"
+level = 3
+[[documents."core.guide.swsh_gift".sections]]
+id = "the-pia-mesh-on-the-gift-screen"
+title = "礼物屏幕上的 Pia 网格"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "the-join-filter-0x006b41c0"
+title = "连接过滤器 0x006b41c0"
+level = 3
+[[documents."core.guide.swsh_gift".sections]]
+id = "the-transport-check"
+title = "运输检查"
+level = 3
+[[documents."core.guide.swsh_gift".sections]]
+id = "with-a-station-seated"
+title = "有一个座位"
+level = 3
+[[documents."core.guide.swsh_gift".sections]]
+id = "the-receive-job-and-the-importer"
+title = "接收作业和导入器"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "the-card-travels-in-beacon-advertise-data"
+title = "卡在信标广告数据中传播"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "the-beacon-body-frame"
+title = "信标主体框架"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "the-gate-a-received-beacon-passes"
+title = "接收到的信标经过的门"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "the-message-the-poll-reassembles"
+title = "民意调查重新组合的消息"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "what-a-record-must-carry"
+title = "记录必须携带什么"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "the-pokemon-a-kind-1-record-carries"
+title = "宝可梦一类记录携带"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "a-card-delivered-by-beacon-end-to-end"
+title = "由信标端到端传送的卡片"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "a-card-delivered-to-a-retail-console"
+title = "一张发送到实机的卡"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "official-event-cards"
+title = "官方活动卡"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "pokemon-home"
+title = "Pokémon HOME"
+level = 3
+[[documents."core.guide.swsh_gift".sections]]
+id = "cards-that-share-an-id"
+title = "共用同一 ID 的卡片"
+level = 3
+[[documents."core.guide.swsh_gift".sections]]
+id = "clothing"
+title = "衣服"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "what-the-menu-refuses"
+title = "菜单拒绝什么"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "the-cards-date"
+title = "卡的日期"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "where-the-album-keeps-a-card"
+title = "相册里存放卡片的地方"
+level = 2
+[[documents."core.guide.swsh_gift".sections]]
+id = "the-per-frame-update-that-drains-the-store"
+title = "每帧更新消耗存储空间"
+level = 2
+[documents."core.guide.swsh_protocol"]
+title = "同步框架"
+path = "locales/zh-Hans/docs/swsh_protocol.md"
+[[documents."core.guide.swsh_protocol".sections]]
+id = "messages-contents-and-routing"
+title = "消息、内容和路由"
+level = 1
+[[documents."core.guide.swsh_protocol".sections]]
+id = "where-a-message-id-comes-from"
+title = "消息 id 来自哪里"
+level = 2
+[[documents."core.guide.swsh_protocol".sections]]
+id = "contents-and-holders"
+title = "内容和持有人"
+level = 2
+[[documents."core.guide.swsh_protocol".sections]]
+id = "the-30000-holder"
+title = "30000持有者"
+level = 3
+[[documents."core.guide.swsh_protocol".sections]]
+id = "the-three-trade-contents"
+title = "三个交换内容"
+level = 3
+[[documents."core.guide.swsh_protocol".sections]]
+id = "the-routing-path"
+title = "路由路径"
+level = 2
+[[documents."core.guide.swsh_protocol".sections]]
+id = "the-application-header"
+title = "应用程序标头"
+level = 3
+[[documents."core.guide.swsh_protocol".sections]]
+id = "reading-the-registrations-live"
+title = "现场阅读报名信息"
+level = 3
+[[documents."core.guide.swsh_protocol".sections]]
+id = "dispatch-gates-ports-and-senders"
+title = "调度口、端口和发件人"
+level = 3
+[[documents."core.guide.swsh_protocol".sections]]
+id = "the-data-envelope"
+title = "`Data` 信封"
+level = 2
+[[documents."core.guide.swsh_protocol".sections]]
+id = "sub-element-kinds"
+title = "子元素种类"
+level = 3
+[[documents."core.guide.swsh_protocol".sections]]
+id = "the-quorum-hash"
+title = "仲裁哈希值"
+level = 3
+[[documents."core.guide.swsh_protocol".sections]]
+id = "the-party-payload-on-protocol-0x84"
+title = "协议 0x84 上的队伍恐惧"
+level = 2
+[[documents."core.guide.swsh_protocol".sections]]
+id = "the-battle-stadium-block"
+title = "战斗体育场街区"
+level = 3
+[[documents."core.guide.swsh_protocol".sections]]
+id = "the-player-profile"
+title = "玩家简介"
+level = 3
+[[documents."core.guide.swsh_protocol".sections]]
+id = "the-pk8"
+title = "PK8"
+level = 2
+[[documents."core.guide.swsh_protocol".sections]]
+id = "the-trade-message"
+title = "交换消息"
+level = 2
+[[documents."core.guide.swsh_protocol".sections]]
+id = "the-receive-handlers-two-silent-drops"
+title = "接收处理程序的两个静默丢弃"
+level = 3
+[[documents."core.guide.swsh_protocol".sections]]
+id = "content-40s-message"
+title = "内容 40 条留言"
+level = 3
+[documents."core.guide.swsh_session"]
+title = "卡带与会话"
+path = "locales/zh-Hans/docs/swsh_session.md"
+[[documents."core.guide.swsh_session".sections]]
+id = "the-cartridge-its-keys-and-taking-a-seat"
+title = "卡带、钥匙以及就座"
+level = 1
+[[documents."core.guide.swsh_session".sections]]
+id = "the-ldn-passphrase"
+title = "LDN 密码"
+level = 2
+[[documents."core.guide.swsh_session".sections]]
+id = "the-pia-game-key"
+title = "Pia 游戏密钥"
+level = 2
+[[documents."core.guide.swsh_session".sections]]
+id = "reading-the-cartridge"
+title = "读取卡带"
+level = 2
+[[documents."core.guide.swsh_session".sections]]
+id = "pia-4"
+title = "皮亚 4"
+level = 2
+[[documents."core.guide.swsh_session".sections]]
+id = "taking-a-seat"
+title = "入座"
+level = 2
+[[documents."core.guide.swsh_session".sections]]
+id = "how-a-searching-sword-finds-a-partner"
+title = "搜索之剑如何寻找伙伴"
+level = 2
+[[documents."core.guide.swsh_session".sections]]
+id = "what-the-console-says-first"
+title = "游戏机首先说的话"
+level = 2
+[[documents."core.guide.swsh_session".sections]]
+id = "the-pia-session-object"
+title = "Pia 会话对象"
+level = 2
+[[documents."core.guide.swsh_session".sections]]
+id = "reaching-the-game-layer"
+title = "到达游戏层"
+level = 2
+[[documents."core.guide.swsh_session".sections]]
+id = "the-ping-handshake"
+title = "ping 握手"
+level = 2
+[[documents."core.guide.swsh_session".sections]]
+id = "leaving"
+title = "离开"
+level = 2
+[[documents."core.guide.swsh_session".sections]]
+id = "operational-notes"
+title = "操作注意事项"
+level = 2
+[documents."core.guide.swsh_trade"]
+title = "连接交换"
+path = "locales/zh-Hans/docs/swsh_trade.md"
+[[documents."core.guide.swsh_trade".sections]]
+id = "trading-with-a-retail-sword-and-shield"
+title = "使用零售剑和盾进行交易"
+level = 1
+[[documents."core.guide.swsh_trade".sections]]
+id = "the-sequence"
+title = "顺序"
+level = 2
+[[documents."core.guide.swsh_trade".sections]]
+id = "the-trade-rpc"
+title = "交换 RPC"
+level = 2
+[[documents."core.guide.swsh_trade".sections]]
+id = "host-migration"
+title = "主机迁移"
+level = 2
+[[documents."core.guide.swsh_trade".sections]]
+id = "hosting-a-trade"
+title = "举办交换会"
+level = 2
+[[documents."core.guide.swsh_trade".sections]]
+id = "the-trade-animation"
+title = "交换动画"
+level = 2
+[[documents."core.guide.swsh_trade".sections]]
+id = "trades-in-a-row-on-one-session"
+title = "一个交易日连续交易"
+level = 2
+[[documents."core.guide.swsh_trade".sections]]
+id = "the-box-state-machine"
+title = "盒子状态机"
+level = 2
+[[documents."core.guide.swsh_trade".sections]]
+id = "the-trade-state-machine"
+title = "交换状态机"
+level = 2
+[[documents."core.guide.swsh_trade".sections]]
+id = "the-confirmation-ladder"
+title = "确认阶梯"
+level = 2
+[[documents."core.guide.swsh_trade".sections]]
+id = "the-phase-to-state-map"
+title = "阶段到状态图"
+level = 3
+[[documents."core.guide.swsh_trade".sections]]
+id = "the-pump"
+title = "泵"
+level = 3
+[[documents."core.guide.swsh_trade".sections]]
+id = "the-phase-is-the-elements-field"
+title = "相位是元素的字段"
+level = 3
+[[documents."core.guide.swsh_trade".sections]]
+id = "the-step-body"
+title = "步体"
+level = 3
+[[documents."core.guide.swsh_trade".sections]]
+id = "the-command"
+title = "命令"
+level = 3
+[[documents."core.guide.swsh_trade".sections]]
+id = "the-cancel-and-proceed-messages"
+title = "取消和继续消息"
+level = 3
+[[documents."core.guide.swsh_trade".sections]]
+id = "shapes-the-confirmation-content-also-sends"
+title = "形状确认内容也发送"
+level = 3
+[[documents."core.guide.swsh_trade".sections]]
+id = "the-league-card"
+title = "联盟卡"
+level = 2
+[[documents."core.guide.swsh_trade".sections]]
+id = "the-offered-record"
+title = "提供的记录"
+level = 2
+[[documents."core.guide.swsh_trade".sections]]
+id = "the-command-line-of-a-completed-trade"
+title = "已完成交换的命令行"
+level = 2
+[[documents."core.guide.swsh_trade".sections]]
+id = "the-penalty-and-ending-a-run-cleanly"
+title = "处罚，干净利落地结束比赛"
+level = 2
+[[documents."core.guide.swsh_trade".sections]]
+id = "verifying-a-completed-trade"
+title = "验证已完成的交换"
+level = 2
+[documents."core.guide.usage"]
+title = "命令行用法"
+path = "locales/zh-Hans/docs/usage.md"
+[[documents."core.guide.usage".sections]]
+id = "command-line-usage"
+title = "命令行用法"
+level = 1
+[[documents."core.guide.usage".sections]]
+id = "firered-and-leafgreen"
+title = "火红／叶绿"
+level = 2
+[[documents."core.guide.usage".sections]]
+id = "lets-go-pikachu-and-eevee"
+title = "Let's Go！皮卡丘／伊布"
+level = 2
+[[documents."core.guide.usage".sections]]
+id = "sword-and-shield"
+title = "剑／盾"
+level = 2
+[[documents."core.guide.usage".sections]]
+id = "brilliant-diamond-and-shining-pearl"
+title = "晶灿钻石／明亮珍珠"
+level = 2
+[[documents."core.guide.usage".sections]]
+id = "legends-arceus"
+title = "传说 阿尔宙斯"
+level = 2
+[[documents."core.guide.usage".sections]]
+id = "scarlet-and-violet"
+title = "朱／紫"
+level = 2
+[[documents."core.guide.usage".sections]]
+id = "legends-z-a"
+title = "传说 Z-A"
+level = 2
+[[documents."core.guide.usage".sections]]
+id = "diagnostics"
+title = "诊断"
+level = 2
+[documents."core.guide.za"]
+title = "传说 Z-A"
+path = "locales/zh-Hans/docs/za.md"
+[[documents."core.guide.za".sections]]
+id = "legends-z-a"
+title = "传说 Z-A"
+level = 1
+[[documents."core.guide.za".sections]]
+id = "the-dump"
+title = "转储"
+level = 2
+[[documents."core.guide.za".sections]]
+id = "the-wireless-layer"
+title = "无线层"
+level = 2
+[[documents."core.guide.za".sections]]
+id = "the-packet-header"
+title = "数据包头"
+level = 2
+[[documents."core.guide.za".sections]]
+id = "the-advertisement"
+title = "广告"
+level = 2
+[[documents."core.guide.za".sections]]
+id = "the-seat"
+title = "座位"
+level = 2
+[[documents."core.guide.za".sections]]
+id = "the-session-on-a-retail-console"
+title = "会议，在实机上"
+level = 2
+[[documents."core.guide.za".sections]]
+id = "the-games-own-exchange"
+title = "游戏自带的兑换"
+level = 2
+[[documents."core.guide.za".sections]]
+id = "the-trade-commands"
+title = "交换命令"
+level = 3
+[[documents."core.guide.za".sections]]
+id = "what-a-joiner-owes-on-those-streams"
+title = "加入方对这些流的欠债"
+level = 3
+[[documents."core.guide.za".sections]]
+id = "the-kick"
+title = "踢球"
+level = 3
+[[documents."core.guide.za".sections]]
+id = "the-keepalive"
+title = "保活"
+level = 3
+[[documents."core.guide.za".sections]]
+id = "packet-ids"
+title = "数据包 ID"
+level = 3
+[[documents."core.guide.za".sections]]
+id = "the-rest-of-the-join"
+title = "其余的连接"
+level = 3
+[[documents."core.guide.za".sections]]
+id = "the-trade-on-protocol-10"
+title = "协议 10 上的交换"
+level = 3
+[[documents."core.guide.za".sections]]
+id = "the-offered-pokemon"
+title = "提供的宝可梦"
+level = 2
+[[documents."core.guide.za".sections]]
+id = "the-record-in-memory"
+title = "内存中的记录"
+level = 3
+[[documents."core.guide.za".sections]]
+id = "the-fields-main-202-reads-and-writes"
+title = "main 2.0.2 读取和写入的字段"
+level = 3
+[[documents."core.guide.za".sections]]
+id = "per-move-flags"
+title = "每次移动标志"
+level = 4
+[[documents."core.guide.za".sections]]
+id = "the-ability"
+title = "特性"
+level = 4
+[[documents."core.guide.za".sections]]
+id = "what-loading-a-received-record-checks"
+title = "加载接收到的记录会检查什么"
+level = 3
+[[documents."core.guide.za".sections]]
+id = "the-name-check-on-a-received-pokemon"
+title = "收到的宝可梦名称检查"
+level = 3
+[[documents."core.guide.za".sections]]
+id = "what-the-trade-writes-into-a-received-record"
+title = "交换写入接收记录的内容"
+level = 3
+[[documents."core.guide.za".sections]]
+id = "the-personal-table"
+title = "个人表"
+level = 3
+[[documents."core.guide.za".sections]]
+id = "a-trade-with-a-retail-console"
+title = "与实机的交换"
+level = 2
+[[documents."core.guide.za".sections]]
+id = "hosting"
+title = "托管"
+level = 2
+[[documents."core.guide.za".sections]]
+id = "the-property-update"
+title = "属性更新"
+level = 3
+[[documents."core.guide.za".sections]]
+id = "leaving"
+title = "离开"
+level = 2
+[[documents."core.guide.za".sections]]
+id = "a-joiner-leaving"
+title = "A 加入方离开"
+level = 3
+[[documents."core.guide.za".sections]]
+id = "a-host-leaving"
+title = "A 主机离开"
+level = 3
+[[documents."core.guide.za".sections]]
+id = "mystery-gift"
+title = "神秘礼物"
+level = 2
+
+[documents."core.guide.localization"]
+title = "本地化 API 与资源格式"
+path = "locales/zh-Hans/docs/localization.md"
+parent = "core.guide.plugins"
+order = 10
+[[documents."core.guide.localization".sections]]
+id = "localization"
+title = "本地化 API 与资源格式"
+level = 1
+[[documents."core.guide.localization".sections]]
+id = "interfaces"
+title = "统一接口"
+level = 2
+[[documents."core.guide.localization".sections]]
+id = "identity"
+title = "实体身份"
+level = 2
+[[documents."core.guide.localization".sections]]
+id = "messages"
+title = "文案与格式化"
+level = 2
+[[documents."core.guide.localization".sections]]
+id = "packages"
+title = "语言包与插件命名空间"
+level = 2
+[[documents."core.guide.localization".sections]]
+id = "fallback"
+title = "回退与诊断"
+level = 2
+[[documents."core.guide.localization".sections]]
+id = "documents"
+title = "文档与实时切换"
+level = 2
+[[documents."core.guide.localization".sections]]
+id = "validation"
+title = "构建与验证"
+level = 2
+
+[documents."core.guide.guide"]
+title = "从这里开始"
+path = "locales/zh-Hans/docs/guide.md"
+[[documents."core.guide.guide".sections]]
+id = "start-here"
+title = "从这里开始"
+level = 1
+[[documents."core.guide.guide".sections]]
+id = "what-you-need"
+title = "准备事项"
+level = 2
+[[documents."core.guide.guide".sections]]
+id = "first-run"
+title = "首次使用"
+level = 2
+[[documents."core.guide.guide".sections]]
+id = "free-up-storage"
+title = "释放存储空间"
+level = 2
+[[documents."core.guide.guide".sections]]
+id = "firered-and-leafgreen-language"
+title = "火红／叶绿的语言"
+level = 2
+[[documents."core.guide.guide".sections]]
+id = "basic-and-advanced"
+title = "基本与高级"
+level = 2
+[[documents."core.guide.guide".sections]]
+id = "your-own-pokemon-files"
+title = "使用自己的宝可梦文件"
+level = 2
+[[documents."core.guide.guide".sections]]
+id = "mystery-gift"
+title = "神秘礼物"
+level = 2
+[[documents."core.guide.guide".sections]]
+id = "when-a-run-fails"
+title = "任务失败时"
+level = 2

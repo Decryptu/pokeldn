@@ -5,6 +5,7 @@ nav_exclude: true
 search_exclude: true
 ---
 
+<a id="ruby-sapphire-and-emerald"></a>
 # Ruby, Sapphire and Emerald
 
 Ruby, Sapphire and Emerald have no Switch release. pokeldn carries support prepared from
@@ -17,6 +18,7 @@ address and number is the GBA English build's; the FireRed Switch build is a new
 The app shows the title only when it runs from a source checkout
 ([Unreleased titles](gui.md#unreleased-titles)); this page is left out of the site's navigation.
 
+<a id="why-the-gba-application-is-expected-to-run-them"></a>
 ## Why the GBA application is expected to run them
 
 The FireRed and LeafGreen application already holds a play-report table for each of the five
@@ -25,6 +27,7 @@ Gen III game codes, `AXV?` Ruby, `AXP?` Sapphire and `BPE?` Emerald among them
 local communication id, `0x01006fa0233f8000` ([The ROM map](frlg_rom_map.md)); the launchers' scan
 joins the only network present when no id is given.
 
+<a id="what-each-game-can-do-over-the-link"></a>
 ## What each game can do over the link
 
 | | Ruby / Sapphire | Emerald |
@@ -43,6 +46,7 @@ link command words, and a trade's three 200-byte party blocks, 220-byte mail blo
 ribbon block [pokeruby link.c, trade.c]. RS writes an 11-byte name into `LinkPlayer`, over the bytes
 FireRed and Emerald read as progress flags, so both zero those flags for an RS partner.
 
+<a id="identifiers"></a>
 ## Identifiers
 
 | field | Ruby | Sapphire | Emerald |
@@ -55,6 +59,7 @@ FireRed and Emerald read as progress flags, so both zero those flags for an RS p
 The language letter is `E`, `F`, `D`, `I`, `S` or `J`, as on the FireRed cartridges. The version and
 language numbers are the same in all three decomps [include/constants/global.h:8-12].
 
+<a id="joining-a-host"></a>
 ## Joining a host
 
 The advertisement record and the `RfuGameData` layout are FireRed's [include/link_rfu.h:80-113].
@@ -67,6 +72,7 @@ A launcher run with `--version emerald` (or `ruby`, `sapphire`) advertises that 
 (bits 16, 17 and 24 of the word at `[16:20]`) and in the NI game data (`RfuGameData` bits 7, 8, 9).
 FireRed and LeafGreen keep the bytes retail consoles accepted, with those bits clear.
 
+<a id="trade"></a>
 ## Trade
 
 The wire is FireRed's: link commands, block exchange order and sizes, the trainer card
@@ -85,6 +91,7 @@ With version 3 an Emerald console draws our trainer card with frontier symbols a
 Points at `0x3C`; with 4 or 5 it draws a FireRed card. Emerald's receive queue holds 32 slots against
 FireRed's 20, and it accepts the serial `0x0000` beside `0x0002` and `0x7F7D`.
 
+<a id="mystery-gift"></a>
 ## Mystery Gift
 
 The link transport, the server and client scripts, the 332-byte `WonderCard`, the 444-byte
@@ -116,6 +123,7 @@ of another game before anything is sent.
 Wonder News in Emerald has no reward: nothing increments its step counter and no script reads its
 berry.
 
+<a id="gifts"></a>
 ### Gifts
 
 The four official gift scripts pokeemerald ships (`data/scripts/gift_aurora_ticket.inc`,
@@ -139,6 +147,7 @@ compares the bytecode. The Mystery Gift man on 2F of a Pokemon Center runs the s
 An Emerald gift file has one variant, `emerald` ([Mystery Gift files](gifts.md)). Native code,
 save backup and the FireRed presets name FireRed addresses and are refused for Emerald.
 
+<a id="the-save"></a>
 ## The save
 
 The flash layout, sector signature `0x08012025` and checksum are FireRed's [save.c]. SaveBlock1 is
@@ -146,12 +155,14 @@ The flash layout, sector signature `0x08012025` and checksum are FireRed's [save
 SaveBlock2 `+0xAC`), flags `0x1270`, vars `0x139C`, game stats `0x159C`, Mystery Gift `0x322C`.
 SaveBlock2 has no `filler_B20`; the kept native payload would need another home.
 
+<a id="emerald-link-features-pokeldn-lacks"></a>
 ## Emerald link features pokeldn lacks
 
 Record Mixing (the Record Corner), the Berry Blender, contests, the Battle Tower link multi battle,
 Berry Crush, Pokemon Jump and Dodrio Berry Picking run over the Wireless Adapter in Emerald (link
 groups 12 to 21, activities 14 and 23 to 29). FireRed carries the last three as well.
 
+<a id="unresolved"></a>
 ## Unresolved
 
 - Whether a Switch release exists, and its title ids, game codes and software version.

@@ -4,6 +4,7 @@ nav_order: 7
 has_children: true
 ---
 
+<a id="lets-go-pikachu-and-eevee"></a>
 # Let's Go Pikachu and Eevee
 
 In Pokemon Let's Go Pikachu and Let's Go Eevee (2018), Pia is statically linked into `main` (269
@@ -19,12 +20,14 @@ shown in two rows: Pikachu, Eevee, Bulbasaur, Charmander, Squirtle; Pidgey, Cate
 Jigglypuff, Diglett. The code sets the advertisement's scene id
 ([the session page](lgpe_session.md#the-link-code)); hosting and joining both work under any code.
 
+<a id="pages"></a>
 ## Pages
 
 | page | contents |
 |---|---|
 | [The Let's Go cartridge and session](lgpe_session.md) | what the title is built from, the LDN passphrase and Pia game key, Pia header version 3, the session key, the station and clone protocols as a real session runs them, the gate that starts the game's own messages, and the four game messages of a trade |
 
+<a id="what-works"></a>
 ## What works
 
 `bin/lgpe_join.py` joins a console's session and `bin/lgpe_host.py` hosts one the console joins. A
@@ -50,6 +53,7 @@ console's Retour ([A joiner leaving](lgpe_session.md#a-joiner-leaving)).
 commit leaves the console on its confirmation screen with the save's trade lock set (no trades for
 ten minutes of counted play time), then the fatal error screen.
 
+<a id="unresolved"></a>
 ## Unresolved
 
 - What left a retail console silent on both of the host's `0xa1` after a host answered its withdrawn

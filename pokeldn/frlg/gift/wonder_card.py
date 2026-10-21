@@ -1,6 +1,7 @@
 """The 332-byte struct WonderCard [decomp:include/global.h:655], checked by ValidateWonderCard
 [decomp:src/mystery_gift.c:191]. The console wraps and checksums the RAM script; the script runs
 unrelocated, so it may use only immediates and setvaddress-relative branches."""
+from pokeldn.app.i18n import message_ref as _message
 
 from pokeldn.frlg.text import charmap
 from pokeldn.frlg.gift.mystery_gift import (
@@ -131,7 +132,7 @@ def flag_for_flag_id(flag_id):
     """sReceivedGiftFlags[flagId - 1000] [decomp:src/mystery_gift.c:255]; flagIds 1000..1019."""
     idx = flag_id - WONDER_CARD_FLAG_OFFSET
     if not (0 <= idx < NUM_WONDER_CARD_FLAGS):
-        raise ValueError(f"card flagId {flag_id} out of range [1000, {1000 + NUM_WONDER_CARD_FLAGS})")
+        raise ValueError(_message('core.pokeldn.frlg.gift.wonder_card.card_flagid_value0_out_of_range_1000_value1_2fddb7ff', value0=flag_id, value1=1000 + NUM_WONDER_CARD_FLAGS))
     # sReceivedGiftFlags[0..3] = AURORA(0x2A7), MYSTIC(0x2A8), OLD_SEA_MAP(0x2A9), UNUSED_1(0x2AA)
     return FLAG_WONDER_CARD_UNUSED_1 - 3 + idx
 
@@ -142,7 +143,7 @@ def build_delivery_ram_script(item=DEFAULT_GIFT_ITEM, flag=None, flag_id=None):
     if flag is None:
         flag = flag_for_flag_id(flag_id) if flag_id is not None else (FLAG_WONDER_CARD_UNUSED_1)
     if item is not None and (type(item) is not int or not 0 < item <= 0xFFFF):
-        raise ValueError("item must be a positive 16-bit item id or None")
+        raise ValueError(_message('core.pokeldn.frlg.gift.wonder_card.item_must_be_a_positive_16_bit_item_id_or_none_7cfdba81'))
 
     out = bytearray(bytes([_OP_LOCK, _OP_FACEPLAYER]))
     if item is not None:
@@ -210,9 +211,9 @@ def build_wonder_card(*, flag_id=1003, icon_species=1, id_number=0,
     """ValidateWonderCard needs flagId != 0, type < 3, sendType in {0,1,2}, bgType < 8,
     maxStamps <= 7; body is up to 4 lines of <= 39 chars; id_number 0 displays flag_id % 100."""
     if flag_id == 0:
-        raise ValueError("flagId 0 is rejected by ValidateWonderCard")
+        raise ValueError(_message('core.pokeldn.frlg.gift.wonder_card.flagid_0_is_rejected_by_validatewondercard_dac06386'))
     if not (0 <= card_type < 3 and 0 <= bg_type < 8 and send_type in (0, 1, 2) and 0 <= max_stamps <= 7):
-        raise ValueError("WonderCard field out of the range ValidateWonderCard accepts")
+        raise ValueError(_message('core.pokeldn.frlg.gift.wonder_card.wondercard_field_out_of_the_range_validatewonder_ac82dd85'))
     flag_for_flag_id(flag_id)
 
     bitfield = (card_type & 0x3) | ((bg_type & 0xF) << 2) | ((send_type & 0x3) << 6)
@@ -265,7 +266,7 @@ def _encode_cutscene_message(text):
             end = text.index("}", index)
             token = text[index + 1:end]
             if token not in _CUTSCENE_MESSAGE_TOKENS:
-                raise ValueError(f"unknown message token {{{token}}}")
+                raise ValueError(_message('core.pokeldn.frlg.gift.wonder_card.unknown_message_token_value0_0b955150', value0=token))
             out += _CUTSCENE_MESSAGE_TOKENS[token]
             index = end + 1
         else:
@@ -277,9 +278,9 @@ def _encode_cutscene_message(text):
 def build_legendary_beast_cutscene_script(
         level=LEGENDARY_BEAST_LEVEL, delay_frames=30):
     if type(level) is not int or not 1 <= level <= 100:
-        raise ValueError("level must be between 1 and 100")
+        raise ValueError(_message('core.pokeldn.frlg.gift.wonder_card.level_must_be_between_1_and_100_57980a79'))
     if type(delay_frames) is not int or not 0 <= delay_frames <= 0xFFFF:
-        raise ValueError("delay_frames must fit in 16 bits")
+        raise ValueError(_message('core.pokeldn.frlg.gift.wonder_card.delay_frames_must_fit_in_16_bits_68a2b72b'))
 
     messages = (
         _encode_cutscene_message(

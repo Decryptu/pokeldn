@@ -4,11 +4,13 @@ parent: Brilliant Diamond and Shining Pearl
 nav_order: 3
 ---
 
+<a id="the-bdsp-trade"></a>
 # The BDSP trade
 
 A retail Shining Pearl trades with a character pokeldn invented, takes a Pokemon pokeldn assembled
 and writes its save. The approach and the greeting are on [The game protocol](bdsp_protocol.md).
 
+<a id="the-message-sequence"></a>
 ## The message sequence
 
     NetDataTransitionData{transitionType: 18}     entering the trade
@@ -45,6 +47,7 @@ dialog. `SS_box_182`, the message a flagged Pokemon of the player's own selects,
 trade Pokémon because there is a problem with your Pokémon." (French "Un problème avec votre Pokémon
 rend tout échange impossible."); `SS_box_181` says the same of the partner's Pokemon.
 
+<a id="the-trade-state-machine"></a>
 ## The trade state machine
 
 `UnionTradeManager.currentState` (+0x88; +0x80 in 1.3.0) is
@@ -68,6 +71,7 @@ by the player's `MyReadyOk`) and `targetTradeState` are both 2 (`WAIT`), then se
 SECURIY_TRADE, clears the select model and sends its own 0x21 with `tradeState` 0. Only the peer's
 0x21 moves the console out of SELECT_WINDOW.
 
+<a id="box-phases-and-the-messages-that-reset-a-round"></a>
 ### Box phases, and the messages that reset a round
 
 `BoxWindow.NetTradePhase`:
@@ -124,6 +128,7 @@ phase [0x1c33e9c]); the partner's `{0}` does not release it.
   the first counts. Stop a security-state repeater before the console can be back in its select
   window.
 
+<a id="the-security-phase"></a>
 ## The security phase
 
 Then `TradeSecurityController` -> `CreateTradeStateModel` -> `TradeStateModel`, which owns the save:
@@ -140,6 +145,7 @@ SECURIY_TRADE drops the decoded Pokemon and calls `SetSecurityTradeParam()`, whi
 `manager.targetPokemonParam` (+0x48, set when the player confirms on the full-screen view) to the
 security controller. Until the player confirms it is null and WAIT_POKE never ends.
 
+<a id="who-leads-the-rarer-pokemon"></a>
 ### Who leads: the rarer Pokemon
 
 `CreateTradeStateModel` [1.3.0 main.bin 0x1c24620] builds a `TradeParentStateModel` for both roles
@@ -195,6 +201,7 @@ Send one message per reliable sequence id: `their_ack_id` moves only when the co
 so later messages under one id look like retransmits and are discarded. `bdsp_connect` keeps its
 own counter.
 
+<a id="the-completed-trade"></a>
 ## The completed trade
 
 The security states in order, the console as recruiter and PARENT (the console's state, then the
@@ -243,6 +250,7 @@ returned after each) and two with `bin/bdsp_host.py` hosting. `TradeStateModel$$
 second trade reads back what the console stored. A SEND_READYOK (5) 0x21 landing while the player
 picks (box phase 5 or below) resets the round, so no repeat follows the console's SEND_READYOK.
 
+<a id="the-pokemon"></a>
 ## The Pokemon
 
 `NetTradePokeData` carries 328 bytes, Gen 8 `SIZE_STORED`: an encrypted PB8, the format on
@@ -281,6 +289,7 @@ for byte.
 An offer is a real Pokemon with named fields changed (`pokemon.build_from`); met data, ribbons,
 handler records and language are non-zero on a console's own.
 
+<a id="what-the-console-does-to-a-received-pokemon"></a>
 ## What the console does to a received Pokemon
 
 Received back by its original trainer, two bytes change: `IsNicknamed` (0x08F bit 7, IV32 bit 31) is
@@ -315,6 +324,7 @@ Mystery Gift (`MysteryGiftWork$$CreatePokemonParam`) and `RenkeiData$$Get_1`/`Ge
 `OwnerInfo` from the save. `UpdateOwnerInfo` is the game's only writer of the handler's gender. The
 game holds no Pokemon HOME code: a Pokemon arriving from HOME is written by HOME.
 
+<a id="duplicate-detection"></a>
 ### Duplicate detection
 
 `PokeDupeChecker` (added in 1.3.0) sets an illegal flag on a duplicated Pokemon. The flag is bit 0
@@ -357,6 +367,7 @@ nature and IVs all match a Pokemon in the receiving save. `bin/bdsp_host.py --fr
 encryption constant and PID, shiny state kept; a record traded that way into a save holding the
 original carried no flag.
 
+<a id="the-disconnect-penalty"></a>
 ## The disconnect penalty
 
 A station dropping out between `FirstSave` and `SecondSave` leaves the penalty armed, and the

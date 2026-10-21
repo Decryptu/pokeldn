@@ -107,8 +107,11 @@ def test_display_names_follow_the_selected_pack_over_one_process(pack, monkeypat
     asked = []
 
     def reply(request):
-        asked.append(request.get("display_language", "en"))
-        return {"names": [{"id": 25, "name": asked[-1]}]}
+        language = request.get("display_language", "en")
+        if request["cmd"] == "name_table":
+            return {"version": "1", "names": {"25": language}}
+        asked.append(language)
+        return {"names": [{"id": 25, "name": language}]}
 
     monkeypatch.setattr(pokemon.SERVICE, "_ask", reply)
     service = DisplayService()

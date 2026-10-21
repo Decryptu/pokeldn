@@ -4,11 +4,13 @@ parent: Sword and Shield
 nav_order: 3
 ---
 
+<a id="trading-with-a-retail-sword-and-shield"></a>
 # Trading with a retail Sword and Shield
 
 A Sword and Shield Link Trade from the snapshot exchange to the save. Framing, content registration
 and the PK8 are on [The sync framework](swsh_protocol.md).
 
+<a id="the-sequence"></a>
 ## The sequence
 
     1  the console broadcasts its 3456-byte snapshot on protocol 0x84, port 0
@@ -29,6 +31,7 @@ Until its 0x84 is answered the console sends nothing else and retransmits it ind
 What follows the save is under [Hosting a trade](#hosting-a-trade) and
 [Host migration](#host-migration).
 
+<a id="the-trade-rpc"></a>
 ## The trade RPC
 
 The ping, block messages and the offer use port 0, the 40030 pair port 1; an answer on the wrong port
@@ -52,6 +55,7 @@ offered Pokemon for confirmation. A hosting console has not been seen sending it
   receive task and the trade (`la communication avec l'autre joueur a été interrompue`). Readers in
   `trade.py` return `None`.
 
+<a id="host-migration"></a>
 ## Host migration
 
 A hosting Sword that leaves the session requests host migration on protocol 0x18 port 1
@@ -79,6 +83,7 @@ A hosting retail Sword sends MIGRATION_START once, in two situations:
 emulated Shield joiner then shows the interrupted-communication message after its save. By default
 the host keeps the session.
 
+<a id="hosting-a-trade"></a>
 ## Hosting a trade
 
 `bin/swsh_host.py` hosts and `pokeldn/swsh/host_trade.py` leads as a hosting Sword does. A retail
@@ -118,6 +123,7 @@ The application layer, after the [ping handshake](swsh_session.md) both ways:
     120   the host pings first
     40    the ladder: host commands as element 0, the joiner's 10040 as element 1, phases 0 to 4
 
+<a id="the-trade-animation"></a>
 ## The trade animation
 
 The console plays its trade animation after its last syncCommand 40 (`3`), with no trade message
@@ -125,6 +131,7 @@ during it. A retail Sword joining `bin/swsh_host.py` started the animation 1.2 s
 syncCommand and gave the player control at about 24 s. It sent no application message until the
 player backed out of the box (box command 3).
 
+<a id="trades-in-a-row-on-one-session"></a>
 ## Trades in a row on one session
 
 A session carries one trade after another. Trade state 9 sends event 7 (success) or 8 (failure)
@@ -185,6 +192,7 @@ When a retail joiner's player presses B in the box, the console sends box comman
 network id). A searching console joins any network that passes the
 [matching rules](swsh_session.md#how-a-searching-sword-finds-a-partner).
 
+<a id="the-box-state-machine"></a>
 ## The box state machine
 
 Content 30 carries everything from the trade screen to the offer. `onBoxSyncStateCommand`
@@ -226,6 +234,7 @@ Command 3 is an opener. The per-frame update `0x010c9bb0` runs, before its state
 The setup `0x010c9280` sets `+0x418 = 1`, `+0x419 = 0x00dceea0() & 1` (from the player list):
 exactly one side sends command 3. `--box-open` sends box commands at the 0x84 ack.
 
+<a id="the-trade-state-machine"></a>
 ## The trade state machine
 
 `[session+0x140]`, range 1..10, table `0x2067b68`:
@@ -246,10 +255,12 @@ The box callback `0x010ca800` drops events unless the state is 0. State 2 ends i
 #0x32`) fails, its send `0x010d5440` does nothing and the caller sets `[session+0x144] = 1`, state 9:
 the interrupted-communication message.
 
+<a id="the-confirmation-ladder"></a>
 ## The confirmation ladder
 
 Content 40 is a barrier, one rung per command.
 
+<a id="the-phase-to-state-map"></a>
 ### The phase-to-state map
 
 The state is `delegate+0x5c`, stored only by the init (0), four sites in the machine `0x010dae70`,
@@ -274,6 +285,7 @@ the same code on `+0x50`/`+0x54` (table `0x02067f60`, offsets `0x70 0x38 0x40 0x
     0x010da6bc   add x9, x19, #8       ->  [content+0x2c0] = delegate + 8     the second interface
     0x010da6d0   str x19, [x8, #0x168] ->  the 10040 holder's listener        the first
 
+<a id="the-pump"></a>
 ### The pump
 
 `0x010db3e0`, run by content 40's tick before the machine, is a 17-state machine on
@@ -340,6 +352,7 @@ Nothing in `0x010d9000..0x010df000` stores 5 to `[content+0x80]` or non-zero to 
 Content 40's registrar stores `w2 = 1` (`0x010da6a8`) at `[+0x374]` (`0x010da800`): a station
 leaving goes 11, 12 and ends the ladder.
 
+<a id="the-phase-is-the-elements-field"></a>
 ### The phase is the element's field
 
 Nothing in `0x010c0000..0x010e0000` stores to `content+0x17c`. The registrar builds the 40040
@@ -386,6 +399,7 @@ that message is its own. The publish reaches the element's slot 0 (`0x006d5730`)
 body per station. The 149 client messages on 40040 in one completed trade all carried four-byte
 bodies; the content's other shapes are [below](#shapes-the-confirmation-content-also-sends).
 
+<a id="the-step-body"></a>
 ### The step body
 
 The four-byte body on content 40's elementId 20000, low half the phase, high half the last
@@ -408,6 +422,7 @@ Both find the own id (`[[0x2616a30]]+0xf0`) in the channel's `{ownerId, entry}` 
 
 `trade.parse_sync_step`, `SYNC_LADDER` and `sync_announced_phase` decode it.
 
+<a id="the-command"></a>
 ### The command
 
 `SyncSaveDataHolder{syncCommand{data:N}}` on 10040, reliable port 0. The handler `0x010dbc90` drops a
@@ -466,6 +481,7 @@ counts, the one on the cue `00000100` included; later, the command on the cue (`
 must not run dry. `answer_rpc` echoes the body and moves neither half; `--confirm-phase N` writes the
 low half.
 
+<a id="the-cancel-and-proceed-messages"></a>
 ### The cancel and proceed messages
 
 30040, the `SequenceDataHolder` ([the protocol page](swsh_protocol.md#the-30000-holder)), is stored
@@ -500,6 +516,7 @@ at "Communicating" before the save.
 The job queue `content+0x310` (entries `+0x350`, count `+0x358`) runs in `0x010ddf40` from the pump
 (`0x010db7d4`); a job returning true is removed. The commit empties it.
 
+<a id="shapes-the-confirmation-content-also-sends"></a>
 ### Shapes the confirmation content also sends
 
 40040 envelopes with no ownerId and bodies other than four bytes:
@@ -511,6 +528,7 @@ The job queue `content+0x310` (entries `+0x350`, count `+0x358`) runs in `0x010d
 The pair's receive `0x006d6490` drops the two-byte ones (`cmp x2,#4`); they are the shared value
 ([The phase is the element's field](#the-phase-is-the-elements-field)).
 
+<a id="the-league-card"></a>
 ## The League Card
 
 After the trade each console asks whether to keep the partner's League Card, the TrainerCard at
@@ -568,6 +586,7 @@ accepts the card pokeldn sends (0x177 = 4, 0x1B3 = 1, language 3) and 0x1B6 or 0
 DesignLevel 5, language 6, GlossIndex 9. `bin/swsh_host.py --card-set FIELD=VALUE` edits the sent card
 (`pokeldn.swsh.league_card` fields); a fresh `trainer_id` makes the console ask again.
 
+<a id="the-offered-record"></a>
 ## The offered record
 
 A built Pikachu traded to a retail Sword and back keeps every requested offer option. The returned
@@ -641,6 +660,7 @@ What a French Sword 1.3.2 does with an edited record:
 Unmeasured: what other absent species draw, and whether the name is the name field or a failed
 lookup.
 
+<a id="the-command-line-of-a-completed-trade"></a>
 ## The command line of a completed trade
 
 `swsh_connect.py --preset trade` carries the flags a trade needs; a flag given after it overrides
@@ -664,6 +684,7 @@ offered and whose ladder has not finished holds the session up to `--grace` seco
 A stored-format record with no party stats trades; the console computes the level from the
 experience.
 
+<a id="the-penalty-and-ending-a-run-cleanly"></a>
 ## The penalty, and ending a run cleanly
 
 A trade timing out with the link alive is a failed trade and locks the console out of trading
@@ -676,6 +697,7 @@ takes no trade lock and starts a new local search at once.
 pass with no new body. It stands down at phase 4, the silent teardown rung (`stall_abort()`,
 `final_phase_seen`, `LADDER_FINAL_PHASE`), so the link is never cut during the save.
 
+<a id="verifying-a-completed-trade"></a>
 ## Verifying a completed trade
 
 A received Pokemon carries `CurrentHandler` 1 at 0xC4 and the receiver's name in

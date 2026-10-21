@@ -1,6 +1,7 @@
 """Paired .bin files for comradesean's pokemon-gen3-mysterygift-tool (WONDERCARD_STRUCTURE.md):
 WonderCard.bin = u16 crc16(card) LE + u16 pad + 332-B card (336 B); Script.bin = u16
 crc16(RamScriptData and its zero pad) LE + u16 pad + 999-B RamScriptData + 1 pad (1004 B = sizeof RamScript)."""
+from pokeldn.app.i18n import message_ref as _message
 
 import os
 
@@ -23,7 +24,7 @@ SCRIPT_BIN_SIZE = 1004
 
 def build_wonder_card_bin(card):
     if len(card) not in (WONDER_CARD_SIZE, 164):
-        raise ValueError(f"card is {len(card)} B; must be 164 or {WONDER_CARD_SIZE}")
+        raise ValueError(_message('core.pokeldn.frlg.gift.gift_to_bin.card_is_value0_b_must_be_164_or_value1_7378d853', value0=len(card), value1=WONDER_CARD_SIZE))
     out = crc16(card).to_bytes(2, "little") + b"\x00\x00" + bytes(card)
     assert len(out) == BIN_HEADER_SIZE + len(card), len(out)
     return out

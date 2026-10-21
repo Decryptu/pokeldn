@@ -4,6 +4,7 @@ each answer goes.
 The manager runs on the app's UI loop: `call` brings each program's messages there, and the view (gui.popups)
 shows and hides the pop-ups and reports the buttons pressed.
 """
+from pokeldn.app.i18n import message_ref as _message
 
 from pokeldn.popup import ANSWERS, CHOICES, LIMIT, TONES
 
@@ -22,7 +23,7 @@ class Entry:
     def __init__(self, program: "Program", message: dict):
         kind, n = message.get("kind"), message.get("n")
         if kind not in ANSWERS or type(n) is not int:
-            raise ValueError("not a pop-up")
+            raise ValueError(_message('core.pokeldn.app.popups.not_a_pop_up_770b8f01'))
         self.program, self.id, self.n, self.kind = program, str(message.get("id") or ""), n, kind
         self.title = _clip(message.get("title"), CLIP["title"])
         self.text = _clip(message.get("text"), CLIP["text"])
@@ -31,10 +32,10 @@ class Entry:
         self.disagree = _clip(message.get("disagree"), CLIP["disagree"])
         options = message.get("options") if kind == "choose" else []
         if not isinstance(options, list) or kind == "choose" and not 2 <= len(options) <= CHOICES:
-            raise ValueError("not a pop-up")
+            raise ValueError(_message('core.pokeldn.app.popups.not_a_pop_up_770b8f01'))
         self.options = [_clip(o, CLIP["option"]) for o in options]
         if not self.id or kind == "confirm" and not (self.agree and self.disagree) or not all(self.options):
-            raise ValueError("not a pop-up")
+            raise ValueError(_message('core.pokeldn.app.popups.not_a_pop_up_770b8f01'))
         self.tone = message.get("tone") if message.get("tone") in TONES else "info"
 
     @property

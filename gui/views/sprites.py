@@ -6,7 +6,7 @@ from gui import theme as t
 from gui.views.widgets import PixelActivity
 from pokeldn.app.sprites import CACHE, bounds
 from pokeldn.app.sprite_forms import sprite_key
-from pokeldn.app.i18n import t as tr
+from pokeldn.app.i18n import text as tr, ref
 
 SIZE = 96   # the sprites are 96x96 pixels: shown at 1:1, or at a whole multiple, never in between
 ICON = 48   # pixelarticons are drawn on a 24 px grid: 48 is a whole multiple
@@ -35,7 +35,7 @@ class Sprite:
         CACHE.online = bool(self.app.settings.sprites)
         species = sprite_key(species, form)
         if not species:
-            self._set(self._placeholder(tr('sprites.no_sprite_for_this_form_0f3039', 'No sprite for this form.') if form else ""), update)
+            self._set(self._placeholder(tr('core.sprites.no_sprite_for_this_form_0f3039') if form else ""), update)
             return
         data = CACHE.cached(species, shiny)
         if data:
@@ -46,14 +46,14 @@ class Sprite:
             self._set(self._image(shown), update)
         if CACHE.known_missing(species, shiny) and (not shiny or CACHE.known_missing(species)):
             if not shown:
-                self._set(self._placeholder(tr('sprites.no_sprite_for_this_species_2c7400', 'No sprite for this species.')), update)
+                self._set(self._placeholder(tr('core.sprites.no_sprite_for_this_species_2c7400')), update)
             return
         if not CACHE.online:
             if not shown:
                 self._set(self._placeholder(self._why()), update)
             return
         if not shown:
-            self._set(PixelActivity(tr('sprites.loading_sprite_642b3d', 'Loading sprite')), update)
+            self._set(PixelActivity(tr('core.sprites.loading_sprite_642b3d')), update)
         WORKERS.submit(self._load, token, species, shiny, bool(shown))
 
     def _load(self, token: int, species: int | str, shiny: bool, shown: bool) -> None:
@@ -72,8 +72,8 @@ class Sprite:
 
     def _why(self) -> str:
         if not self.app.settings.sprites:
-            return tr('sprites.sprite_downloads_are_off_in_settings_bd65ba', 'Sprite downloads are off in Settings.')
-        return tr('sprites.sprite_not_available_it_downloads_once_when_the_app_is__aee73c', 'Sprite not available. It downloads once when the app is online.')
+            return tr('core.sprites.sprite_downloads_are_off_in_settings_bd65ba')
+        return tr('core.sprites.sprite_not_available_it_downloads_once_when_the_app_is__aee73c')
 
     def _image(self, data: bytes) -> ft.Control:
         if self.size >= SIZE:

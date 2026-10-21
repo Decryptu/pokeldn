@@ -1,11 +1,13 @@
 ---
 title: Mystery Gift files
 ---
+<a id="mystery-gift-files"></a>
 # Mystery Gift files
 
 A `.pokegift` file stores a complete Mystery Gift distribution for FireRed/LeafGreen or
 Sword/Shield, or an FRLG ARM console payload, with its target game and native records.
 
+<a id="desktop-app"></a>
 ## Desktop app
 
 Games, Mystery Gift is one tool per game with three ways to choose the gift, four on Sword/Shield.
@@ -108,6 +110,7 @@ The app does not modify gift files on import. Files remain at the chosen paths.
 Delivered from an opened file on retail consoles: a Celebi card and a console code file on a French
 FireRed, a Pikachu card on a Sword. Console code built in the form answered with the save's trainer id.
 
+<a id="command-line"></a>
 ## Command line
 
 Both gift launchers accept `--gift-file FILE`. Sword/Shield retains `--record` as an alias.
@@ -124,6 +127,7 @@ An FRLG gift file defines the card flag ID, scripts, questionnaire and refusal m
 Payload overrides such as `--flag-id`, `--questionnaire` and `--hunt-*` are refused with it.
 Radio, trainer identity and cartridge-selection options remain session settings.
 
+<a id="console-code"></a>
 ### Console code
 
 Export a built-in payload with its configured bytes and response settings:
@@ -168,6 +172,7 @@ Cartridge variants are enforced before code is sent. Packaging verifies structur
 authors must execute new payloads offline with `buffer_script.emulate_repeating` before a live
 run. A file hash does not prove that native code returns or leaves the save intact.
 
+<a id="native-formats"></a>
 ### Native formats
 
 The converter imports Sword/Shield WC8 records, FRLG `.wc3` files and paired FRLG files used by
@@ -224,6 +229,7 @@ CRCs and the script's unbound Mystery Gift header. The native pair cannot carry 
 trainers, Mystery Event scripts, questionnaire gates or Wonder News. Export to that pair refuses
 a distribution with those extras. `.pokegift` preserves them together.
 
+<a id="version-2"></a>
 ## Version 2
 
 The file is UTF-8 JSON with five required fields:
@@ -270,6 +276,7 @@ Hashes detect damaged bytes. They do not authenticate a distributor or prove tha
 FRLG script is safe to execute. Native script import preserves instructions and requires an
 explicit cartridge target.
 
+<a id="implementation"></a>
 ## Implementation
 
 `pokeldn.gifts` owns the envelope, validation dispatch, reader, writer and converter. Game-specific

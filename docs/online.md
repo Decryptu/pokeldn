@@ -1,6 +1,7 @@
 ---
 title: Online trade
 ---
+<a id="online-trade"></a>
 # Online trade
 
 An online trade joins two players far apart. Each player's board hosts a local trade with their own
@@ -10,6 +11,7 @@ console's. No server belongs to the project: the relays are public infrastructur
 ever handles encrypted events. Code: `pokeldn/online/`; the launcher flags are `--online` and
 `--online-code`.
 
+<a id="the-room"></a>
 ## The room
 
 Two apps meet when they run the same game with the same code. The room is
@@ -22,6 +24,7 @@ code is the console's own link code where the game has one, so a player types it
 console and once in the app. Eight digits give 10^8 rooms: anyone who types a code meets whoever
 else typed it, as in the game itself.
 
+<a id="the-relays"></a>
 ## The relays
 
 Every event is a Nostr event (NIP-01) of kind 21059, which lies in the ephemeral range 20000-29999:
@@ -55,6 +58,7 @@ Two consoles on one desk find each other directly: a Scarlet or Violet searching
 as the other, a FireRed whose player chooses Become Leader. For such a test each console takes its
 own local code (or Join Group on a board's group) and `--online-code` puts both boards in one room.
 
+<a id="stored-events"></a>
 ### Stored events
 
 Online trade stores nothing. Stored events were measured on seven relays (relay.primal.net,
@@ -71,6 +75,7 @@ kind 30402 listings (NIP-99) and a kind 1059 wrap (NIP-59), each from a fresh ke
 
 How long a relay keeps an event with no expiration is unmeasured.
 
+<a id="meeting"></a>
 ## Meeting
 
 Every event's content is AES-256-GCM under the room key `sha256("pokeldn room key|" + room)`. Inside:
@@ -87,6 +92,7 @@ longest, and holds one invite at a time for up to 6 s; an app with an invite out
 invite with `no`. A refused or unanswered invite skips that app for 10 s. Relays do not keep order,
 so the partner's first channel message can arrive before its `yes`; it counts as the `yes`.
 
+<a id="the-channel"></a>
 ## The channel
 
 A paired app's messages to its partner are sealed twice: the outer AES-GCM under the room key holds
@@ -109,6 +115,7 @@ lost before anything was offered on either side is replaced: the app looks for s
 | `done` | trade *r* completed on the local console; the next trade is *r* + 1 |
 | `ping`, `bye` | keepalive; leaving |
 
+<a id="what-crosses"></a>
 ## What crosses
 
 Only a console's offered record and the trade's state cross; never keys, saves or files. Each app
@@ -123,6 +130,7 @@ checks a received record with PKHeX before its console sees it (`pokeldn.online.
 A record a retail console traded can fail PKHeX's legality analysis, so a flag alone refuses
 nothing.
 
+<a id="in-a-launcher"></a>
 ## In a launcher
 
 A host launcher run with `--online` offers nothing of its own: its offer is the partner's console's.
@@ -164,6 +172,7 @@ Cancel left the room.
 A Sword's chained trades already offer records that differ from the snapshot's slot
 ([Sword trades](swsh_trade.md)), and the exchanged record is content 50's.
 
+<a id="the-gts"></a>
 ## The GTS
 
 The GTS trades banked Pokemon between players who are never online at the same time. A player lists
@@ -215,6 +224,7 @@ send nothing back, and a listing can show a Pokemon its lister does not hold; th
 afterwards, never before. A fair exchange with no trusted third party is impossible (Pagnia and
 Gaertner, 1999).
 
+<a id="unresolved"></a>
 ## Unresolved
 
 - How long a relay keeps a listing or a wrap beyond 24 hours. At 24.1 h all seven relays served a

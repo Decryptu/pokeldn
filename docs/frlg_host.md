@@ -4,6 +4,7 @@ parent: FireRed and LeafGreen
 nav_order: 7
 ---
 
+<a id="host-implementation"></a>
 # Host implementation
 
 `bin/frlg_trade_host.py` is the FireRed/LeafGreen Direct Corner leader: a Switch joins the host's
@@ -11,6 +12,7 @@ LDN network, Pia establishes the peer session, and Reliable carries an emulated 
 ending in the leader-side trade state machine. `bin/frlg_mg_host.py` reuses everything below the
 activity.
 
+<a id="components-and-ownership"></a>
 ## Components and ownership
 
 | component | owns |
@@ -28,6 +30,7 @@ Datagrams flow Switch, `HostTransport`, `HostPeerProtocol`, `HostSession`, `RFUL
 peer protocol, so Net/Session retries, RTT probes, retransmission and the ~59.727 Hz tick do not
 depend on a polling delay.
 
+<a id="startup-and-session-establishment"></a>
 ## Startup and session establishment
 
 1. The CLI hands `TradeRunConfig` to `HostApplication`, which starts an inactive Direct Corner
@@ -41,6 +44,7 @@ Malformed Pia, bad padding, failed authentication, incomplete Reliable tiling an
 identities are logged and ignored. A Session request is accepted only when its constant id, Pia
 variables, source IP and encrypted header agree with the current LDN peer.
 
+<a id="trade-and-room-exit-lifecycle"></a>
 ## Trade and room-exit lifecycle
 
 ```mermaid
@@ -68,6 +72,7 @@ queues the RFU disconnect. It answers the console's Session leave request with t
 ([frlg_link.md](frlg_link.md), Leaving the Pia session). An LDN leave event stops peer output at
 once.
 
+<a id="shutdown-and-cleanup"></a>
 ## Shutdown and cleanup
 
 After the disconnect: save the received Pokemon if one exists, stop and join the beacon worker,
@@ -81,6 +86,7 @@ Every host, trade, battle and Mystery Gift alike, stops when the console leaves 
 successful delivery's disconnect is sent, without waiting for the console to leave; its `--idle-timeout`
 stops it after that many seconds without Switch traffic.
 
+<a id="trainer-profile-propagation"></a>
 ## Trainer profile propagation
 
 `pokeldn.config.DEFAULT_TRAINER` is the default identity. Each CLI derives an immutable per-run
@@ -94,6 +100,7 @@ and derives every view from it:
 | LinkPlayer | `SID << 16 \| TID`, version, language, gender and progress flags; Gen III name |
 | trainer card | Gen III name; the host pads with `0xFF`, joiners keep native `0x00` |
 
+<a id="failure-handling"></a>
 ## Failure handling
 
 - Preflight rejects a radio without AP support.
@@ -111,6 +118,7 @@ and derives every view from it:
 - Output is written only for a complete received Pokemon; input `.pk3`/`.ek3` files are never
   modified.
 
+<a id="extending-the-host"></a>
 ## Extending the host
 
 Add behaviour at the lowest layer that understands it: settings in the run configuration, OS and
@@ -121,6 +129,7 @@ or command rows.
 The host serves one Switch. More peers need a `HostPeerProtocol` each (own Pia variables, nonces,
 packet ids) and a game-level RFU policy; raising the LDN participant limit is not enough.
 
+<a id="source-map"></a>
 ## Source map
 
 | source | responsibility |

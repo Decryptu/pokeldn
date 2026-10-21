@@ -4,6 +4,7 @@ parent: Hardware and setup
 nav_order: 3
 ---
 
+<a id="wi-fi-adapters"></a>
 # Wi-Fi adapters
 
 A Linux host can drive an AP-capable Wi-Fi card directly, as root, in place of the
@@ -15,6 +16,7 @@ A Linux host can drive an AP-capable Wi-Fi card directly, as root, in place of t
 | a silent host | `accept_decrypted_ccmp` unset |
 | `failed to get tx report from firmware` in `dmesg` | the host's own teardown |
 
+<a id="windows-usb-wi-fi-through-ldnrs"></a>
 ## Windows USB Wi-Fi through ldnrs
 
 Windows can use an external USB Wi-Fi adapter through
@@ -53,6 +55,7 @@ The offline checks compare scan, join and host requests against vectors generate
 Python client and exchange UDP over its raw Ethernet channel with a scripted daemon. A Windows
 adapter and retail console have not yet been tested with this backend.
 
+<a id="tested-cards"></a>
 ## Tested cards
 
 | model | type | driver | result on a tested host |
@@ -65,6 +68,7 @@ adapter and retail console have not yet been tested with this backend.
 | Intel AX200 | internal M.2 | `iwlwifi` | fails: cannot be assigned an IP |
 | Atheros AR9271 | external USB | `ath9k_htc` | fails: usually cannot be assigned an IP |
 
+<a id="host-modes"></a>
 ## Host modes
 
 `--skip-encryption` skips LDN's Python CCMP step so mac80211 or the hardware applies CCMP once;
@@ -85,6 +89,7 @@ several. An explicit `--phy phyN` always wins; keep it for one-off debugging, si
 changes on every re-enumeration. Startup prints the detected profile, the transmit and receive
 modes, and a warning if the flags differ from the proven profile.
 
+<a id="the-tp-link-archer-t3u"></a>
 ## The TP-Link Archer T3U
 
 `rtw88_8822bu` is mainline since kernel 6.11 and lists this USB id. Confirm the kernel binds it:
@@ -95,6 +100,7 @@ lsusb | grep -i 2357
 iw dev
 ```
 
+<a id="keep-networkmanager-off-the-adapter-itself"></a>
 ### Keep NetworkManager off the adapter itself
 
 NetworkManager claims the adapter's hotplugged interface (`wlx...`) and starts a background scan;
@@ -119,6 +125,7 @@ The file must sort last (`zz-`): some distributions ship a later file setting
 it, NetworkManager grabs the interface a join creates, points wpa_supplicant at it, and the join
 fails with `[Errno 114] Match already configured`.
 
+<a id="disable-the-drivers-usb-3-mode-switch"></a>
 ### Disable the driver's USB 3 mode switch
 
 `rtw88_usb` defaults to `switch_usb_mode=Y`, which re-enumerates the adapter into USB 3 mode after
@@ -145,6 +152,7 @@ cat /sys/bus/usb/devices/*/speed     # 480, not 5000
 cat /sys/bus/usb/devices/*/version   # 2.10, not 3.00
 ```
 
+<a id="bring-the-adapter-interface-down-before-a-run"></a>
 ### Bring the adapter interface down before a run
 
 An up managed interface holds the radio's channel. `transport.free_radio()` lowers it; a bare
@@ -161,6 +169,7 @@ sudo ip link set wlxXXXXXXXXXXXX down
 A kill script that brings the base interface back up makes the next launch fail with that error.
 Anything that raises it for a kernel `iw scan` must lower it again before handing over.
 
+<a id="verify"></a>
 ### Verify
 
 `./scripts/preflight_pi.sh` runs on any Linux host.

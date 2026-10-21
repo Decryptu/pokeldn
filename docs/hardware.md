@@ -4,12 +4,14 @@ nav_order: 9
 has_children: true
 ---
 
+<a id="hardware-and-setup"></a>
 # Hardware and setup
 
 The radio is an ESP32 board on USB serial running `firmware/esp32`; LDN, Pia and the games run in
 Python on the host, which needs no root and no Wi-Fi driver. Every title trades through it. A
 Linux host can instead drive an AP-capable Wi-Fi card directly; that path is legacy.
 
+<a id="pages"></a>
 ## Pages
 
 - [ESP32 radio](hardware_esp32.md): the board, its firmware, serial protocol and measurements.

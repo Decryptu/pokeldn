@@ -4,6 +4,7 @@ parent: Hardware and setup
 nav_order: 2
 ---
 
+<a id="installing-switch-keys-on-the-raspberry-pi"></a>
 # Installing Switch keys on the Raspberry Pi
 
 `prod.keys` is a credential for your own Switch, required by the live LDN host. Never commit it,
@@ -17,6 +18,7 @@ would not resolve to the login account:
 keys_path = "/home/PI_USER/.switch/prod.keys"
 ```
 
+<a id="install-locally-on-the-pi"></a>
 ## Install locally on the Pi
 
 Run the installer as the Pi login user (under `sudo` it restarts as `$SUDO_USER`). It creates
@@ -36,6 +38,7 @@ cd ~/pokeldn
 ssh pi-ldn 'cd ~/pokeldn && ./scripts/install_switch_keys.sh --stdin' < "$HOME/.switch/prod.keys"
 ```
 
+<a id="scp-through-an-ssh-alias"></a>
 ## SCP through an SSH alias
 
 Stage in a private directory, never a shared one such as `/tmp`, and remove the copy afterwards

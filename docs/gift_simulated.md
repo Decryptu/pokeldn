@@ -1,6 +1,7 @@
 ---
 title: Simulated Mystery Gifts
 ---
+<a id="simulated-mystery-gifts"></a>
 # Simulated Mystery Gifts
 
 Let's Go Pikachu/Eevee, Brilliant Diamond/Shining Pearl, Legends Arceus, Scarlet/Violet and Legends
@@ -23,6 +24,7 @@ fixed arguments and host code (Brilliant Diamond/Shining Pearl's room password),
 receiving player. It sits after the game's trades (`catalog.simulated_gift`). The player offers a
 Pokemon back for each gift and leaves after the last trade. The host keeps the session between trades.
 
+<a id="the-gifts"></a>
 ## The gifts
 
 PKHeX.Core embeds every distribution its legality check knows, one table per game, read from the
@@ -55,6 +57,7 @@ refused ([Saves a card reached](#saves-a-card-reached)). A Your OT card that nev
 the Settings trainer's language is listed as illegal, its tile saying why, and picking it says so
 and changes nothing.
 
+<a id="saves-a-card-reached"></a>
 ### Saves a card reached
 
 A Your OT copy names the receiving save as its OT, so it must be a save the card reached.
@@ -80,6 +83,7 @@ PKHeX.Core 26.8.26, the only Your OT cards of the five games that some save cann
 Go's Meltan and Melmetal (1501, 1502): a mainland China distribution, legal in Simplified Chinese
 alone (`WB7.IsMainlandChinaGift`). Every other Your OT card takes every language and version.
 
+<a id="homes-gifts"></a>
 ### HOME's gifts
 
 HOME delivers Pokemon, not cards: PKHeX's HOME cards rebuild what it hands out. The EventsGallery
@@ -113,6 +117,7 @@ Two of HOME's gifts need more than PKHeX's `ConvertToPKM` gives (`services/pkhex
   IVs and 20 in the rest (`WA9.HomeBaseIV`). PKHeX.Core 26.8.26 makes them with one perfect IV and
   five at 0, which its own check refuses, so the service sets HOME's spread (`SetHomeIVs`).
 
+<a id="the-copy-a-trade-offers"></a>
 ## The copy a trade offers
 
 Picking a gift runs `gift_event`: a fresh copy for the trainer in Settings, made on each of the game's
@@ -136,6 +141,7 @@ The console receives a traded event Pokemon:
   app's trainer from Settings;
 - with the card's trainer, or the app's, the console's player becomes its handler.
 
+<a id="made-for-the-receiving-player"></a>
 ## Made for the receiving player
 
 Made for the receiving player (`--for-receiver`, on by default in the app) makes the gift during the
@@ -156,6 +162,7 @@ At launch, the host asks `gift_event` for the card under a trainer no card names
 `pokeldn.receiver_gift`, whose `ReceiverGift` takes the place of the online partner a host already
 trades with ([In a launcher](online.md#in-a-launcher)).
 
+<a id="whose-save-it-is"></a>
 ### Whose save it is
 
 The trainer comes from the Pokemon the console offers, when its save caught it: still with its
@@ -210,6 +217,7 @@ no save like it received ([Saves a card reached](#saves-a-card-reached)): Let's 
 Melmetal (1501, 1502) for any save not in Simplified Chinese. HOME's Turtwig, Chimchar and Piplup
 are Brilliant Diamond's, whatever the save.
 
+<a id="the-trade"></a>
 ### The trade
 
 The trade runs as an online one does ([Online](online.md)):
@@ -259,6 +267,7 @@ Pokemon HOME and back named the save, and a Pokemon from a Surprise Trade named 
 back came with handler 0 and no handler name, as the save's own catch does
 ([What a trade rewrites](sv.md#what-a-trade-rewrites)): it names the save in turn.
 
+<a id="other-games"></a>
 ## Other games
 
 FireRed and LeafGreen receive event Pokemon through their own Mystery Gift:

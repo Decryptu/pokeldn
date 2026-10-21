@@ -1,3 +1,5 @@
+from pokeldn.app.i18n import message_ref as _message
+from pokeldn.app.i18n import ref as _ref
 """Save backup and restore over Mystery Gift: the console sends its whole 128 KiB save chip, or writes
 one onto it and loads it, through asm/save-backup.s and asm/save-restore.s [docs/frlg_gift.md, Save
 backup and restore]. Both servers speak MysteryGiftServer's contract to HostMysteryGiftEngine: run()
@@ -127,15 +129,15 @@ class _Server:
 
     def on_sent(self):
         if self.action is None or self.action[0] != "send":
-            raise MysteryGiftServerError("on_sent called with no send in flight")
+            raise MysteryGiftServerError(_message('core.pokeldn.frlg.gift.save_transfer.on_sent_called_with_no_send_in_flight_8d7375e9'))
         self.messages_sent += 1
         self.action = None
 
     def on_received(self, ident, payload):
         if self.action is None or self.action[0] != "recv":
-            raise MysteryGiftServerError("on_received called with no recv in flight")
+            raise MysteryGiftServerError(_message('core.pokeldn.frlg.gift.save_transfer.on_received_called_with_no_recv_in_flight_5b04d45c'))
         if ident != self.action[1]:
-            raise MysteryGiftServerError(f"expected ident {self.action[1]}, console sent {ident}")
+            raise MysteryGiftServerError(_message('core.pokeldn.frlg.gift.save_transfer.expected_ident_value0_console_sent_value1_1161803d', value0=self.action[1], value1=ident))
         self.messages_received += 1
         self._reply = bytes(payload)
         self.action = None
@@ -161,7 +163,7 @@ class _Server:
             except builds.UnknownBuild as exc:
                 refusal = str(exc)
         if refusal:
-            self.outcome = "refused"
+            self.outcome = _ref("core.pokeldn.frlg.gift.save_transfer.refused_83c874d3")
             self.info(f"Nothing was read or written: {refusal}.")
             yield self.send(MG_LINKID_CLIENT_SCRIPT, C.CLIENT_SCRIPT_CANT_ACCEPT)
             yield ("recv", MG_LINKID_READY_END)
@@ -279,7 +281,7 @@ class SaveRestoreServer(_Server):
         try:
             sav.check_restorable(self.save, japanese=build.language == "japanese")
         except sav.SaveError as exc:
-            self.outcome = "refused"
+            self.outcome = _ref("core.pokeldn.frlg.gift.save_transfer.refused_83c874d3")
             self.info(f"Nothing was written: {exc}.")
             yield from self._end(REFUSED, False, SVR_MSG_NOTHING_SENT)
             yield from self._finished()

@@ -1,3 +1,4 @@
+from pokeldn.app.i18n import message_ref as _message
 import argparse
 from dataclasses import dataclass, replace
 
@@ -50,9 +51,9 @@ class GiftRegistry:
 
     def register(self, entry):
         if not isinstance(entry, GiftCatalogEntry):
-            raise TypeError("entry must be a GiftCatalogEntry")
+            raise TypeError(_message('core.pokeldn.frlg.gift.gift_registry.entry_must_be_a_giftcatalogentry_a59b66f8'))
         if entry.slug in self._entries:
-            raise ValueError(f"duplicate Mystery Gift slug {entry.slug!r}")
+            raise ValueError(_message('core.pokeldn.frlg.gift.gift_registry.duplicate_mystery_gift_slug_value0_r_7fe48b23', value0=entry.slug))
         self._entries[entry.slug] = entry
         return entry
 
@@ -60,7 +61,7 @@ class GiftRegistry:
         validate_definition(definition)
         compiled = compile_definition(definition)
         if not isinstance(definition, WonderGift):
-            raise TypeError("definition must be a WonderGift")
+            raise TypeError(_message('core.pokeldn.frlg.gift.gift_registry.definition_must_be_a_wondergift_a9568a4d'))
         if isinstance(definition.event, GiftSpec):
             candidates = (GiftCatalogEntry(
                 slug=definition.slug,
@@ -90,7 +91,7 @@ class GiftRegistry:
         # Registration is atomic: no slot becomes visible if any slug collides.
         for candidate in candidates:
             if candidate.slug in self._entries:
-                raise ValueError(f"duplicate Mystery Gift slug {candidate.slug!r}")
+                raise ValueError(_message('core.pokeldn.frlg.gift.gift_registry.duplicate_mystery_gift_slug_value0_r_7fe48b23', value0=candidate.slug))
         for candidate in candidates:
             self._entries[candidate.slug] = candidate
         return candidates
@@ -100,7 +101,7 @@ class GiftRegistry:
             return self._entries[slug]
         except KeyError as exc:
             choices = ", ".join(self.live_choices)
-            raise ValueError(f"unknown Mystery Gift {slug!r}; choose from {choices}") from exc
+            raise ValueError(_message('core.pokeldn.frlg.gift.gift_registry.unknown_mystery_gift_value0_r_choose_from_value1_d4b98857', value0=slug, value1=choices)) from exc
 
     @property
     def live_choices(self):
@@ -117,7 +118,7 @@ class GiftRegistry:
         """`build` is the cartridge the bytes are for [builds.py]; None is French FireRed."""
         entry = self.entry(slug)
         if not entry.live:
-            raise ValueError(f"Mystery Gift {slug!r} is not available to the live host")
+            raise ValueError(_message('core.pokeldn.frlg.gift.gift_registry.mystery_gift_value0_r_is_not_available_to_the_li_1d584a82', value0=slug))
         distribution = entry.build_distribution(flag_id=flag_id, build=build)
         from pokeldn.frlg.gift import wonder_card
         return replace(distribution, card=wonder_card.for_build(distribution.card, build))
@@ -125,7 +126,7 @@ class GiftRegistry:
     def build_static(self, slug, *, flag_id=None):
         entry = self.entry(slug)
         if not entry.static:
-            raise ValueError(f"Mystery Gift {slug!r} is live-host-only")
+            raise ValueError(_message('core.pokeldn.frlg.gift.gift_registry.mystery_gift_value0_r_is_live_host_only_e4ab9913', value0=slug))
         distribution = entry.build_distribution(flag_id=flag_id)
         return distribution.card, distribution.ram_script
 

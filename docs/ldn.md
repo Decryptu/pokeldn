@@ -4,12 +4,14 @@ nav_order: 2
 has_children: true
 ---
 
+<a id="the-wireless-layer"></a>
 # The wireless layer
 
 A Switch talks to nearby consoles over **LDN**, Nintendo's local wireless, and above it over
 [Pia](pia.md), Nintendo's peer-to-peer session middleware. Both are system libraries; titles differ
 in Pia version and payloads.
 
+<a id="the-two-secrets"></a>
 ## The two secrets
 
 The LDN passphrase authenticates the 802.11 association: 16-64 bytes (checked by
@@ -26,6 +28,7 @@ Scarlet/Violet and Legends Arceus use Sword/Shield's passphrase and game key ([S
 Violet](sv.md), [Legends Arceus](pla.md)); the NintendoClients wiki's `HGHG` spelling for Arceus is
 wrong.
 
+<a id="discovery"></a>
 ## Discovery
 
 Reading an advertisement needs only `prod.keys`: `tools/ldn/ldn_scan.py` shows any session's
@@ -44,6 +47,7 @@ A host console sends beacons at 11 Mbit/s DSSS and advertisement action frames a
 (OFDM), Scarlet's Link Trade search and Sword's Mystery Gift screen alike; a DSSS-only receiver
 misses the action frames.
 
+<a id="the-advertisements-application-data"></a>
 ## The advertisement's application data
 
 Pia 5 layout, from Shining Pearl:
@@ -77,6 +81,7 @@ in place, AES-128-GCM under the game key, tag discarded, IV `key[1] key[8] key[7
 copied in by the block builder (Arceus 1.1.1 `0x6fac70`; [the setter](pla.md#the-link-code-in-the-advertisement)).
 One GCM block is an XOR with a keystream fixed by the key: the game key alone reads the password.
 
+<a id="hosting-for-an-emulator"></a>
 ## Hosting for an emulator
 
 An emulator in ldn_mitm mode associates over port 11452, then runs Pia over the LAN: no radio, no
@@ -112,6 +117,7 @@ and the plaintext of the Pia session key `AES(game_key).encrypt(ssid)`, network 
 [vendor/LDN/ldn/__init__.py:1921, :1910]. Advertising one and encrypting with another associates,
 then the console drops every datagram and times out, with no error.
 
+<a id="a-stations-broadcasts"></a>
 ## A station's broadcasts
 
 A joined console sends broadcast and multicast straight to the BSS (no DS bits; addresses group,
@@ -121,6 +127,7 @@ DS bits, and a host that does not answer the ARP is deauthenticated with reason 
 [ESP32](hardware_esp32.md) forwards these frames whole (`vendor/LDN/ldn/__init__.py`
 `_process_data_frame` decrypts them for the legacy Linux path).
 
+<a id="channels"></a>
 ## Channels
 
 LDN also allows 5 GHz channels 36/40/44/48, which the ESP32 cannot reach; FireRed/LeafGreen scans

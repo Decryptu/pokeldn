@@ -1,0 +1,13 @@
+id = "community-zh-hans"
+name = "简体中文"
+version = "2.0.0"
+api = "1.10"
+locale = "zh-Hans"
+localization_format = 1
+
+[locales.zh-Hans]
+name = "简体中文"
+strings = "locales/zh-Hans/strings.toml"
+entities = "locales/zh-Hans/entities.toml"
+documents = "locales/zh-Hans/documents.toml"
+font_family = "Noto Sans CJK SC"

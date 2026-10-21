@@ -4,6 +4,7 @@ parent: Hardware and setup
 nav_order: 5
 ---
 
+<a id="controller-board"></a>
 # Controller board
 
 The controller board is an ESP32-S3 that a Switch takes as a wired controller on its USB-C port,
@@ -11,6 +12,7 @@ or a classic ESP32 that pairs with it as a Pro Controller over Bluetooth Classic
 the console's buttons and loads macros the board plays on its own clock. Firmware `firmware/pad`, host side `pokeldn.pad`, app page [The controller](gui.md#the-controller),
 command line `tools/switch/pad.py`.
 
+<a id="which-boards"></a>
 ## Which boards
 
 | chip | controller | why |
@@ -19,6 +21,7 @@ command line `tools/switch/pad.py`.
 | classic ESP32 | wireless Pro Controller, Bluetooth Classic; the host on its USB-to-serial port | no USB device of its own; it has Bluetooth Classic, the Pro Controller's transport |
 | ESP32-C3, ESP32-C6 | none | USB Serial/JTAG is fixed-function, and their Bluetooth is LE only |
 
+<a id="the-usb-side"></a>
 ## The USB side
 
 The board enumerates as a HORI Pokken controller, `0f0d:0092`, one HID interface with an
@@ -48,6 +51,7 @@ The input report is 8 bytes, sent every millisecond the host is ready for one:
 
 Vendor byte: 1 synced, 2 advertising, 3 connected; `0x80 | step` when that step failed.
 
+<a id="cabling"></a>
 ## Cabling
 
 A USB-C to USB-C cable from the board to the console. The console is the power source and the USB
@@ -59,6 +63,7 @@ Through a USB-A port at the Mac, with "Copy to a Computer via USB Connection" op
 `057e:201d`, one MTP interface, a read-only "Album" storage and ten read-only operations
 (`0x1001`-`0x100a`).
 
+<a id="the-bluetooth-side"></a>
 ## The Bluetooth side
 
 The board advertises as `POKELDN-PAD` with one service, `7a1e0001-5d2c-4c3e-9f4b-504f4b454c44`:
@@ -104,6 +109,7 @@ still took 63 ms, and whether macOS granted the request is unknown.
 A disconnect returns the report to neutral, so a host that vanishes leaves no button held; a playing
 macro keeps going.
 
+<a id="the-serial-side"></a>
 ## The serial side
 
 The classic ESP32 stays on the computer's USB: UART0 at 921600 baud carries frames both ways
@@ -127,6 +133,7 @@ for up to 3 s. The service tries each USB serial port that is not an S3's native
 for Bluetooth LE. Hold the port with one process: every new open restarts the board and drops its
 Bluetooth link.
 
+<a id="the-bluetooth-classic-side"></a>
 ## The Bluetooth Classic side
 
 `firmware/pad/main/bt_esp32.c` registers a Bluedroid HID device: the 170-byte Pro Controller report
@@ -158,6 +165,7 @@ partition and with it the bond: pair again from Change Grip/Order.
 it returns at 0x603D; blank flash (0xFF) for the serial number and user calibration.
 `tests/test_pad_pro.py` compiles it on the host and checks every button bit and the calibration.
 
+<a id="macros"></a>
 ## Macros
 
 A macro is a JSON file with the extension `.pokemacro` (`pokeldn.pad.macro`):
@@ -191,6 +199,7 @@ The compiler expands repeats, joins neighbouring entries that hold the same repo
 over 65535 ms. A macro that expands past 8192 entries is refused. `after: 0` between two equal presses
 holds them as one. A file whose `version` is newer than the reader's is refused.
 
+<a id="the-host-side"></a>
 ## The host side
 
 `pokeldn.pad.service` holds the Bluetooth link and takes one JSON request per line on
@@ -215,6 +224,7 @@ macOS aborts a process that opens Bluetooth when its responsible app declares no
 `pad.py --make-app PATH` writes a small app that runs the service; `open` it once and allow
 Bluetooth, and later `pad.py` calls and a source checkout's app use it.
 
+<a id="flashing-again"></a>
 ## Flashing again
 
 The pad owns the USB port, so esptool cannot reset it into the loader. The download command, the
@@ -240,6 +250,7 @@ the controller firmware.
 Trap: the USB loop's delay is zero ticks at FreeRTOS's default 100 Hz and starves NimBLE; the
 firmware builds at 1000 Hz.
 
+<a id="build"></a>
 ## Build
 
     . scratchpad/esp/env.sh
@@ -248,6 +259,7 @@ firmware builds at 1000 Hz.
 TinyUSB comes from the component manager (`espressif/esp_tinyusb` 2.4.0). The release builds
 `pokeldn-pad-s3.bin` beside the radio images.
 
+<a id="unresolved"></a>
 ## Unresolved
 
 - Whether a Switch 2 pairs with the classic ESP32 firmware; only a Switch Lite was measured.

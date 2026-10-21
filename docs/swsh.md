@@ -4,6 +4,7 @@ nav_order: 6
 has_children: true
 ---
 
+<a id="sword-and-shield"></a>
 # Sword and Shield
 
 Pokemon Sword and Shield run C++ game code with protocol-buffer messages, over a generic
@@ -23,6 +24,7 @@ A retail Sword has traded with pokeldn in both roles ([Hosting a trade](swsh_tra
 | [Mystery Gift](swsh_gift.md) | the Mystery Gift menu's local-wireless branch |
 | [Max Raid Battles](swsh_raid.md) | the den lobby, its advertisement, hosting a raid one or several consoles join, the battle a guest fights, Dynamax Adventures, leaving |
 
+<a id="sources"></a>
 ## Sources
 
 Ids, offsets and addresses come from Shield's `main` or the air unless a section names a client.
@@ -31,6 +33,7 @@ capture (messages 97 and 60000 match pokeldn's byte for byte). Four clients spea
 `kwsch/PokePiaSWSH`, `lincoln-lm/swsh-lan-client`, `andyjusa/nxldn-lab`, `Slashcash/PSD`, from the
 Pia station handshake up; none covers LDN or host migration.
 
+<a id="the-field-scripts"></a>
 ## The field scripts
 
 `bin/script/amx/*.amx` (953 in 1.3.2) are Pawn 3.x with 64-bit cells: magic `0xF1E1`, version 10,
@@ -51,6 +54,7 @@ Variables: `WorkGet`/`WorkSet` (hashed 64-bit keys), `TempWorkGet`/`TempWorkSet`
 fills before the script resumes). A call is `PUSH` per argument, right to left, then
 `SYSREQ.N native, bytes`.
 
+<a id="unresolved"></a>
 ## Unresolved
 
 - [Player profile](swsh_protocol.md#the-player-profile): which role sample states 3 and 4 stand for

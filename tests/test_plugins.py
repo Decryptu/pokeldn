@@ -170,6 +170,18 @@ def test_a_broken_plugin_keeps_its_error_and_adds_nothing(isolated, tmp_path, mo
     assert plugins.radios() == []
 
 
+def test_failed_plugin_discards_its_localization_catalog(isolated, tmp_path, monkeypatch):
+    from pokeldn.app import i18n
+    broken = make(tmp_path, "broken", '''
+def register(api):
+    api.register_localization({"broken.title": "Temporary title"})
+    raise ValueError("half done")
+''')
+    monkeypatch.setenv("POKELDN_PLUGINS", str(broken))
+    assert "half done" in plugins.load()[0].error
+    assert "broken.title" not in i18n._catalog
+
+
 KIT = ROOT / "examples" / "plugins" / "test_kit"
 KIT_VERSION = re.search(r'^version = "(.+)"', (KIT / "plugin.toml").read_text(), re.M)[1]
 HELLO = ROOT / "examples" / "plugins" / "hello"

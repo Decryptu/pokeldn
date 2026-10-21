@@ -4,11 +4,13 @@ parent: Let's Go Pikachu and Eevee
 nav_order: 1
 ---
 
+<a id="the-cartridge-its-keys-and-the-session"></a>
 # The cartridge, its keys, and the session
 
 Addresses are offsets into Let's Go Pikachu 1.0.2's decompressed `main` as `tools/switch/nso_read.py`
 lays it out: text `0..0xd32ba8`, rodata from `0xd33000`, data from `0x1527000`.
 
+<a id="what-the-title-is-built-from"></a>
 ## What the title is built from
 
 The update NSP carries the Program NCA `2b7730a9e56498bbafac2002d4908c6b` (title `010003f003a34000`,
@@ -28,6 +30,7 @@ carries the `Ldn*` and `Local*` families (`LdnCreateNetworkJob`, `LdnCreateSessi
 `0x15fa1e0..0x15fa2a8`. Above Pia, `gflnet3` bundles protocol buffers
 (`lib/gflnet3/external/include/google/protobuf/`).
 
+<a id="the-ldn-passphrase"></a>
 ## The LDN passphrase
 
     W3GoSMEn7RIIUQ89rzqBHGhGferRNb7K18ZBq2aNuj8Us9RO9Q9JYyGOZlLy8MYL
@@ -47,6 +50,7 @@ literal length `0x40`:
 its length at +0x104 and builds the `nn::ldn::SecurityConfig` from them before
 `nn::ldn::CreateNetwork` (`0x5ce988`, PLT stub `0xd31c78`).
 
+<a id="the-pia-game-key"></a>
 ## The Pia game key
 
     p1frXqxmeCZWFv0X
@@ -60,6 +64,7 @@ and Scarlet/Violet. One call site stores it into a crypto setting, conditional o
     0x0011a380  ldp  x10, x9, [x9]
     0x0011a384  stp  x10, x9, [x8]          x8 = setting + 0x24c
 
+<a id="the-pia-header"></a>
 ## The Pia header
 
 Version 3 (the wiki's Pia 5.11-5.17). The initializer `0xd122d4` writes magic and version as one
@@ -76,6 +81,7 @@ Version 3 (the wiki's Pia 5.11-5.17). The initializer `0xd122d4` writes magic an
 
 The wiki's 5.11-5.21 layout, Sword's version 4 but for the version byte; `pokeldn/ldn/pia4.py`.
 
+<a id="the-message-framing"></a>
 ## The message framing
 
 A fixed 22-byte message header (Pia 5.11-5.12; 5.18 and later are presence-flagged).
@@ -93,6 +99,7 @@ writer `0x5aeb00` stores a literal 1 at byte 1.
 
 `pokeldn/ldn/pia3.py` implements it over pia4's header.
 
+<a id="the-session-key"></a>
 ## The session key
 
 `LocalProtocol`'s derivation `0x5cd560` is BDSP's and Sword's: seed a SEAD xorshift128 from one
@@ -115,6 +122,7 @@ The seed is the session param at +0x0C. 392 of 392 datagrams from a Let's Go Pik
 authenticated under `ldn_session_key(game key, session param)` with the pia4 IV (three bytes of
 `crc32(network id little-endian || host MAC)`, a source-id byte 0, the eight-byte header nonce).
 
+<a id="the-link-code"></a>
 ## The link code
 
 The link code is the NetworkInfo scene id; the password CRC32 at application-data +4 stays 0 and
@@ -143,6 +151,7 @@ A searching console joins another network only when it advertises the console's 
 console's own channel. `bin/lgpe_host.py --code NAMES` hosts on the code's channel (`--channel auto` scans for the console's network instead); Let's Go Pikachu and Let's
 Go Eevee join it. `bin/lgpe_join.py` sends no code, and a console host trades with it.
 
+<a id="the-local-protocol-measured"></a>
 ## The Local Protocol, measured
 
 The session state goes out on Pia protocol 0x24, port 0, as on BDSP and Sword: the wiki's 5.7-5.45
@@ -155,6 +164,7 @@ The body carries the host constant id little-endian (`000048f120229beb`,
 `station_protocol.ldn_constant_id` over MAC `48:f1:eb:20:9b:22`); the Pia message header carries it
 big-endian as the source (`eb9b2220f1480000`), as on Sword.
 
+<a id="the-station-protocol-for-a-mesh-join"></a>
 ## The station protocol, for a mesh join
 
 A connection request on protocol 0x14, then a mesh join on 0x18. The connection-request handler
@@ -191,6 +201,7 @@ The connection-response parser `0x5b9270` reads `[1]` the result, `[5]` a big-en
 `[0xD]` a big-endian u32 against its own ids, and `[0x37]` a gate byte the result-0 path drops when
 5 or more.
 
+<a id="the-connection-response-a-station-sends"></a>
 ### The connection response a station sends
 
 0x348 bytes (the parser accepts 0x3C):
@@ -215,6 +226,7 @@ A joiner's station location in the connection request is 36 bytes: an empty publ
 zero port) and zero NAT flags and location, `station_location(..., public=False, nat_flags=0,
 nat_location=0)`.
 
+<a id="joining-the-mesh"></a>
 ## Joining the mesh
 
 A mesh join request on 0x18 (`mesh_protocol.build_join_request`, type 1, local station index 253, a
@@ -227,6 +239,7 @@ The host then streams the Local Protocol update-session (0x24, acked with a 0x21
 Clock (0x1C) and Clone (0x73). A joiner answers each and sends its own RTT and sync clock requests
 from the moment it is seated.
 
+<a id="the-rtt-protocol-0x58-version-3"></a>
 ## The RTT Protocol (0x58), version 3
 
 Sixteen bytes: the kind a big-endian u32 at [0] (a byte on Sword), the sender's 19.2 MHz system tick
@@ -238,6 +251,7 @@ as a u64 at [8]. A response copies the tick with kind 1. Each station requests a
 `rtt_protocol.build_v3` and `response_for_v3`; `bin/lgpe_join.py --connect` runs both directions
 (`--no-rtt` turns them off).
 
+<a id="the-sync-clock-protocol-0x1c"></a>
 ## The Sync Clock Protocol (0x1C)
 
 A monotonic mesh clock the host controls (wiki Sync-Clock-Protocol). A station requests every two
@@ -252,6 +266,7 @@ stop).
 
 Keep-alive is protocol 0x08, no body, answered in kind.
 
+<a id="the-reliable-protocol-0x7c-where-the-games-data-is"></a>
 ## The Reliable Protocol (0x7C), where the game's data is
 
 Pia 5.11's header is 24 bytes (9 or 13 in 5.29-5.43); 32-bit sequence ids start at 0xFFFFF82F on
@@ -269,6 +284,7 @@ both stations.
 An acknowledgement is the header alone, stream and size zero. `pokeldn.ldn.reliable3`. The payload
 is the game's framing ("The game's messages on the reliable protocol" below).
 
+<a id="the-clone-protocol-0x73"></a>
 ## The Clone Protocol (0x73)
 
 `nn::pia::clone::CloneProtocol` (GetProtocolId `0x158aab8`; SDK string `PiaCommon-5_11_4`) carries
@@ -277,6 +293,7 @@ starts with version 3, the type, and the sender's frame counter as a big-endian 
 second from the sender's Pia session start). Measured between two Let's Go Pikachu 1.0.2 endpoints
 under Ryujinx over ldn_mitm; both sides run the same state machine.
 
+<a id="clock-sync-the-first-two-seconds"></a>
 ### Clock sync, the first two seconds
 
 Both sides send clock requests (type 0x11, 18 bytes, serializer `0x51f9b0`) about 5 per second and
@@ -300,6 +317,7 @@ answer the other's with a reply (type 0x21, 22 bytes, `0x51fab0`).
 - The clone clock is milliseconds since the sender's clone protocol started (element +0x14), about
   60 ms before its first request. A reply with the clock zero leaves a retail console requesting.
 
+<a id="participate"></a>
 ### Participate
 
 After ten answered requests the joiner sends a participate (type 0x31, 10 bytes, serializer
@@ -307,6 +325,7 @@ After ten answered requests the joiner sends a participate (type 0x31, 10 bytes,
 then sends its own participate, which the joiner acknowledges with 0x33, 0x0001.
 From the first participate, clock replies are type 0x22.
 
+<a id="clone-elements"></a>
 ### Clone elements
 
 A clone is keyed by a clone type (1 to 4), the owning station (0xFD when none) and a 32-bit clone
@@ -410,6 +429,7 @@ word `+0x40`:
 In state `0x22` the protocol waits for the mask to empty before moving to `0x31`
 (`0x51b074..0x51b084`).
 
+<a id="the-clone-0-pair"></a>
 ### The clone 0 pair
 
 The owner of clone 0 on clone type 3 announces it with an 0xa1 and an 0xb1; the other station
@@ -422,6 +442,7 @@ connecté" with nothing past clock traffic. `bin/lgpe_host.py` repeats the pair 
 first pair (`--ignore-clone0-answer` on the launcher ignores it, test only) answers the repeat with
 0xa2.
 
+<a id="the-games-messages-on-the-reliable-protocol"></a>
 ### The game's messages on the reliable protocol
 
 Every message on `0x7c` is a 16-byte header and a body:
@@ -550,6 +571,7 @@ with the constant. `pokeldn.lgpe.pb7` round-trips a captured offer byte for byte
 The state word is byte 12 of the `f3` state data and walks 0, 1, 2 on every clone a station owns. A
 station that publishes 2 and sends its kind 2 waits for the peer's kind 2.
 
+<a id="what-gates-the-games-own-first-message"></a>
 ### What gates the game's own first message
 
 The link-trade object's per-frame state machine is `0x349200` (jump table `0xf4e994` on +0x68).
@@ -573,6 +595,7 @@ from that station (`0x51c52c`'s jump table `0xf76c38` into `0x522350`).
 State 7 stores each arriving first message at `this + node * 0x1C8 + 0xC0` and counts them at
 `this+0x470`; its own loops back, so a silent partner leaves the count at one.
 
+<a id="hosting-a-retail-console-to-its-trade-screen"></a>
 ### Hosting a retail console to its trade screen
 
 What a console joining a hosted session needs, above the joiner's layers:
@@ -594,6 +617,7 @@ What a console joining a hosted session needs, above the joiner's layers:
 - An offer is answered under the step it carried; answering under a fresh step opens a new round
   and the stations answer each other without end.
 
+<a id="the-two-clone-records-a-trade-walks"></a>
 ### The two clone records a trade walks
 
 The trade object publishes its state on its own clone and reads the peer's. The clone type 2 copy's
@@ -696,6 +720,7 @@ A trade between two retail consoles carries no clone data on clone types 4 and 1
 direction; a host publishing none there leaves a joining console short of the gate `0x11b080`, on
 its search screen.
 
+<a id="the-trade-animation"></a>
 ### The trade animation
 
 The console plays its trade animation after its step `0e` and sends no trade payload during it.
@@ -703,6 +728,7 @@ With a retail Let's Go hosting `bin/lgpe_join.py`, from that step: the animation
 1.7 s, the received Pokemon appears at about 15.3 s (hand-pressed, up to 2 s late), the console's
 type 4 payload (248 bytes) arrives at 27.0 s and the player has control at about 28.8 s.
 
+<a id="the-commit-and-the-trade-lock"></a>
 ### The commit and the trade lock
 
 The trade lock is a u32 countdown in seconds in the save's MyStatus block. A trade's save sets it to
@@ -917,6 +943,7 @@ For a peer:
 - Any network error recorded between the end of state 0 and the 2 aborts the commit: the save keeps
   600 and the console ends on the fatal error screen.
 
+<a id="the-trade-dispatcher"></a>
 ### The trade dispatcher
 
 `0x886530` runs the link from the menu to its exit, switching on `[obj+0x68]` through the table
@@ -971,6 +998,7 @@ trade's sync save (mode 3) adds to `local_trade_cnt` (`0x1dc`) or `net_trade_cnt
 same flag (`0x838828..0x838840`). The link menu numbers its choices differently: choice 1, the trade,
 stores 3 (`0x97845c`), choice 2 stores 1 and choice 3 stores 2 (`0x978504..0x978514`).
 
+<a id="the-battle-scenes-channel"></a>
 ### The battle scene's channel
 
 The senders in `0x9dce94..0x9dede8`, the only non-zero tags, keep their state in a global block at
@@ -988,6 +1016,7 @@ object `[[[0x15faec8]]+0x50]` is in state 8 (`0x9dc61c..0x9dc634`); `0x9dce10` r
 while `0x1640eb0` is null, and readiness `0x9dce30` returns 1 with no channel, so a wild battle
 registers none. The teardown (`0x9d3df0` -> `0x9dcce0`) clears the pointer.
 
+<a id="what-a-hosted-trade-puts-in-the-save"></a>
 ### What a hosted trade puts in the save
 
 The offered box structure lands in the save as sent, unchecked. A record carrying these values
@@ -997,6 +1026,7 @@ as 083154, `(sid << 16 | tid) % 1000000`), nature 10, genderless, 31 in every IV
 437 at level 100, the game's maximum), one move, met level 30, met location 4 (Route 2), language 2,
 OT `POKELDN`. Offsets are PKHeX's PB7 map.
 
+<a id="a-joiner-leaving"></a>
 ### A joiner leaving
 
 A console backing out with Retour publishes state 4 on the offered clone, argument 0 under a fresh
@@ -1043,6 +1073,7 @@ gives every record on a clone a clock above the last.
 not lift the trade lock, which the sync save wrote before the commit clone vote (state 0 of
 `0x838070`).
 
+<a id="a-host-leaving"></a>
 ### A host leaving
 
 A console host whose player backs out publishes state 4, argument 3, releases its clones (0x83,
@@ -1062,6 +1093,7 @@ first 0x13 34 ms later; a retail host answered the same way sent its first 0x13 
 migration start. `bin/lgpe_join.py` sends both answers and leaves the network on the first
 0x13 (`pokeldn.lgpe.leave.host_departure`).
 
+<a id="the-wait-before-leaving"></a>
 ### The wait before leaving
 
 The game's teardown step `0x116bc0` (state 8 of the link object's update `0x4d9b70`) ends the clone
@@ -1080,6 +1112,7 @@ on clone type 2 for every clone, a 0x32, and the leave request 0.11 and 0.29 s a
 last release; a console host sends its migration start 0.13 s after its last release. `pokeldn.ldn.clone.Participant` acks
 after the peer's clone 0 release.
 
+<a id="what-a-host-does-with-a-joiner-that-holds-no-clone-data"></a>
 ### What a host does with a joiner that holds no clone data
 
 A console host given a 0x3C-byte connection response (no network id, no player) answers a clone
@@ -1087,6 +1120,7 @@ announcement and announces its own, never sends the clone's data (no 0xb1), and 
 session (0x32) a few seconds after the mesh join. A joiner that sent a full response gets the clone's
 data after its participate (1.1 s measured).
 
+<a id="past-the-gate"></a>
 ### Past the gate
 
 A host goes from state 4 to the settled state 8 once the gate passes: state 6 sends the first message (0x168 bytes from `obj+0x450`), and state 7
@@ -1102,6 +1136,7 @@ In a working session the kind 1 messages are acknowledged, clone ids 2 and 3 are
 kind 2 messages follow (70 ms, 3.2 s and 0.4 s apart). State 8 is terminal
 for `0x349200`: while the mode word `+0x8C` stays 0, clone ids 2 and 3 are never announced.
 
+<a id="the-state-machine-above-the-gate"></a>
 ### The state machine above the gate
 
 State 3 of `0x349200` allocates the session sub-object at `+0xB8`, calls `0x11aec0` through the thunk
@@ -1126,6 +1161,7 @@ console host emits the triple from the trade state machine for clone id 1 only; 
 from the second publisher (`0x349a90`, below). Joining, it emits no `0x81`, only the take-over
 burst. A station runs `0x11aec0` once per clone id, 1 then 2 and 3.
 
+<a id="the-second-publisher-and-its-mode-word"></a>
 ### The second publisher and its mode word
 
 `0x11aec0` has two callers. The trade state machine calls it once, in state 3, for clone id 1. Ids 2
@@ -1145,6 +1181,7 @@ trade, the three setters and `0x5a733c` never fire while the mode word moves fro
 method stores to `+0x8C`, and none of the sixteen constant stores to `+0x8C` in `.text` writes 3: the
 writer is unknown.
 
+<a id="the-sequence-a-take-over-has-to-carry"></a>
 ### The sequence a take-over has to carry
 
 A station announcing a clone allocates a sequence and stamps it on its announcement. `0x520c30`, the
@@ -1186,6 +1223,7 @@ and was refused: the gate `0x11b080` stays false and the state word never leaves
 the peer's first clone type 2 publish and acknowledging the rest returns it to re-announcing under a
 fresh sequence each time.
 
+<a id="the-take-over-exchange-a-joiner-runs-once-per-clone"></a>
 ### The take-over exchange a joiner runs once per clone
 
 A take-over is an ownership transfer: `0x520d30` cancels the peer's announcement and the joiner
@@ -1225,6 +1263,7 @@ A retail console answered the first peer-only announcements for commit clones 4,
 `bin/lgpe_host.py` and `bin/lgpe_join.py`, test only), the resend 100 ms later draws the console's
 `0x82` and three trades complete in each role.
 
+<a id="what-the-announces-destination-field-decides"></a>
 ### What the announce's destination field decides
 
 The command header `0x51f820` lays out `+0x10` as a station bitmap. An 0x81 announcing a clone for

@@ -1,6 +1,7 @@
 """The 444-byte struct WonderNews [decomp:include/global.h:646] and the news the host can serve.
 ValidateWonderNews checks only id != 0; any changed byte makes old news new [docs/frlg_gift.md].
 """
+from pokeldn.app.i18n import message_ref as _message
 
 from dataclasses import dataclass
 
@@ -32,15 +33,15 @@ def build_wonder_news(*, news_id, title="", body=(), send_type=SEND_TYPE_ALLOWED
                       bg_type=0):
     """id must be non-zero or ValidateWonderNews rejects the news and the console keeps nothing."""
     if not 0 < news_id <= 0xFFFF:
-        raise ValueError("news id must be 1..65535; 0 fails ValidateWonderNews")
+        raise ValueError(_message('core.pokeldn.frlg.gift.wonder_news.news_id_must_be_1_65535_0_fails_validatewonderne_1198ee11'))
     if send_type not in (SEND_TYPE_DISALLOWED, SEND_TYPE_ALLOWED, SEND_TYPE_ALLOWED_ALWAYS):
-        raise ValueError("sendType must be 0, 1 or 2")
+        raise ValueError(_message('core.pokeldn.frlg.gift.wonder_news.sendtype_must_be_0_1_or_2_2af371a7'))
     if not 0 <= bg_type < NUM_WONDER_BGS:
-        raise ValueError(f"bgType must be 0..{NUM_WONDER_BGS - 1}")
+        raise ValueError(_message('core.pokeldn.frlg.gift.wonder_news.bgtype_must_be_0_value0_969ebb6d', value0=NUM_WONDER_BGS - 1))
     body = list(body)
     if len(body) > WONDER_NEWS_BODY_TEXT_LINES:
         raise ValueError(
-            f"Wonder News carries {WONDER_NEWS_BODY_TEXT_LINES} body lines, got {len(body)}")
+            _message('core.pokeldn.frlg.gift.wonder_news.wonder_news_carries_value0_body_lines_got_value1_5c4e818a', value0=WONDER_NEWS_BODY_TEXT_LINES, value1=len(body)))
     out = bytearray()
     out += (news_id & 0xFFFF).to_bytes(2, "little")     # +0
     out += bytes([send_type & 0xFF, bg_type & 0xFF])    # +2, +3
@@ -76,7 +77,7 @@ def parse(news):
     news = bytes(news)
     width = 20 if len(news) == JAPANESE_WONDER_NEWS_SIZE else WONDER_NEWS_TEXT_LENGTH
     if len(news) not in (WONDER_NEWS_SIZE, JAPANESE_WONDER_NEWS_SIZE):
-        raise ValueError(f"Wonder News is {len(news)} bytes; expected 444 or 224")
+        raise ValueError(_message('core.pokeldn.frlg.gift.wonder_news.wonder_news_is_value0_bytes_expected_444_or_224_e14979d7', value0=len(news)))
     language = 1 if width == 20 else None
     return {"id": int.from_bytes(news[:2], "little"), "send_type": news[2], "bg_type": news[3],
             "title": charmap.decode(news[4:4 + width], language=language),
@@ -87,8 +88,7 @@ def parse(news):
 def describe(news):
     parsed = parse(news)
     lines = tuple(line for line in parsed["body"] if line)
-    return (f"news id {parsed['id']}, sendType {parsed['send_type']}, bg {parsed['bg_type']}, "
-            f"title {parsed['title']!r}, {len(lines)} body line(s)")
+    return (_message('core.pokeldn.frlg.gift.wonder_news.news_id_value0_sendtype_value1_bg_value2_title_v_3815d5ea', value0=parsed['id'], value1=parsed['send_type'], value2=parsed['bg_type'], value3=parsed['title'], value4=len(lines)))
 
 
 @dataclass(frozen=True)
@@ -159,7 +159,7 @@ def build_news(slug, *, news_id=None):
         spec = NEWS_REGISTRY[slug]
     except KeyError as exc:
         choices = ", ".join(NEWS_REGISTRY)
-        raise ValueError(f"unknown Wonder News {slug!r}; choose from {choices}") from exc
+        raise ValueError(_message('core.pokeldn.frlg.gift.wonder_news.unknown_wonder_news_value0_r_choose_from_value1_0c11373c', value0=slug, value1=choices)) from exc
     return spec.build(news_id=news_id)
 
 

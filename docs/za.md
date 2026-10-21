@@ -4,12 +4,14 @@ nav_order: 10
 has_children: false
 ---
 
+<a id="legends-z-a"></a>
 # Legends Z-A
 
 Pokemon Legends: Z-A (title id `0100f43008c44000`) is a native Switch title with Pia statically
 linked into `main`. Its packet header is version 16, the one `pokeldn.ldn.crypto` writes for the
 GBA application.
 
+<a id="the-dump"></a>
 ## The dump
 
 Base application `v0` (4.3 GB), update `0100f43008c44800` `v393216` (2.1 GB), Mega Dimension DLC
@@ -27,6 +29,7 @@ addresses on this page are offsets into that image. The Control RomFS data is at
 section counter `0000000000000005`; `control.nacp` gives display version 2.0.2 and eight local
 communication ids at `+0x30b0`, all `0100f43008c44000`.
 
+<a id="the-wireless-layer"></a>
 ## The wireless layer
 
 | value | | where |
@@ -36,6 +39,7 @@ communication ids at `+0x30b0`, all `0100f43008c44000`.
 
 Both match the [NintendoClients wiki](https://github.com/kinnay/NintendoClients/wiki/Pia-Game-Keys).
 
+<a id="the-packet-header"></a>
 ## The packet header
 
 Header version 16, Pia 6.39 to 7.2 in the wiki's table. The layout is
@@ -51,6 +55,7 @@ encrypted; see [Pia](pia.md)).
 The object keeps nonce and tag eight bytes above their wire offsets, as Legends Arceus's version-11
 header does in `pokeldn.ldn.pia6`.
 
+<a id="the-advertisement"></a>
 ## The advertisement
 
 A console on the local search screen hosts a network and advertises 112 bytes: the 0x5C Pia system
@@ -75,6 +80,7 @@ Legends Arceus's ([pla.md](pla.md), The link code in the advertisement); Z-A's g
 mask `1068a742ac3a8787ab6066a161f5d5e1`. `pokeldn.za.build_advertise_data(code)` reproduces each
 advertisement from the code alone; `tests/test_za.py` pins both.
 
+<a id="the-seat"></a>
 ## The seat
 
 A searching console accepts a station and speaks Pia at once: first datagram (109 bytes) at 0.02 s.
@@ -112,6 +118,7 @@ The deadline starts before the LDN connect completes, so the wait is 0.06 s shor
 LdnProtocol's timing slots 0x1b0 to 0x1f8 return 6000, 1000, 500, 10500, 4500, 8000, 20000, 5000,
 5000 and 10000 ms; only 0x1d8 and 0x1e8 are identified.
 
+<a id="the-session-on-a-retail-console"></a>
 ## The session, on a retail console
 
 A station sending a reference joiner's Session join is admitted at once. The console's sends:
@@ -151,6 +158,7 @@ every 0.5 s from 19.31 s, Net 0x40 every 0.3 s from 23.31 s, the last packet at 
 partner found" on the console. The 27 s ending is this sequence: a joiner that sends nothing from
 its own variable id for 10 s.
 
+<a id="the-games-own-exchange"></a>
 ## The game's own exchange
 
 Above Pia the game runs on Reliable (protocol 10) and Broadcast Reliable (protocol 11), the
@@ -217,6 +225,7 @@ sent with that stale 1403 leaves a retail console on its search screen: it sends
 but never its 0100. `pokeldn.za.reference.sync_message` builds the 1403 for the
 identity sent.
 
+<a id="the-trade-commands"></a>
 ### The trade commands
 
 The trade session setup `0xca2928` subscribes five command types (named by ctti strings) on the
@@ -308,6 +317,7 @@ handlers reject a round below +0x152) and the console waits on "Communicating"; 
 trade. `pokeldn.za.host`
 takes the round from the console's own `0102`, `0103` and `0104`.
 
+<a id="what-a-joiner-owes-on-those-streams"></a>
 ### What a joiner owes on those streams
 
 Measured against a reference pair and an emulated host's acknowledgements:
@@ -333,6 +343,7 @@ Measured against a reference pair and an emulated host's acknowledgements:
 The LDN NodeInfo local communication version (+0x2E of 0x40 bytes) is 6 on reference stations; 0
 is treated the same.
 
+<a id="the-kick"></a>
 ### The kick
 
 A host kicks a station whose own variable id has sourced no packet for 10 s, whatever its player's
@@ -362,6 +373,7 @@ session+0x18 is the `SessionProtocol` (0xd8e8 bytes, vtable `0x3c8db18`, protoco
 by `0x253f284` at `0x253cacc` in the Session initialisation `0x253c880`, which also stores
 framework+0xb8 at session+0x30.
 
+<a id="the-keepalive"></a>
 ### The keepalive
 
 The setting's +0x290 is a send-silence limit in ms (`0x257d12c` -> `0x256a238`; negative fails with
@@ -382,6 +394,7 @@ bucket, so an unread message is reclaimed at the start of the next receive pass 
 messages cannot accumulate. A full node pool (`0x10c10`) drops the rest of the packet. Byte +0xa0 marks a station being kicked, set only by
 `0x2577094` from `0x255b4a0` and a non-host's drain `0x2548b60`.
 
+<a id="packet-ids"></a>
 ### Packet ids
 
 Packet ids run on two counters per sender: one for destination 0x0001, one for every other
@@ -405,6 +418,7 @@ The Net 0x51 handler `0x2504100` reads no header field: it deserializes (`0x250f
 and type 0x51 (`0x2504150`), matches the source against its stations (`0x250c60c`, `0x24fba00`) and
 passes station and the acknowledged sequence at message +4 to `0x250daa8`.
 
+<a id="the-rest-of-the-join"></a>
 ### The rest of the join
 
 - Net: the connection status 0x11 is answered with 0x12, the update property 0x50 with 0x51.
@@ -415,6 +429,7 @@ passes station and the acknowledged sequence at message +4 to `0x250daa8`.
 A host that accepts update sequence 1 sends its selection record about 50 ms later (1.2 and 1.25 s
 after the seat, measured) and moves to its trade box.
 
+<a id="the-trade-on-protocol-10"></a>
 ### The trade on protocol 10
 
 Each side sends a 354-byte `0101` after the selection records (about 2.5 s after, measured). The
@@ -429,6 +444,7 @@ exchange worker's random wait ([The trade commands](#the-trade-commands)). The h
 `0000000202` on protocol 11 and answers each step with `0201b901XX` under its prefix.
 `bin/za_join.py --trade-offer` runs the joiner.
 
+<a id="the-offered-pokemon"></a>
 ## The offered Pokemon
 
 The offer's record is the generation 8 and 9 entity: four 0x50-byte blocks shuffled by the
@@ -458,6 +474,7 @@ A composed Glaceon (experience 125,000, language 3, met 2025-10-16, scale 128) s
 origin France, size class M. A record the save already holds trades again under a new encryption
 constant and PID with the same `hi ^ lo` (`--fresh-pid`).
 
+<a id="the-record-in-memory"></a>
 ### The record in memory
 
 Every field accessor takes the record's accessor object in `x0`:
@@ -486,6 +503,7 @@ encrypted range (`0xe485f0` tests it). A getter finding it set, the species gett
 with 1 at `0x3f7ed98`+2, language (0xd5) `[0x3f0784()+0x378]` and ball (0x124) 4. The serializers
 `0xe47a20` (0x158 bytes) and `0xe47c60` (0x148) write the encrypted, shuffled form.
 
+<a id="the-fields-main-202-reads-and-writes"></a>
 ### The fields main 2.0.2 reads and writes
 
 Offsets in the decrypted, unshuffled record. A name the code does not show is PKHeX's
@@ -564,6 +582,7 @@ In Scarlet's layout (kept by PA9.cs) they hold contest stats, Pokerus, ribbons a
 
 0x4b and 0x156 are zero on every console-made record.
 
+<a id="per-move-flags"></a>
 #### Per-move flags
 
 PA9.cs's plus move record: 360 bits, bit k at 0xd6 + k/8 for k below 264, at 0x94 + (k - 264)/8
@@ -627,6 +646,7 @@ Console-made records against {unlock level <= level}:
 Glaceon also carries Eevee's 36, 38, 129, 204 and 273 (254 entries in its own learnset); Roserade
 carries 40, a 253 entry of Roselia (315).
 
+<a id="the-ability"></a>
 #### The ability
 
 Scarlet's u16 at 0x14, slot bits at 0x16. GetAbility `0xe43bec` returns the stored value below 299
@@ -647,6 +667,7 @@ slot 42 (`0x2d524f4`). On an emulated 2.0.2 the summary pages hit none of `0x288
 `0xd8a04` caches slot 42 at handler+0x4c (`0x2ae8f4`, handler vtable `0x3d1b0a0`); its reader is
 untraced.
 
+<a id="what-loading-a-received-record-checks"></a>
 ### What loading a received record checks
 
 A partner's `0101` reaches `0xb2a44c`, registered for CommandSelectPokemon (`0xca33d8`, called
@@ -680,6 +701,7 @@ both make a Bad Egg, never a refusal; a rejected name is rewritten. A record wit
 as an egg icon, level 0, male symbol, under the offer's nickname, with "Trade it" offered; traded, it
 lands in the box as "Egg" with an empty summary and the game keeps running.
 
+<a id="the-name-check-on-a-received-pokemon"></a>
 ### The name check on a received Pokemon
 
 `0xad2c68` returns for an empty record (IsEmpty `0x13778`), else runs `0x89f250` (other caller
@@ -752,6 +774,7 @@ language picks them, whatever the record's language:
 | 8 Korean | 0x412 | American and British English, Korean |
 | 9, 10 Chinese | 0x8813 | Japanese, American and British English, Chinese, Taiwanese |
 
+<a id="what-the-trade-writes-into-a-received-record"></a>
 ### What the trade writes into a received record
 
 Step 6 of the exchange calls trade object vfunc +0x80, `0xcbc68c`, which calls `0xcbc7fc`. Unless
@@ -773,6 +796,7 @@ trainer. Each setter, on a record still marked encrypted (+0x18), re-sums (`0xe5
 Bad Egg bit on a mismatch (`0xe58b60..0xe58b80`); on a Bad Egg it writes into a sink at `0x3f7ef98`
 (`0xe58bcc`).
 
+<a id="the-personal-table"></a>
 ### The personal table
 
 `0xe380c0` loads `personal_array.bin` from the directory `0x7961b0` configures as "avalon/data"
@@ -802,6 +826,7 @@ neither empty (IsEmpty `0x13778`) nor egg-or-bad (IsEgg `0x18e4c`), but the live
 Egg tests only skip work: the PP clamp `0xe42584` and the stat recomputation `0xe41750` (skipped by
 `0xc34b5c`).
 
+<a id="a-trade-with-a-retail-console"></a>
 ## A trade with a retail console
 
 A retail Z-A on its Link Trade search trades with `bin/za_join.py` and keeps a composed record.
@@ -824,6 +849,7 @@ in the wiki's numbering, which puts the kick at 12 where Z-A uses 13) until it r
 (measured: first datagram 1.4 s after association against under 0.1 s on a normal seat, Net restarted
 at 6.5 s). A retail Scarlet's search behaved the same on hardware; no code on either side is traced.
 
+<a id="hosting"></a>
 ## Hosting
 
 A searching console also scans, and joins a network carrying the title's advertisement and its link
@@ -871,6 +897,7 @@ previewed after the fourth step of the previous trade. The console leaves when i
 Back on its box after a trade, the console previews the Pokemon under its cursor, so `--offer-out`
 keeps only picks.
 
+<a id="the-property-update"></a>
 ### The property update
 
 The Net update property (type 0x50) is built by `0x2502960` (sequence at NetProtocol+0x160, through
@@ -1034,6 +1061,7 @@ Measured over four seated sessions decrypted by a joiner board: player count 2 a
 policy 1 first advertised 2 to 48 ms before the Net 0x50 at 0.09 to 0.64 s. With 2 of 2 participants
 the policy refuses nothing the capacity did not.
 
+<a id="leaving"></a>
 ## Leaving
 
 A station leaves through one of two `nn::pia::session` jobs, each waiting on a reply from the other
@@ -1048,6 +1076,7 @@ station. Session types read by the dispatcher `0x2547490` (table `0x336a9b7`, ty
 
 `pokeldn.za` builds all four (`build_leave_request`, `build_leave_response`, `build_migration_ack`).
 
+<a id="a-joiner-leaving"></a>
 ### A joiner leaving
 
 `LeaveMeshJob::SendLeaveRequest` (`0x2557e54`) sends the type 3 to the host and sets a 500 ms
@@ -1062,6 +1091,7 @@ deauthenticated 2.0 s after the first (1.99, 2.02 and 2.03 s over three departur
 `bin/za_host.py` answers each type 3 with a type 4; `bin/za_join.py` sends its own type 3 when it
 leaves on `--hold` or `--hold-after-trade`, and goes on the type 4 or after the fourth send.
 
+<a id="a-host-leaving"></a>
 ### A host leaving
 
 `LeaveMeshWithHostMigrationJob` names the next host (`CalcNextHost` `0x255a6fc`), then
@@ -1134,6 +1164,7 @@ or 4 s, then the 0x40 every 0.3 s for 4 s (2 s when the 0x12 never came) or unti
 the network. Unanswered, it ends 11 s after its first type 9. `tests/test_za_host.py` runs it
 against `bin/za_join.py` and pins the type 9 and both Net messages to the emulated pair's bytes.
 
+<a id="mystery-gift"></a>
 ## Mystery Gift
 
 Mystery Gift in 2.0.2 offers Get via Internet, Get with Code/Password and Check Mystery Gifts; there

@@ -1,6 +1,7 @@
 """The visiting trainer: a BattleTowerEReaderTrainer pushed into the save over Mystery Gift
 [decomp:src/mystery_gift_client.c:233]; the old woman in SevenIsland_House_Room1 battles it with no
 level rule or banlist (docs/frlg_gift.md)."""
+from pokeldn.app.i18n import message_ref as _message
 
 from dataclasses import dataclass
 
@@ -56,7 +57,7 @@ def _u32(value):
 
 def _check_range(value, low, high, what):
     if not isinstance(value, int) or isinstance(value, bool) or not low <= value <= high:
-        raise EReaderTrainerError(f"{what} must be an integer in [{low}, {high}], got {value!r}")
+        raise EReaderTrainerError(_message('core.pokeldn.frlg.gift.ereader_trainer.value0_must_be_an_integer_in_value1_value2_got_v_7702823c', value0=what, value1=low, value2=high, value3=value))
     return value
 
 
@@ -72,7 +73,7 @@ def personality_for(nature, *, ot_id=0, shiny=False, gender_byte=None):
     if isinstance(nature, str):
         key = nature.strip().lower()
         if key not in NATURES:
-            raise EReaderTrainerError(f"unknown nature {nature!r}")
+            raise EReaderTrainerError(_message('core.pokeldn.frlg.gift.ereader_trainer.unknown_nature_value0_r_7af741e2', value0=nature))
         nature = NATURES.index(key)
     _check_range(nature, 0, NUM_NATURES - 1, "nature")
     if gender_byte is not None:
@@ -86,7 +87,7 @@ def personality_for(nature, *, ot_id=0, shiny=False, gender_byte=None):
         if shiny and not is_shiny(value, ot_id):
             continue
         return value
-    raise EReaderTrainerError("no personality satisfies that combination")
+    raise EReaderTrainerError(_message('core.pokeldn.frlg.gift.ereader_trainer.no_personality_satisfies_that_combination_6af13853'))
 
 
 @dataclass(frozen=True)
@@ -108,7 +109,7 @@ class TrainerMon:
     def _six(self, value, low, high, what):
         values = (value,) * 6 if isinstance(value, int) and not isinstance(value, bool) else tuple(value)
         if len(values) != 6:
-            raise EReaderTrainerError(f"{what} must be one value or six, got {len(values)}")
+            raise EReaderTrainerError(_message('core.pokeldn.frlg.gift.ereader_trainer.value0_must_be_one_value_or_six_got_value1_0377c3c8', value0=what, value1=len(values)))
         return tuple(_check_range(v, low, high, what) for v in values)
 
     def pack(self):
@@ -120,9 +121,9 @@ class TrainerMon:
         _check_range(self.pp_bonuses, 0, 0xFF, "ppBonuses")
         moves = tuple(self.moves)
         if not moves:
-            raise EReaderTrainerError(f"{self.nickname!r} needs at least one move")
+            raise EReaderTrainerError(_message('core.pokeldn.frlg.gift.ereader_trainer.value0_r_needs_at_least_one_move_c13a26d3', value0=self.nickname))
         if len(moves) > MAX_MON_MOVES:
-            raise EReaderTrainerError(f"a Pokemon holds at most {MAX_MON_MOVES} moves")
+            raise EReaderTrainerError(_message('core.pokeldn.frlg.gift.ereader_trainer.a_pokemon_holds_at_most_value0_moves_778ebb45', value0=MAX_MON_MOVES))
         for move in moves:
             _check_range(move, 1, 0xFFFF, "move")
         ivs = self._six(self.ivs, 0, 31, "IV")
@@ -168,7 +169,7 @@ class VisitingTrainer:
         if isinstance(value, str):
             key = value.strip().lower().replace(" ", "_").replace("-", "_")
             if key not in FACILITY_CLASSES:
-                raise EReaderTrainerError(f"unknown trainer class {value!r}")
+                raise EReaderTrainerError(_message('core.pokeldn.frlg.gift.ereader_trainer.unknown_trainer_class_value0_r_efd53eff', value0=value))
             return FACILITY_CLASSES[key]
         return _check_range(value, 0, 149, "trainer class")
 
@@ -179,13 +180,12 @@ class VisitingTrainer:
     def pack(self):
         if len(self.party) != PARTY_SIZE:
             raise EReaderTrainerError(
-                f"the visiting trainer battles with exactly {PARTY_SIZE} Pokemon, "
-                f"got {len(self.party)}")
+                _message('core.pokeldn.frlg.gift.ereader_trainer.the_visiting_trainer_battles_with_exactly_value0_6226d4ac', value0=PARTY_SIZE, value1=len(self.party)))
         if not self.name:
-            raise EReaderTrainerError("the visiting trainer needs a name")
+            raise EReaderTrainerError(_message('core.pokeldn.frlg.gift.ereader_trainer.the_visiting_trainer_needs_a_name_e52de48c'))
         if len(self.name) > NAME_FIELD_SIZE - 1:
             raise EReaderTrainerError(
-                f"a trainer name holds at most {NAME_FIELD_SIZE - 1} characters")
+                _message('core.pokeldn.frlg.gift.ereader_trainer.a_trainer_name_holds_at_most_value0_characters_4339b9a9', value0=NAME_FIELD_SIZE - 1))
         _check_range(self.trainer_id, 0, 0xFFFFFFFF, "trainer id")
         _check_range(self.win_streak, 0, 0xFFFF, "win streak")
         _check_range(self.unk0, 0, 0xFF, "unk0")
@@ -210,8 +210,7 @@ class VisitingTrainer:
     def describe(self):
         party = ", ".join(f"{mon.nickname} (species {mon.species}) Lv{mon.level}"
                           for mon in self.party)
-        return (f"{self.display_name!r} (class {self.class_id}, TID {self.trainer_id & 0xFFFF}): "
-                f"{party}")
+        return (_message('core.pokeldn.frlg.gift.ereader_trainer.value0_r_class_value1_tid_value2_value3_e3a5c980', value0=self.display_name, value1=self.class_id, value2=self.trainer_id & 0xFFFF, value3=party))
 
 
 def checksum(packed):
@@ -227,7 +226,7 @@ def validate(packed):
     would keep it. A struct that fails is silently cleared and the old woman says nothing."""
     if len(packed) != TRAINER_SIZE:
         raise EReaderTrainerError(
-            f"a visiting trainer is {TRAINER_SIZE} bytes, got {len(packed)}")
+            _message('core.pokeldn.frlg.gift.ereader_trainer.a_visiting_trainer_is_value0_bytes_got_value1_801062fb', value0=TRAINER_SIZE, value1=len(packed)))
     nonzero = 0
     for offset in range(0, TRAINER_SIZE - 4, 4):
         nonzero |= int.from_bytes(packed[offset:offset + 4], "little")
@@ -301,5 +300,5 @@ def build(name="red"):
     """-> the packed 188 bytes for one named preset."""
     if name not in PRESETS:
         raise EReaderTrainerError(
-            f"unknown visiting trainer {name!r}; choose from {', '.join(sorted(PRESETS))}")
+            _message('core.pokeldn.frlg.gift.ereader_trainer.unknown_visiting_trainer_value0_r_choose_from_va_50bbfd1d', value0=name, value1=', '.join(sorted(PRESETS))))
     return PRESETS[name]().pack()

@@ -4,6 +4,7 @@ parent: Sword and Shield
 nav_order: 1
 ---
 
+<a id="the-cartridge-its-keys-and-taking-a-seat"></a>
 # The cartridge, its keys, and taking a seat
 
 `main` statically links all of Pia (252 `nn::pia` classes, 2036 virtual methods) and imports
@@ -11,6 +12,7 @@ nav_order: 1
 of 78 P2P message sets (`gflnet.p2p.framework.pb`, `.block.pb`, `.sync.pb`, one package per content:
 trade, battle, camp, raid).
 
+<a id="the-ldn-passphrase"></a>
 ## The LDN passphrase
 
     W3GoSMEn7RIIUQ89rzqBHGhGferRNb7K18ZBq2aNuj8Us9RO9Q9JYyGOZlLy8MYL
@@ -28,6 +30,7 @@ Scarlet/Violet row, one character off Legends: Arceus (`HGhG` here, `HGHG` there
 `SecurityConfig+4` (`0x01797280..0x01797284`) just before `nn::ldn::CreateNetwork` (`0x017972bc`).
 `LdnBackgroundProcessJob` requires a length of 16..64.
 
+<a id="the-pia-game-key"></a>
 ## The Pia game key
 
     p1frXqxmeCZWFv0X
@@ -40,6 +43,7 @@ Sixteen ASCII bytes at `0x01c3dc87`, used unchanged by three call sites (the wik
     0x006ca938  stur x9, [sp, #0x1c]                  -> the setting's key field
     0x006ca93c  bl   #0x183fd10                       create/join
 
+<a id="reading-the-cartridge"></a>
 ## Reading the cartridge
 
     ./.venv/bin/python tools/switch/xci_read.py <the.xci> --keys prod.keys --type Program
@@ -54,6 +58,7 @@ Sixteen ASCII bytes at `0x01c3dc87`, used unchanged by three call sites (the wik
 `0x7C89 + n * 0x2983` and rotates left 3 per character (every line ends in `0x0000`). The `.tbl` is
 an `AHTB` index, entry *i* is line *i*.
 
+<a id="pia-4"></a>
 ## Pia 4
 
 The Pia header carries version 4, a shape distinct from both bands on [The Pia layer](pia.md); below
@@ -68,6 +73,7 @@ it, 5.27's LDN family (same key, IV, framing plus one field). `pokeldn/ldn/pia4.
 per session. A second path, `0x0179bff0` -> `0x01774f40`, seeds AES-GCM over the session's two
 64-bit values; a local trade needs only the advertisement.
 
+<a id="taking-a-seat"></a>
 ## Taking a seat
 
     POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_join.py --keys PROD_KEYS --scan-only
@@ -109,6 +115,7 @@ changed under it); `bin/swsh_connect.py` joins scene 60001 only and rescans unti
 association the console broadcasts Pia to `169.254.x.255:12345` (about ten packets a second); the
 screen shows nothing. What ends a console's advertisement after a joined station leaves is unread.
 
+<a id="how-a-searching-sword-finds-a-partner"></a>
 ## How a searching Sword finds a partner
 
 On the Y-Comm screen every console hosts a beacon network at scene 65535 and browses about once a
@@ -137,6 +144,7 @@ A Link Code changes only 0x04. `bin/swsh_connect.py` (no code) joins a coded con
 larger id hosts, so two searching consoles pair one way only; a host advertises an id near
 0xFFFFFFFF.
 
+<a id="what-the-console-says-first"></a>
 ## What the console says first
 
 Pia Local Protocol 0x24, as in BDSP (`pokeldn.ldn.local_protocol`): version 1, type 0x11, 0x30 fixed
@@ -151,6 +159,7 @@ id stops the rebroadcast (within 13 ms); an ack with another sequence id does no
 (`bin/swsh_connect.py --seq-delta`). Header byte 0x05 and the IV's source id are 0, as in the
 console's own (`--station-sweep` walks others).
 
+<a id="the-pia-session-object"></a>
 ## The Pia session object
 
 `[[0x02616a30]]` (also `[0x02630f40]`), where the trade code reads station ids, is Pia's session
@@ -219,6 +228,7 @@ with the create and join values, on the console hosting Pia's mesh. A console ho
 the confirmation ladder on commands; one that joined pokeldn's host follows the shared value
 ([the pump](swsh_trade.md#the-pump)).
 
+<a id="reaching-the-game-layer"></a>
 ## Reaching the game layer
 
 Every layer below the game works both ways ([The Pia layer](pia.md)): Local Protocol 0x24, station
@@ -239,6 +249,7 @@ asks for ack id 1 once a second, 0x7C stays silent. `bin/swsh_connect.py --send-
 console's own; five silent receive checks: [version 4](pia.md#version-4)). Pass signal: the 0x80 ack
 id moves off 1; 0x7C acks at all.
 
+<a id="the-ping-handshake"></a>
 ## The ping handshake
 
 A payload is a four-byte little-endian message id and a protobuf body. A handshake carries
@@ -270,6 +281,7 @@ these five and no others (the right column counts each in one capture):
 `bin/swsh_connect.py --sync-answers` answers `trade.SYNC_ANSWERS` where it has a rule, echoes per
 protocol elsewhere, and prints each unruled payload (after the answer it caused; read the ownerId).
 
+<a id="leaving"></a>
 ## Leaving
 
 A Sword leaving a trade session sends box command 3 and, about 0.77 s later, starts the Pia leave
@@ -329,6 +341,7 @@ UPDATE_MESH it goes quiet 0.07 s after the start.
 the finish and an UPDATE_MESH as host, acks the host-migration update session and leaves the
 network on START_HOST_MIGRATION.
 
+<a id="operational-notes"></a>
 ## Operational notes
 
 - Never pass `--verbose` live; use `--capture FILE`.

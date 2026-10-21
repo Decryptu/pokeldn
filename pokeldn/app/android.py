@@ -1,6 +1,7 @@
 """The app on Android (examples/android): the radio board's USB link as a serial port, so the Board page,
 the launchers and esptool reach it unchanged, and the Android calls that stand in for a desktop's
 folders. Everything here needs Chaquopy's `java` module; nothing imports it off Android."""
+from pokeldn.app.i18n import message_ref as _message
 import os
 import sys
 import time
@@ -25,9 +26,9 @@ class Serial(SerialBase):
 
     def open(self):
         if self.is_open:
-            raise SerialException("Port is already open.")
+            raise SerialException(_message('core.pokeldn.app.android.port_is_already_open_cff975e9'))
         if self._port != PORT:
-            raise SerialException(f"Only {PORT} exists on this phone, not {self._port!r}.")
+            raise SerialException(_message('core.pokeldn.app.android.only_value0_exists_on_this_phone_not_value1_r_b4d8d2b2', value0=PORT, value1=self._port))
         # A reset into the ROM loader re-enumerates native USB (esptool reopens the port): wait for it.
         deadline = time.monotonic() + 10
         while True:
@@ -82,7 +83,7 @@ class Serial(SerialBase):
             chunk = bytes(self._usb.read(size - len(data)))   # waits up to 20 ms for a USB transfer
             data += chunk
             if self._usb.isClosed() and not chunk:
-                raise SerialException("The board's USB link closed.")
+                raise SerialException(_message('core.pokeldn.app.android.the_board_s_usb_link_closed_587fde8e'))
             if timeout.expired():
                 break
         return bytes(data)

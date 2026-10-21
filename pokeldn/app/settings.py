@@ -1,3 +1,4 @@
+from pokeldn.app.i18n import message_ref as _message
 import json
 import os
 import random
@@ -22,6 +23,7 @@ class Settings:
     radio: str = ""         # external radio scheme (pokeldn.ldn.radios); empty: the board
     plugins: list = field(default_factory=list)   # plugin ids turned on
     app_language: str = ""   # language-pack plugin id; empty selects English
+    app_locale: str = ""     # locale within the selected pack
     baud: int = 921600
     capture: bool = True
     private_logs: bool = True   # mask names, trainer IDs, MACs and the home folder in the logs shown (redact.py)
@@ -87,7 +89,7 @@ def load() -> Settings:
     try:
         data = json.loads(PATH.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
-            raise ValueError("settings must be an object")
+            raise ValueError(_message('core.pokeldn.app.settings.settings_must_be_an_object_d007e5f3'))
     except (OSError, ValueError):
         settings = Settings()
         settings.save()   # keeps the trainer ids drawn above

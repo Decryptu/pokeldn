@@ -4,6 +4,7 @@ nav_order: 4
 has_children: true
 ---
 
+<a id="firered-and-leafgreen"></a>
 # FireRed and LeafGreen
 
 The Switch release of FireRed and LeafGreen is the original GBA ROM running inside an emulator, so
@@ -28,6 +29,7 @@ A console that leaves about three seconds after associating, once the Pia sessio
 was given an association response without 6, 9 and 12 Mbit/s ([frlg_link.md](frlg_link.md), The
 advertised rate set); a missing Pia type 2 Join Response gives the same symptom.
 
+<a id="what-works"></a>
 ## What works
 
 On retail hardware, on both cartridges, the host serves every activity the console offers: Mystery
@@ -50,6 +52,7 @@ pipeline](frlg_rom.md#the-wrappers-own-scan-pipeline)): the scan results, the co
 and the parent-candidate list are all fixed-shape and bounded, and the one length-taking
 path (a station name, at most `0x40`) is clamped at its caller.
 
+<a id="pages"></a>
 ## Pages
 
 | page | contents |
@@ -62,11 +65,13 @@ path (a station name, at most `0x40`) is clamped at its caller.
 | [LeafGreen](frlg_leafgreen.md) | what the second cartridge shares, the measured offset map, and the English build as an instrument |
 | [Host implementation](frlg_host.md) | the component boundaries of the trade and Mystery Gift hosts |
 
+<a id="the-two-cartridges"></a>
 ## The two cartridges
 
 LeafGreen runs the same code at a piecewise-constant offset; the measured pairs and the boundaries
 are on [LeafGreen](frlg_leafgreen.md). Never predict an address across an unbracketed boundary.
 
+<a id="rules-that-hold-across-all-of-it"></a>
 ## Rules that hold across all of it
 
 - The decomp's link order is evidence; its addresses need measuring on the cartridge.

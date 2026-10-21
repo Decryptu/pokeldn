@@ -1,3 +1,5 @@
+from pokeldn.app.i18n import message_ref as _message
+from pokeldn.app.i18n import ref as _ref
 """The app's Sword/Shield gift builder: a plain form state (JSON) -> a sealed WC8 record. Each kind
 mirrors a record a retail Sword listed and redeemed (docs/swsh_gift.md, A card delivered)."""
 
@@ -7,8 +9,8 @@ from dataclasses import dataclass
 from pokeldn.pokemon import NATURES
 from pokeldn.swsh import events as OFFICIAL, gift_file, wc8
 
-KINDS = (("pokemon", "Pokemon", "gift"), ("egg", "Egg", "package"), ("items", "Items", "bulletlist"),
-         ("clothing", "Clothing", "shirt"), ("bp", "Battle Points", "zap"), ("money", "Money", "coins"))
+KINDS = (("pokemon", _ref("core.pokeldn.swsh.gift_builder.pokemon_22464231"), "gift"), ("egg", "Egg", "package"), ("items", "Items", "bulletlist"),
+         ("clothing", _ref("core.pokeldn.swsh.gift_builder.clothing_5bea3ab3"), "shirt"), ("bp", _ref("core.pokeldn.swsh.gift_builder.battle_points_c484f837"), "zap"), ("money", "Money", "coins"))
 MAX_ITEM = 1607          # the 1.3.2 item table; a higher id crashes the bag screen
 MAX_MONEY = 9_999_999    # the kind-5 clamp 0x01438f2c
 TITLE_AT, PAYLOAD_AT = 0x15, 0x20
@@ -30,18 +32,18 @@ class Outfit:
 
 # The pairs of projectpokemon EventsGallery's official clothing cards (card ids in the comments).
 OUTFITS = (
-    Outfit("pikachu-uniform", "Pikachu uniform", ((9, 20), (11, 21), (12, 20), (13, 20), (14, 19)),
+    Outfit("pikachu-uniform", _ref("core.pokeldn.swsh.gift_builder.pikachu_uniform_ac84b0e7"), ((9, 20), (11, 21), (12, 20), (13, 20), (14, 19)),
            ((9, 2), (11, 3), (12, 2), (13, 2), (14, 19))),                                       # 1607
-    Outfit("eevee-uniform", "Eevee uniform", ((9, 21), (11, 22), (12, 21), (13, 21), (14, 20)),
+    Outfit("eevee-uniform", _ref("core.pokeldn.swsh.gift_builder.eevee_uniform_39e4bad7"), ((9, 21), (11, 22), (12, 21), (13, 21), (14, 20)),
            ((9, 3), (11, 4), (12, 3), (13, 3), (14, 20))),                                       # 1608
-    Outfit("tracksuit", "Tracksuit", ((7, 0), (8, 0), (12, 24), (10, 0), (11, 25), (13, 26)),
+    Outfit("tracksuit", _ref("core.pokeldn.swsh.gift_builder.tracksuit_62ac1521"), ((7, 0), (8, 0), (12, 24), (10, 0), (11, 25), (13, 26)),
            ((7, 0), (8, 0), (12, 24), (10, 0), (11, 25), (13, 25))),                             # 1605
-    Outfit("leon-cap-tights", "Leon's cap and tights", ((7, 80), (13, 89)), ((7, 80), (13, 121))),  # 1624
-    Outfit("gold-backpack", "Gold studded backpack", ((10, 45),), ((10, 48),)),                     # 1606
-    Outfit("tee-poke-ball", "Poke Ball Guy tee", ((9, 101),), ((9, 89),)),                          # 0001
-    Outfit("tee-great-ball", "Great Ball Guy tee", ((9, 102),), ((9, 90),)),                        # 0001
-    Outfit("tee-ultra-ball", "Ultra Ball Guy tee", ((9, 103),), ((9, 91),)),                        # 0001
-    Outfit("tee-quest", "Pokemon Quest tee", ((9, 104),), ((9, 92),)),                              # 0105
+    Outfit("leon-cap-tights", _ref("core.pokeldn.swsh.gift_builder.leon_s_cap_and_tights_bb408f8d"), ((7, 80), (13, 89)), ((7, 80), (13, 121))),  # 1624
+    Outfit("gold-backpack", _ref("core.pokeldn.swsh.gift_builder.gold_studded_backpack_adef657f"), ((10, 45),), ((10, 48),)),                     # 1606
+    Outfit("tee-poke-ball", _ref("core.pokeldn.swsh.gift_builder.poke_ball_guy_tee_97868992"), ((9, 101),), ((9, 89),)),                          # 0001
+    Outfit("tee-great-ball", _ref("core.pokeldn.swsh.gift_builder.great_ball_guy_tee_cced69ca"), ((9, 102),), ((9, 90),)),                        # 0001
+    Outfit("tee-ultra-ball", _ref("core.pokeldn.swsh.gift_builder.ultra_ball_guy_tee_4b9cd872"), ((9, 103),), ((9, 91),)),                        # 0001
+    Outfit("tee-quest", _ref("core.pokeldn.swsh.gift_builder.pokemon_quest_tee_1fa586d4"), ((9, 104),), ((9, 92),)),                              # 0105
 )
 OUTFIT = {o.key: o for o in OUTFITS}
 TEES = ["tee-poke-ball", "tee-great-ball", "tee-ultra-ball", "tee-quest"]
@@ -75,33 +77,33 @@ def blank(**changes):
 
 
 PRESETS = (
-    Preset("pikachu", "Pikachu", "Pokemon", "A level 25 Pikachu nicknamed POKELDN.", blank()),
-    Preset("gmax-pikachu", "Gigantamax Pikachu", "Pokemon",
-           "A level 25 Pikachu that can Gigantamax, at the top Dynamax level.",
+    Preset("pikachu", _ref("core.pokeldn.swsh.gift_builder.pikachu_a7c280e7"), _ref("core.pokeldn.swsh.gift_builder.pokemon_22464231"), _ref("core.pokeldn.swsh.gift_builder.a_level_25_pikachu_nicknamed_pokeldn_e0280b36"), blank()),
+    Preset("gmax-pikachu", _ref("core.pokeldn.swsh.gift_builder.gigantamax_pikachu_9599164e"), _ref("core.pokeldn.swsh.gift_builder.pokemon_22464231"),
+           _ref("core.pokeldn.swsh.gift_builder.a_level_25_pikachu_that_can_gigantamax_at_the_top_dynam_8106641e"),
            blank(gigantamax=True, dynamax_level=10)),
-    Preset("egg", "Pikachu egg", "Pokemon", "An egg that hatches into Pikachu.",
+    Preset("egg", _ref("core.pokeldn.swsh.gift_builder.pikachu_egg_db0a4bdd"), _ref("core.pokeldn.swsh.gift_builder.pokemon_22464231"), _ref("core.pokeldn.swsh.gift_builder.an_egg_that_hatches_into_pikachu_7f0e9844"),
            blank(kind="egg", level=1, nickname="")),
-    Preset("master-balls", "Three Master Balls", "Items", "Three Master Balls in the bag.",
+    Preset("master-balls", _ref("core.pokeldn.swsh.gift_builder.three_master_balls_c74548de"), "Items", _ref("core.pokeldn.swsh.gift_builder.three_master_balls_in_the_bag_dbb9a06b"),
            blank(kind="items", items=[[1, 3]])),
-    Preset("rare-candies", "Ten Rare Candies", "Items", "Ten Rare Candies in the bag.",
+    Preset("rare-candies", _ref("core.pokeldn.swsh.gift_builder.ten_rare_candies_6fc8f9d9"), "Items", _ref("core.pokeldn.swsh.gift_builder.ten_rare_candies_in_the_bag_943c500a"),
            blank(kind="items", items=[[50, 10]])),
-    Preset("training-kit", "Training kit", "Items",
-           "Rare Candies, Exp. Candy XL, PP Max, an Ability Capsule and Bottle Caps.",
+    Preset("training-kit", _ref("core.pokeldn.swsh.gift_builder.training_kit_076e65c4"), "Items",
+           _ref("core.pokeldn.swsh.gift_builder.rare_candies_exp_candy_xl_pp_max_an_ability_capsule_and_351ae7e6"),
            blank(kind="items", items=[[50, 10], [1128, 5], [53, 3], [645, 1], [795, 3], [796, 1]])),
-    Preset("bp", "10 Battle Points", "Items", "Adds 10 BP, up to the game's 9999.", blank(kind="bp", bp=10)),
-    Preset("money", "Pocket money", "Items", "Adds 100,000 to the player's money.",
+    Preset("bp", _ref("core.pokeldn.swsh.gift_builder.10_battle_points_4ef116e9"), "Items", _ref("core.pokeldn.swsh.gift_builder.adds_10_bp_up_to_the_game_s_9999_5169a377"), blank(kind="bp", bp=10)),
+    Preset("money", _ref("core.pokeldn.swsh.gift_builder.pocket_money_0c8a15ef"), "Items", _ref("core.pokeldn.swsh.gift_builder.adds_100_000_to_the_player_s_money_62f1dfa1"),
            blank(kind="money", money=100000)),
-    Preset("pikachu-uniform", "Pikachu uniform", "Clothing", "The Pikachu outfit, in the wardrobe.",
+    Preset("pikachu-uniform", _ref("core.pokeldn.swsh.gift_builder.pikachu_uniform_ac84b0e7"), _ref("core.pokeldn.swsh.gift_builder.clothing_5bea3ab3"), _ref("core.pokeldn.swsh.gift_builder.the_pikachu_outfit_in_the_wardrobe_1d6f24ab"),
            blank(kind="clothing", outfits=["pikachu-uniform"])),
-    Preset("eevee-uniform", "Eevee uniform", "Clothing", "The Eevee outfit, in the wardrobe.",
+    Preset("eevee-uniform", _ref("core.pokeldn.swsh.gift_builder.eevee_uniform_39e4bad7"), _ref("core.pokeldn.swsh.gift_builder.clothing_5bea3ab3"), _ref("core.pokeldn.swsh.gift_builder.the_eevee_outfit_in_the_wardrobe_26614934"),
            blank(kind="clothing", outfits=["eevee-uniform"])),
-    Preset("tracksuit", "Tracksuit", "Clothing", "The tracksuit set, in the wardrobe.",
+    Preset("tracksuit", _ref("core.pokeldn.swsh.gift_builder.tracksuit_62ac1521"), _ref("core.pokeldn.swsh.gift_builder.clothing_5bea3ab3"), _ref("core.pokeldn.swsh.gift_builder.the_tracksuit_set_in_the_wardrobe_eb12aacf"),
            blank(kind="clothing", outfits=["tracksuit"])),
-    Preset("leon-cap-tights", "Leon's cap and tights", "Clothing", "Leon's cap and tights, in the wardrobe.",
+    Preset("leon-cap-tights", _ref("core.pokeldn.swsh.gift_builder.leon_s_cap_and_tights_bb408f8d"), _ref("core.pokeldn.swsh.gift_builder.clothing_5bea3ab3"), _ref("core.pokeldn.swsh.gift_builder.leon_s_cap_and_tights_in_the_wardrobe_c5323f78"),
            blank(kind="clothing", outfits=["leon-cap-tights"])),
-    Preset("gold-backpack", "Gold studded backpack", "Clothing", "A gold studded backpack, in the wardrobe.",
+    Preset("gold-backpack", _ref("core.pokeldn.swsh.gift_builder.gold_studded_backpack_adef657f"), _ref("core.pokeldn.swsh.gift_builder.clothing_5bea3ab3"), _ref("core.pokeldn.swsh.gift_builder.a_gold_studded_backpack_in_the_wardrobe_1e6e4d4a"),
            blank(kind="clothing", outfits=["gold-backpack"])),
-    Preset("tees", "Four Poke Ball tees", "Clothing", "The four Poke Ball Guy and Pokemon Quest tees.",
+    Preset("tees", _ref("core.pokeldn.swsh.gift_builder.four_poke_ball_tees_61ec16b7"), _ref("core.pokeldn.swsh.gift_builder.clothing_5bea3ab3"), _ref("core.pokeldn.swsh.gift_builder.the_four_poke_ball_guy_and_pokemon_quest_tees_2da45d5f"),
            blank(kind="clothing", outfits=TEES)),
 )
 PRESET = {p.key: p for p in PRESETS}
@@ -125,14 +127,14 @@ def record(state):
     """Form state -> a sealed 720-byte record. Raises ValueError with what to fix."""
     kind, card_id = state.get("kind", "pokemon"), _int(state, "card_id", 9999)
     if not 0 < card_id <= 0xFFFF:
-        raise ValueError("The card id is 1 to 65535.")
+        raise ValueError(_ref("core.pokeldn.swsh.gift_builder.the_card_id_is_1_to_65535_b5091d1d"))
     if kind in ("pokemon", "egg"):
         egg = kind == "egg"
         level = 1 if egg else _int(state, "level")
         if not egg and not 0 <= level <= 100:
-            raise ValueError("The level is 0 to 100; 0 lets the game roll one.")
+            raise ValueError(_ref("core.pokeldn.swsh.gift_builder.the_level_is_0_to_100_0_lets_the_game_roll_one_c61399f5"))
         if (item := _int(state, "item")) > MAX_ITEM:
-            raise ValueError(f"Sword and Shield have no item above {MAX_ITEM}.")
+            raise ValueError(_message('core.pokeldn.swsh.gift_builder.sword_and_shield_have_no_item_above_value0_3b116fb4', value0=MAX_ITEM))
         moves = [int(m or 0) for m in (list(state.get("moves", ())) + [0] * 4)[:4]]
         species, form = _int(state, "species", 25), _int(state, "form")
         fields = {"ot_gender": 2, "held_item": item, "ball": _int(state, "ball"),
@@ -146,28 +148,28 @@ def record(state):
             fields["egg"] = 1
         if (nature := state.get("nature")) not in (None, ""):
             if not 0 <= int(nature) < len(NATURES):
-                raise ValueError(f"The nature is 0 to {len(NATURES) - 1}.")
+                raise ValueError(_message('core.pokeldn.swsh.gift_builder.the_nature_is_0_to_value0_e7bdc32e', value0=len(NATURES) - 1))
             fields["nature"] = int(nature)
         try:
             raw = wc8.pokemon_card(species, level=level, form=form,
                                    moves=moves, nickname=state.get("nickname") or None,
                                    ot=None if egg else state.get("ot") or None, card_id=card_id, **fields)
         except ValueError as exc:
-            raise ValueError(f"Names: {exc}") from None
+            raise ValueError(_message('core.pokeldn.swsh.gift_builder.names_value0_ea870e9d', value0=exc)) from None
         if egg or fields.get("gigantamax"):
             raw = _patch(raw, {TITLE_AT: bytes([TITLE_EGG if egg else TITLE_GMAX])})
         return raw
     if kind == "items":
         pairs = [(int(i or 0), int(q or 0)) for i, q in state.get("items", ()) if int(i or 0)]
         if not pairs:
-            raise ValueError("Add at least one item.")
+            raise ValueError(_ref("core.pokeldn.swsh.gift_builder.add_at_least_one_item_027d7846"))
         if len(pairs) > 6:
-            raise ValueError("A card carries six items at most.")
+            raise ValueError(_ref("core.pokeldn.swsh.gift_builder.a_card_carries_six_items_at_most_800c28f9"))
         for item, quantity in pairs:
             if not 0 < item <= MAX_ITEM:
-                raise ValueError(f"Sword and Shield have no item {item}.")
+                raise ValueError(_message('core.pokeldn.swsh.gift_builder.sword_and_shield_have_no_item_value0_5cf14a71', value0=item))
             if not 0 < quantity <= 999:
-                raise ValueError("Each quantity is 1 to 999.")
+                raise ValueError(_ref("core.pokeldn.swsh.gift_builder.each_quantity_is_1_to_999_8be3dbfe"))
         payload = b"".join(struct.pack("<HH", i, q) for i, q in pairs)
         return _card(card_id, KIND_ITEMS, TITLE_ITEM, payload)
     if kind == "clothing":
@@ -175,14 +177,14 @@ def record(state):
     if kind == "bp":
         amount = _int(state, "bp")
         if not 0 < amount <= 9999:
-            raise ValueError("Battle Points are 1 to 9999.")
+            raise ValueError(_ref("core.pokeldn.swsh.gift_builder.battle_points_are_1_to_9999_2e6591ba"))
         return _card(card_id, KIND_BP, TITLE_BP, struct.pack("<I", amount))
     if kind == "money":
         amount = _int(state, "money")
         if not 0 < amount <= MAX_MONEY:
-            raise ValueError(f"Money is 1 to {MAX_MONEY:,}.")
+            raise ValueError(_message('core.pokeldn.swsh.gift_builder.money_is_1_to_value0_60e05a52', value0=MAX_MONEY))
         return _card(card_id, KIND_MONEY, TITLE_MONEY, struct.pack("<I", amount))
-    raise ValueError(f"Unknown gift kind {kind!r}.")
+    raise ValueError(_message('core.pokeldn.swsh.gift_builder.unknown_gift_kind_value0_r_ec9c77c5', value0=kind))
 
 
 def clothing_payload(keys):
@@ -191,14 +193,14 @@ def clothing_payload(keys):
     try:
         outfits = [OUTFIT[k] for k in dict.fromkeys(keys)]
     except KeyError as exc:
-        raise ValueError(f"Unknown outfit {exc.args[0]!r}.") from None
+        raise ValueError(_message('core.pokeldn.swsh.gift_builder.unknown_outfit_value0_r_f3aa65c7', value0=exc.args[0])) from None
     if not outfits:
-        raise ValueError("Pick at least one outfit.")
+        raise ValueError(_ref("core.pokeldn.swsh.gift_builder.pick_at_least_one_outfit_a88f8a11"))
     payload = b""
     for side in ("male", "female"):
         pairs = [pair for o in outfits for pair in getattr(o, side)]
         if len(pairs) > CLOTHING_SLOTS:
-            raise ValueError(f"A card carries {CLOTHING_SLOTS} pieces of clothing at most; pick fewer outfits.")
+            raise ValueError(_message('core.pokeldn.swsh.gift_builder.a_card_carries_value0_pieces_of_clothing_at_most_c4bc7c37', value0=CLOTHING_SLOTS))
         pairs += [NO_CLOTHING] * (CLOTHING_SLOTS - len(pairs))
         payload += b"".join(struct.pack("<II", c, i) for c, i in pairs)
     return payload
@@ -217,34 +219,39 @@ def _patch(raw, extra):
 
 
 def compile(state):
-    names = {"pokemon": state.get("nickname") or "Pokemon", "egg": "Pokemon egg", "items": "Items",
-             "clothing": "Clothing", "bp": "Battle Points", "money": "Money"}
+    names = {"pokemon": state.get("nickname") or _ref("core.pokeldn.swsh.gift_builder.pokemon_22464231"), "egg": _ref("core.pokeldn.swsh.gift_builder.pokemon_egg_671f2394"), "items": "Items",
+             "clothing": _ref("core.pokeldn.swsh.gift_builder.clothing_5bea3ab3"), "bp": _ref("core.pokeldn.swsh.gift_builder.battle_points_c484f837"), "money": "Money"}
     return gift_file.from_record(record(state), name=names.get(state.get("kind"), "Sword/Shield gift"))
 
 
 def describe(state, name=lambda kind, n: f"{kind} #{n}"):
     """(when it applies, [what happens]); `name(kind, id)` names a species or an item."""
     kind = state.get("kind", "pokemon")
-    when = "Listed under Mystery Gift; the player picks it, then it lands in the save."
+    when = _ref("core.pokeldn.swsh.gift_builder.listed_under_mystery_gift_the_player_picks_it_then_it_l_dade4d6f")
     if kind == "pokemon":
         level = _int(state, "level")
-        lines = [f"Gives {name('species', state.get('species'))}, "
-                 + (f"level {level}" if level else "a level the game rolls")
-                 + (f", {NATURES[int(state['nature'])]}" if state.get("nature") not in (None, "") else "")
-                 + (", shiny" if state.get("shiny") else "")
-                 + (", can Gigantamax" if state.get("gigantamax") else "")]
+        from pokeldn.app import i18n
+        details = [_message("core.gift.pokemon.level", level=level) if level else _ref("core.gift.pokemon.random_level")]
+        if state.get("nature") not in (None, ""):
+            details.append(i18n.EntityRef("swsh", i18n.EntityKind.NATURE, int(state["nature"])))
+        if state.get("shiny"):
+            details.append(_ref("core.presentation.shiny"))
+        if state.get("gigantamax"):
+            details.append(_ref("core.gift.pokemon.gigantamax"))
+        details = i18n.text("core.presentation.list_separator").join(i18n.render(part) for part in details)
+        lines = [_message("core.gift.pokemon.description", species=name("species", state.get("species")), details=details)]
         if _int(state, "item"):
-            lines.append(f"Holding {name('item', state.get('item'))}")
+            lines.append(_message("core.gift.pokemon.holding", item=name("item", state.get("item"))))
     elif kind == "egg":
-        lines = [f"Gives a {name('species', state.get('species'))} egg"]
+        lines = [_message("core.gift.egg.description", species=name("species", state.get("species")))]
     elif kind == "items":
-        lines = [f"Gives {name('item', i)} x{q}" for i, q in state.get("items", ()) if int(i or 0)]
+        lines = [_message("core.gift.item.description", item=name("item", i), quantity=q) for i, q in state.get("items", ()) if int(i or 0)]
     elif kind == "clothing":
-        lines = [f"Puts the {OUTFIT[k].label} in the wardrobe" for k in state.get("outfits", ()) if k in OUTFIT]
-        lines.append("The card holds a male and a female version; the player gets their own")
+        lines = [_message("core.gift.clothing.destination", clothing=OUTFIT[k].label) for k in state.get("outfits", ()) if k in OUTFIT]
+        lines.append(_ref("core.pokeldn.swsh.gift_builder.the_card_holds_a_male_and_a_female_version_the_player_g_97694f8b"))
     elif kind == "money":
-        lines = [f"Adds {_int(state, 'money'):,} to the player's money, up to {MAX_MONEY:,}"]
+        lines = [_message("core.gift.money.description", quantity=_int(state, "money"), maximum=MAX_MONEY)]
     else:
-        lines = [f"Adds {_int(state, 'bp')} Battle Points"]
-    lines.append(f"Card id {_int(state, 'card_id', 9999)}: a console takes the same id again")
+        lines = [_message("core.gift.bp.description", quantity=_int(state, "bp"))]
+    lines.append(_message("core.gift.card.repeat", card_id=_int(state, "card_id", 9999)))
     return when, lines

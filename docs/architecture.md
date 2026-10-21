@@ -1,6 +1,7 @@
 ---
 title: Code organization
 ---
+<a id="code-organization"></a>
 # Code organization
 
 The GUI and CLI share tool presets and Pokémon preparation. Game modules keep their measured wire
@@ -29,6 +30,7 @@ The app runs one session at a time, since one board serves one process. Stop app
 whose session is running; Start on another tool stops that session, waits for it to exit, then
 starts. A flash holds the board too, and Start waits for it.
 
+<a id="pokmon-preparation"></a>
 ## Pokémon preparation
 
 The shared service generates legal encounters and saves imports in the selected game's format.
@@ -112,6 +114,7 @@ game only in a later form:
 | Legends Z-A | Scatterbug, Spewpa | Garden, Meadow |
 | Legends Z-A | Vivillon | Garden, Meadow, Marine |
 
+<a id="encounter-order"></a>
 ### Encounter order
 
 A build tries PKHeX's encounters (`EncounterMovesetGenerator`) one game version at a time, the player's
@@ -144,6 +147,7 @@ of 233 such builds were legal at every level from the lowest legal one up to 100
 whether the encounter can carry the species and a bisection finds the lowest level. The two others were
 Hydrapple in Scarlet/Violet, legal at scattered levels.
 
+<a id="offer-options"></a>
 ### Offer options
 
 A build can also ask for a form, nature, ability, gender, held item, ball, friendship, up to four
@@ -203,6 +207,7 @@ Brilliant Diamond and Scarlet, a shiny level 37 Pikachu with a nickname, nature,
 held item, ball, four moves, IVs and effort values showed each option on its summary screen; the
 Brilliant Diamond record traded back matched in all twelve fields.
 
+<a id="showdown-sets"></a>
 ### Showdown sets
 
 Import paste reads a Pokémon Showdown, Smogon or PKHeX set with PKHeX's own parser
@@ -228,6 +233,7 @@ items with PKHeX. Custom WC8 cards are distributions, and this structural check 
 official events. The optional `--image` research check uses a user-supplied game binary; it is not
 required to distribute a card.
 
+<a id="the-lets-go-link-code"></a>
 ### The Let's Go link code
 
 The Let's Go host's code is three slots. A slot opens the console's ten picker Pokemon, two rows of five as on the console, as sprites with
@@ -236,6 +242,7 @@ opens the next empty one. The value is the three English names, comma-separated,
 them, and Start waits until all three are set: an empty slot would host under the launcher's default
 code, which the console's search never finds.
 
+<a id="the-trade-queue"></a>
 ### The trade queue
 
 A tool whose entry point completes several trades on one seat takes up to six Pokemon; "Add a trade"
@@ -264,6 +271,7 @@ what it received to the output path with `-N` before the extension (FireRed/Leaf
 the species; Scarlet/Violet: `.N`, counted by distinct offers; Brilliant Diamond/Shining Pearl host:
 `_N`; Legends Z-A and Sword/Shield: `-N`).
 
+<a id="ending-a-run"></a>
 ### Ending a run
 
 A trade run ends on its own when the console has left after a trade, so the app's Stop is never
@@ -279,6 +287,7 @@ The time limit (`--seconds`, `--hold`) still bounds a run whose console never le
 
 Departure measurements and open questions are on each title's Leaving section.
 
+<a id="local-files-and-releases"></a>
 ## Local files and releases
 
 `config/host.toml` and runtime reference messages are tracked. `host.local.toml`, keys, notes, logs,
@@ -300,6 +309,7 @@ Windows builds keep standard input and output for child-process logs and stop ha
 owned console hidden. PyInstaller's windowed mode removes those streams on Windows.
 Linux archives contain the portable executable; desktop entries with build-machine paths are omitted.
 
+<a id="verification"></a>
 ## Verification
 
 ```sh

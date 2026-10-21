@@ -164,7 +164,8 @@ def pkhex(target: Target, bundle: Path) -> None:
     rid = 'ios-arm64' if target.device else 'iossimulator-arm64'
     out = BUILD / 'pkhex' / rid
     library = out / 'pokeldn-pkhex.dylib'
-    sources = [*(ROOT / 'services' / 'pkhex').glob('*.cs'), ROOT / 'services' / 'pkhex' / 'pkhex.csproj']
+    sources = [*(ROOT / 'services' / 'pkhex').glob('*.cs'), ROOT / 'services' / 'pkhex' / 'pkhex.csproj',
+               ROOT / 'services' / 'pkhex' / 'messages.en.json']
     if not library.is_file() or library.stat().st_mtime < max(p.stat().st_mtime for p in sources):
         run('dotnet', 'publish', ROOT / 'services' / 'pkhex' / 'pkhex.csproj', '-c', 'Release', '-r', rid,
             '-o', out, '--artifacts-path', BUILD / 'pkhex' / 'artifacts',   # services/pkhex/bin stays the desktop's

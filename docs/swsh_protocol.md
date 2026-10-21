@@ -4,17 +4,20 @@ parent: Sword and Shield
 nav_order: 2
 ---
 
+<a id="messages-contents-and-routing"></a>
 # Messages, contents and routing
 
 The publish/subscribe framework above Pia. A message is a u16 LE id, a discriminator byte, a zero
 byte, and a protobuf body.
 
+<a id="where-a-message-id-comes-from"></a>
 ## Where a message id comes from
 
 Low ids come from a table of 838 24-byte records at `0x01BBFFA0`, `{u64 handler slot, u32 0x402,
 u32 id, u64 0}`, ids 1..880 (97, the ping holder, 110, 120, 130 among them). High ids are base plus
 offset; 20030 or 40040 never occur as constants, 60000 is base + 0 (a MOVZ at 41 sites).
 
+<a id="contents-and-holders"></a>
 ## Contents and holders
 
 Each content registers three holders (registrars `0x010ccd90` content 30, `0x010da7d0` 40,
@@ -37,6 +40,7 @@ Installs: content 30 `0x010ccc94`, `0x010ccca4`, `0x010ccf7c`; content 40 `0x010
 `0x010da9bc` (cleared `0x010dab10`); content 50 `0x010d50ac`, `0x010d533c` (cleared `0x010d5660`).
 None reaches the 20000-base holder of 40 or 50: 20040 and 20050 are inert.
 
+<a id="the-30000-holder"></a>
 ### The 30000 holder
 
 The 30000+offset holder (`0x010d0980`, vtable GOT `0x02618620` = `0x02528100`, no RTTI) carries
@@ -67,6 +71,7 @@ sync contents (`0x008b71a0`, `0x008b7700`, `0x008cfb10`, `0x008cfbe0`,
 
     RequestForcedProceed{c, c+1}   58750000 2204 08<c> 10<c+1>     c=0: 58750000 2204 0800 1001
 
+<a id="the-three-trade-contents"></a>
 ### The three trade contents
 
 `0x010c9280` builds the session:
@@ -84,6 +89,7 @@ A content's init registers its holders and mints its 40000 id: content 50 in tra
 (`0x010d4d90`), content 40 in state 6 (`0x010da470`), after the exchange (state 3) and the state-4
 decision `0x01109320`.
 
+<a id="the-routing-path"></a>
 ## The routing path
 
     0x006a9a20   the sync pump, from the trade session update
@@ -95,6 +101,7 @@ decision `0x01109320`.
     0x010d81d0   content 50's 10000-base holder: parse, call the listener's slot 0
     0x010d5e40   the listener: sender to station index, memcpy 0x158, invoke
 
+<a id="the-application-header"></a>
 ### The application header
 
 A payload is `struct.pack("<HBB", id, discriminator, 0)` then the body, built at `manager+0x240f0`
@@ -104,6 +111,7 @@ by `0x006db840` (`strh w3`, the discriminator from `manager+0x480f0`, `strb wzr`
 (`0x006db470`, `0x010dcea4..0x010dcec8`); registrars zero it (`0x010d53a0`). The 107 payloads of
 one trade with no forced CancelAccepted all carried zero.
 
+<a id="reading-the-registrations-live"></a>
 ### Reading the registrations live
 
     manager = read_u64(read_u64(main + 0x02616750))     0x006a9a70, the poll's caller
@@ -115,6 +123,7 @@ one trade with no forced CancelAccepted all carried zero.
 Slot 7 returns `[holder+0x160]` here; elsewhere decode its `ldrh`. Empty on an idle screen; a seated
 link trade adds two entries (seen within two seconds of the seat); Mystery Gift adds none.
 
+<a id="dispatch-gates-ports-and-senders"></a>
 ### Dispatch gates, ports and senders
 
 An entry is 16 bytes: holder, kind at +8 (`w2`), flag at +9 (`w3`, 1 only for 10000+offset):
@@ -128,6 +137,7 @@ Kind is the mesh port: 0 for content holders (20030, 10050, pings), 1 for the 40
 `0x006db9c0`) passed down to `0x010d5e40` and resolved by `0x006b5850` (`mesh->GetStationIndex`,
 0xfd on failure); loopback passes `[[0x2616a30]]+0xf0`. `Data.ownerId` plays no part on 10050.
 
+<a id="the-data-envelope"></a>
 ## The `Data` envelope
 
 `gflnet.p2p.sync.pb`, `data.proto`:
@@ -147,6 +157,7 @@ The 40000 holder's listener is `element+0x18`; its slot 0, `0x006d59f0`, routes:
     sub->vtable at 0x48 (sub, body, len, [Data+0x28])     body and clock
     otherwise: ret                        dropped silently
 
+<a id="sub-element-kinds"></a>
 ### Sub-element kinds
 
 | kind | constructor | vtable | `+0x88` at birth | slot 9, receive: size check, store to `+0x88` |
@@ -178,6 +189,7 @@ The mint `0x006d44e0` builds four channels, adding every station in `[element+0x
 | `+0xf0` | `0x006d29b0`, B | 0x40 | at `+0x38` a 16-bit sub-element, elementId 20000, owner 0: the [shared value](swsh_trade.md#the-phase-is-the-elements-field); per station a pair, elementId 20000 (`0x006d2aa0`), in 16-byte `{stationId, sub}` entries |
 | `+0x110` | `0x006d7980` | 0x30 | the list the quorum hash walks |
 
+<a id="the-quorum-hash"></a>
 ### The quorum hash
 
 The four bytes on elementId 10000, built by `0x006d7b40` at `element+0xa8`:
@@ -202,6 +214,7 @@ non-zero hash a hosting Sword sent matches, e.g. content 50:
 A clock can change before its message is sent. A joiner that echoes the host's hash completes a
 trade against a hosting Sword.
 
+<a id="the-party-payload-on-protocol-0x84"></a>
 ## The party payload on protocol 0x84
 
 `ReliableBroadcastProtocol` carries the 3456-byte trade snapshot in three fragments until acked;
@@ -225,6 +238,7 @@ callers, Link Trade (`0x010967f0`) and password matching (`0x00bd80f4`,
 `ChikaMatchingStateSession`) pass no block; Battle Stadium (`0x00b2d7d0`, `StateBtlSpot*Battle`,
 Casual, Rank, Comp) passes one. The receiver `0x0110cff0` copies both regions per station.
 
+<a id="the-battle-stadium-block"></a>
 ### The Battle Stadium block
 
 0x180 bytes of data, a u64 length. Producer `0x00b2eb60` fills an optional (flag `+0`, data
@@ -301,6 +315,7 @@ mode)` builds them, reached only via `0x00b1cdd0` from six sites in `StateBtlSpo
 (0x33D0 bytes, key at `0x02072fac`, read by `0x01444ac0`; the preceding key `0xEEE5A3F8` is PKHeX's
 `KOfficialCompetition`).
 
+<a id="the-player-profile"></a>
 ### The player profile
 
 266 bytes at 0xAEC, also the beacon's record at 0x1F ([session](swsh_session.md#taking-a-seat)).
@@ -405,6 +420,7 @@ The trainer name appears four times (MyStatus, trainer card, party records, prof
 `pokeldn/swsh/trade_payload.rewrite` moves all four, and the trade screen names that trainer. Empty
 party slots are zero; the count at 0x810 agrees.
 
+<a id="the-pk8"></a>
 ## The PK8
 
 Shared with BDSP in `pokeldn/gen8.py` (PKHeX `PK8` and `PB8` are both `G8PKM`). Sword sends the
@@ -426,6 +442,7 @@ Two silent misreads:
 Checks of a decoded party: nicknames match species; levels (unshuffled tail) match experience;
 hyper-training 0x126 matches the IV word 0x8C; MyStatus's trainer ids match every PK8's.
 
+<a id="the-trade-message"></a>
 ## The trade message
 
 `net_contents.trade.common.pokemon_trade.protocol_buffers`:
@@ -439,6 +456,7 @@ a 0x28-byte message (`0x010d9c90`), calls `ParseFromArray` (`0x0070c180`) and pa
 `[Pokemon+0x18]` as a libc++ `std::string` (byte 0 bit 0 selects the heap pointer at +0x10), copying
 0x158.
 
+<a id="the-receive-handlers-two-silent-drops"></a>
 ### The receive handler's two silent drops
 
 `0x010d5e40`:
@@ -455,6 +473,7 @@ Content 50's init fills only `+0x30` and `+0x38`, so a station index above 1 ret
 10050 back means the offer never reached `0x010d5e40`. Content 30's slot (`0x010ce080`) only rejects
 its own id (`[[0x2616a30]]+0xf0`): an ownerless offer passes the box phase and fails content 50.
 
+<a id="content-40s-message"></a>
 ### Content 40's message
 
 `net_contents.trade.common.sync_save.protocol_buffers`:

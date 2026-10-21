@@ -3,6 +3,7 @@ title: Home
 nav_order: 1
 ---
 
+<a id="pokeldn"></a>
 # pokeldn
 
 pokeldn is an implementation of Nintendo Switch local wireless (LDN) that speaks to Pokemon games
@@ -13,6 +14,7 @@ with decompilation citations, disassembly addresses and hardware measurements.
 Start with [app setup](gui.md) or [command-line usage](usage.md).
 [Code organization](architecture.md) covers the shared modules and tests.
 
+<a id="targets"></a>
 ## Targets
 
 Seven games, all on retail hardware, all over the same LDN and Pia layers:
@@ -34,6 +36,7 @@ code directly on Pia: Unity/IL2CPP in Brilliant Diamond and Shining Pearl, C++ w
 buffers over `gflnet3` in Sword and Shield and in Let's Go, and C++ with Pia statically linked in
 Legends Arceus, in Scarlet and Violet and in Legends Z-A.
 
+<a id="sections"></a>
 ## Sections
 
 | section | contents |
@@ -54,6 +57,7 @@ Legends Arceus, in Scarlet and Violet and in Legends Z-A.
 | [Hardware and setup](hardware.md) | The ESP32 radio, Switch keys, and legacy Linux Wi-Fi cards. |
 | [Code signing policy](code_signing.md) | What the Windows release signs, the team roles, and the privacy policy. |
 
+<a id="credits"></a>
 ## Credits
 
 Built on [kinnay's LDN library](https://github.com/kinnay/LDN) and the

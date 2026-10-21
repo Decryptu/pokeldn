@@ -1,6 +1,7 @@
 ---
 title: Desktop builds
 ---
+<a id="desktop-builds"></a>
 # Desktop builds
 
 Released apps include PKHeX and merged radio firmware for ESP32, ESP32-S3, ESP32-C3
@@ -20,6 +21,7 @@ a `.pokegift` or, by its extension, a `.wc3` (FireRed/LeafGreen) or `.wc8` (Swor
 [Mystery Gift files](gifts.md#desktop-app) describes the forms, cartridge variants and native-format
 conversion.
 
+<a id="first-launch"></a>
 ## First launch
 
 The checkerboard covers the whole window, the transparent header included; the navigation rail
@@ -38,6 +40,7 @@ window-manager behavior remains unverified.
   needs `sudo usermod -aG dialout $USER` (`uucp` on Arch); log out and back in after changing groups.
   See [Linux serial ports](#linux-serial-ports) for missing ports and brltty conflicts.
 
+<a id="android-setup-requirements"></a>
 ## Android setup requirements
 
 The [Android app](../examples/android/README.md) is this interface on a phone. Its Board page
@@ -68,6 +71,7 @@ separate from user setup.
 On Android "Open the folder" saves a zip of the folder where the player picks, and file choosers are
 Android's own.
 
+<a id="ios-setup"></a>
 ## iOS setup
 
 The [iOS app](../examples/ios/README.md) is this interface on an iPhone or iPad, installed with
@@ -80,6 +84,7 @@ answers nothing on its USB cable: close the iOS app before using the board from 
 Android phone. File choosers are iOS's own and copy the chosen file into the app; the app's files
 are under Files, On My iPhone, pokeldn.
 
+<a id="phones"></a>
 ## Phones
 
 Below 760 points wide the app shows its pages through a bottom tab bar and each page's panels one
@@ -87,6 +92,7 @@ at a time, picked on a switcher above them: Games, Options and Session on the Ga
 a tool brings its options forward and Start brings the session. Dialogs take the screen's width.
 The Control and Update pages are absent on Android and iOS.
 
+<a id="app-language"></a>
 ## App language
 
 Settings, App language lists English and installed community language packs. Choosing a pack enables
@@ -96,6 +102,7 @@ package format and translator template. The desktop app ships English defaults o
 covers Chinese, Japanese and Korean text offline; its SIL Open Font License is in
 `gui/assets/fonts/LICENSE`.
 
+<a id="your-trainer"></a>
 ## Your trainer
 
 Settings, Your trainer is the original trainer of every Pokemon the app builds: a name, a gender, a
@@ -122,6 +129,7 @@ FireRed and LeafGreen, Let's Go, Sword/Shield and BDSP. FireRed and LeafGreen ho
 characters; a longer name is cut to seven, and a name outside the Gen III characters becomes
 `POKELDN` (`Settings.name`).
 
+<a id="windows-usb-drivers"></a>
 ## Windows USB drivers
 
 A classic ESP32 board reaches the computer through a USB-to-serial bridge chip, printed next to its
@@ -138,6 +146,7 @@ With no COM port listed, the Board page asks Windows for USB devices with a Devi
 (`Get-CimInstance Win32_PnPEntity`, `ConfigManagerErrorCode <> 0`) every 2 s and names a known bridge
 it finds, with that driver's install steps (`gui/board.py` `bridges_without_driver`).
 
+<a id="linux-serial-ports"></a>
 ## Linux serial ports
 
 The app opens the board as the user, with no root and no kernel networking. Opening the port needs
@@ -154,6 +163,7 @@ With no serial port listed on Linux, the Board page reads `/sys/bus/usb/devices`
 bridge that has no tty under its interfaces, with the brltty fix for a CH340
 (`gui/board.py` `bridges_without_port`).
 
+<a id="local-storage"></a>
 ## Local storage
 
 Settings, Storage shows the space occupied by reclaimable local files. Clear local files asks for
@@ -173,6 +183,7 @@ Finish any active session, flash or board check before cleanup. Cleanup runs in 
 holds off new sessions and flashes until it finishes. A file that cannot be removed is reported and
 can be retried. The Pokemon sprites cache has its own Clear the cache button under advanced settings.
 
+<a id="your-saves"></a>
 ## Your saves
 
 The FireRed and LeafGreen Mystery Gift tool's Your save tab backs the console's save up, or puts one
@@ -202,6 +213,7 @@ Pokemon shows PKHeX's verdict; Check legality runs it over one box, which takes 
 save writes the result through PKHeX, which recomputes every sector checksum, checks that the game's
 own sector test passes and adds it to the library as a new entry; the original is unchanged.
 
+<a id="the-bank"></a>
 ## The bank
 
 The Bank page keeps every Pokemon a trade brings in and trades one into any game that HOME would move
@@ -248,6 +260,7 @@ fields and runs PKHeX's legality check; an edit that would make a legal Pokemon 
 the record is left as it was. A saved edit rewrites the record and its `.json` (summary, verdict,
 SHA-256) and the destinations are checked again. A Pokemon queued for a trade is not editable.
 
+<a id="the-home-tracker-setting"></a>
 ### The HOME tracker setting
 
 PKHeX marks a Pokemon invalid when it lacks a HOME tracker it needs (`HomeTrackerUtil.IsRequired`,
@@ -283,6 +296,7 @@ every gift passes the check under either setting. The Sword/Shield Mystery Gift 
 community's cards (Official events, Pokemon HOME): the console makes the Pokemon, so it never carries a
 tracker, whatever the setting ([Pokemon HOME](swsh_gift.md#pokemon-home)).
 
+<a id="importing"></a>
 ### Importing
 
 The Bank page's plus button, or a file dropped on its grid, imports a Pokemon file or a game save. The
@@ -319,6 +333,7 @@ run that takes a traded Pokemon out of the bank. It imports a Black 2 save, a Ge
 PKHeX's encounter generator (`tests/data/bank_import.json`): the held item and the HM go,
 an illegal record is refused, and a second import banks nothing.
 
+<a id="unresolved"></a>
 ### Unresolved
 
 - Whether Pokemon HOME accepts a Pokemon the bank moved with a made tracker. HOME 3.1.0 and later
@@ -331,6 +346,7 @@ an illegal record is refused, and a second import banks nothing.
   unmeasured here). PKHeX.Core 26.8.26 converts a `.pk3` by the Pal Park lineage, so a bank move from
   FireRed/LeafGreen may differ from the record HOME writes.
 
+<a id="the-gts"></a>
 ## The GTS
 
 The GTS page lists other players' open listings, filtered by the species offered or wanted, and the
@@ -340,6 +356,7 @@ offered, a Pokemon is in `Documents/pokeldn/GTS`, out of the bank. The app answe
 runs, on any page, once a listing or an offer exists. The events and the rules are in
 [The GTS](online.md#the-gts).
 
+<a id="boards-and-firmware"></a>
 ## Boards and firmware
 
 The Board page lists every board plugged into this computer. The header of the selected board names
@@ -362,6 +379,7 @@ the board's. An install on a serial port lets esptool reset the chip into its lo
 running the Controller firmware it sends the download command over Bluetooth, waits up to 20 s for
 the loader's port, and flashes with `--from-loader`.
 
+<a id="the-controller"></a>
 ## The controller
 
 The Control page presses a Switch's buttons through a board running the controller firmware
@@ -408,6 +426,7 @@ permission. From the main executable, a scan saw 0 devices; from the helper, 19,
 them. An app that finds a service running other code
 (`code` in its status reply) tells it to quit and starts its own.
 
+<a id="pokemon-sprites"></a>
 ## Pokemon sprites
 
 Pokemon images come from [PokeAPI](https://github.com/PokeAPI/sprites) and are downloaded on demand.
@@ -419,6 +438,7 @@ has a button to clear the sprite cache.
 An unavailable species or form shows a placeholder. If a shiny image is unavailable, the normal
 image of the same form is shown. Missing images do not prevent building or trading Pokemon.
 
+<a id="raid-events"></a>
 ## Raid events
 
 The Scarlet/Violet Tera Raid (Host) tool's Raid event card hosts a raid from Project Pokemon's
@@ -459,6 +479,7 @@ event is in use. An event the copy lacks (not downloaded, or an update dropped i
 header reads "Missing: Event" in red, and the run refuses it until the copy has it or another event
 is chosen (`pokeldn.app.command.code_error`).
 
+<a id="hosted-raid-rewards"></a>
 ## Hosted raid rewards
 
 The Tera Raid (Host) tool's Rewards card offers training items, Tera Shards (Stellar included),
@@ -470,6 +491,7 @@ invalid quantities prevent a launch. The saved selection keeps the items and qua
 Raid's own rewards clears the overrides and uses the selected raid's reward tables
 ([Hosting](sv_raid.md#hosting); `gui/views/rewards.py`).
 
+<a id="raid-npc-partners"></a>
 ## Raid NPC partners
 
 The Tera Raid (Host) tool's Raid NPC partners card, below Consoles joining, chooses the NPC trainers
@@ -491,6 +513,7 @@ Each pick passes `--raid-partner`, in order. Raising Consoles joining drops the 
 pick the chosen stage lacks (Dylan or Luke below four stars) is dropped. Folding only hides the card
 (`GamesView.show_raid_partners`): the choice still goes to the raid, and the header names it.
 
+<a id="union-circle"></a>
 ## Union Circle
 
 Scarlet/Violet's two Union Circle tools join the circle a console hosts under a four-digit Link Code
@@ -518,6 +541,7 @@ A circle run's log keeps to what a user follows: the join, the host's totals, th
 spawns coming out or being battled, and the host's area found or lost. `--verbose-circle` (in the
 Advanced tab's Advanced options) adds every circle message sent and each step of the area search.
 
+<a id="mystery-gift---simulated"></a>
 ## Mystery Gift - Simulated
 
 The Mystery Gift - Simulated tool's card, on Let's Go, Brilliant Diamond/Shining Pearl, Legends
@@ -550,6 +574,7 @@ chosen copy, shows the setting's warning: "PKHeX flags the missing HOME tracker"
 deposited in HOME". The trade offers it like any other
 ([The copy a trade offers](gift_simulated.md#the-copy-a-trade-offers)).
 
+<a id="private-logs"></a>
 ## Private logs
 
 Settings, Hide personal details in logs (on by default) masks, in the session and board logs the app
@@ -568,6 +593,7 @@ A nickname is masked where it stands and nowhere else: it is often the species' 
 records (`captures/`) carry the raw messages and are not masked. Local link addresses (`169.254.x.x`,
 `127.0.0.x`) identify nobody and stay.
 
+<a id="pop-ups"></a>
 ## Pop-ups
 
 A run the app started, another of its child processes, or the app's own code can put a pop-up over
@@ -607,6 +633,7 @@ nothing. Code in the app reaches the manager directly (`popup.attach`). `pokeldn
 keeps the open pop-ups; `gui.popups.Dialogs` draws them. An app dialog's
 `page.pop_dialog()` closes the app's own top dialog, never a pop-up opened above it.
 
+<a id="progress"></a>
 ## Progress
 
 A run prints `[progress] DONE TOTAL UNIT TITLE` (`pokeldn.progress.show`, plugin API 1.7; `UNIT` is
@@ -620,6 +647,7 @@ PKHeX, the offer check or the loader ([The trade](gift_simulated.md#the-trade)).
 console (`receiver_gift.pop_up`), a newer reason replacing the one open. The app raises its own for
 an update that did not install and for a plugin it turned off.
 
+<a id="updates"></a>
 ## Updates
 
 At launch the app asks `api.github.com/repos/Decryptu/pokeldn/releases/latest` for the newest stable
@@ -678,6 +706,7 @@ leaves the old app in place and the dialog names the error.
 The request carries no user data. GitHub allows 60 unauthenticated requests per hour per address.
 `POKELDN_UPDATE_URL` replaces the endpoint, for tests (`tests/test_app_update.py`).
 
+<a id="file-drops"></a>
 ## File drops
 
 Files dragged from the desktop land on these targets:
@@ -700,6 +729,7 @@ always carries the built one. The script needs Flutter, at the version
 deployment target from 11.0 to 12.0: Xcode 27 builds nothing older. The Linux client is Flet's light
 flavor, as Flet's own CI builds it.
 
+<a id="the-docs-page"></a>
 ## The docs page
 
 The Docs page shows the app guide and every page of this site that its navigation lists. The search
@@ -707,6 +737,7 @@ field above the page list matches sections: each heading and the text under it, 
 query required. A word in a heading or a page title ranks first. Picking a result opens the page at
 that heading; a link to `page.md#heading` scrolls the same way (`gui/views/docs.py`).
 
+<a id="unreleased-titles"></a>
 ## Unreleased titles
 
 A title prepared ahead of its Switch release appears in the Games list, the Bank and the Docs page
@@ -714,6 +745,7 @@ only when the app runs from a source checkout (`pokeldn/app/preview.py`). A pack
 frozen and carries no `.git`, so it never shows one. `POKELDN_PREVIEW=1` shows them anywhere;
 `POKELDN_PREVIEW=0` hides them in a checkout. Its docs page sets `nav_exclude` and `search_exclude`.
 
+<a id="run-from-source"></a>
 ## Run from source
 
 For source development, install Python 3.13 and the .NET 10 SDK:
@@ -734,6 +766,7 @@ when all match. A release that predates a chip carries no image for it. An image
 older release than the checkout can carry an older serial protocol; the board check then reports the
 firmware as out of date.
 
+<a id="build-a-desktop-app"></a>
 ## Build a desktop app
 
 To package an app, install ESP-IDF v6.1 for `esp32`, `esp32s3`, `esp32c3` and `esp32c6` and activate its

@@ -4,6 +4,7 @@ parent: Scarlet and Violet
 nav_order: 2
 ---
 
+<a id="union-circle"></a>
 # Union Circle
 
 A Union Circle is a Scarlet/Violet session of up to four players who share the field. Its code calls
@@ -20,6 +21,7 @@ function, counted from 0. The prototype numbers are the same in the public 3.0.1
 (Martmists-GH/SV-Script-RE). Names in angle brackets come from its hash list; the others are still
 hashes.
 
+<a id="getting-the-lua"></a>
 ## Getting the Lua
 
 The chunk is `script/lua/bin/release/main/main.blua` in `arc/data.trpfs`, stored with Oodle. The
@@ -35,6 +37,7 @@ prototypes. The event scripts are a second chunk, `main_dynamic`
 (`script/lua/bin/release/main_dynamic/main_dynamic.blua`, 6,431 top-level prototypes), extracted
 the same way.
 
+<a id="the-team-circles-messages"></a>
 ## The team circle's messages
 
 `TeamCircleNetReceiver` (`CF1D074B6B410BDB8`) dispatches on the message id (`0.15862`):
@@ -51,6 +54,7 @@ the same way.
 A station sends 110 (`0.15863`) with its new field on every map change
 (`main.event.general.system.map_change.MapChangeCore`). The BBQ code reads it back (below).
 
+<a id="bbqs"></a>
 ## BBQs
 
 Quest progress is native, in the Lua module `c5137FC87`. Lua game events report into it through
@@ -120,6 +124,7 @@ So the Lua checks nothing. The host is paid a member's Normal or Team clear stra
 queue. A Bonus clear pays only through a grant that the native circle module puts in the third
 queue, and on the host that module is also what takes in the members' clears.
 
+<a id="native-modules"></a>
 ## Native modules
 
 The addresses below are in Scarlet 4.0.0's `main`.
@@ -170,6 +175,7 @@ Its sequence was 4. A tenth of a second before it the host sent kind 2: the ques
 progress (1.0), 3, and its status record. In the tagged format an integer from -64 to 127 is its own
 byte, a wider one goes behind a signed tag (0x84 to 0x86), a float behind 0x88.
 
+<a id="the-bbq-status-record"></a>
 ### The BBQ status record
 
 Each player's BBQ manager keeps its status record at its `+0x40`; the circle writes it (`0xa0f37c`)
@@ -204,6 +210,7 @@ until a report finished it. Its own clear named the quest that took the freed sl
 The further slots stayed empty and its Bonus count 0. Its Team total went up by one with each Team
 clear from pokeldn, as [Snacksworth](#snacksworth) has it.
 
+<a id="a-members-progress-on-the-hosts-quests"></a>
 ### A member's progress on the host's quests
 
 A member finishes one of the host's quests by reporting progress on it, not by clearing it. In a
@@ -225,6 +232,7 @@ the next of the host's three slots as its latest record shows them, with a count
 goal of a Normal row) and the slot's variant as the first value, -1 without one. A retail host
 cleared each quest reported this way, and its solo total rose by one for each.
 
+<a id="what-the-host-does-with-a-members-clear"></a>
 ## What the host does with a member's clear
 
 The receive handler (`0xa13b00`) dispatches on the type through the jump table at `0x3c5b7a4`. For
@@ -255,6 +263,7 @@ releases it into the grant queue (the object's `+0x108`) only when its `+0x7c` i
 last released event's, or two less, or both are 0. That value is built from the slots, so a
 member's next Bonus clear must report a count one past its last.
 
+<a id="snacksworth"></a>
 ## Snacksworth
 
 The BBQ manager keeps two running totals, read by `c5137FC87.f6ED7C9B6` (`+0x1c8`) and
@@ -302,6 +311,7 @@ check that the quest is a Team quest it has, and the sequence does not stop a re
 Snacksworth. That covers the 12 on the host's Team route; the 13 on its solo route need solo clears,
 which a member makes for the host by finishing its quests.
 
+<a id="joining"></a>
 ## Joining
 
 `bin/sv_join.py --union-circle` joins a circle a console hosts the way a raid guest joins a raid
@@ -322,6 +332,7 @@ It seats a guest the way a Link Trade or Tera Raid host does: the join response,
 channel table (keys 0x007B, 0x0132, 0x0232 and 0x0332), both stream opens, the clock answer and its
 identity records. The guest then waits until the host's player starts the circle.
 
+<a id="starting-the-circle"></a>
 ## Starting the circle
 
 On the start the host sends Net 0x50 with its advertisement counting the members, the type-7
@@ -359,6 +370,7 @@ host's own does.
 
 Once every 106 is in, the host warps to the fly point of its 102 and sends 115 (1, 0).
 
+<a id="the-field"></a>
 ## The field
 
 The host's player then enters the field. It opens 14 more channel keys (low bytes 0x1E to 0x2A, some
@@ -441,6 +453,7 @@ Team clear, even of a quest that is not a Team quest, was enough for Snacksworth
 Team-route legendary ([Snacksworth](#snacksworth)), also with the host outside the Blueberry
 Academy.
 
+<a id="overworld-encounters"></a>
 ## Overworld encounters
 
 Every console in a circle spawns the wild Pokemon around its own player from its own game version,
@@ -571,6 +584,7 @@ and a member walks the same categories (1, 2, 3, 4, 5, 9, 10, 13, 16) about ever
 asking about a few to 250 ids each. Right after the field opens, the host answers every id with 1;
 later it answers about half with 0. The host never asks a member.
 
+<a id="crafted-encounters"></a>
 ## Crafted encounters
 
 `sv_join --spawn SPECIES:LEVEL` joins the circle as a member and keeps three spawns of a Pokemon the
@@ -617,6 +631,7 @@ estimated from its spawns, or unknown. Until the area is found it suggests a pic
 started: packing it up spawns the wild Pokemon around the player afresh, which narrows the areas
 faster.
 
+<a id="unresolved"></a>
 ## Unresolved
 
 - Whether the merge in the grant push (`0xa112c0`) changes an event's BP.

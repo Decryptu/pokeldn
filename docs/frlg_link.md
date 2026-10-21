@@ -4,12 +4,15 @@ parent: FireRed and LeafGreen
 nav_order: 1
 ---
 
+<a id="the-gba-link-and-what-runs-on-it"></a>
 # The GBA link, and what runs on it
 
 Measured on retail hardware or read out of [pret/pokefirered](https://github.com/pret/pokefirered).
 
+<a id="the-rfu-link-layer"></a>
 # The RFU link layer
 
+<a id="one-child-slot-per-parent-poll"></a>
 ## One child slot per parent poll
 
 `RfuMain2_Parent` keeps one child slot per poll in `gRfu.childRecvBuffer[i]` and checks its rolling
@@ -29,6 +32,7 @@ rate reach the seat, so the 5.8 s stop does not come from the tag check.
 
 Nothing is exempt, including the seat walk.
 
+<a id="row-one-of-the-parents-table-is-the-consoles-own-command-mirrored-back"></a>
 ## Row one of the parent's table is the console's own command, mirrored back
 
 This rule governs every stall while the console is sending, in any activity.
@@ -56,6 +60,7 @@ a missing fragment; it resends everything.
 The child sends one command per parent frame it receives (`childSendCount` increments only on
 `recv.newDataFlag` [link_rfu_2.c:600]), so the mirror queue cannot grow on its own.
 
+<a id="a-tile-step-is-exactly-16-link-updates"></a>
 ## A tile step is exactly 16 link updates
 
 `FacingHandler_DpadMovement` sets `objEvent->directionSequenceIndex = 16`;
@@ -64,6 +69,7 @@ The child sends one command per parent frame it receives (`childSendCount` incre
 last step spent, so a scripted walk's gap needs only `16 - (N mod 16)` updates; overshooting costs a
 slot per update and nothing else.
 
+<a id="the-players-inputs-are-not-always-transmitted"></a>
 ## The player's inputs are not always transmitted
 
 `UpdateHeldKeyCode` rewrites EMPTY, the four DPAD codes, START and A to `LINK_KEY_CODE_NULL` whenever
@@ -71,6 +77,7 @@ slot per update and nothing else.
 player under queue pressure looks parked. `LINK_KEY_CODE_READY` (0x16) is exempt, so gate on 0x16,
 never on the absence of DPAD codes.
 
+<a id="the-seat-is-a-mutual-barrier"></a>
 ## The seat is a mutual barrier
 
 `Task_EnterCableClubSeat` shows "Please wait", calls `SetInCableClubSeat()` (the next held-key
@@ -80,6 +87,7 @@ emission becomes `LINK_KEY_CODE_READY`), then spins on `GetCableClubPartnersRead
 [cable_club.c:910-943], the source of the post-seat standby rounds. Drive those only once both players
 are READY; driving them at a console still in `CABLE_SEAT_WAITING` faults its seat state machine.
 
+<a id="what-a-real-child-sends-end-to-end"></a>
 ## What a real child sends, end to end
 
 A retail French FireRed as child against the host. The order is fixed by the protocol; the IDLE
@@ -106,6 +114,7 @@ IDLE x75    -> the host pulls the party
   `LINK_KEY_CODE_IDLE` sets `sPlayerLinkStates[player] = IDLE` on the peer [overworld.c:2755], and
   `HandleLinkPlayerKeyInput` runs tile scripts only for a player in state IDLE.
 
+<a id="both-sides-advance-only-when-they-have-heard-from-the-peer"></a>
 ## Both sides advance only when they have heard from the peer
 
 `CB1_UpdateLinkState` runs `UpdateAllLinkPlayers` only when `!IsRfuRecvQueueEmpty()`, which returns
@@ -116,6 +125,7 @@ settles into one exchange per round trip.
 The high byte of the host's `SEND_HELD_KEYS` is `heldKeyCount`, one per prepared command, so the last
 value counts the link updates its trade room survived.
 
+<a id="post-seat-standby-gate-and-walk-out"></a>
 ## Post-seat standby gate and walk-out
 
 After both sit, the console broadcasts its own `READY_EXIT_STANDBY` count=2 at mpId 0 after
@@ -131,6 +141,7 @@ The walk-out: the host emits `LINK_KEY_CODE_EXIT_ROOM` (0x17) and blocks in
 [overworld.c:2962-2981]. The child must answer with its own 0x17 on the held-keys stream; an all-zero
 slot is not a key.
 
+<a id="leaving-the-room"></a>
 ## Leaving the room
 
 A console whose player walks out of the Trade Center, before sitting down or after a battle, sends
@@ -140,6 +151,7 @@ held key `0x17` (EXITING_ROOM) and waits on "Please wait" until every player has
 FireRed that walked out while the host was still walking to its chair stayed on "Please wait" until
 `H_ENTRY_SEAT` answered too.
 
+<a id="quiet-gate"></a>
 ### Quiet gate
 
 While the console has sent nothing for `QUIET_GATE_SECONDS` (0.25 s), the host drops its own
@@ -147,6 +159,7 @@ retransmissions, except one every `QUIET_RETRANSMIT_SECONDS` (1 s), so a console
 the host's hole guard (`HOST_OUTSTANDING_MAX`) holds behind still receives it
 (`tests/test_host_quiet_gate.py`).
 
+<a id="cancel-after-a-trade"></a>
 ## Cancel after a trade
 
 `BufferTradeParties` clears received block flags after the gift-ribbon exchange
@@ -163,6 +176,7 @@ idles until `BOTH_CANCEL_TRADE` [trade.c:2049, 1643]; a leader whose player chos
 when it reads it [1715-1722]. The host answers a console's `REQUEST_CANCEL` in the final menu at
 once.
 
+<a id="one-sided-cancel-returns-both-sides-to-the-menu"></a>
 ## One-sided cancel returns both sides to the menu
 
 `PLAYER_CANCEL_TRADE` / `PARTNER_CANCEL_TRADE` go through `CB_HandleTradeCanceled` → `CB_MAIN_MENU`
@@ -174,6 +188,7 @@ first one with `BOTH_CANCEL_TRADE`, the exit path. A leader's own pick sends not
 that sent `READY_TO_TRADE` first draws `PLAYER_CANCEL_TRADE` on the leader's first Cancel;
 `bin/frlg_trade_join.py` then cancels at the menu, so the leader's second Cancel ends the session.
 
+<a id="version-and-language-on-the-link"></a>
 ## Version and language on the link
 
 `IsTryingToTradeAcrossVersionTooSoon` [union_room.c:1499] fires only for a partner that is neither
@@ -189,6 +204,7 @@ After the player selects pokeldn in the Mystery Gift Friend list, the console se
 code in GameData. The host chooses that cartridge's addresses and card layout before delivery.
 The GUI shows this automatic language detection beside the version on its Basic screen.
 
+<a id="the-emulator-can-close-the-link-on-its-own"></a>
 ## The emulator can close the link on its own
 
 `HandleLinkConnection` runs `svc_51` on the Switch build only [link.c:1654]:
@@ -214,8 +230,10 @@ then `RfuSoftReset()` under `Task_MysteryGift`, else `RfuReloadSave()` [link.c:1
 | `swi 0x51` | link.c:1654 | close the link now (soft reset under Mystery Gift) |
 | `swi 0x53` | wireless_communication_status_screen.c:328 | emulator-driven exit from the status screen |
 
+<a id="the-wireless-layer-as-this-game-exercises-it"></a>
 # The wireless layer, as this game exercises it
 
+<a id="the-advertised-rate-set"></a>
 ## The advertised rate set
 
 An association response without 6, 9 and 12 Mbit/s makes the console leave the LDN network 2.9 to
@@ -247,6 +265,7 @@ decoder takes the TID into the CCMP nonce and AAD. `host_pia` unicasts the type 
 A probe response without RSN under a privacy capability leaves the console's association requests
 unanswered.
 
+<a id="the-console-as-a-pia-child"></a>
 ## The console as a Pia child
 
 - The console child needs the type 2 Join Response: on a type 5 alone it re-sends its join request
@@ -269,6 +288,7 @@ Sequence from a console hosting Mystery Gift to the receive client, from its Net
     6.82   SEND_PLAYER_IDS, 6.87 BLOCK_REQ (2.2s after the YES)
     8.15   Net 0x50 property update every ~0.5s, acked 0x51
 
+<a id="leaving-the-pia-session"></a>
 ## Leaving the Pia session
 
 A console child leaves in three steps after its RFU `D` frame: a pause, the Session type-3 leave
@@ -316,12 +336,14 @@ or 3 (`swi 0x42`, or `swi 0x43` with a zero PID) or once a Pia error or timeout 
 disconnect reason `+0x277c` (checked first in `0x4ee64`; set through `0x4f020` from `0x5110c`,
 `0x52470` and `0x53440`). The countdown code has no role check.
 
+<a id="behaviour"></a>
 ## 802.11 behaviour
 
 - Console as station: no power save (PM bit 0 always), RTS before every data frame. When it leaves,
   it sends one deauthentication with no probe or null frame before it.
 - A Switch host beacons at 11M and sends data at 48-54M.
 
+<a id="the-pia-header-nonce-is-a-counter-the-console-enforces"></a>
 ## The Pia header nonce is a counter the console enforces
 
 The console keeps, per channel, the last accepted 8-byte header nonce (big-endian) and drops any
@@ -332,6 +354,7 @@ datagram not strictly above it, so a random nonce passes about half the time:
 
 `Sim._next_nonce` and the host both count.
 
+<a id="carry-forward"></a>
 ## Carry-forward
 
 Each reliable frame is repeated in the next 4 datagrams, acknowledged about 17 ms after the
@@ -341,6 +364,7 @@ together and overflows the console's 8-deep RFU receive queue. With carry 0, one
 and its 68 ms retransmit put ten slots into the console at once, and it disconnected 300 ms later.
 The host de-duplicates by sequence.
 
+<a id="the-consoles-acknowledgement-lag-is-a-512-ms-metronome"></a>
 ## The console's acknowledgement lag is a 512 ms metronome
 
 The console's cumulative ack lives in the CTRL frame payload (`parse_bulk_ack`); the reliable
@@ -361,6 +385,7 @@ ms of phase. On an idle chat link the outstanding count reaches 5 harmlessly; un
 trade load the stall lands on a full send window. The ROM has no 512 ms tick, so the timer belongs to
 the emulator or the Pia/LDN layer; what it is remains unknown.
 
+<a id="the-ident-25-stall-a-hole-plus-an-unbounded-backlog"></a>
 ## The ident-25 stall: a hole plus an unbounded backlog
 
 The console can go idle after the last delivery-script block (ident 25, `MG_LINKID_RAM_SCRIPT`),
@@ -380,6 +405,7 @@ retransmitting the gap, and resumes when the ack catches up, so a closed hole re
 `--block-repeat 1`, the one LeafGreen session measured stalled at ident 25. Whether air loss or the
 console's RFU-to-game handoff drops the fragment is unknown.
 
+<a id="transmission-phase-deaths-after-the-card"></a>
 ## Transmission-phase deaths after the card
 
 A transmit stall of 250 ms to 3 s, then no acks, then every unacked frame re-sent every tick killed
@@ -392,6 +418,7 @@ sessions that completed. The host's guards, all on by default:
   while the console is silent (about 0.5 s after accepting the card, its flash save; a blocking send
   there froze the host 6-11 s).
 
+<a id="datagrams-held-between-the-socket-and-the-air"></a>
 ## Datagrams held between the socket and the air
 
 Host datagrams held 0.1-1.1 s before the air (in one measured battle, released as one burst of 71
@@ -400,8 +427,10 @@ connexion, rapprochez-vous" [link_rfu_2.c:2312 → CB2_PrintErrorMessage, link.c
 board the longest socket-to-acknowledgement wait over four FireRed trades was 265 ms, in the board's
 transmit queue ([ESP32 radio](hardware_esp32.md), TX_DONE).
 
+<a id="the-union-room"></a>
 # The Union Room
 
+<a id="getting-listed-the-advertised-activity-byte"></a>
 ## Getting listed: the advertised activity byte
 
 A searching console keeps a candidate only if its advertised activity is in the accept list of the
@@ -416,6 +445,7 @@ src/data/union_room.h:398-456]; most lists hold one id. A console in the Union R
 Record byte 16 is the activity: 21 lists the host on the Wonder Cards screen, 22 on the Wonder News
 screen, where the console joins it and completes a session.
 
+<a id="the-connect-inunionroom-exactly-and-alone"></a>
 ## The connect: IN_UNION_ROOM, exactly and alone
 
 `IsPartnerActivityIncompatible` [src/link_rfu_2.c:2925] tests
@@ -429,6 +459,7 @@ is refused inside `Task_TryConnectToUnionRoomParent` [link_rfu_2.c:2963]. The tr
 `sPlayerCurrActivity`, negotiated after the link is up. The bare `IN_UNION_ROOM` (0x40) connects. The
 avatar tracks the beacon live: it walks out and back in when the host restarts.
 
+<a id="no-parent-ni-and-the-five-frame-rule"></a>
 ## No parent NI, and the five-frame rule
 
 The Union Room child expects no parent join-status NI: once its name NI succeeds
@@ -460,6 +491,7 @@ pending receive is released only by `NI_failCounter_limit`, 480 frames after the
 [link_rfu_2.c:139, AgbRfu_LinkManager.c:1328] (measured: the first UNI frame 482 frames after the
 host's last). Nothing releases it early.
 
+<a id="what-the-console-does-once-connected"></a>
 ## What the console does once connected
 
 [src/union_room.c:2858-2879]
@@ -491,6 +523,7 @@ own parental controls can turn its request into a DECLINE. Salut shows the host'
 repeats; Retour sends 0x40 then READY_CLOSE_LINK, and once answered the console disconnects normally
 and stays in the room with no error.
 
+<a id="the-trading-board"></a>
 ## The trading board
 
 The board lists partners whose advertisement carries `tradeSpecies`, `tradeType` and `tradeLevel`
@@ -508,6 +541,7 @@ READY_FINISH, the host's CONFIRM_FINISH, the save barriers, READY_CLOSE_LINK bot
 disconnect back into the room. Another board trade is a new connection. The trade centre returns to
 its trade menu instead [trade.c:2094-2113]. There is no party exchange, menu or room route.
 
+<a id="chat"></a>
 ## Chat
 
 Chat rides `SendBlock` and bypasses `Rfu_SendPacket`: every member calls `SendBlock(0, sendMessageBuffer,
@@ -534,6 +568,7 @@ The leader must close on a LEAVE: the leaver waits for the parent to drop the li
 the chat?". The host sends DROP 0.1 s after LEAVE and runs the close-link handshake. Lines appended
 to `--chat-file` reach the console about 1.7 s after the write.
 
+<a id="the-link-battle-urbattle-0x41"></a>
 ## The link battle (UR_BATTLE 0x41)
 
 `HasAtLeastTwoMonsOfLevel30OrLower` [union_room.c:4565] requires two non-egg party mons at level 30
@@ -560,6 +595,7 @@ tests exactly [battle_controllers.c:520]. Then [`CB2_HandleStartBattle`, battle_
 The party exchange is the trades' 3 × 200-byte transfer (`mon.party_blocks`; `Rfu_InitBlockSend`
 allows up to 252).
 
+<a id="master-election"></a>
 ### Master election
 
 In a link single battle only the `BATTLE_TYPE_IS_MASTER` side sets `gBattleMainFunc =
@@ -573,6 +609,7 @@ is a battle controller.
 index with the highest version. A signature below 0x201 other than 0x100 makes the console master;
 the host sends 0x200.
 
+<a id="the-link-buffer-protocol"></a>
 ### The link buffer protocol
 
 Every controller command is one SendBlock with an 8-byte header [battle_controllers.c:401-435]:
@@ -607,6 +644,7 @@ from `gEnemyParty` [link_opponent.c:444].
 A link battler may run [battle_main.c:3239] with top turn order [:3548-3560], so answering the first
 `CHOOSEACTION` with `B_ACTION_RUN` exercises the whole path and ends the battle.
 
+<a id="two-rules-not-visible-in-the-decomp"></a>
 ### Two rules not visible in the decomp
 
 A block's size does not decide its path. Every ack and short command (the first `GETMONDATA`
@@ -631,6 +669,7 @@ echo queue is 24 times too slow; counting echoes, or watching only the last frag
 fragment's echo share a frame with the ack. No later message frees a console waiting on
 `gBattleControllerExecFlags`; ending the host returns it to the room through the error screen.
 
+<a id="the-pace-is-the-rfu-vblank-budget"></a>
 ### The pace is the RFU VBlank budget
 
 A link battle step takes about a second against the host, in both directions. Datagram turnaround
@@ -641,6 +680,7 @@ follows 355 ms later. `HostSession.tick` emits one RFU slot per call at `HOST_VB
 ~340 ms, and a step is that plus the return leg. More than one slot per VBlank is not what the
 hardware link does.
 
+<a id="what-two-real-consoles-put-on-the-air"></a>
 ## What two real consoles put on the air
 
 A passive capture of a trade between two real consoles (FireRed hosting through the third NPC,
@@ -657,6 +697,7 @@ The 25.5/s figure rests on the softest capture.
 A FireRed console hosting over Direct Corner carries the Switch profile name in plain ASCII at offset
 0x11 of `application_data`; the in-game trainer name is absent from the advertisement.
 
+<a id="host-tick-rate-and-the-consoles-output-rate"></a>
 ## Host tick rate and the console's output rate
 
 `--tick-hz` sets the host's RFU slots per second (default one per VBlank). One trade at each rate
@@ -672,6 +713,7 @@ with the same console:
 At 20 Hz the console's rate fell by a sixth, the trade took 197 s against 92 s, and the console sent
 80% more datagrams. The default is one slot per VBlank.
 
+<a id="the-cable-club-colosseum"></a>
 # The cable-club colosseum
 
 `frlg_trade_host.py --colosseum` hosts Pokemon Center 2F → third NPC (club sans fil) → Colosseum →
@@ -708,6 +750,7 @@ The host owes the exit key after a battle too: the door waits for every player i
 `PLAYER_LINK_STATE_EXITING_ROOM` [overworld.c:2977], else the console sits on *"conduire a la sortie
 de la piece, veuillez patienter"* until the link errors.
 
+<a id="what-decides-whether-a-colosseum-run-counts"></a>
 ## What decides whether a colosseum run counts
 
 A forfeit is a win for the console: `HandleAction_Run` sets `B_OUTCOME_WON` for the side that did not
@@ -721,6 +764,7 @@ with its POTION. After one:
     save 0x3434:  0100 0000 0000 2300    battlesWon 1, lost 0, trades 0, icon 35 CARD_TYPE_LINK_STAT
     game data:    "1 battles won"
 
+<a id="two-host-side-constraints"></a>
 # Two host-side constraints
 
 The close path depends on the hole guard: `done` comes from the disconnect path, gated on

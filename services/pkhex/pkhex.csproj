@@ -22,6 +22,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="messages.en.json" LogicalName="pokeldn.messages.en.json" WithCulture="false" />
     <PackageReference Include="PKHeX.Core" Version="26.8.26" />
   </ItemGroup>
 

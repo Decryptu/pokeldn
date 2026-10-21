@@ -1,3 +1,5 @@
+from pokeldn.app.i18n import message_ref as _message
+from pokeldn.app.i18n import ref as _ref
 """Mystery Gift server script interpreter [decomp:src/mystery_gift_server.c]; we are link player 0.
 run() advances until it blocks and publishes ``action`` as ("send", ident, payload, size),
 ("recv", ident) or ("done", server_msg_id); the caller acknowledges with on_sent()/on_received()."""
@@ -114,17 +116,15 @@ def _encode_message(text, default):
         lines = text.split("\n")
         if len(lines) > MAX_MESSAGE_LINES:
             raise MysteryGiftServerError(
-                f"the console's message window holds {MAX_MESSAGE_LINES} lines, got {len(lines)}")
+                _message('core.pokeldn.frlg.gift.mg_server.the_console_s_message_window_holds_value0_lines__44076bc0', value0=MAX_MESSAGE_LINES, value1=len(lines)))
         for line in lines:
             if len(line) > MAX_MESSAGE_LINE_CHARS:
                 raise MysteryGiftServerError(
-                    f"line {line!r} is {len(line)} characters; the window fits about "
-                    f"{MAX_MESSAGE_LINE_CHARS} and a longer one wraps around inside it")
+                    _message('core.pokeldn.frlg.gift.mg_server.line_value0_r_is_value1_characters_the_window_fi_274b2db1', value0=line, value1=len(line), value2=MAX_MESSAGE_LINE_CHARS))
         encoded = b"\xFE".join(charmap.encode(line) for line in lines) + b"\xff"
     if len(encoded) > mg_script.CLIENT_MAX_MSG_SIZE:
         raise MysteryGiftServerError(
-            f"the message encodes to {len(encoded)} bytes; the console copies only "
-            f"{mg_script.CLIENT_MAX_MSG_SIZE}")
+            _message('core.pokeldn.frlg.gift.mg_server.the_message_encodes_to_value0_bytes_the_console__6e9d9bd6', value0=len(encoded), value1=mg_script.CLIENT_MAX_MSG_SIZE))
     return encoded
 
 
@@ -508,7 +508,7 @@ def gate_on_questionnaire(script):
     """Splice a questionnaire check after the game-data prefix."""
     if tuple(script[:len(_GAME_DATA_PREFIX)]) != _GAME_DATA_PREFIX:
         raise MysteryGiftServerError(
-            "only a script that opens with the standard game-data prefix can be gated")
+            _message('core.pokeldn.frlg.gift.mg_server.only_a_script_that_opens_with_the_standard_game__be9c96e8'))
     return (_GAME_DATA_PREFIX
             + ((SVR_CHECK_QUESTIONNAIRE,),
                (SVR_GOTO_IF_EQ, False, _SCRIPT_QUESTIONNAIRE_DENIED))
@@ -531,38 +531,35 @@ class MysteryGiftServer:
                  script=None, per_build=None, game="frlg", log=lambda *a: None):
         self.expect_console = None if expect_console is None else str(expect_console).lower()
         if game not in GAME_CONSOLES:
-            raise MysteryGiftServerError(f"game is one of {', '.join(GAME_CONSOLES)}, got {game!r}")
+            raise MysteryGiftServerError(_message('core.pokeldn.frlg.gift.mg_server.game_is_one_of_value0_got_value1_r_569659d0', value0=', '.join(GAME_CONSOLES), value1=game))
         self.game = game
         if self.expect_console not in (None, *GAME_CONSOLES[game]):
             raise MysteryGiftServerError(
-                f"expect_console is one of {', '.join(GAME_CONSOLES[game])}, got {expect_console!r}")
+                _message('core.pokeldn.frlg.gift.mg_server.expect_console_is_one_of_value0_got_value1_r_815df091', value0=', '.join(GAME_CONSOLES[game]), value1=expect_console))
         self.console_mismatch = None
         self.news = None if news is None else bytes(news)
         if self.news is not None:
             if card is not None or ram_script is not None:
                 raise MysteryGiftServerError(
-                    "a Wonder News session carries no Wonder Card and no RAM script")
+                    _message('core.pokeldn.frlg.gift.mg_server.a_wonder_news_session_carries_no_wonder_card_and_3a120532'))
             if len(self.news) not in (wonder_news.WONDER_NEWS_SIZE, wonder_news.JAPANESE_WONDER_NEWS_SIZE):
                 raise MysteryGiftServerError(
-                    f"Wonder News must be exactly 224 or {wonder_news.WONDER_NEWS_SIZE} bytes, "
-                    f"got {len(self.news)}")
+                    _message('core.pokeldn.frlg.gift.mg_server.wonder_news_must_be_exactly_224_or_value0_bytes__1c72feef', value0=wonder_news.WONDER_NEWS_SIZE, value1=len(self.news)))
             if not wonder_news.validate(self.news):
                 raise MysteryGiftServerError(
-                    "news id 0 fails ValidateWonderNews; the console would keep nothing")
+                    _message('core.pokeldn.frlg.gift.mg_server.news_id_0_fails_validatewondernews_the_console_w_28448376'))
         elif buffer_code is None and (card is None or ram_script is None):
             raise MysteryGiftServerError(
-                "a Mystery Gift session needs a Wonder Card and RAM script, or news, or a "
-                "buffer script")
+                _message('core.pokeldn.frlg.gift.mg_server.a_mystery_gift_session_needs_a_wonder_card_and_r_be52c404'))
         self.card = None if card is None else bytes(card)
         self.ram_script = None if ram_script is None else bytes(ram_script)
         if self.news is None and buffer_code is None:
             if len(self.ram_script) > self.MAX_RAM_SCRIPT_SIZE:
                 raise MysteryGiftServerError(
-                    f"delivery RAM script is {len(self.ram_script)} bytes; the console "
-                    f"only saves the first {self.MAX_RAM_SCRIPT_SIZE}")
+                    _message('core.pokeldn.frlg.gift.mg_server.delivery_ram_script_is_value0_bytes_the_console__448fbb4f', value0=len(self.ram_script), value1=self.MAX_RAM_SCRIPT_SIZE))
             if len(self.card) not in (WONDER_CARD_SIZE, 164):
                 raise MysteryGiftServerError(
-                    f"Wonder Card must be exactly 164 or {WONDER_CARD_SIZE} bytes, got {len(self.card)}")
+                    _message('core.pokeldn.frlg.gift.mg_server.wonder_card_must_be_exactly_164_or_value0_bytes__bebdcb34', value0=WONDER_CARD_SIZE, value1=len(self.card)))
         self.stamp = None if stamp is None else bytes(stamp)
         self.activation_script = (None if activation_script is None
                                   else bytes(activation_script))
@@ -573,41 +570,36 @@ class MysteryGiftServer:
         if any(value is not None for value in extras):
             if any(value is None for value in extras):
                 raise MysteryGiftServerError(
-                    "stamp flow requires a stamp and both activation scripts")
+                    _message('core.pokeldn.frlg.gift.mg_server.stamp_flow_requires_a_stamp_and_both_activation__7195e5c8'))
             if len(self.stamp) != 4:
-                raise MysteryGiftServerError("stamp must be exactly four bytes")
+                raise MysteryGiftServerError(_message('core.pokeldn.frlg.gift.mg_server.stamp_must_be_exactly_four_bytes_fb1263a5'))
         self.trainer = None if trainer is None else bytes(trainer)
         if self.trainer is not None:
             if len(self.trainer) != ereader_trainer.TRAINER_SIZE:
                 raise MysteryGiftServerError(
-                    f"a visiting trainer is {ereader_trainer.TRAINER_SIZE} bytes, "
-                    f"got {len(self.trainer)}")
+                    _message('core.pokeldn.frlg.gift.mg_server.a_visiting_trainer_is_value0_bytes_got_value1_801062fb', value0=ereader_trainer.TRAINER_SIZE, value1=len(self.trainer)))
             if not ereader_trainer.validate(self.trainer):
                 raise MysteryGiftServerError(
-                    "the visiting trainer fails ValidateEReaderTrainer; the console would "
-                    "silently clear it")
+                    _message('core.pokeldn.frlg.gift.mg_server.the_visiting_trainer_fails_validateereadertraine_2462840a'))
             if self.stamp is not None:
                 raise MysteryGiftServerError(
-                    "a stamp rally and a visiting trainer cannot share one session")
+                    _message('core.pokeldn.frlg.gift.mg_server.a_stamp_rally_and_a_visiting_trainer_cannot_shar_fc9f317d'))
         if self.news is not None and (self.stamp is not None or self.trainer is not None):
             raise MysteryGiftServerError(
-                "Wonder News cannot share a session with a stamp rally or a visiting trainer")
+                _message('core.pokeldn.frlg.gift.mg_server.wonder_news_cannot_share_a_session_with_a_stamp__d75e5d70'))
         self.mevent = None if mevent is None else bytes(mevent)
         if self.mevent is not None:
             if len(self.mevent) > mystery_event.MAX_SCRIPT_SIZE:
                 raise MysteryGiftServerError(
-                    f"Mystery Event script is {len(self.mevent)} bytes; the console's receive "
-                    f"buffer is {mystery_event.MAX_SCRIPT_SIZE}")
+                    _message('core.pokeldn.frlg.gift.mg_server.mystery_event_script_is_value0_bytes_the_console_d763405e', value0=len(self.mevent), value1=mystery_event.MAX_SCRIPT_SIZE))
             if not mystery_event.decode(self.mevent):
-                raise MysteryGiftServerError("Mystery Event script is empty")
+                raise MysteryGiftServerError(_message('core.pokeldn.frlg.gift.mg_server.mystery_event_script_is_empty_151d1a1b'))
             if mystery_event.decode(self.mevent)[-1][0] not in mystery_event.TERMINAL_OPCODES:
                 raise MysteryGiftServerError(
-                    "Mystery Event script has no terminal command; the console would carry on "
-                    "decoding the rest of its receive buffer")
+                    _message('core.pokeldn.frlg.gift.mg_server.mystery_event_script_has_no_terminal_command_the_76fd1492'))
             if self.news is not None or self.stamp is not None or self.trainer is not None:
                 raise MysteryGiftServerError(
-                    "a Mystery Event script cannot share a session with news, a stamp rally or a "
-                    "visiting trainer")
+                    _message('core.pokeldn.frlg.gift.mg_server.a_mystery_event_script_cannot_share_a_session_wi_1c114ae6'))
         # A CLI_RUN_BUFFER_SCRIPT payload [buffer_script.py] shares a session with nothing else.
         self.buffer_code = None if buffer_code is None else bytes(buffer_code)
         if self.buffer_code is not None:
@@ -615,14 +607,13 @@ class MysteryGiftServer:
             if any(other is not None for other in
                    (self.card, self.news, self.stamp, self.trainer, self.mevent)):
                 raise MysteryGiftServerError(
-                    "a buffer script runs on its own: no card, news, stamp rally, visiting "
-                    "trainer or Mystery Event script in the same session")
+                    _message('core.pokeldn.frlg.gift.mg_server.a_buffer_script_runs_on_its_own_no_card_news_sta_fdac6751'))
         # Payloads run before buffer_code in the same session; their answers are not read.
         self.buffer_lead = tuple(bytes(code) for code in buffer_lead)
         for code in self.buffer_lead:
             buffer_script.validate(code)
         if self.buffer_lead and self.buffer_code is None:
-            raise MysteryGiftServerError("payloads run ahead of the last one, and there is none")
+            raise MysteryGiftServerError(_message('core.pokeldn.frlg.gift.mg_server.payloads_run_ahead_of_the_last_one_and_there_is__11ea3bf2'))
         self.buffer_dump_size = None if buffer_dump_size is None else int(buffer_dump_size)
         # Only memory-dump-multi uses these; every other payload answers once.
         self.buffer_dump_blocks = int(buffer_dump_blocks)
@@ -631,57 +622,47 @@ class MysteryGiftServer:
         self.buffer_dump_addresses = tuple(int(a) for a in buffer_dump_addresses)
         if not 1 <= self.buffer_dump_blocks <= mg_script.MAX_DUMP_BLOCKS:
             raise MysteryGiftServerError(
-                f"a session carries 1..{mg_script.MAX_DUMP_BLOCKS} blocks, got "
-                f"{self.buffer_dump_blocks}")
+                _message('core.pokeldn.frlg.gift.mg_server.a_session_carries_1_value0_blocks_got_value1_af47dd6c', value0=mg_script.MAX_DUMP_BLOCKS, value1=self.buffer_dump_blocks))
         if self.buffer_dump_size is not None:
             if self.buffer_code is None:
                 raise MysteryGiftServerError(
-                    "a memory dump needs the payload that repoints the send")
+                    _message('core.pokeldn.frlg.gift.mg_server.a_memory_dump_needs_the_payload_that_repoints_th_58a02ce8'))
             if not 0 < self.buffer_dump_size <= buffer_script.MAX_BUFFER_SCRIPT_SIZE:
                 raise MysteryGiftServerError(
-                    f"a dump is 1..{buffer_script.MAX_BUFFER_SCRIPT_SIZE} bytes "
-                    f"(MG_LINK_BUFFER_SIZE), got {self.buffer_dump_size}")
+                    _message('core.pokeldn.frlg.gift.mg_server.a_dump_is_1_value0_bytes_mg_link_buffer_size_got_8471ac3d', value0=buffer_script.MAX_BUFFER_SCRIPT_SIZE, value1=self.buffer_dump_size))
         self.buffer_decode = buffer_decode
         if self.buffer_decode == buffer_script.MEMORY_SCAN \
                 and self.buffer_dump_size != buffer_script.SCAN_ANSWER_SIZE:
             raise MysteryGiftServerError(
-                f"a memory scan answers with exactly {buffer_script.SCAN_ANSWER_SIZE} bytes, "
-                f"got {self.buffer_dump_size}")
+                _message('core.pokeldn.frlg.gift.mg_server.a_memory_scan_answers_with_exactly_value0_bytes__884335f5', value0=buffer_script.SCAN_ANSWER_SIZE, value1=self.buffer_dump_size))
         if self.buffer_decode == buffer_script.ROM_CHECKSUM \
                 and self.buffer_dump_size != buffer_script.ROM_CHECKSUM_ANSWER_SIZE:
             raise MysteryGiftServerError(
-                f"a rom checksum answers with exactly {buffer_script.ROM_CHECKSUM_ANSWER_SIZE} "
-                f"bytes, got {self.buffer_dump_size}")
+                _message('core.pokeldn.frlg.gift.mg_server.a_rom_checksum_answers_with_exactly_value0_bytes_273eb7d9', value0=buffer_script.ROM_CHECKSUM_ANSWER_SIZE, value1=self.buffer_dump_size))
         # rom-checksum: the ROM image its sums are compared with, read when the answer lands.
         self.buffer_reference = buffer_reference
         if self.buffer_decode == buffer_script.STRING_GATHER \
                 and self.buffer_dump_size != buffer_script.GATHER_ANSWER_SIZE:
             raise MysteryGiftServerError(
-                f"a string gather answers with exactly {buffer_script.GATHER_ANSWER_SIZE} bytes, "
-                f"got {self.buffer_dump_size}")
+                _message('core.pokeldn.frlg.gift.mg_server.a_string_gather_answers_with_exactly_value0_byte_67c0ae0d', value0=buffer_script.GATHER_ANSWER_SIZE, value1=self.buffer_dump_size))
         if self.buffer_decode == buffer_script.CREATE_MON \
                 and self.buffer_dump_size != buffer_script.CREATE_MON_ANSWER_SIZE:
             raise MysteryGiftServerError(
-                f"create-mon answers with exactly {buffer_script.CREATE_MON_ANSWER_SIZE} bytes, "
-                f"got {self.buffer_dump_size}")
+                _message('core.pokeldn.frlg.gift.mg_server.create_mon_answers_with_exactly_value0_bytes_got_c551e46f', value0=buffer_script.CREATE_MON_ANSWER_SIZE, value1=self.buffer_dump_size))
         if self.buffer_decode == buffer_script.CALL \
                 and self.buffer_dump_size != buffer_script.CALL_ANSWER_SIZE:
             raise MysteryGiftServerError(
-                f"a call answers with exactly {buffer_script.CALL_ANSWER_SIZE} bytes, "
-                f"got {self.buffer_dump_size}")
+                _message('core.pokeldn.frlg.gift.mg_server.a_call_answers_with_exactly_value0_bytes_got_val_8d531db6', value0=buffer_script.CALL_ANSWER_SIZE, value1=self.buffer_dump_size))
         if self.buffer_decode == buffer_script.RNG_TRACE:
             asked = buffer_script.trace_parameters(self.buffer_code)
             if self.buffer_dump_size != buffer_script.trace_answer_size(asked["samples"]):
                 raise MysteryGiftServerError(
-                    f"a trace of {asked['samples']} samples answers with "
-                    f"{buffer_script.trace_answer_size(asked['samples'])} bytes, "
-                    f"got {self.buffer_dump_size}")
+                    _message('core.pokeldn.frlg.gift.mg_server.a_trace_of_value0_samples_answers_with_value1_by_aa57c2d7', value0=asked['samples'], value1=buffer_script.trace_answer_size(asked['samples']), value2=self.buffer_dump_size))
         self.buffer_expect = buffer_expect
         if not (buffer_expect is None or buffer_expect == BUFFER_EXPECT_TRAINER_ID
                 or isinstance(buffer_expect, int)):
             raise MysteryGiftServerError(
-                f"buffer_expect is a u32, {BUFFER_EXPECT_TRAINER_ID!r} or None, "
-                f"got {buffer_expect!r}")
+                _message('core.pokeldn.frlg.gift.mg_server.buffer_expect_is_a_u32_value0_r_or_none_got_valu_6cc3d672', value0=BUFFER_EXPECT_TRAINER_ID, value1=buffer_expect))
         self.buffer_success_message = _encode_message(
             buffer_success_message, DEFAULT_BUFFER_SUCCESS_MESSAGE)
         self.buffer_failure_message = _encode_message(
@@ -690,8 +671,7 @@ class MysteryGiftServer:
             int(word) & 0xFFFF for word in questionnaire)
         if self.questionnaire is not None and len(self.questionnaire) != NUM_QUESTIONNAIRE_WORDS:
             raise MysteryGiftServerError(
-                f"a questionnaire phrase is exactly {NUM_QUESTIONNAIRE_WORDS} Easy Chat words, "
-                f"got {len(self.questionnaire)}")
+                _message('core.pokeldn.frlg.gift.mg_server.a_questionnaire_phrase_is_exactly_value0_easy_ch_890656a8', value0=NUM_QUESTIONNAIRE_WORDS, value1=len(self.questionnaire)))
         # A refusal message wraps inside the window too.
         self.denied_message = _encode_message(denied_message, DEFAULT_DENIED_MESSAGE)
         self.questionnaire_matched = None
@@ -740,8 +720,7 @@ class MysteryGiftServer:
                 other = MysteryGiftServer(**chosen, script=script)
                 if other.script != self.script:
                     raise MysteryGiftServerError(
-                        f"the {code} payload runs another server script; one session is one kind "
-                        "of payload")
+                        _message('core.pokeldn.frlg.gift.mg_server.the_value0_payload_runs_another_server_script_on_79cda001', value0=code))
                 self._build_servers[str(code)] = other
         self.cmdidx = 0
         self.param = None
@@ -762,7 +741,7 @@ class MysteryGiftServer:
     @property
     def card_flag_id(self):
         if self.card is None:
-            raise MysteryGiftServerError("this session carries no Wonder Card")
+            raise MysteryGiftServerError(_message('core.pokeldn.frlg.gift.mg_server.this_session_carries_no_wonder_card_418bd9e9'))
         return int.from_bytes(self.card[0:2], "little")
 
     def run(self):
@@ -772,31 +751,31 @@ class MysteryGiftServer:
 
     def on_sent(self):
         if self.action is None or self.action[0] != "send":
-            raise MysteryGiftServerError("on_sent called with no send in flight")
+            raise MysteryGiftServerError(_message('core.pokeldn.frlg.gift.mg_server.on_sent_called_with_no_send_in_flight_8d7375e9'))
         self.messages_sent += 1
         self.action = None
         self._loaded = None
 
     def on_received(self, ident, payload):
         if self.action is None or self.action[0] != "recv":
-            raise MysteryGiftServerError("on_received called with no recv in flight")
+            raise MysteryGiftServerError(_message('core.pokeldn.frlg.gift.mg_server.on_received_called_with_no_recv_in_flight_5b04d45c'))
         expected = self.action[1]
         if ident != expected:
             raise MysteryGiftServerError(
-                f"expected ident {expected}, console sent {ident}")
+                _message('core.pokeldn.frlg.gift.mg_server.expected_ident_value0_console_sent_value1_1161803d', value0=expected, value1=ident))
         self.messages_received += 1
         self._received = bytes(payload)
         self.action = None
 
     def _step(self):
         if self.cmdidx >= len(self.script):
-            raise MysteryGiftServerError("server script ran off the end without SVR_RETURN")
+            raise MysteryGiftServerError(_message('core.pokeldn.frlg.gift.mg_server.server_script_ran_off_the_end_without_svr_return_afcef542'))
         command = self.script[self.cmdidx]
         self.cmdidx += 1
         instr, args = command[0], command[1:]
         handler = getattr(self, "_do_" + instr.lower(), None)
         if handler is None:
-            raise MysteryGiftServerError(f"unimplemented server opcode {instr}")
+            raise MysteryGiftServerError(_message('core.pokeldn.frlg.gift.mg_server.unimplemented_server_opcode_value0_cf6ff242', value0=instr))
         self.trace.append(instr)
         handler(*args)
 
@@ -812,7 +791,7 @@ class MysteryGiftServer:
 
     def _do_svr_send(self):
         if self._loaded is None:
-            raise MysteryGiftServerError("SVR_SEND with no message loaded")
+            raise MysteryGiftServerError(_message('core.pokeldn.frlg.gift.mg_server.svr_send_with_no_message_loaded_90732cd1'))
         self.action = ("send",) + self._loaded
 
     def _do_svr_recv(self, ident):
@@ -843,9 +822,7 @@ class MysteryGiftServer:
             return
         self.console_mismatch = (self.expect_console, got)
         raise MysteryGiftServerError(
-            f"THIS RUN IS FOR {self.expect_console.upper()} AND THE CONSOLE THAT JOINED IS "
-            f"{got.upper()}. Nothing was sent. Put the other cartridge on the Mystery Gift "
-            "search screen and launch again, or drop --expect-console if the run does not care.")
+            _message('core.pokeldn.frlg.gift.mg_server.this_run_is_for_value0_and_the_console_that_join_dc4d20d6', value0=self.expect_console.upper(), value1=got.upper()))
 
     def _check_game(self):
         """Refuse a console of another game, before anything is sent: a gift names its own game's
@@ -855,8 +832,7 @@ class MysteryGiftServer:
             return
         self.console_mismatch = (self.game, got)
         raise MysteryGiftServerError(
-            f"THIS GIFT IS FOR {' OR '.join(GAME_CONSOLES[self.game]).upper()} AND THE CONSOLE THAT "
-            f"JOINED IS {got.upper()}. Nothing was sent: its flags and variables are another game's.")
+            _message('core.pokeldn.frlg.gift.mg_server.this_gift_is_for_value0_and_the_console_that_joi_69f5fb08', value0=' OR '.join(GAME_CONSOLES[self.game]).upper(), value1=got.upper()))
 
     BUILD_FIELDS = ("card", "ram_script", "news", "stamp", "activation_script",
                     "install_activation_script", "trainer", "mevent", "buffer_code", "buffer_lead",
@@ -877,8 +853,7 @@ class MysteryGiftServer:
             why = (chosen if isinstance(chosen, str) else
                    f"this run was built for {', '.join(sorted(self._build_servers))}")
             raise MysteryGiftServerError(
-                f"THE CONSOLE IS {code!r} AND NOTHING WAS SENT: {why}. The payload names "
-                "cartridge addresses, and another build's land on other variables.")
+                _message('core.pokeldn.frlg.gift.mg_server.the_console_is_value0_r_and_nothing_was_sent_val_177a4e0b', value0=code, value1=why))
         for name in self.BUILD_FIELDS:
             setattr(self, name, getattr(chosen, name))
         self.build = builds.for_game_code(raw)
@@ -1045,8 +1020,7 @@ class MysteryGiftServer:
             return int(self.buffer_expect) & 0xFFFFFFFF, 0xFFFFFFFF, "the value we asked for"
         if self.game_data is None:
             raise MysteryGiftServerError(
-                "buffer_expect=trainer-id needs the console's game data, which this script "
-                "never read")
+                _message('core.pokeldn.frlg.gift.mg_server.buffer_expect_trainer_id_needs_the_console_s_gam_112a7274'))
         expected = self.game_data.trainer_id & 0xFFFFFFFF
         if self.game_data.trainer_id_is_reliable:
             return expected, 0xFFFFFFFF, "the trainer id from the console's own game data"
@@ -1112,7 +1086,7 @@ class MysteryGiftServer:
             for line in buffer_script.describe_call_chain(self.buffer_dump, asked["steps"]):
                 self.info(f"  {line}")
             chained = buffer_script.read_call_chain(self.buffer_dump)
-            self.trace.append(("buffer_chain", chained["executed"], chained["refused"]))
+            self.trace.append(("buffer_chain", chained["executed"], chained[_ref("core.pokeldn.frlg.gift.mg_server.refused_83c874d3")]))
             return
         if self.buffer_decode == buffer_script.SLOOP_SVC:
             got = buffer_script.parse_sloop_svc(self.buffer_dump)

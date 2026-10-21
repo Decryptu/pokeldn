@@ -4,6 +4,7 @@ parent: Hardware and setup
 nav_order: 1
 ---
 
+<a id="esp32-radio"></a>
 # ESP32 radio
 
 An ESP32 board on USB serial is the radio. It runs `firmware/esp32/` and carries LDN's vendor
@@ -11,6 +12,7 @@ action frames and Ethernet frames; advertisement crypto, LDN authentication, IP 
 host. `pokeldn.ldn.esp32_wlan` gives the LDN library a factory backed by the board, so `ldn.scan`,
 `ldn.connect` and `ldn.create_network` run unchanged and the host needs no Wi-Fi driver.
 
+<a id="supported-boards"></a>
 ## Supported boards
 
 | chip | host connection | merged image |
@@ -79,6 +81,7 @@ and takes 5000 of 5000 uplink commands with none lost. Its idle free heap at sta
 The classic ESP32 measurements below use the ELEGOO ESP32-D0WD-V3 board unless another board is
 named. Completed trades per board are in [Trades by board](#trades-by-board).
 
+<a id="the-usb-link-after-a-reset-c6-s3"></a>
 ### The USB link after a reset (C6, S3)
 
 Opening the port resets a C6 or S3 through USB Serial/JTAG (reset reason 11, a core reset). With
@@ -117,6 +120,7 @@ bytes, `wire_dropped`, stall count, then the sixteen target-specific registers l
 The S3 snapshots its USB endpoints, SYSTEM clocks and resets, and GPIO19/20; the C6 snapshots its
 USB endpoints, PCR clocks and resets, and GPIO12/13. S3 support starts with firmware 1.6.2.
 
+<a id="roles"></a>
 ## Roles
 
 | role | what the board does |
@@ -144,6 +148,7 @@ another release.
   `ieee80211_supplicant.o`) for a WPA2 station. Never wait for that event to install the key: with
   no 4-way handshake it never comes and the console's first encrypted frame is dropped.
 
+<a id="the-access-points-frames"></a>
 ## The access point's frames
 
 The softAP's beacon, probe response and association response are built in the closed
@@ -165,6 +170,7 @@ association request without the configured SSID is dropped (0x9c6). `esp_wifi_80
 beacons and refuses association responses (`ieee80211_raw_frame_sanity_check` 0xf9); the blob's own
 beacons cannot be stopped.
 
+<a id="serial-protocol"></a>
 ## Serial protocol
 
 A frame is `COBS(type | payload | crc32-le(type | payload))` then `0x00`; the CRC is CRC-32/ISO-HDLC
@@ -233,6 +239,7 @@ EtherType `0x88B7` frames are LDN authentication; `esp32_wlan` turns them into t
 Creating a TAP needs `CAP_NET_ADMIN`. The desktop app runs as the user, so on Linux a TAP default
 fails before the board joins anything.
 
+<a id="the-host-watchdog"></a>
 ### The host watchdog
 
 From firmware 1.4.0 the host sends ALIVE every second (`esp32.ALIVE_EVERY`), chosen from INFO's
@@ -247,6 +254,7 @@ On a XIAO ESP32C6 with a retail FireRed in the trade room of `frlg_trade_host.py
 killed with SIGKILL, the console showed 2318-0006, a later JOIN search listed no host, and the LED
 returned to its idle look. Without the discard the LED stayed on `flash3`.
 
+<a id="the-serial-ceiling"></a>
 ## The serial ceiling
 
 On the classic ESP32 UART at 921600 baud, 8N1, the board-to-host line carries 92.16 KB/s.
@@ -265,6 +273,7 @@ overflows in a Scarlet host's opening burst (337 messages dropped where measured
 line's rate holds the heap at that floor (`heap_min` 63976, `queue_max` 95, `refused_heap` 219): the
 heap refuses RX_ETH before the queue fills.
 
+<a id="baud-rate"></a>
 ### Baud rate
 
 `POKELDN_ESP32_BAUD` sets the rate `open_serial` switches to, 921600 by default. The ESP32 UART runs
@@ -283,6 +292,7 @@ on macOS:
 A Legends Z-A seat at 921600 with CREDIT had no refused association, its first message at 1.68 s
 (1.7 s at 1500000) and 695 of 695 ETH_TX counted.
 
+<a id="host-to-board-command-loss-and-credit"></a>
 ### Host-to-board command loss and CREDIT
 
 Under a console's flood, host commands can be lost before the handler: a Scarlet seat that handed
@@ -341,6 +351,7 @@ shut across it until the board's CREDIT 0. A host that wrote unthrottled after a
 `tools/ldn/esp32_cmd_loss.py TRACE` reconciles a trace: ETH_TX written against `tx_eth +
 tx_eth_failed`, bytes written since HELLO against the last CREDIT.
 
+<a id="transmit-timing"></a>
 ### Transmit timing
 
 On one calm Scarlet seat ETH_TX spent 0.12 ms on average and 1.57 ms at most in the driver, and the
@@ -364,8 +375,10 @@ saturated. BENCH fills its payload once; an RNG fill held it under the line's ra
 board sends as an access point is broadcast at 1 Mbit/s and fills the air past about 90 frames a
 second.
 
+<a id="holds-and-receive-misses"></a>
 ## Holds and receive misses
 
+<a id="the-firered-hold"></a>
 ### The FireRed hold
 
 Five FireRed trades with the board as the access point, one row per trade; the console
@@ -404,6 +417,7 @@ What makes the board wait about 100 ms between copies is unknown. `tools/ldn/esp
 TRACE` splits each wait into stages, pairing TX-dones by length (they complete out of order);
 `tools/ldn/esp32_hold_air.py` lists what the sniffer saw during each hold.
 
+<a id="the-cpu-clock"></a>
 ### The CPU clock
 
 The firmware runs the CPU at 240 MHz (`CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240`; IDF's default is 160).
@@ -421,6 +435,7 @@ copies the board did not hear:
 
 The spread between runs of one setting is as large as the clock's difference.
 
+<a id="the-channel"></a>
 ### The channel
 
 Long waits follow the channel's occupancy. Where these trades were measured, channel 1 also carried
@@ -435,6 +450,7 @@ the console's home access point and held the long waits:
 On channel 11 the board misses as many first copies with the same p90 wait (4.5 ms); only the tail
 differs (8 and 9 frames over 20 ms against 42 to 137): the receive misses do not make the holds. `config/host.local.toml` takes a `[host] channel`; the console joins a host on 1, 6 or 11.
 
+<a id="the-board-is-the-deaf-side"></a>
 ### The board is the deaf side
 
 A sniffing board keeps every ACK as a 10-byte RX_SNIFF; an ACK names only its receiver, so
@@ -459,6 +475,7 @@ alone. The board missed 4.5 to 12.1% of the console's first copies at 54 and 48 
 missed first copy follows another console frame 37 to 52% of the time, a heard one 28 to 32%; RSSI,
 rate and length do not differ.
 
+<a id="receive-misses-on-two-boards"></a>
 ### Receive misses on two boards
 
 `tools/ldn/esp32_pair_bench.py AP STA --flood 0 --burst N --send R` has the station board send
@@ -513,6 +530,7 @@ PERIOD_US`).
 `tools/ldn/esp32_bench_drift.py` measures both boards' clocks against the host (1.9 ppm apart over
 600 s) and scans the fold period.
 
+<a id="the-userspace-stack"></a>
 ## The userspace stack
 
 `pokeldn.ldn.userspace_ip` carries IPv4, UDP and ARP inside the host process for an interface with no
@@ -537,6 +555,7 @@ None for a kernel interface, which is how every launcher picks its path.
   `select(0.05)` handles one message per 50 ms, and the console re-sends its records meanwhile (50
   to 70 s measured).
 
+<a id="the-boards-led-and-buttons"></a>
 ## The board's LED and buttons
 
 LED patterns drive GPIO2 on classic ESP32 boards, GPIO21, inverted, on the S3 (the XIAO ESP32S3's
@@ -588,6 +607,7 @@ command plays flash3 for 1.5 s. A completed trade or Mystery Gift delivery ramps
 800 ms, held until 3 s (`pokeldn.ldn.show_done`); the Sword gift host, a beacon with no read-back, has
 no such moment. `tools/ldn/esp32_led.py --port PORT PATTERN` sets a look; `--demo` shows each.
 
+<a id="the-screen"></a>
 ## The screen
 
 An SSD1306 128x64 one-bit OLED on I2C is optional. Users report 128x64 SSD1315 and SSD1309 modules
@@ -700,6 +720,7 @@ after, through the app's sprite cache and its download setting. A sprite becomes
 `tools/ldn/screen_preview.py OUT.gif` builds `scene.c` and `screen.c` for the host and renders a
 scripted session offline.
 
+<a id="the-e32r40t-board"></a>
 ### The E32R40T board
 
 The E32R40T (sold as the 4.0-inch ESP32-32E display) is a classic ESP32 with a 480x320 ST7796S panel
@@ -717,6 +738,7 @@ white, at 40 MHz SPI; a frame identical to the last one is not sent again. GPIO2
 the board's LED is the blue one on GPIO17. The panel has no dim step: the backlight goes off when the
 OLED would turn off.
 
+<a id="building-and-flashing"></a>
 ## Building and flashing
 
 Firmware releases use `major.minor.patch` in `firmware/esp32/version.txt`, shared by ESP32, S3, C3
@@ -744,6 +766,7 @@ S3, C3 and C6: `0x0`) before writing, including custom images. esptool 5.4.0's `
 chip check when a merged image starts with padding. Never choose firmware from a USB bridge ID.
 [Desktop builds](gui.md) covers packaging all four images.
 
+<a id="bluetooth"></a>
 ### Bluetooth
 
 A build with `POKELDN_BLE=1` also carries the host link over Bluetooth LE, for a host with no USB
@@ -805,6 +828,7 @@ still discovers services.
 On macOS, bleak aborts (SIGABRT) in a process whose responsible app has no Bluetooth grant; a script
 started with `open -n -a Terminal FILE.command` runs under Terminal's.
 
+<a id="the-usb-host-link"></a>
 ### The USB host link
 
 The S3, C3 and C6 use the same COBS, CRC and CREDIT protocol over USB Serial/JTAG. Both driver rings are
@@ -859,6 +883,7 @@ trade on the raised priority counted 5629 of 5629 ETH_TX. On a XIAO ESP32C6 at p
 14-byte ETH_TX every 20 ms during an 820.6 KB/s BENCH read at most 19997 us apart, 221 of 221
 counted; a FireRed host and a Legends Z-A host trade followed with no error on the console.
 
+<a id="running"></a>
 ## Running
 
 `POKELDN_RADIO=esp32:<port>` puts every launcher's `ldn` calls on the board. `esp32:auto` takes the
@@ -906,6 +931,7 @@ access point beacons itself.
 A CH9102 or CH343 USB bridge enumerates as CDC ACM: `/dev/ttyACM0` on Linux, `/dev/cu.usbmodem*` on
 macOS.
 
+<a id="a-board-that-decodes-no-ofdm"></a>
 ### A board that decodes no OFDM
 
 A console's advertisements are HT MCS 3 ([Discovery](ldn.md#discovery)), so a board that cannot
@@ -922,6 +948,7 @@ back to DSSS. A generic ESP32-WROOM-32 DevKit (ESP32-D0WD-V3 revision 3.1, CP210
 with firmware other than pokeldn's; a WROOM-32E board with the same chip passes both, hears Sword's
 gift network and delivers a Mystery Gift ([issue 1](https://github.com/Decryptu/pokeldn/issues/1)).
 
+<a id="trades-by-board"></a>
 ## Trades by board
 
 The ELEGOO board (ESP32-D0WD-V3 revision 3.1 on its unbranded module, CP2102, macOS, 921600 baud)
@@ -981,6 +1008,7 @@ Scarlet as joiner: the board seated on its first association attempt, 0.35 s fro
 seat. The console's first
 burst of 46 records (about 50 KB) saturates board-to-host at 92 KB/s.
 
+<a id="joining"></a>
 ### Joining
 
 `STA_JOIN` makes one association attempt: a fast scan on the given channel and BSSID, then open
@@ -992,6 +1020,7 @@ that channel; a new `STA_JOIN` on the same search associated. A successful join 
 (`pokeldn.ldn.esp32_wlan.JOIN_ATTEMPTS`) within the join timeout. Why the console's network
 misses a given attempt is unknown.
 
+<a id="unresolved"></a>
 ## Unresolved
 
 - The softAP negotiates WMM, which a Switch host does not; trades complete with and without it.

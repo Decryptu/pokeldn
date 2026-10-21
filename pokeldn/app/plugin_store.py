@@ -4,6 +4,7 @@ A package is a zip holding plugin.toml at its root or inside one top folder, bes
 module and files (docs/plugins.md, Packages). Nothing in a package runs before it is installed and
 turned on.
 """
+from pokeldn.app.i18n import message_ref as _message
 import ast
 import base64
 import hashlib
@@ -77,35 +78,35 @@ def read(path: str) -> Package:
     try:
         return _read(path)
     except (OSError, zipfile.BadZipFile, NotImplementedError, RuntimeError, ValueError, RecursionError) as error:
-        raise PackageError(f"The plugin package could not be read ({error}).") from None
+        raise PackageError(_message('core.pokeldn.app.plugin_store.the_plugin_package_could_not_be_read_value0_7019e5c0', value0=error)) from None
 
 
 def _read(path: str) -> Package:
     """Reads and checks a package without extracting it."""
     try:
         if os.path.getsize(path) > MAX_BYTES + (1 << 20):
-            raise PackageError("The package is too large to be a plugin.")
+            raise PackageError(_message('core.pokeldn.app.plugin_store.the_package_is_too_large_to_be_a_plugin_526f27f5'))
         archive = archives.open_zip(path, MAX_FILES)
     except (OSError, zipfile.BadZipFile) as error:
-        raise PackageError(f"{os.path.basename(path)} is not a plugin package ({error}).") from None
+        raise PackageError(_message('core.pokeldn.app.plugin_store.value0_is_not_a_plugin_package_value1_1b5938bd', value0=os.path.basename(path), value1=error)) from None
     with archive:
         try:
             archives.bounded(((i.filename, i.file_size, i) for i in archive.infolist()),
                              MAX_FILES, MAX_BYTES, MAX_BYTES)
         except OSError as error:
-            raise PackageError(f"The package holds an unsafe path or is too large: {error}") from None
+            raise PackageError(_message('core.pokeldn.app.plugin_store.the_package_holds_an_unsafe_path_or_is_too_large_9371d283', value0=error)) from None
         infos = [i for i in archive.infolist() if not i.is_dir()]
         if len(infos) > MAX_FILES or sum(i.file_size for i in infos) > MAX_BYTES:
-            raise PackageError("The package is too large to be a plugin.")
+            raise PackageError(_message('core.pokeldn.app.plugin_store.the_package_is_too_large_to_be_a_plugin_526f27f5'))
         sources = [i for i in infos if i.filename.endswith(".py")]
         if any(i.file_size > MAX_SOURCE for i in sources) or sum(i.file_size for i in sources) > 8 << 20:
-            raise PackageError("The package has too much Python source to review safely.")
+            raise PackageError(_message('core.pokeldn.app.plugin_store.the_package_has_too_much_python_source_to_review_7c6ba48f'))
         names = [i.filename for i in infos]
         for info in infos:
             parts = PurePosixPath(info.filename).parts
             if info.filename.startswith(("/", "\\")) or ".." in parts or ":" in info.filename \
                     or stat.S_ISLNK(info.external_attr >> 16):
-                raise PackageError(f"The package holds an unsafe path: {info.filename}")
+                raise PackageError(_message('core.pokeldn.app.plugin_store.the_package_holds_an_unsafe_path_value0_56c364a0', value0=info.filename))
         tomls = [n for n in names if PurePosixPath(n).name == "plugin.toml" and len(PurePosixPath(n).parts) <= 2]
         if len(tomls) != 1:
             raise PackageError("The package has no plugin.toml at its top." if not tomls else
@@ -113,14 +114,14 @@ def _read(path: str) -> Package:
         prefix = str(PurePosixPath(tomls[0]).parent)
         prefix = "" if prefix == "." else prefix + "/"
         if any(not n.startswith(prefix) for n in names):
-            raise PackageError("plugin.toml must sit at the top of the package, beside the plugin's files.")
+            raise PackageError(_message('core.pokeldn.app.plugin_store.plugin_toml_must_sit_at_the_top_of_the_package_b_f05be5be'))
         try:
             meta = tomllib.loads(archive.read(tomls[0]).decode("utf-8"))
         except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
-            raise PackageError(f"plugin.toml does not parse: {error}") from None
+            raise PackageError(_message('core.pokeldn.app.plugin_store.plugin_toml_does_not_parse_value0_81be26d0', value0=error)) from None
         plugin_id = str(meta.get("id", ""))
         if not ID.fullmatch(plugin_id):
-            raise PackageError("plugin.toml needs an id of lowercase letters, digits, dots, dashes or underscores.")
+            raise PackageError(_message('core.pokeldn.app.plugin_store.plugin_toml_needs_an_id_of_lowercase_letters_dig_8c677f84'))
         api = plugins.parse_api(meta.get("api"))
         try:
             library = plugins.library_name(meta["library"]) if "library" in meta else ""
@@ -130,7 +131,7 @@ def _read(path: str) -> Package:
         if state in ("newer", "older"):
             raise PackageError(message)
         module = str(meta.get("module", "plugin"))
-        if "locale" in meta or "strings" in meta:
+        if "locale" in meta or "strings" in meta or "localization_format" in meta:
             from pokeldn.app.i18n import read_pack, read_resources
             try:
                 read_pack(meta, lambda name: archive.read(prefix + name))
@@ -138,7 +139,7 @@ def _read(path: str) -> Package:
             except ValueError as error:
                 raise PackageError(str(error)) from None
         elif f"{prefix}{module}.py" not in names:
-            raise PackageError(f"The package has no {module}.py next to plugin.toml.")
+            raise PackageError(_message('core.pokeldn.app.plugin_store.the_package_has_no_value0_py_next_to_plugin_toml_a421ab31', value0=module))
         contents = {n: archive.read(n) for n in names}
         findings = scan(contents)
         key = verify(plugin_id, str(meta.get("version", "")),
@@ -181,8 +182,7 @@ def verify(plugin_id: str, version: str, files: dict) -> str:
         eddsa.new(key, "rfc8032").verify(_manifest(plugin_id, version, files),
                                          base64.b64decode(signed["signature"], validate=True))
     except (ValueError, KeyError, TypeError):
-        raise PackageError("This plugin was changed after its author signed it, or its signature is damaged. "
-                           "Get it again from its author.") from None
+        raise PackageError(_message('core.pokeldn.app.plugin_store.this_plugin_was_changed_after_its_author_signed__6e81bc0a')) from None
     return base64.b64encode(raw).decode()
 
 
@@ -333,7 +333,7 @@ def install(package: Package, origin: str = "") -> Path:
     accepted them."""
     current = read(package.source)
     if (current.id, current.version, current.key, current.digest) != (package.id, package.version, package.key, package.digest):
-        raise PackageError("The package changed after it was checked.")
+        raise PackageError(_message('core.pokeldn.app.plugin_store.the_package_changed_after_it_was_checked_e982a65a'))
     package = current
     root = plugins.folder()
     root.mkdir(parents=True, exist_ok=True)
@@ -374,7 +374,7 @@ def remove(plugin_id: str, data: bool = False) -> None:
     root = plugins.folder().resolve()
     target = (root / plugin_id).resolve()
     if target.parent != root or not (target / "plugin.toml").is_file():
-        raise PackageError("Only a plugin installed in the app can be removed here.")
+        raise PackageError(_message('core.pokeldn.app.plugin_store.only_a_plugin_installed_in_the_app_can_be_remove_a3635b6e'))
     shutil.rmtree(target)
     from pokeldn.app import panels
     panels.forget(plugin_id)

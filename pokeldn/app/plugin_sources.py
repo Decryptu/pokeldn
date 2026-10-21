@@ -2,6 +2,7 @@
 remove plugins in one press. A listing only names packages; every download still goes through the
 package checks and the risk screen (docs/plugins.md, Sources).
 """
+from pokeldn.app.i18n import message_ref as _message
 import hashlib
 import json
 import os
@@ -76,9 +77,9 @@ def resolve(text: str) -> str:
     if slug:
         return f"https://raw.githubusercontent.com/{slug[1]}/{slug[2]}/HEAD/{FILE}"
     if not text:
-        raise SourceError("Type a source address.")
+        raise SourceError(_message('core.pokeldn.app.plugin_sources.type_a_source_address_fed84691'))
     if not allowed(text):
-        raise SourceError("A source must be an HTTPS address, or OWNER/REPO for a GitHub repository.")
+        raise SourceError(_message('core.pokeldn.app.plugin_sources.a_source_must_be_an_https_address_or_owner_repo__a2d93bd4'))
     path = urllib.parse.urlsplit(text).path
     return text if path.endswith(".json") else text.rstrip("/") + "/" + FILE
 
@@ -92,11 +93,11 @@ def parse(url: str, data: bytes) -> Source:
     try:
         reply = json.loads(data)
     except (ValueError, RecursionError) as error:
-        raise SourceError(f"The source is not a plugin listing ({error}).") from None
+        raise SourceError(_message('core.pokeldn.app.plugin_sources.the_source_is_not_a_plugin_listing_value0_e72843c6', value0=error)) from None
     if not isinstance(reply, dict) or not isinstance(reply.get("plugins"), list):
-        raise SourceError("The source is not a plugin listing.")
+        raise SourceError(_message('core.pokeldn.app.plugin_sources.the_source_is_not_a_plugin_listing_1d3b0f45'))
     if reply.get("schema") != SCHEMA:
-        raise SourceError("The source is written for another pokeldn. Update pokeldn.")
+        raise SourceError(_message('core.pokeldn.app.plugin_sources.the_source_is_written_for_another_pokeldn_update_ba1484da'))
     entries, seen = [], set()
     for item in reply["plugins"][:MAX_ENTRIES]:
         if not isinstance(item, dict):
@@ -151,7 +152,7 @@ def add(text: str) -> Source:
     """Reads the listing at what the player typed and follows it once it reads."""
     url = resolve(text)
     if url in followed():
-        raise SourceError("That source is already in the list.")
+        raise SourceError(_message('core.pokeldn.app.plugin_sources.that_source_is_already_in_the_list_7c128e08'))
     source = fetch(url)
     if source.error:
         raise SourceError(source.error)
@@ -163,7 +164,7 @@ def add(text: str) -> Source:
 def remove(url: str) -> None:
     """Stops following a source; the plugins installed from it stay installed."""
     if url == BUILT_IN:
-        raise SourceError("The built-in source cannot be removed.")
+        raise SourceError(_message('core.pokeldn.app.plugin_sources.the_built_in_source_cannot_be_removed_fba60d13'))
     with _lock:
         _write([u for u in followed() if u != url])
     _cache_file(url).unlink(missing_ok=True)

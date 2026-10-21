@@ -3,11 +3,13 @@ title: Reverse-engineering a Switch title
 nav_order: 3
 ---
 
+<a id="reverse-engineering-a-switch-title"></a>
 # Reverse-engineering a Switch title
 
 Reading a retail Switch game's code without unpacking it, for a Unity/IL2CPP title (BDSP, 7.3 GB of
 NSPs) and a native C++ one (Sword / Shield, a 13.3 GB XCI).
 
+<a id="order-of-work"></a>
 ## Order of work
 
 1. Search published sources for a constant in hand. Code search reaches inside the
@@ -30,8 +32,10 @@ NSPs) and a native C++ one (Sword / Shield, a 13.3 GB XCI).
 Decrypting a Pia LDN title takes its passphrase, `cryptoKeyDataSeed`, local communication version,
 the advertisement and each sender's MAC ([The Pia layer](pia.md)).
 
+<a id="getting-the-executable-out"></a>
 ## Getting the executable out
 
+<a id="from-an-nsp"></a>
 ### From an NSP
 
 An NSP is a PFS0 archive of NCAs; the executable sits near the end of a multi-GB NCA.
@@ -45,6 +49,7 @@ An NSP is a PFS0 archive of NCAs; the executable sits near the end of a multi-GB
    conv=notrunc` the needed ranges. 109 MB on disk stands in for 2.7 GB and passes hactool's bounds
    checks (`du -h` shows the real size, `ls -l` does not).
 
+<a id="from-an-xci"></a>
 ### From an XCI
 
 `tools/switch/xci_read.py` walks HFS0 partitions (or an NSP's PFS0), decrypts NCA headers in place
@@ -62,6 +67,7 @@ its Program NCA, an ordinary CTR PartitionFS:
 Traps: the FS header's `fs_type` is at +0x2 and the hash type at +0x3 (hactool's struct swaps the
 names); the 8-byte section counter is used reversed.
 
+<a id="from-a-romfs"></a>
 ### From a RomFS
 
 NCA sections are AES-128-CTR under the title key (counter: the section's CTR value and `offset >> 4`
@@ -70,6 +76,7 @@ from a 4.2 GB RomFS off the container, raising unless the header's size field re
 wrong key, offset or counter shows first. hactool aborts on a `prod.keys` line of 34 hex digits and
 segfaults on `--listromfs` over a sparse file missing the tables.
 
+<a id="naming-everything-first"></a>
 ## Naming everything first
 
 A retail Unity title has two independent naming layers:
@@ -84,6 +91,7 @@ The owning class (`LocalProtocol` or `LanProtocol`) tells the LDN session-key de
 near-identical LAN one. A vtable with holes is a multiple-inheritance group: the holes are the next
 sub-object's offset-to-top and typeinfo.
 
+<a id="a-constant-only-in-the-metadata"></a>
 ## A constant only in the metadata
 
 A constant `byte[]` default of a plain `[Serializable]` C# class (not a `ScriptableObject`) is
@@ -94,6 +102,7 @@ field-default-value table. The constructor's ADRP/LDR pair names a metadata-usag
 and verify by hashing. BDSP's 16-byte game key seed is stored this way. Native C++ constants are in
 rodata, found by cross-reference.
 
+<a id="check-which-version-you-dumped"></a>
 ## Check which version you dumped
 
 Base game and update are separate NSPs. BDSP's base defines 24 network message classes, 1.3.0
@@ -110,6 +119,7 @@ decodes a capture into plausible nonsense. Checks:
 Constants survive (BDSP's base-metadata key seed decrypts 674 of 674 packets from an updated
 console); re-read anything structural a capture has not confirmed.
 
+<a id="reading-a-game-updates-romfs"></a>
 ## Reading a game update's RomFS
 
 An update's RomFS is a BKTR section patching the base game's. Two tables at its end, under the
@@ -124,6 +134,7 @@ of the section counter. `tools/switch/bktr_read.py` composes both into one seeka
 The base is the Program NCA of the update's title with a CTR RomFS section: an XCI's update
 partition holds system titles' Program NCAs, and the first Program NCA found is one of those.
 
+<a id="finding-callers"></a>
 ## Finding callers
 
 Scan the image words for `bl` (`100101` plus a signed 26-bit word offset) and the tail call `b`
@@ -138,11 +149,13 @@ preceding function (check the prologue); bounding a function by "N bytes after i
 its `ret` into the next body; `mov w0, #0x80` is an ORR-immediate on ARM64, invisible to a byte
 pattern sweep, so decode constants with a disassembler.
 
+<a id="calling-into-nnsdk"></a>
 ## Calling into nnSdk
 
 A call into nnSdk goes through a GOT slot filled by a JUMP_SLOT relocation naming the symbol:
 cross-reference the slot (`tools/switch/nso_imports.py`), then count callers of its one PLT stub.
 
+<a id="the-tools"></a>
 ## The tools
 
 The readers are `pokeldn.switch` (containers and NCAs, RomFS, NSO, Trinity packs); the tools are

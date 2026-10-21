@@ -1,6 +1,7 @@
 """Leader-side FRLG Mystery Gift engine (the HostTradeEngine feed_child_slot()/tick() contract).
 The console ignores SEND_BLOCK_INIT unless its slot is RECV_STATE_READY
 [decomp:src/link_rfu_2.c:1146], which nothing reports: blocks are paced (inter_block_gap_frames)."""
+from pokeldn.app.i18n import message_ref as _message
 
 from collections import Counter, deque
 from dataclasses import dataclass
@@ -90,12 +91,12 @@ class HostMysteryGiftEngine:
         if server is None:
             if distribution is not None:
                 if card is not None or ram_script is not None:
-                    raise ValueError("pass either distribution or card/ram_script")
+                    raise ValueError(_message('core.pokeldn.frlg.gift.host_mystery_gift.pass_either_distribution_or_card_ram_script_ba868233'))
                 server_extras = server_keywords(distribution)
                 card, ram_script = server_extras.pop("card"), server_extras.pop("ram_script")
             else:
                 if card is None or ram_script is None:
-                    raise ValueError("card and ram_script are required")
+                    raise ValueError(_message('core.pokeldn.frlg.gift.host_mystery_gift.card_and_ram_script_are_required_1dbe1c1d'))
                 server_extras = {}
             if per_build is not None:
                 server_extras["per_build"] = {
@@ -181,7 +182,7 @@ class HostMysteryGiftEngine:
 
     def mark_disconnect_sent(self):
         if not self.disconnect_requested:
-            raise RuntimeError("disconnect sent before the close-link handshake")
+            raise RuntimeError(_message('core.pokeldn.frlg.gift.host_mystery_gift.disconnect_sent_before_the_close_link_handshake_f7099efc'))
         self.done = True
         self._set_state(MG_DONE)
 

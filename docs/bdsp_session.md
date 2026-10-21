@@ -4,8 +4,10 @@ parent: Brilliant Diamond and Shining Pearl
 nav_order: 1
 ---
 
+<a id="joining-a-bdsp-session-and-what-is-under-the-encryption"></a>
 # Joining a BDSP session, and what is under the encryption
 
+<a id="the-advertisement"></a>
 ## The advertisement
 
     local_communication_id  0100000011d90000
@@ -39,6 +41,7 @@ wrong password sends the host nothing and opens a room of its own. A password lo
 characters keeps eight for Pia and moves the rest into application data behind `INL1`
 (`IlcaNetSession.SettingSet` `0x2735f14`).
 
+<a id="the-passphrase"></a>
 ## The passphrase
 
     WirelessStrongCryptoKey2021
@@ -47,6 +50,7 @@ Used raw: 27 bytes, neither padded nor hashed (LDN accepts 16 to 64 bytes with a
 The game hands it to `nn::ldn::CreateNetwork` in an `nn::ldn::SecurityConfig`; it never reaches Pia's
 crypto.
 
+<a id="taking-a-seat"></a>
 ## Taking a seat
 
 `bin/bdsp_join.py` scans, associates and reports the participant table:
@@ -103,6 +107,7 @@ of `NetworkManager$$OnUpdate` is `SoftwareKeyboard$$Open` [0x01c980c8].
 
 Unauthenticated Pia is dropped silently, with no error and no loss of the seat.
 
+<a id="what-is-on-the-wire"></a>
 ## What is on the wire
 
 Before a station acknowledges it, a hosting console broadcasts its update session to
@@ -116,6 +121,7 @@ Version byte `0x89` is encrypted, version 9: Pia 5.27-5.45; the reliable protoco
 it to 5.31-5.43. The header, message framing and transport protocols are on
 [The Pia layer](pia.md). `pokeldn/ldn/pia5.py` round-trips 674 captured packets byte-identically.
 
+<a id="the-key-hierarchy"></a>
 ## The key hierarchy
 
     cryptoKeyDataSeed  9918bd0fdcfa65779918bd0fdcfa6577    from global-metadata.dat
@@ -130,6 +136,7 @@ it to 5.31-5.43. The header, message framing and transport protocols are on
 All 674 packets of the reference capture authenticate, and re-encrypting each plaintext reproduces
 the console's ciphertext and tag byte for byte.
 
+<a id="where-the-seed-lives"></a>
 ### Where the seed lives
 
 `INL1.IlcaNetSessionSetting`'s constructor sets the defaults:
@@ -144,6 +151,7 @@ the SHA-1 of the sixteen bytes. The blob lives in `global-metadata.dat`'s field-
 section, in neither the executables nor the RomFS; the method is on
 [Reverse-engineering a Switch title](switch_re.md).
 
+<a id="the-published-key-is-the-seed-derived"></a>
 ### The published key is the seed, derived
 
     seed (metadata)   9918bd0f dcfa6577 9918bd0f dcfa6577
@@ -153,6 +161,7 @@ section, in neither the executables nor the RomFS; the method is on
 The game overwrites bytes 1, 3, 7 and 12 from the local communication version, 199 for 1.3.0 (the
 advertisement's `app_version`); `ldn_game_key(seed, 199)` reproduces the published key.
 
+<a id="the-session-key"></a>
 ### The session key
 
 From `nn::pia::local::LocalProtocol`:
@@ -164,6 +173,7 @@ From `nn::pia::local::LocalProtocol`:
 
 The generator is SEAD's RNG; `pokeldn/ldn/sead.py` implements it.
 
+<a id="the-gcm-nonce"></a>
 ### The GCM nonce
 
 The IV is built by the stream object, one per network family:
@@ -184,6 +194,7 @@ The CRC at `0x1719204` is ordinary CRC32 (`0xEDB88320`) over the network id (lit
 advertisement +0x00 via the network object's +0x450) and the source MAC from a station record. The
 source MAC cannot be recovered from the packet being decrypted.
 
+<a id="the-local-protocol-decoded"></a>
 ## The Local Protocol, decoded
 
 Every packet of the reference capture carries the same message:
@@ -210,6 +221,7 @@ mac[1] << 24 | mac[0] << 16`) to the scanned MAC `48:f1:eb:20:9b:22`. The Pia me
 big-endian, the Local Protocol's fields little-endian, a local address inside them big-endian again.
 The presence byte 0x7F sets three bits that name no field in Pia 5.27-6.30.
 
+<a id="the-ack"></a>
 ### The ack
 
 The 20-byte ack is on [The Pia layer](pia.md#the-local-protocol-0x24). The framing that works is
@@ -217,6 +229,7 @@ the host's own: a broadcast with packet `dst_var` 0 and message destination 0; t
 are untested. The first ack stops the updates: in the capture, 42 updates went 100 ms apart and the
 ack came 34 ms after the last. The console then sent nothing while the station sent nothing more.
 
+<a id="joining-the-mesh"></a>
 ## Joining the mesh
 
 The three handshakes and the ack rule are on [The Pia layer](pia.md#joining-a-mesh). BDSP's
@@ -253,6 +266,7 @@ The join response for a two-station mesh:
 Within a second the console sends RTT (0x58) and reliable (0x7c) traffic. Result 7 means the
 variable id is already one of its stations.
 
+<a id="the-session-protocol-0x94"></a>
 ### The Session Protocol (0x94)
 
 `nn::pia::session::SessionProtocol` (1.3.0 `main`, vtable `0x4b5da50`) carries the joint-session
@@ -270,6 +284,7 @@ rings, protocol 0x94, port 1 (`0x159de54(window, 2, 2, 0x94000001)`); receive is
 one flagged `is initialized`, sequence below base plus two) is acknowledged, then dropped by its
 handler. No 0x94 has been captured or sent.
 
+<a id="hosting"></a>
 ## Hosting
 
 A console entering the Union Room joins any room with a free seat before opening its own
@@ -306,6 +321,7 @@ Clock requests go unanswered deauthenticates and re-associates repeatedly while 
 host does, and from there the room is symmetric: the approach, the greeting and
 [the trade](bdsp_trade.md) run unchanged with the console as joiner.
 
+<a id="leaving"></a>
 ## Leaving
 
 A console leaving the room runs Pia's mesh leave as a joiner and its host-migration leave as a host.
@@ -356,6 +372,7 @@ Leaving the trade box sends no departure message: the box's close callback `Trad
 `UnionTradeManager$$Cancel` [0x1c33780] sends `NetCharacterStateData{0}`, both in one packet, with
 no wait on the partner.
 
+<a id="measurement-methods"></a>
 ## Measurement methods
 
 - The console answers a connection request only when the protocol count matches its own; sweeping

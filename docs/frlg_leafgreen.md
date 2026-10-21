@@ -4,12 +4,14 @@ parent: FireRed and LeafGreen
 nav_order: 6
 ---
 
+<a id="leafgreen-and-the-two-cartridges-offset-map"></a>
 # LeafGreen, and the two cartridges' offset map
 
 The rest of this section was read off French FireRed (BPRF, version 0x0A). French LeafGreen is
 BPGF, 0x0A (`POKEMON LEAF` in its header). Every payload works there unchanged; ROM addresses do not.
 The measurements run inside the Mystery Gift menu, so the console never leaves its save point.
 
+<a id="the-measured-addresses"></a>
 ## The measured addresses
 
 | symbol | LeafGreen | FireRed |
@@ -36,6 +38,7 @@ not in the table instead of falling back to FireRed.
 Every IWRAM and EWRAM address measured is identical (link-time globals of the same code); every ROM
 address above 0x080486C8 differs. Fifteen symbols confirm it; a new ROM symbol is measured, not predicted.
 
+<a id="the-delta-by-region"></a>
 ## The delta by region
 
 The offset from a FireRed address to its LeafGreen twin is piecewise constant over at least eight
@@ -48,6 +51,7 @@ aims a dump; it says nothing about content. `pokeldn/frlg/rom/leafgreen_twins.py
 each read off its own cartridge (about 200 are named functions); `leafgreen_twins.leafgreen(address)`
 answers exactly where it has a pair and falls back to `leafgreen_guess`.
 
+<a id="the-boundaries"></a>
 ### The boundaries
 
     step             span                          what is in it
@@ -65,12 +69,15 @@ window matching the old delta to the first matching the new one. `rom_map.LEAFGR
 holds them; a test asserts the boundary and segment tables agree. Above 0x0843C800 the cartridges
 hold different bytes (version-specific graphics), so the delta there is undefined by content.
 
+<a id="measurement-methods"></a>
 ## Measurement methods
 
+<a id="paired-constants"></a>
 ### Paired constants
 
 `RAND_MULT` scanned on both cartridges gave eleven hits each, pairing in order across 1.3 MB.
 
+<a id="a-pointer-as-the-needle"></a>
 ### A pointer as the needle
 
 Every reference to an address measured on both consoles is a paired point. Scanning each cartridge
@@ -85,6 +92,7 @@ for its own `gSpeciesInfo` gave 56 literal-pool references each, ascending, pair
 
 No hit lies above 0x0815A630.
 
+<a id="making-a-needle-where-there-is-no-symbol"></a>
 ### Making a needle where there is no symbol
 
 Above 0x083E3700 nothing has a name. Dump 1 KB off one console; a word occurring exactly once in it
@@ -110,6 +118,7 @@ unconstrained, so a control point is needed. The script-layer scans:
 Delta 0 is also what a scan of the wrong console answers, so the last row, from above the boundary,
 must come back shifted.
 
+<a id="literal-pools-which-are-free-pointer-tables"></a>
 ### Literal pools, which are free pointer tables
 
 A function keeps the addresses it touches in a pool after its body, so a 1 KB code window is a few
@@ -138,6 +147,7 @@ delta at the target; a 16 KB handler window holds 834. `tools/frlg/cartridge_pai
 `bl`s out of every window held on both cartridges: 1592 points, every site paired (734 of 734, 834 of
 834), four distinct deltas per window, no outliers.
 
+<a id="dumping-both-cartridges-at-the-same-address"></a>
 ### Dumping both cartridges at the same address
 
 At a common address with delta d, the LeafGreen block
@@ -150,6 +160,7 @@ A wide gap may hide several steps: the 421 KB from −0x1C4 to −0x12D8 holds t
 resembles itself, so each reading is scored against the alternatives: at 0x08442800 −0x124C scores
 436/436, −0x1240 6.9%, −0x12D8 2.7%; at 0x08457000 74.7% against 57.3% is recorded as no verdict.
 
+<a id="reading-a-leafgreen-dump-against-firereds-tables"></a>
 ## Reading a LeafGreen dump against FireRed's tables
 
 Every table here was read off FireRed. `tools/frlg/rom_functions.py --console leafgreen` moves the
@@ -163,6 +174,7 @@ the script engine (`ScriptContext_Stop`, `ScriptJump`, `ScriptCall`, `ScriptRetu
 setter `callnative` uses), `GetVarPointer`, `VarGet`, `FlagSet`, `FlagClear`, `FlagGet`, and the
 `_call_via_r0` veneer.
 
+<a id="the-overworld-and-a-shiny-mewtwo"></a>
 ## The overworld, and a shiny Mewtwo
 
 Every literal in [the seek stubs](frlg_rng.md) is a link-time IWRAM word shared with FireRed
@@ -183,6 +195,7 @@ and starts an aimed Mewtwo battle at once (verified shiny on retail LeafGreen).
 While bound, the console reports holding no Wonder Card; the card stays intact
 ([the one RAM script slot](frlg_gift.md#the-one-ram-script-slot)).
 
+<a id="a-dumped-region-must-not-move"></a>
 ## A dumped region must not move
 
 A `memory-dump` of 0x03004220 (`gRngValue`, two turns per frame) dies mid-transmission with *erreur
@@ -193,6 +206,7 @@ between frames fails its CRC; a ROM region of the same size does not. Mechanism 
 Starting 4 bytes higher reads the save-block pointers. Both move together, by one shared 4-aligned
 offset inside the 0..124 range `SetSaveBlocksPointers` rolls [load_save.c:75].
 
+<a id="the-english-build"></a>
 ## The English build
 
 `pret/pokefirered` builds both cartridges at REVISION 10, the Switch release's revision:
@@ -207,6 +221,7 @@ It is the English release: at the same address a French console and the English 
 of bytes, since French strings differ in length. It serves as a second cartridge pair from the same
 source and link order, with every symbol known.
 
+<a id="the-offset-french-address-to-english-address"></a>
 ### The offset: French address to English address
 
 Piecewise constant, stepping only where an object changes size between languages; code runs are tens
@@ -219,6 +234,7 @@ of kilobytes long, one 1.3 MB. Two independent readings agree everywhere both ap
 
       ./.venv/bin/python tools/frlg/english_build.py --offsets
 
+<a id="the-control"></a>
 ### The control
 
 The English ELF (which carries static functions, unlike the link map) names a French address through
@@ -240,6 +256,7 @@ when it lands exactly on a function start and the other does not (`[english?]`).
 targets reached from a dozen bodies each read as `__divsi3`, `__modsi3` and `__umodsi3`, agbcc's
 division helpers.
 
+<a id="the-english-pairs-own-delta-map"></a>
 ### The English pair's own delta map
 
 The two English ROMs compared give the same six deltas the French cartridges measured, in order:
@@ -253,6 +270,7 @@ inside the brackets measured on hardware.
 
     ./.venv/bin/python tools/frlg/english_build.py --boundaries
 
+<a id="traps"></a>
 ### Traps
 
 - A `.gcc2_compiled.` symbol shadows the first function of its file; skip names beginning `.` or `$`.
@@ -262,6 +280,7 @@ inside the brackets measured on hardware.
   `french delta = offsetFR - offsetLG + english delta`.
 - Regenerate `english_names.py` with `scripts/gen_english_names.py` after any new dump.
 
+<a id="unusable-references"></a>
 ## Unusable references
 
 `gSongTable` (347 `{header, ms, me}` entries) packs 122 song headers inside 9 KB, so it fixes one

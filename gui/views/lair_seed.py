@@ -1,6 +1,6 @@
 """The Dynamax Adventure seed: the rentals and the Pokemon on the way it gives, a new seed, and a
 search for a seed whose offer holds a wanted rental (pokeldn.swsh.lair, docs/swsh_raid.md)."""
-from pokeldn.app.i18n import t as tr
+from pokeldn.app.i18n import text as tr, ref
 
 import random
 import re
@@ -26,17 +26,17 @@ class LairSeedPicker:
         self.rows = lair.table()
         self.names = raid_event.tables()["species_names"]
         self.seed = t.field(value=str(value or ""), mono=True, expand=True, on_change=self._typed,
-                            hint=tr('lair_seed.empty_for_a_random_seed_6d1f0a', 'Empty for a random seed'))
+                            hint=tr('core.lair_seed.empty_for_a_random_seed_6d1f0a'))
         rentals = sorted({row[0] for row in self.rows if not row[2]}, key=lambda s: self._name(s))
         self.want = None
         self.wanted = t.dropdown([(str(s), self._name(s)) for s in rentals], None, enable_filter=True,
                                  on_select=lambda e: setattr(self, "want", e.control.value),
                                  editable=True, menu_height=320,
-                                 hint_text=tr('lair_seed.a_rental_you_want_8e2b71', 'A rental you want'))
+                                 hint_text=tr('core.lair_seed.a_rental_you_want_8e2b71'))
         self.status = t.text("", 12, t.MUTED)
         self.preview = ft.Column(spacing=8, tight=True)
-        buttons = ft.Row([t.secondary_button(tr('lair_seed.new_seed_4c0d9a', 'New seed'), self._roll, "shuffle"),
-                          t.secondary_button(tr('lair_seed.find_a_seed_2f7e15', 'Find a seed'), self._find, "search")],
+        buttons = ft.Row([t.secondary_button(tr('core.lair_seed.new_seed_4c0d9a'), self._roll, "shuffle"),
+                          t.secondary_button(tr('core.lair_seed.find_a_seed_2f7e15'), self._find, "search")],
                          spacing=8, wrap=True, run_spacing=8)
         self.control = ft.Column([ft.Row([self.seed]), ft.Row([self.wanted]), buttons, self.status, self.preview],
                                  spacing=8, tight=True)
@@ -54,13 +54,13 @@ class LairSeedPicker:
     def _show(self, text: str, update: bool = True) -> None:
         seed = seed_of(text)
         self.seed.error = (None if not text or seed is not None
-                           else tr('lair_seed.up_to_sixteen_hexadecimal_digits_3a91c4', 'Up to sixteen hexadecimal digits.'))
+                           else tr('core.lair_seed.up_to_sixteen_hexadecimal_digits_3a91c4'))
         self.preview.controls = []
         if seed is not None:
             offer, encounters = lair.adventure(seed, rows=self.rows)
             self.preview.controls = [
-                t.labeled_control(tr('lair_seed.rentals_offered_5b8d02', 'Rentals offered'), self._tiles(offer[:3])),
-                t.labeled_control(tr('lair_seed.pokemon_on_the_way_1e6c47', 'Pokemon on the way'), self._tiles(encounters))]
+                t.labeled_control(tr('core.lair_seed.rentals_offered_5b8d02'), self._tiles(offer[:3])),
+                t.labeled_control(tr('core.lair_seed.pokemon_on_the_way_1e6c47'), self._tiles(encounters))]
         if update:
             self.control.update()
 
@@ -81,7 +81,7 @@ class LairSeedPicker:
         if not self.want:
             return
         species = int(self.want)
-        self.status.value = tr('lair_seed.searching_7a1b33', 'Searching...')
+        self.status.value = tr('core.lair_seed.searching_7a1b33')
         self.status.update()
 
         def run():
@@ -95,7 +95,7 @@ class LairSeedPicker:
 
             def done():
                 self.status.value = ("" if found is not None else
-                                     tr('lair_seed.no_seed_found_try_again_0c5e8d', 'No seed found; try again.'))
+                                     tr('core.lair_seed.no_seed_found_try_again_0c5e8d'))
                 if found is not None:
                     self._set(found)
                 else:
