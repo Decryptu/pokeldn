@@ -1,4 +1,3 @@
-from pokeldn.app.i18n import message_ref as _message
 import os
 import random
 import re
@@ -132,8 +131,7 @@ def _args(field: Field, value, tool: Tool) -> list[str]:
     if field.kind == "raidpartners":  # {"progress": a stage or "", "picks": trainers in slot order}
         value = value if isinstance(value, dict) else {}
         progress = [flags[1], value["progress"]] if value.get("progress") else []
-        return progress + [a for name in value.get("picks", ())
-                           for a in (flags[0], raid_partners.TRAINERS[raid_partners.trainer(name)])]
+        return progress + [a for name in value.get("picks", ()) for a in (flags[0], name)]
     if value in ("", None):
         return list(field.unset)
     items = str(value).split() if field.kind == "multi" else [field.template.format(value) if field.template
@@ -257,14 +255,14 @@ def reward_problem(tool: Tool, values: dict, rows) -> str:
         return ""
     den = reward_den(tool, values)
     if den is None:
-        return _message('core.pokeldn.app.command.choose_a_boss_a_den_holds_before_choosing_reward_45855ea2')
+        return "Choose a boss a den holds before choosing rewards."
     den = dict(den)
     for n, row in enumerate(rows, 1):
         item, quantity = str(row.get("item_id", "")), str(row.get("quantity", ""))
         if not item.isdigit() or int(item) not in den:
-            return _message('core.pokeldn.app.command.reward_value0_is_not_one_this_den_gives_2311f48f', value0=n)
+            return f"Reward {n} is not one this den gives."
         if den[int(item)] is not None and quantity != str(den[int(item)]):
-            return _message('core.pokeldn.app.command.reward_value0_this_den_gives_it_value1_at_a_time_4ea872eb', value0=n, value1=den[int(item)])
+            return f"Reward {n}: this den gives it {den[int(item)]} at a time."
     return ""
 
 
@@ -317,7 +315,7 @@ def code_error(field: Field, value, game: str = "sv") -> str:
             return "Choose the partners' progress again."
         stage = (raid_partners.STAGES.index(value["progress"]) if value.get("progress")
                  else raid_partners.SIX_STARS)
-        known = {str(p.trainer) for p in raid_partners.pool(stage)} | {p.trainer_key for p in raid_partners.pool(stage)}
+        known = {p.trainer for p in raid_partners.pool(stage)}
         if any(name not in known for name in picks):
             return "A chosen partner is not among this progress's trainers."
         return ""
@@ -373,10 +371,8 @@ def missing_offer(tool: Tool, values: dict) -> str:
             if not path and not field.required and len(entries) == 1:
                 continue
             if not path or not os.path.isfile(path):
-                return (_message("core.offer.choose_event") if field.events else
-                        _message("core.offer.build_number", number=n) if len(entries) > 1 else
-                        _message("core.offer.build_first"))
+                return ("Choose the Mystery Gift Pokemon first." if field.events
+                        else f"Build the Pokemon to offer{which} first.")
             if entry.get("legal") is False:
-                return (_message("core.offer.illegal_number", number=n) if len(entries) > 1 else
-                        _message("core.offer.illegal"))
+                return f"The Pokemon{which} is not legal."
     return ""

@@ -129,9 +129,11 @@ def test_an_unknown_radio_is_refused_before_any_ldn_call(isolated, monkeypatch):
         trio.run(open_factory)
 
 
-def test_a_plugin_toml_that_does_not_parse_runs_no_code(isolated, tmp_path, monkeypatch):
+@pytest.mark.parametrize("toml", ['id = "badtoml"\napi = \n',
+                                  pytest.param("api = " + "[" * 5000 + "]" * 5000, id="deep")])
+def test_a_plugin_toml_that_does_not_parse_runs_no_code(isolated, tmp_path, monkeypatch, toml):
     folder = make(tmp_path, "badtoml", "raise SystemExit('imported')")
-    (folder / "plugin.toml").write_text('id = "badtoml"\napi = \n')
+    (folder / "plugin.toml").write_text(toml)
     monkeypatch.setenv("POKELDN_PLUGINS", str(folder))
     [plugin] = plugins.load()
     assert plugin.error.startswith("plugin.toml:") and not plugin.loaded
@@ -168,18 +170,6 @@ def test_a_broken_plugin_keeps_its_error_and_adds_nothing(isolated, tmp_path, mo
     keys = {t.key for g in plugins.games() for t in g.tools}
     assert "good-echo" in keys and "example-echo" not in keys
     assert plugins.radios() == []
-
-
-def test_failed_plugin_discards_its_localization_catalog(isolated, tmp_path, monkeypatch):
-    from pokeldn.app import i18n
-    broken = make(tmp_path, "broken", '''
-def register(api):
-    api.register_localization({"broken.title": "Temporary title"})
-    raise ValueError("half done")
-''')
-    monkeypatch.setenv("POKELDN_PLUGINS", str(broken))
-    assert "half done" in plugins.load()[0].error
-    assert "broken.title" not in i18n._catalog
 
 
 KIT = ROOT / "examples" / "plugins" / "test_kit"

@@ -1,4 +1,3 @@
-from pokeldn.app.i18n import message_ref as _message
 import _thread
 import os
 import runpy
@@ -166,7 +165,7 @@ class InProcess(Process):
     def __init__(self, argv: list[str], cwd: str, env: dict, on_line: Callable[[str], None],
                  on_exit: Callable[[int], None], bluetooth: bool = False, popups=None, label: str = ""):
         if InProcess.current is not None:
-            raise RuntimeError(_message('core.pokeldn.app.runner.a_run_is_already_in_progress_cfde1862'))
+            raise RuntimeError("A run is already in progress.")
         self.on_line, self.on_exit = on_line, on_exit
         self.code: int | None = None
         self.stopping = False

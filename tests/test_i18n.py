@@ -26,9 +26,7 @@ def isolated(tmp_path, monkeypatch):
 
 
 def test_template_matches_source():
-    import tomllib
-    source = TEMPLATE.read_text(encoding="utf-8")
-    assert source == render(extract(), tomllib.loads(source).get("parameters"))
+    assert TEMPLATE.read_text(encoding="utf-8") == render(extract())
 
 
 def test_conflicting_defaults_are_refused(tmp_path):
@@ -86,7 +84,8 @@ def test_signed_pack_install_selection_and_views(isolated, monkeypatch):
 
 
 @pytest.mark.parametrize("text", ['bad = [', '"bank.title" = 3', '"bank.title" = "Hello {name"',
-                                      '"bank.title" = "{name.__class__}"'])
+                                      '"bank.title" = "{name.__class__}"', '"bank.title" = "{name:>999999999}"',
+                                      pytest.param("bad = " + "[" * 5000 + "]" * 5000, id="deep")])
 def test_bad_pack_refused_by_installer_and_loader(isolated, monkeypatch, text):
     folder = isolated / "bad"
     folder.mkdir()
@@ -109,12 +108,12 @@ def test_bad_placeholder_falls_back(isolated, monkeypatch):
 
 def test_catalog_import_after_pack_selection(isolated):
     code = '''
-from pokeldn.app.i18n import select, render
+from pokeldn.app.i18n import select
 select("pseudo-language")
 from pokeldn import plugins
 plugins.load()
 from pokeldn.app.catalog import GAMES
-assert render(GAMES[0].tools[0].name) == "[Trade (Host)]"
+assert GAMES[0].tools[0].name == "[Trade (Host)]"
 from gui.views.controller import KEYBOARD, STICK_DIRECTIONS
 assert KEYBOARD["Arrow Up"] == "UP"
 assert STICK_DIRECTIONS[1][0] == "UP"
@@ -148,7 +147,7 @@ import json, os
 from pokeldn.app import i18n
 from scripts.extract_strings import extract
 if os.environ["TRANSLATE"] == "yes":
-    i18n._strings = {k: "[简体中文 " + v + "]" if isinstance(v, str) else v for k, v in extract().items()}
+    i18n._strings = {k: "[简体中文 " + v + "]" for k, v in extract().items()}
 from pokeldn.app.catalog import GAMES
 print(json.dumps([(g.key, [(t.key, t.script, t.fixed,
     [(f.key, f.flag, f.default, [c[0] for c in f.choices], f.when, f.unless, f.requires,
@@ -169,12 +168,12 @@ def test_code_plugin_importing_catalog_during_startup_uses_pack(isolated):
     (folder / "plugin.toml").write_text('id = "code-plugin"\napi = 1\n')
     (folder / "plugin.py").write_text('from pokeldn.plugins import Tool\ndef register(api):\n    pass\n')
     result = subprocess.run([sys.executable, "-c", '''
-from pokeldn.app.i18n import select, render
+from pokeldn.app.i18n import select
 select("pseudo-language")
 from pokeldn import plugins
 plugins.load()
 from pokeldn.app.catalog import GAMES
-assert render(GAMES[0].tools[0].name) == "[Trade (Host)]"
+assert GAMES[0].tools[0].name == "[Trade (Host)]"
 '''], cwd=ROOT, capture_output=True, text=True,
         env={**os.environ, "POKELDN_DATA": str(isolated / "child"),
              "POKELDN_PLUGINS": os.pathsep.join((str(folder), str(SAMPLE)))})

@@ -1,4 +1,3 @@
-from pokeldn.app.i18n import ref as _ref
 import errno
 import os
 import sys
@@ -15,11 +14,11 @@ from pokeldn import plugins, pokemon, popup
 from pokeldn.app import android, ios, popups, settings, update
 from pokeldn.app.paths import SESSION
 from gui.views.widgets import on_ui
-from pokeldn.app.i18n import text as tr, ref
+from pokeldn.app.i18n import t as tr
 
-NO_FIRMWARE = _ref('core.gui.app.no_pokeldn_firmware_091f1ae1')
-PORT_BUSY = _ref('core.gui.app.port_busy_or_not_allowed_0c197ba6')
-PORT_DENIED = _ref('core.gui.app.port_not_allowed_bbd7016b')
+NO_FIRMWARE = 'No pokeldn firmware'
+PORT_BUSY = 'Port busy or not allowed'
+PORT_DENIED = 'Port not allowed'
 
 
 @dataclass(frozen=True)
@@ -117,67 +116,67 @@ class App:
             return self.android_status()
         if not present and ios.active():
             off = ios.radio_state() == "off"
-            return BoardStatus("missing", tr('core.app.ios_no_radio') if off else
-                               tr('core.app.ios_looking_for_radio'),
-                               tr('core.app.ios_radio_steps'))
+            return BoardStatus("missing", tr('app.ios_no_radio', 'Bluetooth is off') if off else
+                               tr('app.ios_looking_for_radio', 'Looking for the Bluetooth radio'),
+                               tr('app.ios_radio_steps', 'Power a board running the Bluetooth radio firmware near the phone, and allow pokeldn to use Bluetooth in Settings.'))
         if not present:
             hidden = board.bridges_without_port() if sys.platform.startswith("linux") else []
             if hidden:
-                fix = (tr('core.app.ubuntu_22_04_s_braille_service_takes_ch340_boards_sudo__4f946d') if "WCH CH340" in hidden else
-                       tr('core.app.unplug_and_replug_it_the_kernel_log_sudo_dmesg_says_why_c4306e'))
-                return BoardStatus("missing", tr('core.app.board_found_without_a_serial_port_c0cd13'),
-                                   tr('core.app.linux_gave_the_no_serial_port_5329c0', value0=hidden[0], value1=fix))
+                fix = (tr('app.ubuntu_22_04_s_braille_service_takes_ch340_boards_sudo__4f946d', "Ubuntu 22.04's braille service takes CH340 boards: sudo apt remove brltty, then unplug and replug the board.") if "WCH CH340" in hidden else
+                       tr('app.unplug_and_replug_it_the_kernel_log_sudo_dmesg_says_why_c4306e', 'Unplug and replug it; the kernel log (sudo dmesg) says why.'))
+                return BoardStatus("missing", tr('app.board_found_without_a_serial_port_c0cd13', 'Board found without a serial port'),
+                                   tr('app.linux_gave_the_no_serial_port_5329c0', 'Linux gave the {value0} no serial port. {value1}', value0=hidden[0], value1=fix))
             if sys.platform == "win32" and self.hidden_bridges:
                 name = self.hidden_bridges[0]
-                steps = board.DRIVER_STEPS.get(name, tr('core.app.install_its_driver_the_board_page_links_it_c226a3'))
-                return BoardStatus("missing", tr('core.app.board_found_without_a_driver_aea8c6'),
-                                   tr('core.app.windows_has_no_driver_for_the_so_it_has_no_com_port_10597e', value0=name, value1=steps))
+                steps = board.DRIVER_STEPS.get(name, tr('app.install_its_driver_the_board_page_links_it_c226a3', 'Install its driver; the Board page links it.'))
+                return BoardStatus("missing", tr('app.board_found_without_a_driver_aea8c6', 'Board found without a driver'),
+                                   tr('app.windows_has_no_driver_for_the_so_it_has_no_com_port_10597e', 'Windows has no driver for the {value0}, so it has no COM port. {value1}', value0=name, value1=steps))
             if self.controllers:
-                return BoardStatus("controller", tr('core.app.your_board_runs_the_controller_firmware_fec986'),
-                                   tr('core.app.trades_need_the_wireless_firmware_install_it_from_the_b_c0721b'))
-            return BoardStatus("missing", tr('core.app.no_board_plugged_in_0ea8e5'),
-                               tr('core.app.plug_the_esp32_in_with_a_usb_data_cable_charge_only_cab_baeb1f'))
+                return BoardStatus("controller", tr('app.your_board_runs_the_controller_firmware_fec986', 'Your board runs the Controller firmware'),
+                                   tr('app.trades_need_the_wireless_firmware_install_it_from_the_b_c0721b', 'Trades need the Wireless firmware: install it from the Board page.'))
+            return BoardStatus("missing", tr('app.no_board_plugged_in_0ea8e5', 'No board plugged in'),
+                               tr('app.plug_the_esp32_in_with_a_usb_data_cable_charge_only_cab_baeb1f', 'Plug the ESP32 in with a USB data cable. Charge-only cables show nothing.'))
         port = device or self.radio_port(present)
         if not port:
-            return BoardStatus("choose", tr('core.app.several_boards_plugged_in_997786'),
-                               tr('core.app.open_the_board_page_and_pick_the_one_to_use_1dae63'))
+            return BoardStatus("choose", tr('app.several_boards_plugged_in_997786', 'Several boards plugged in'),
+                               tr('app.open_the_board_page_and_pick_the_one_to_use_1dae63', 'Open the Board page and pick the one to use.'))
         found = next((p for p in present if p.device == port), None)
         if found is None:
-            return BoardStatus("missing", tr('core.app.board_unplugged_3ffbbb'), tr('core.app.plug_it_back_in_b782dc'), port)
+            return BoardStatus("missing", tr('app.board_unplugged_3ffbbb', 'Board unplugged'), tr('app.plug_it_back_in_b782dc', 'Plug it back in.'), port)
         ident = self.identities.get(port)
         if isinstance(ident, board.Identity):
             if ident.current:
                 version = f" v{ident.firmware_version}" if ident.firmware_version else ""
-                return BoardStatus("ready", tr('core.app.board_ready_222cfc'), tr('core.app.pokeldn_firmware_answered_9123fd', value0=version), port)
-            return BoardStatus("flash", tr('core.app.firmware_out_of_date_bcafad'),
-                               tr('core.app.update_it_on_the_board_page_2ca281'), port)
+                return BoardStatus("ready", tr('app.board_ready_222cfc', 'Board ready'), tr('app.pokeldn_firmware_answered_9123fd', 'pokeldn firmware{value0} answered.', value0=version), port)
+            return BoardStatus("flash", tr('app.firmware_out_of_date_bcafad', 'Firmware out of date'),
+                               tr('app.update_it_on_the_board_page_2ca281', 'Update it on the Board page.'), port)
         if isinstance(ident, board.PadIdentity):
-            return BoardStatus("controller", tr('core.app.your_board_runs_the_controller_firmware_fec986'),
-                               tr('core.app.trades_need_the_wireless_firmware_install_it_from_the_b_c0721b'), port)
+            return BoardStatus("controller", tr('app.your_board_runs_the_controller_firmware_fec986', 'Your board runs the Controller firmware'),
+                               tr('app.trades_need_the_wireless_firmware_install_it_from_the_b_c0721b', 'Trades need the Wireless firmware: install it from the Board page.'), port)
         if ident == PORT_DENIED:
             group = "uucp" if os.path.exists("/etc/arch-release") else "dialout"
-            fix = (tr('core.app.add_yourself_to_the_group_sudo_usermod_ag_user_then_log_b0f6cb', value0=group, value1=group) if sys.platform.startswith("linux") else tr('core.app.unplug_and_replug_the_board_5e9230'))
-            return BoardStatus("denied", tr('core.app.no_permission_to_open_the_board_87f9dc'), fix, port)
+            fix = (tr('app.add_yourself_to_the_group_sudo_usermod_ag_user_then_log_b0f6cb', 'Add yourself to the {value0} group (sudo usermod -aG {value1} $USER), then log out and back in.', value0=group, value1=group) if sys.platform.startswith("linux") else tr('app.unplug_and_replug_the_board_5e9230', 'Unplug and replug the board.'))
+            return BoardStatus("denied", tr('app.no_permission_to_open_the_board_87f9dc', 'No permission to open the board'), fix, port)
         if ident == PORT_BUSY:
-            return BoardStatus("busy", tr('core.app.board_port_busy_68939c'),
-                               tr('core.app.another_program_holds_the_port_close_it_or_unplug_and_r_6addae'),
+            return BoardStatus("busy", tr('app.board_port_busy_68939c', 'Board port busy'),
+                               tr('app.another_program_holds_the_port_close_it_or_unplug_and_r_6addae', 'Another program holds the port. Close it, or unplug and replug the board.'),
                                port)
         if ident == NO_FIRMWARE:
             if board.wrong_port(found, self.chips.get(port, "")):
-                return BoardStatus("wrong-port", tr('core.app.use_the_board_s_other_usb_port_f8c42f'),
-                                   tr('core.app.the_firmware_talks_over_the_native_usb_port_move_the_ca_a14e6b', value0=self.chips[port]), port)
-            return BoardStatus("flash", tr('core.app.no_pokeldn_firmware_on_the_board_bf42d9'),
-                               tr('core.app.install_the_wireless_firmware_on_the_board_page_if_you__f58486'),
+                return BoardStatus("wrong-port", tr('app.use_the_board_s_other_usb_port_f8c42f', "Use the board's other USB port"),
+                                   tr('app.the_firmware_talks_over_the_native_usb_port_move_the_ca_a14e6b', 'The {value0} firmware talks over the native USB port. Move the cable to the port marked USB (not COM or UART).', value0=self.chips[port]), port)
+            return BoardStatus("flash", tr('app.no_pokeldn_firmware_on_the_board_bf42d9', 'No pokeldn firmware on the board'),
+                               tr('app.install_the_wireless_firmware_on_the_board_page_if_you__f58486', "Install the Wireless firmware on the Board page. If you just installed it, press the board's RESET (RST) button."),
                                port)
-        return BoardStatus("checking", tr('core.app.checking_the_board_f7ce4a'), tr('core.app.asking_the_board_for_its_firmware_21d622'), port)
+        return BoardStatus("checking", tr('app.checking_the_board_f7ce4a', 'Checking the board'), tr('app.asking_the_board_for_its_firmware_21d622', 'Asking the board for its firmware.'), port)
 
     def android_status(self) -> BoardStatus:
         """The phone's USB state before any firmware answers (docs/gui.md, Android setup requirements)."""
         state = android.usb_state()
-        titles = {"missing": tr('core.app.no_board_plugged_in_0ea8e5'),
-                  "bridge": tr('core.app.android_bridge_board'),
-                  "permission": tr('core.app.android_allow_usb'),
-                  "denied": tr('core.app.android_usb_refused')}
+        titles = {"missing": tr('app.no_board_plugged_in_0ea8e5', 'No board plugged in'),
+                  "bridge": tr('app.android_bridge_board', 'This board needs a computer'),
+                  "permission": tr('app.android_allow_usb', 'Allow USB access'),
+                  "denied": tr('app.android_usb_refused', 'USB access was refused')}
         return BoardStatus("denied" if state in ("permission", "denied") else "missing", titles.get(state, ""),
                            android.usb_guidance(state))
 
@@ -276,7 +275,7 @@ class App:
 
     async def copy(self, value: str) -> None:
         await self.clipboard.set(value)
-        self.page.show_dialog(ft.SnackBar(ft.Text(tr('core.app.copied_8d525e')), duration=1500))
+        self.page.show_dialog(ft.SnackBar(ft.Text(tr('app.copied_8d525e', 'Copied')), duration=1500))
 
 
 def keys_found(path: str) -> bool:

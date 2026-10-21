@@ -1,7 +1,6 @@
 """Child-side FRLG Mystery Gift client [decomp:src/mystery_gift_client.c]: receives a Wonder Card
 from a console that chose Friend -> send. The trade joiner's feed_in_frame()/tick() contract, so it
 runs in pokeldn.frlg.link.sim.Sim; every message both ways is kept in ``messages``."""
-from pokeldn.app.i18n import message_ref as _message
 
 from collections import deque
 
@@ -527,7 +526,7 @@ class MysteryGiftClientEngine:
                 self.flash = bytes(self.machine.flash)
                 return buffer_script.RepeatedRun(calls=self.machine.calls, final=run,
                                                  instructions=instructions)
-        raise buffer_script.BufferScriptError(_message('core.pokeldn.frlg.gift.mg_client.the_payload_never_returned_1_39d9f128'))
+        raise buffer_script.BufferScriptError("the payload never returned 1")
 
     def _copy_recv_script(self):
         self.script = bytes(self.recv_buffer)

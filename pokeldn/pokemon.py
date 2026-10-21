@@ -1,6 +1,4 @@
 """Legal Pokemon from PKHeX.Core, through the services/pkhex service, saved in the form each launcher reads."""
-from pokeldn.app.i18n import message_ref as _message
-from pokeldn.app.i18n import ref as _ref
 import base64
 import glob
 import json
@@ -47,7 +45,7 @@ def _command() -> list[str]:
              if os.path.isfile(path)]
     if found:
         return [max(found, key=os.path.getmtime)]
-    raise BuilderError(_message('core.pokeldn.pokemon.pkhex_is_missing_from_source_run_dotnet_build_c__b8117691'))
+    raise BuilderError("PKHeX is missing. From source, run: dotnet build -c Release services/pkhex")
 
 
 def _library(command: list[str]) -> bool:
@@ -78,7 +76,7 @@ class _Library:
     def wait(self, timeout=None):
         self.thread.join(timeout)
         if self.thread.is_alive() and timeout is not None:
-            raise subprocess.TimeoutExpired(_message('core.pokeldn.pokemon.pkhex_2e4f1f16'), timeout)
+            raise subprocess.TimeoutExpired("pkhex", timeout)
         return 0
 
     def kill(self):
@@ -91,7 +89,6 @@ class Service:
     def __init__(self):
         self.lock = threading.Lock()
         self.proc = None
-        self.name_data_version = "unknown"
         self.species_cache: dict[str, list[dict]] = {}
         # Settings.home_tracker; the app sets it, a run inherits it through the environment.
         self.home_tracker = os.environ.get("POKELDN_HOME_TRACKER") or "empty"
@@ -110,21 +107,15 @@ class Service:
                                                   creationflags=flags))
                 line = self._exchange(request)
                 if not line:
-                    raise BuilderError(_message('core.pokeldn.pokemon.the_pokemon_builder_stopped_b5401afc'))
+                    raise BuilderError("The Pokemon builder stopped.")
                 reply = json.loads(line)
-                self.name_data_version = reply.get("name_data_version", self.name_data_version)
                 if not reply.get("ok"):
-                    if reply.get("message"):
-                        from pokeldn.app.i18n_types import MessageRef
-                        error = BuilderError(reply.get("error", "unknown error"))
-                        error.message = MessageRef.from_wire(reply["message"])
-                        raise error
                     raise BuilderError(reply.get("error", "unknown error"))
                 if request.get("cmd") != "check" or reply.get("parsed") is not False:
                     return reply
                 self._close()
                 if attempt:
-                    raise BuilderError(_message('core.pokeldn.pokemon.pkhex_could_not_complete_its_legality_analysis_a_50579c65'))
+                    raise BuilderError("PKHeX could not complete its legality analysis after restarting the builder.")
 
     def _exchange(self, request):
         proc = self.proc
@@ -150,10 +141,10 @@ class Service:
             proc.wait()
             worker.join(timeout=2)
             self._close()
-            raise BuilderError(_message('core.pokeldn.pokemon.pkhex_took_too_long_to_check_this_pokemon_d351ad17')) from None
+            raise BuilderError("PKHeX took too long to check this Pokemon.") from None
         if isinstance(reply, Exception):
             self._close()
-            raise BuilderError(_message('core.pokeldn.pokemon.the_pokemon_builder_stopped_b5401afc')) from reply
+            raise BuilderError("The Pokemon builder stopped.") from reply
         return reply
 
     def species(self, game: str) -> list[dict]:
@@ -199,13 +190,13 @@ class Service:
 
     def check_bytes(self, game: str, data: bytes, *, fresh=False, fields=None) -> dict:
         if not isinstance(game, str) or game not in RECORD_SIZES or len(data) > RECORD_LIMIT:
-            raise BuilderError(_message('core.pokeldn.pokemon.this_is_not_a_pokemon_record_of_the_selected_gam_140ee3bd'))
+            raise BuilderError("This is not a Pokemon record of the selected game.")
         try:
             data = entity_bytes(game, data)
         except ValueError as exc:
-            raise BuilderError(_message('core.pokeldn.pokemon.this_is_not_a_pokemon_record_of_the_selected_gam_140ee3bd')) from exc
+            raise BuilderError("This is not a Pokemon record of the selected game.") from exc
         if len(data) not in RECORD_SIZES[game]:
-            raise BuilderError(_message('core.pokeldn.pokemon.this_is_not_a_pokemon_record_of_the_selected_gam_140ee3bd'))
+            raise BuilderError("This is not a Pokemon record of the selected game.")
         return self._ask({"cmd": "check", "game": game, "data": base64.b64encode(data).decode(),
                           "fresh": fresh, "fields": fields or {}})
 
@@ -219,14 +210,6 @@ class Service:
         version (PKHeX's number). BuilderError for a record PKHeX cannot read."""
         data = entity_bytes(game, data)
         return self._ask({"cmd": "owner", "game": game, "data": base64.b64encode(data).decode()})
-
-    def identity(self, game: str, data: bytes) -> dict:
-        """Read display identities from the record without building it or running legality analysis."""
-        data = entity_bytes(game, data)
-        if game not in RECORD_SIZES or len(data) not in RECORD_SIZES[game]:
-            raise BuilderError(_message('core.pokeldn.pokemon.this_is_not_a_pokemon_record_of_the_selected_gam_140ee3bd'))
-        return identity_info(self._ask({"cmd": "identity", "game": game,
-                              "data": base64.b64encode(data).decode()}), game)
 
     def import_file(self, game: str, path: str) -> dict:
         reply = self.check(game, path)
@@ -317,7 +300,7 @@ class Service:
     def validate_gift(self, data):
         from pokeldn.swsh import wc8
         if not wc8.sealed(data):
-            raise BuilderError(_message('core.pokeldn.pokemon.the_wc8_size_or_checksum_is_invalid_a11d7e29'))
+            raise BuilderError("The WC8 size or checksum is invalid.")
         return self._ask({"cmd": "gift", "game": "swsh", "data": base64.b64encode(data).decode()})
 
     def close(self):
@@ -355,8 +338,7 @@ atexit.register(SERVICE.close)
 
 
 # What a reply's "home_tracker" means for HOME (docs/gui.md, The bank).
-HOME_TRACKER_WARNINGS = {"empty": _ref("core.pokemon.home_tracker.missing"),
-                         "made": _ref("core.pokemon.home_tracker.unavailable")}
+HOME_TRACKER_WARNINGS = {"empty": "PKHeX flags the missing HOME tracker", "made": "Can't be deposited in HOME"}
 
 
 def summary(info: dict) -> str:
@@ -370,13 +352,6 @@ def summary(info: dict) -> str:
     if info.get("held_item"):
         parts.append(f"holding {info['held_item']}")
     return " · ".join(p for p in parts if p)
-
-
-def identity_info(info, game):
-    """Persist identities and literal record text; display labels are derived on demand."""
-    keys = ("species_id", "form_id", "nature_id", "ability_id", "held_item_id", "ball_id",
-            "move_ids", "level", "shiny", "nickname", "is_nicknamed")
-    return {"entity_schema": 1, "game": str(game), **{key: info[key] for key in keys if key in info}}
 
 
 def entity_bytes(game, data):

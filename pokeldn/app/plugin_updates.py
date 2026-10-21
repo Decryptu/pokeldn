@@ -1,7 +1,6 @@
 """Newer versions of installed plugins, from the address each names in plugin.toml's `updates`: a
 GitHub repository's latest release, or a JSON file {"version", "url", "page"}. Nothing installs
 without the risk screen (docs/plugins.md, Updates)."""
-from pokeldn.app.i18n import message_ref as _message
 import hashlib
 import re
 import shutil
@@ -39,12 +38,12 @@ def allowed(url: str) -> bool:
 def latest(url: str) -> tuple[str, str, str]:
     """(version, package URL, page) the address publishes; an OSError when it answers nothing usable."""
     if not allowed(url):
-        raise OSError(_message('core.pokeldn.app.plugin_updates.value0_is_not_an_https_address_6582ba80', value0=url))
+        raise OSError(f"{url} is not an HTTPS address")
     repo = GITHUB.fullmatch(url)
     if repo:
         reply = update.github_json(f"https://api.github.com/repos/{repo[1]}/{repo[2]}/releases/latest")
         if not isinstance(reply, dict):
-            raise OSError(_message('core.pokeldn.app.plugin_updates.github_sent_no_release_f915bfab'))
+            raise OSError("GitHub sent no release")
         assets = [a.get("browser_download_url") for a in reply.get("assets") or [] if isinstance(a, dict)
                   and str(a.get("name", "")).endswith(f".{plugin_store.EXTENSION}")]
         version = str(reply.get("tag_name", "")).removeprefix("v")
@@ -52,10 +51,10 @@ def latest(url: str) -> tuple[str, str, str]:
     else:
         reply = update.github_json(url, what="plugin version")
         if not isinstance(reply, dict):
-            raise OSError(_message('core.pokeldn.app.plugin_updates.no_plugin_version_e1d38f95'))
+            raise OSError("no plugin version")
         version, download, page = str(reply.get("version", "")), str(reply.get("url", "")), str(reply.get("page", ""))
     if not version or len(version) > 96 or not isinstance(download, str) or not allowed(download):
-        raise OSError(_message('core.pokeldn.app.plugin_updates.value0_names_no_value1_to_download_4b8e04c1', value0=url, value1=plugin_store.EXTENSION))
+        raise OSError(f"{url} names no .{plugin_store.EXTENSION} to download")
     return version, download, page
 
 
@@ -82,7 +81,7 @@ def download(available: Available, folder: Path) -> Path:
     shutil.rmtree(folder, ignore_errors=True)
     folder.mkdir(parents=True)
     if not plugin_store.ID.fullmatch(available.plugin) or not allowed(available.download):
-        raise OSError(_message('core.pokeldn.app.plugin_updates.the_plugin_download_is_invalid_ff19ebf1'))
+        raise OSError("the plugin download is invalid")
     dest = folder / f"{available.plugin}.{plugin_store.EXTENSION}"
     done, digest = 0, hashlib.sha256()
     try:
@@ -90,11 +89,11 @@ def download(available: Available, folder: Path) -> Path:
             for chunk in update.chunks(reply, 60):
                 done += len(chunk)
                 if done > plugin_store.MAX_BYTES:
-                    raise OSError(_message('core.pokeldn.app.plugin_updates.the_download_is_too_large_to_be_a_plugin_7ab80da8'))
+                    raise OSError("the download is too large to be a plugin")
                 digest.update(chunk)
                 out.write(chunk)
         if available.sha256 and digest.hexdigest() != available.sha256:
-            raise OSError(_message('core.pokeldn.app.plugin_updates.the_download_is_not_the_file_its_source_lists_it_360fcb16'))
+            raise OSError("the download is not the file its source lists; it was changed or damaged")
     except BaseException:
         dest.unlink(missing_ok=True)
         raise

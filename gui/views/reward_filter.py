@@ -1,7 +1,7 @@
 """The raid finder's wanted rewards: a foldable list of items, each with the least quantity a raid
 must give of it, chosen among what the raids searched can give (pokeldn.sv.raid_search). Folded,
 the list is kept and leaves the search alone."""
-from pokeldn.app.i18n import text as tr, ref
+from pokeldn.app.i18n import t as tr
 
 import threading
 
@@ -38,16 +38,16 @@ class RewardFilter:
         self.summary = t.text("", 11, t.MUTED)
         header = ft.Container(ft.Row([
             self.chevron, t.pixel_icon("gift", size=12, color=t.BLUE),
-            t.text(tr('core.reward_filter.rewards_59afe4'), 12, t.SOFT, weight=ft.FontWeight.W_600),
+            t.text(tr('reward_filter.rewards_59afe4', 'Rewards'), 12, t.SOFT, weight=ft.FontWeight.W_600),
             ft.Container(self.summary, expand=True, alignment=ft.Alignment.CENTER_RIGHT),
         ], spacing=8), padding=ft.Padding(0, 6, 0, 0), on_click=self._toggle,
-            tooltip=tr('core.reward_filter.unfold_to_want_rewards_folded_the_search_leaves_them_al_0be515'))
-        self.busy = ft.Row([PixelActivity(tr('core.reward_filter.listing_the_rewards_3cf5eb')),
-                            t.text(tr('core.reward_filter.listing_what_these_raids_give_25e326'), 11, t.MUTED)], spacing=8, visible=False)
+            tooltip=tr('reward_filter.unfold_to_want_rewards_folded_the_search_leaves_them_al_0be515', 'Unfold to want rewards; folded, the search leaves them alone'))
+        self.busy = ft.Row([PixelActivity(tr('reward_filter.listing_the_rewards_3cf5eb', 'Listing the rewards')),
+                            t.text(tr('reward_filter.listing_what_these_raids_give_25e326', 'Listing what these raids give...'), 11, t.MUTED)], spacing=8, visible=False)
         self.list = ft.Column(spacing=8)
-        self.add = t.secondary_button(tr('core.reward_filter.add_reward_974066'), self._add, "plus")
+        self.add = t.secondary_button(tr('reward_filter.add_reward_974066', 'Add reward'), self._add, "plus")
         self.body = ft.Column([
-            t.text(tr('core.reward_filter.find_raids_that_give_at_least_these_only_what_the_raids_ba25c5'),
+            t.text(tr('reward_filter.find_raids_that_give_at_least_these_only_what_the_raids_ba25c5', 'Find raids that give at least these. Only what the raids searched can give is listed.'),
                    11, t.FAINT),
             self.busy, self.list, self.add], spacing=8, visible=False)
         self.control = ft.Column([header, self.body], spacing=8, tight=True)
@@ -62,13 +62,13 @@ class RewardFilter:
         if not rows:
             return None
         if self.choices is None:
-            raise ValueError(tr('core.reward_filter.the_rewards_are_still_being_listed_8e2654'))
+            raise ValueError(tr('reward_filter.the_rewards_are_still_being_listed_8e2654', 'The rewards are still being listed.'))
         out = {}
         for row in rows:
             if row["item"] is None:
-                raise ValueError(tr('core.reward_filter.choose_an_item_for_each_wanted_reward_or_remove_it_831fac'))
+                raise ValueError(tr('reward_filter.choose_an_item_for_each_wanted_reward_or_remove_it_831fac', 'Choose an item for each wanted reward, or remove it.'))
             if row["item"] not in self.choices:
-                raise ValueError(tr('core.reward_filter.no_raid_searched_gives_change_the_reward_or_where_the_r_645c80', value0=self._name(row['item'])))
+                raise ValueError(tr('reward_filter.no_raid_searched_gives_change_the_reward_or_where_the_r_645c80', 'No raid searched gives {value0}; change the reward or where the raid is.', value0=self._name(row['item'])))
             out[row["item"]] = out.get(row["item"], 0) + row["least"]
         return out
 
@@ -135,12 +135,12 @@ class RewardFilter:
         self._render()
 
     def _name(self, item: int) -> str:
-        return self.names.get(item, tr('core.presentation.item_number', number=item))
+        return self.names.get(item, tr("presentation.item_number", "Item {number}", number=item))
 
     def _render(self, update: bool = True) -> None:
         count = len(self.rows)
-        wanted = tr('core.reward_filter.wanted_16af7a', value0=count) if count else tr('core.reward_filter.any_rewards_4b6ba5')
-        self.summary.value = wanted if self.open or not count else tr('core.reward_filter.off_d2834c', value0=wanted)
+        wanted = tr('reward_filter.wanted_16af7a', '{value0} wanted', value0=count) if count else tr('reward_filter.any_rewards_4b6ba5', 'Any rewards')
+        self.summary.value = wanted if self.open or not count else tr('reward_filter.off_d2834c', 'Off: {value0}', value0=wanted)
         self.summary.color = t.BLUE if self.open and count else t.MUTED
         rows = []
         choices = self.choices or {}
@@ -149,9 +149,9 @@ class RewardFilter:
             item, here = row["item"], row["item"] in choices
             options = [(str(i), self._name(i)) for i in listed]
             if item is not None and not here:      # kept from a wider search, shown as such
-                options.insert(0, (str(item), tr('core.reward_filter.not_given_here_f8a380', value0=self._name(item))))
+                options.insert(0, (str(item), tr('reward_filter.not_given_here_f8a380', '{value0} (not given here)', value0=self._name(item))))
             picker = t.dropdown(options, str(item) if item is not None else None, enable_filter=True,
-                                editable=True, menu_height=300, hint_text=tr('core.reward_filter.search_an_item_ebd2df'),
+                                editable=True, menu_height=300, hint_text=tr('reward_filter.search_an_item_ebd2df', 'Search an item'),
                                 disabled=self.choices is None,
                                 on_select=lambda e, n=index: self._item(n, e.control.value))
             totals = choices.get(item, (row["least"],)) if item is not None else (1,)
@@ -159,17 +159,17 @@ class RewardFilter:
                                disabled=item is None or not here,
                                on_select=lambda e, n=index: self._least(n, e.control.value))
             line = [ft.Row([
-                t.labeled_control(tr('core.reward_filter.item_652bcc'), picker, expand=True),
-                t.labeled_control(tr('core.reward_filter.at_least_325198'), ft.Container(least, width=96)),
-                t.icon_button("close", lambda _e, n=index: self._remove(n), tr('core.reward_filter.remove_reward_242188')),
+                t.labeled_control(tr('reward_filter.item_652bcc', 'Item'), picker, expand=True),
+                t.labeled_control(tr('reward_filter.at_least_325198', 'At least'), ft.Container(least, width=96)),
+                t.icon_button("close", lambda _e, n=index: self._remove(n), tr('reward_filter.remove_reward_242188', 'Remove reward')),
             ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.END)]
             if item is not None and not here and self.choices is not None:
-                line.append(t.text(tr('core.reward_filter.no_raid_searched_gives_it_e1cce4'), 11, t.RED))
+                line.append(t.text(tr('reward_filter.no_raid_searched_gives_it_e1cce4', 'No raid searched gives it.'), 11, t.RED))
             rows.append(ft.Column(line, spacing=4, tight=True))
         if self.error:
             rows.append(t.text(self.error, 11, t.RED))
         elif not rows:
-            rows.append(t.text(tr('core.reward_filter.any_rewards_add_one_to_look_for_raids_that_give_it_33a45d'), 11, t.MUTED))
+            rows.append(t.text(tr('reward_filter.any_rewards_add_one_to_look_for_raids_that_give_it_33a45d', 'Any rewards. Add one to look for raids that give it.'), 11, t.MUTED))
         self.list.controls = rows
         self.add.disabled = count >= REWARD_ROWS or self.choices is None
         if update:

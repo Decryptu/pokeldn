@@ -1,6 +1,5 @@
 """A plugin's library (pokeldn.plugins.library_folder) as the Games page lists it: the files a player keeps,
 copies in, renames and deletes. Hidden names and unfinished `.part` files are the plugin's own."""
-from pokeldn.app.i18n import message_ref as _message
 import os
 import re
 import shutil
@@ -53,7 +52,7 @@ def entries(folder: Path, sort: str = DEFAULT_SORT) -> list[Entry]:
     except OSError:
         return []
     if sort not in SORTS:
-        raise ValueError(_message('core.pokeldn.app.library.a_library_sort_is_one_of_value0_ae7a732f', value0=', '.join(SORTS)))
+        raise ValueError(f"a library sort is one of {', '.join(SORTS)}")
     return sorted((Entry(p, s.st_size, s.st_mtime) for p, s in listed), key=_key(sort),
                   reverse=sort.endswith("-desc"))
 
@@ -61,7 +60,7 @@ def entries(folder: Path, sort: str = DEFAULT_SORT) -> list[Entry]:
 def _inside(folder: Path, path: Path) -> Path:
     path = Path(path)
     if path.parent.resolve() != Path(folder).resolve():
-        raise ValueError(_message('core.pokeldn.app.library.value0_is_not_in_the_library_0f54c7a4', value0=path.name))
+        raise ValueError(f"{path.name} is not in the library")
     return path
 
 
@@ -70,7 +69,7 @@ def rename(folder: Path, entry: Entry, name: str) -> Path:
     -> its new path."""
     name = " ".join(name.split())
     if not name or name.startswith(".") or any(c in name for c in '/\\:*?"<>|'):
-        raise ValueError(_message('core.pokeldn.app.library.a_file_name_cannot_be_empty_start_with_a_dot_or__38f075ba'))
+        raise ValueError("A file name cannot be empty, start with a dot or hold / \\ : * ? \" < > |.")
     source = _inside(folder, entry.path)
     if not name.lower().endswith(source.suffix.lower()):
         name += source.suffix
@@ -78,7 +77,7 @@ def rename(folder: Path, entry: Entry, name: str) -> Path:
     if target == source:
         return source
     if target.exists():
-        raise FileExistsError(_message('core.pokeldn.app.library.value0_is_already_in_the_library_14866623', value0=name))
+        raise FileExistsError(f"{name} is already in the library.")
     os.rename(source, target)
     return target
 

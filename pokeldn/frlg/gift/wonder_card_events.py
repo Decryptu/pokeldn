@@ -1,4 +1,3 @@
-from pokeldn.app.i18n import message_ref as _message
 from pokeldn.frlg.gift.gift_composer import (
     AddVar,
     AllOf,
@@ -640,7 +639,7 @@ def build_mevent_npc_script(*, map_group=MAP_GROUP_PALLET_TOWN, map_num=MAP_NUM_
     Trap: while bound, the menu shows no Wonder Card (ValidateRamScript) [docs/frlg_gift.md]."""
     if actions is not None:
         if field_script is not None or lines is not None:
-            raise ValueError(_message('core.pokeldn.frlg.gift.wonder_card_events.give_actions_lines_or_a_field_script_not_more_th_41bb06f3'))
+            raise ValueError("give actions, lines or a field_script, not more than one")
         field_script = build_bound_script(actions, slug=GIFT_MEVENT_NPC)
     elif field_script is None:
         lines = lines or (
@@ -651,7 +650,7 @@ def build_mevent_npc_script(*, map_group=MAP_GROUP_PALLET_TOWN, map_num=MAP_NUM_
         )
         field_script = build_talk_script(lines, slug=GIFT_MEVENT_NPC)
     elif lines is not None:
-        raise ValueError(_message('core.pokeldn.frlg.gift.wonder_card_events.give_lines_or_a_field_script_not_both_769d66ff'))
+        raise ValueError("give lines or a field_script, not both")
 
     script = mystery_event.MysteryEventScript()
     # initramscript sets no status, so the marker proves the chain reached past it.

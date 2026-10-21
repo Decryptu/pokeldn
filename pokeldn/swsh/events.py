@@ -8,26 +8,22 @@ import struct
 from pathlib import Path
 
 from pokeldn.swsh import gift_file, wc8
-from pokeldn.app import i18n
-from pokeldn.app.i18n import ref, message_ref
 
 DATA = Path(__file__).parent / "data" / "events.json"
 HOME = "Pokemon HOME"
 GROUPS = ("Pokemon", HOME, "Items", "Battle Points", "Clothing")
-GROUP_LABELS = dict(zip(GROUPS, (ref("core.swsh.event.group.pokemon"), ref("core.swsh.event.home"),
-    ref("core.gift.kind.items"), ref("core.swsh.event.group.bp"), ref("core.pokeldn.swsh.gift_builder.clothing_5bea3ab3"))))
 # Card ids from 9000 are the community's cards for the gifts Pokemon HOME gave (PKHeX's WC8.IsHOMEGift).
 HOME_CARDS = 9000
-HOME_WHY = ref("core.swsh.event.home_why")
+HOME_WHY = ("Pokemon HOME gave this gift with its own tracker. The console makes the Pokemon from this card "
+            "without one, whatever the HOME tracker setting, and Pokemon HOME currently accepts it.")
 ENGLISH = 1                 # the record's name slots run Japanese, English, French, ...
-VERSIONS = {1: ref("core.swsh.event.sword"), 2: ref("core.swsh.event.shield")}
+VERSIONS = {1: "Sword only", 2: "Shield only"}
 
 
 @functools.cache
 def load() -> tuple[dict, ...]:
     cards = json.loads(DATA.read_text(encoding="utf-8"))      # Windows reads cp1252 by default
-    return tuple({**e, "label": ref(f"core.swsh.event.{e['key']}.title"),
-                  "record": base64.b64decode(e["record"])} for e in cards)
+    return tuple({**e, "record": base64.b64decode(e["record"])} for e in cards)
 
 
 @functools.cache
@@ -101,10 +97,10 @@ def receipt(raw):
     [docs/swsh_gift.md, What the menu refuses]."""
     number = card_id(raw)
     if raw[0x10] & 1:
-        return message_ref("core.swsh.event.receipt.once", card_id=number)
+        return f"Card id {number}: a console takes it once"
     if raw[0x10] & 4:
-        return message_ref("core.swsh.event.receipt.daily", card_id=number)
-    return message_ref("core.swsh.event.receipt.again", card_id=number)
+        return f"Card id {number}: a console takes it once for its date, at most ten such cards a day"
+    return f"Card id {number}: a console takes it again"
 
 
 def _name(raw, base, index=ENGLISH):
@@ -116,33 +112,32 @@ def _name(raw, base, index=ENGLISH):
 def describe(raw, name=lambda kind, n: f"{kind} #{n}"):
     """(when it applies, [what happens]); `name(kind, id)` names a species or an item."""
     kind = raw[wc8.GIFT_KIND_AT]
-    when = ref("core.pokeldn.swsh.gift_builder.listed_under_mystery_gift_the_player_picks_it_then_it_l_dade4d6f")
+    when = "Listed under Mystery Gift; the player picks it, then it lands in the save."
     if kind == wc8.GIFT_KIND_POKEMON:
         f = wc8.read(raw)
-        details = [message_ref("core.gift.pokemon.level", level=f['level']) if f["level"] else ref("core.gift.pokemon.random_level")]
-        if f["shiny_type"] in (2, 3):
-            details.append(ref("core.presentation.shiny"))
-        if f["gigantamax"]:
-            details.append(ref("core.gift.pokemon.gigantamax"))
-        lines = [message_ref("core.gift.egg.description", species=name('species', f['species'])) if f["egg"] else
-                 message_ref("core.gift.pokemon.description", species=name('species', f['species']), details=i18n.join(details))]
+        line = f"Gives {name('species', f['species'])}, " + (
+            f"level {f['level']}" if f["level"] else "a level the game rolls")
+        line += ", shiny" if f["shiny_type"] in (2, 3) else ""
+        line += ", can Gigantamax" if f["gigantamax"] else ""
+        lines = [line + (" (an egg)" if f["egg"] else "")]
         if f["held_item"]:
-            lines.append(message_ref("core.gift.pokemon.holding", item=name('item', f['held_item'])))
+            lines.append(f"Holding {name('item', f['held_item'])}")
         ot = _name(raw, wc8.OT_NAMES)
-        lines.append(message_ref("core.swsh.event.ot", ot=ot) if ot and not (f["tid"] == f["sid"] == 0)
-                     else ref("core.swsh.event.your_ot"))
+        lines.append(f"Original trainer {ot}" if ot and not (f["tid"] == f["sid"] == 0)
+                     else "The player is its original trainer")
     elif kind == 2:
-        lines = [message_ref("core.gift.item.description", item=name('item', i), quantity=q) for i, q in item_pairs(raw)]
+        lines = [f"Gives {name('item', i)} x{q}" for i, q in item_pairs(raw)]
     elif kind == 3:
-        lines = [message_ref("core.gift.bp.description", quantity=struct.unpack_from('<I', raw, 0x20)[0])]
+        lines = [f"Adds {struct.unpack_from('<I', raw, 0x20)[0]} Battle Points"]
     elif kind == 4:
         pairs = [struct.unpack_from("<II", raw, 0x20 + 8 * i) for i in range(6)]
         pieces = sum(i != 0xFFFFFFFF and (c, i) != (0, 0) for c, i in pairs)   # official cards pad with (0, 0)
-        lines = [message_ref("core.swsh.event.clothing", quantity=pieces)]
+        lines = [f"Puts {pieces} piece{'s' * (pieces != 1)} of clothing in the wardrobe; the player gets "
+                 f"the version for their own character"]
     else:
-        lines = [message_ref("core.swsh.event.kind", kind=kind)]
+        lines = [f"Gift kind {kind}"]
     version = VERSIONS.get(struct.unpack_from("<H", raw, 0x0E)[0])
     if version:
-        lines.append(message_ref("core.swsh.event.version", version=version))
+        lines.append(f"{version}: the other version skips the card")
     lines.append(receipt(raw))
     return when, lines

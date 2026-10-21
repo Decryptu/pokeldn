@@ -1,6 +1,5 @@
 """The gift a tool would send, as a .pokegift: built gifts compile directly, a preset sent as flags goes
 through the launcher's own builder. See docs/gifts.md."""
-from pokeldn.app.i18n import message_ref as _message
 
 from pokeldn.app import command, gift_builder
 from pokeldn.app.introspect import _load
@@ -24,7 +23,7 @@ def build(tool, values, extra, settings):
         args = parser.parse_args(command.build(tool, values, extra, settings))
         config = module.build_run_config(parser, args)
     except SystemExit as exc:
-        raise ValueError(_message('core.pokeldn.app.gift_files.the_gift_options_are_invalid_check_the_launcher__a58b3dc4')) from exc
+        raise ValueError("The gift options are invalid; check the launcher options.") from exc
     preset = gift_builder.module("frlg").PRESET[value["preset"]]
     return from_payload(config.payload, console_build=config.console_build,
                         version=config.console_version, name=preset.label)

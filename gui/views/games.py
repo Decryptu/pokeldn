@@ -1,4 +1,3 @@
-from pokeldn.app.i18n import ref as _ref
 import os
 import shlex
 import threading
@@ -11,7 +10,6 @@ import flet as ft
 from gui.app import keys_found
 from pokeldn import panel, progress
 from pokeldn.app import bank, command, panels, events_gallery, gift_builder, online, received, runner
-from pokeldn.app import i18n
 from pokeldn.swsh import raid_event as swsh_raid_event
 from pokeldn.sv import raid_event as raid_events
 from gui import theme as t
@@ -21,7 +19,7 @@ from pokeldn.app.introspect import flags_of
 from pokeldn.app.paths import SESSION
 from gui.views.event_gifts import EventGiftPicker
 from gui.views.pokemon import NAME_LISTS, LinkCodePicker, NamePicker, OfferQueue, PokemonPicker
-from gui.views.raid_event import FOLDED, RaidEventPicker, den_label, swsh_boss_label
+from gui.views.raid_event import FOLDED, RaidEventPicker
 from gui.views.encounter import EncounterPicker
 from gui.views.raid_partners import RaidPartnersPicker
 from gui.views.raid_seed import RaidSeedPicker
@@ -32,16 +30,16 @@ from gui.views.library import LibraryCard
 from gui.views.panels import StatusCards, card_control
 from gui.views.sprites import MINI, Sprite
 from gui.views.widgets import CodeBlock, DigitCode, Log, PathField, open_folder
-from gui.localization import SERVICE, display_summary, summary as pokemon_summary, summary_lines, summary_text, translate
-from pokeldn.app.i18n import choice_text, help_text, text as tr, ref
+from gui.localization import SERVICE, summary as pokemon_summary, summary_lines, summary_text, translate
+from pokeldn.app.i18n import help_text, t as tr
 
 EMPTY = "-"   # a dropdown option cannot carry an empty key
 # The Tera Raid host's event fields (pokeldn/app/catalog.py) and the context fields an event narrows.
 RAID_EVENT, RAID_DEN, RAID_CATCH = "--raid-event", "--raid-event-group", "--raid-catch-normal"
 REWARD_DEN_KEYS = ("--raid-boss", "--raid-gigantamax")   # a Max Raid's den follows its boss
-RAID_CONTEXT = {"--raid-version": ("version", _ref('core.gui.views.games.violet_22d2084f')), "--raid-map": ("map_name", _ref('core.gui.views.games.paldea_f1ba8838')),
-                "--raid-progress": ("progress", _ref('core.gui.views.games.4star_f04fd401')), "--raid-content": ("content", _ref('core.gui.views.games.standard_fe6d3468'))}
-ADVANCED_NOTE = (ref('core.games.the_tested_defaults_work_for_most_players_change_these__1815f2'))
+RAID_CONTEXT = {"--raid-version": ("version", "violet"), "--raid-map": ("map_name", "paldea"),
+                "--raid-progress": ("progress", "4star"), "--raid-content": ("content", "standard")}
+ADVANCED_NOTE = (tr('games.the_tested_defaults_work_for_most_players_change_these__1815f2', 'The tested defaults work for most players. Change these only when a guide or a bug report asks you to. A value set here overrides the Basic tab.'))
 
 
 def tool_icon(tool: Tool):
@@ -52,19 +50,19 @@ def tool_icon(tool: Tool):
     if "circle" in tool.key:
         return "users"
     # "Trade (Host)" and "Mystery Gift - Simulated" take their kind's icon.
-    return "gift" if "gift" in tool.key else "diamond-gem" if _ref('core.gui.views.games.raid_263dae9a') in tool.key else "arrows-horizontal"
+    return "gift" if "gift" in tool.key else "diamond-gem" if "raid" in tool.key else "arrows-horizontal"
 
 
 def tool_role(tool: Tool) -> str:
     """Who looks for whom, said from the console's side; a plugin's tool names its plugin."""
     if owner := plugins.owner(tool.key):
-        return tr('core.games.plugin_c37b59', value0=owner.name)
+        return tr('games.plugin_c37b59', 'Plugin: {value0}', value0=owner.name)
     if tool.key.endswith("-host"):
-        return tr('core.games.your_console_joins_pokeldn_269e96')
+        return tr('games.your_console_joins_pokeldn_269e96', 'Your console joins pokeldn')
     if tool.key.endswith("-join"):
-        return tr('core.games.pokeldn_joins_your_console_7e1f2f')
+        return tr('games.pokeldn_joins_your_console_7e1f2f', 'pokeldn joins your console')
     if tool.key.endswith("-online"):
-        return tr('core.games.your_console_joins_pokeldn_which_reaches_your_partner_0a41b2')
+        return tr('games.your_console_joins_pokeldn_which_reaches_your_partner_0a41b2', 'Your console joins pokeldn, which reaches your partner')
     return ""
 
 
@@ -107,7 +105,6 @@ class GamesView:
         self.raid_partners_open = False
         self.raid_partners_width = 0
         self.raid_partners = None              # the card shown, whose level follows Our Pokemon
-        self.event_gift_pickers = []
         self.locks = []                        # (field, switch, note) the chosen gift can lock (command.locked)
         # The override of a boss a save catches once starts unchecked at every launch.
         for stored in app.settings.tool_values.values():
@@ -127,13 +124,13 @@ class GamesView:
         center = ft.Stack([
             t.fade(self.body, 48),
             ft.Container(t.notch(self.tabs,
-                                 t.icon_button("book-open", self._open_doc, tr('core.games.read_the_docs_for_this_game_ca6165'))),
+                                 t.icon_button("book-open", self._open_doc, tr('games.read_the_docs_for_this_game_ca6165', 'Read the docs for this game'))),
                          top=0, left=0, right=0),
         ], expand=True)
         self.panes = t.Panes(
-            (tr('core.games.pane_games'), "gamepad", t.panel(ft.Column([t.panel_header(tr('core.games.games_d9dae7')), t.fade(self.tree)], spacing=0, expand=True), width=t.SIDEBAR_WIDTH)),
-            (tr('core.games.pane_options'), "sliders-horizontal", center),
-            (tr('core.games.pane_session'), "play", self.session.control))
+            (tr('games.pane_games', 'Games'), "gamepad", t.panel(ft.Column([t.panel_header(tr('games.games_d9dae7', 'Games')), t.fade(self.tree)], spacing=0, expand=True), width=t.SIDEBAR_WIDTH)),
+            (tr('games.pane_options', 'Options'), "sliders-horizontal", center),
+            (tr('games.pane_session', 'Session'), "play", self.session.control))
         self.control = self.panes.control
         self.select(self.game, self.tool, update=False)
 
@@ -153,10 +150,6 @@ class GamesView:
 
     def leave(self) -> None:
         self.visible = False
-
-    def localize(self) -> None:
-        for picker in self.event_gift_pickers:
-            picker.localize()
 
     # State
 
@@ -293,7 +286,7 @@ class GamesView:
         if event is None or field.key not in ("--raid-version", "--raid-map", "--raid-progress"):
             return None
         context = self.raid_context()
-        allowed = {"--raid-version": raid_events.versions(event), "--raid-map": [_ref('core.gui.views.games.paldea_f1ba8838')],
+        allowed = {"--raid-version": raid_events.versions(event), "--raid-map": ["paldea"],
                    "--raid-progress": raid_events.progresses(event, context["version"], context["group"])}
         return tuple((key, label) for key, label in field.choices if key in allowed[field.key])
 
@@ -309,13 +302,11 @@ class GamesView:
             self.tab, self.search = "basic", ""
         self.game, self.tool = game, tool
         self.summary.value = tool.summary
-        self.tabs.content = t.segmented([("basic", tr('core.games.basic_0e35f6'), "sliders-horizontal"),
-                                          ("all", tr('core.games.advanced_9f088d'), "bulletlist")], self.tab, self._tab)
+        self.tabs.content = t.segmented([("basic", tr('games.basic_0e35f6', 'Basic'), "sliders-horizontal"),
+                                          ("all", tr('games.advanced_9f088d', 'Advanced'), "bulletlist")], self.tab, self._tab)
         self.render_tree()
         self.render_body()
         self.session.show(tool)
-        from gui.localization import localize_controls
-        localize_controls(self.control)
         if update:
             self.control.update()
 
@@ -346,7 +337,7 @@ class GamesView:
                         ft.Column([name, t.text(role, 11, t.FAINT, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS)],
                                   spacing=0, expand=True) if role else
                         ft.Container(name, expand=True),
-                        t.badge(tr('core.games.soon_cf0ee3'), t.FAINT) if tool.unavailable else ft.Container(),
+                        t.badge(tr('games.soon_cf0ee3', 'Soon'), t.FAINT) if tool.unavailable else ft.Container(),
                     ], spacing=10), padding=ft.Padding(24, 7, 8, 7), border_radius=12, tooltip=tool.summary,
                         bgcolor=t.SELECTED if active else None,
                         on_click=lambda e, g=game, x=tool: self.pick(g, x)))
@@ -369,11 +360,10 @@ class GamesView:
 
     def render_body(self) -> None:
         self.raid_partners = self.reward_picker = None
-        self.event_gift_pickers = []
         self.show_run_cards(update=False)
         if self.tool.unavailable:
             self.tabs.visible = False
-            self.cards.controls = [t.card(tr('core.games.not_available_yet_787406'), None, self.tool.unavailable)]
+            self.cards.controls = [t.card(tr('games.not_available_yet_787406', 'Not available yet'), None, self.tool.unavailable)]
             return
         self.tabs.visible = True
         self.cards.controls = self.basic_cards() if self.tab == "basic" else self.all_rows()
@@ -437,18 +427,18 @@ class GamesView:
                     t.labeled_control(f.label, self.input(f, grouped=True), expand=True)
                     for f in fields[i:i + per_row]], spacing=10, vertical_alignment=ft.CrossAxisAlignment.START)
                     for i in range(0, len(fields), per_row)]
-                if item == ref('core.catalog.console_29a408') and self.tool.key == "frlg-gift":
+                if item == tr('catalog.console_29a408', 'Console') and self.tool.key == "frlg-gift":
                     rows.append(ft.Column([
-                        t.text(tr('core.games.game_language_233497'), 12, t.MUTED),
-                        t.text(tr('core.games.detected_automatically_ff4f09'), 13, t.TEXT),
-                        t.text(tr('core.games.english_french_german_italian_spanish_japanese_54bc86'), 12, t.MUTED),
-                        t.text(tr('core.games.after_you_choose_pokeldn_in_the_friend_list_your_game_r_1fb839'),
+                        t.text(tr('games.game_language_233497', 'Game language'), 12, t.MUTED),
+                        t.text(tr('games.detected_automatically_ff4f09', 'Detected automatically'), 13, t.TEXT),
+                        t.text(tr('games.english_french_german_italian_spanish_japanese_54bc86', 'English · French · German · Italian · Spanish · Japanese'), 12, t.MUTED),
+                        t.text(tr('games.after_you_choose_pokeldn_in_the_friend_list_your_game_r_1fb839', 'After you choose pokeldn in the Friend list, your game reports its language.'),
                                12, t.MUTED),
                     ], spacing=4))
                 out.append(t.card(item, ft.Column(rows, spacing=10),
-                                  i18n.join((f.help for f in fields if f.help), " "), trailing=sprite))
+                                  " ".join(f.help for f in fields if f.help), trailing=sprite))
         if not self.tool.fields:
-            out.append(t.text(tr('core.games.nothing_to_fill_in_10f2c5'), 13, t.MUTED))
+            out.append(t.text(tr('games.nothing_to_fill_in_10f2c5', 'Nothing to fill in.'), 13, t.MUTED))
         owner = plugins.owner(self.tool.key)
         self.plugin_cards = StatusCards(owner) if owner is not None else None
         self.library_card = LibraryCard(self.app, owner) if owner is not None and owner.library else None
@@ -483,8 +473,7 @@ class GamesView:
         selected = command.value_of(field, self.values)
         detail = dict(field.choice_help).get(selected, "") if field.kind == "choice" else ""
         why = command.locked(field, self.tool, self.values) if field.your_ot else ""
-        from pokeldn.app import i18n
-        return i18n.join((part for part in (field.help, detail, translate(why)) if part), " ")
+        return " ".join(part for part in (field.help, detail, translate(why)) if part)
 
     def offer_queue(self, field: Field) -> OfferQueue:
         return OfferQueue(self.app, self.game.key, command.value_of(field, self.values), field.queue,
@@ -508,21 +497,21 @@ class GamesView:
             event = self.raid_event()
             bosses = swsh_raid_event.hostable(event) if event is not None else []
             options = [(f"{v}:{stars}:{n}:{area}",
-                        swsh_boss_label(v, stars, area, b))
+                        f"{'★' * stars} {b.name} · Lv {b.level} · {v.title()}" + (f" · {area}" if area != "Wild Area" else ""))
                        for v, stars, n, area, b in bosses]
             keys = [k for k, _ in options]
             chosen = value if value in keys else (keys[-1] if keys else "")
             if chosen != value and chosen:
                 self.values[field.key] = chosen
             options = [(key, translate(label)) for key, label in options]
-            control = t.dropdown(options or [(EMPTY, tr('core.games.no_boss_of_this_event_shows_in_a_den_8a4b1e'))],
+            control = t.dropdown(options or [(EMPTY, tr('games.no_boss_of_this_event_shows_in_a_den_8a4b1e', 'No boss of this event shows in a den'))],
                                  chosen or EMPTY, on_select=lambda e: self.set_value(field, e.control.value, rebuild=True))
             control.disabled = not options
             return control
         if field.kind == "raidden":
             event, context = self.raid_event(), self.raid_context()
             dens = raid_events.dens(event, context["version"]) if event is not None else []
-            control = t.dropdown([(str(d.group), den_label(d)) for d in dens], str(context.get("group", "")),
+            control = t.dropdown([(str(d.group), translate(d.label)) for d in dens], str(context.get("group", "")),
                                  on_select=lambda e: self.set_value(field, e.control.value, rebuild=True))
             control.disabled = len(dens) == 1
             return control
@@ -543,9 +532,8 @@ class GamesView:
                     values[field.key] = chosen
                     self.app.settings.save()
 
-            picker = EventGiftPicker(self.app, self.game.key, value, picked, limit=field.queue)
-            self.event_gift_pickers.append(picker)
-            return picker.control
+            return EventGiftPicker(self.app, self.game.key, value, picked,
+                                   limit=field.queue).control
         if field.kind == "pokemon" and field.queue > 1:
             return self.offer_queue(field).control
         if field.kind == "pokemon":
@@ -589,13 +577,13 @@ class GamesView:
     # All tab
 
     def all_rows(self) -> list[ft.Control]:
-        search = t.field(value=self.search, hint=tr('core.games.search_the_options_596033'), autofocus=False,
+        search = t.field(value=self.search, hint=tr('games.search_the_options_596033', 'Search the options'), autofocus=False,
                          prefix_icon=ft.Container(t.pixel_icon("search", color=t.FAINT),
                                                   width=40, alignment=ft.Alignment.CENTER),
                          on_change=self._search)
         self.flag_list = ft.Column(spacing=0)
         self._fill_flags()
-        return [t.card(tr('core.games.advanced_options_9443ff'), ft.Column([search, self.flag_list], spacing=10,
+        return [t.card(tr('games.advanced_options_9443ff', 'Advanced options'), ft.Column([search, self.flag_list], spacing=10,
                                                      horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
                        ADVANCED_NOTE)]
 
@@ -608,7 +596,7 @@ class GamesView:
         try:
             flags = flags_of(self.tool.script)
         except Exception as error:
-            self.flag_list.controls = [t.text(tr('core.games.could_not_read_the_options_8d9eb8', value0=error), 12, t.RED)]
+            self.flag_list.controls = [t.text(tr('games.could_not_read_the_options_8d9eb8', 'Could not read the options: {value0}', value0=error), 12, t.RED)]
             return
         query = self.search.lower().strip()
         hidden = {f.key: f for f in self.tool.fields if f.hidden}
@@ -620,11 +608,11 @@ class GamesView:
         for flag in sorted(flags, key=lambda f: f.option not in hidden):
             field = hidden.get(flag.option)
             localized = help_text(self.tool.key, flag.option, flag.help)
-            text = " ".join(i18n.render(p) for p in ((flag.option, flag.help, localized, field.label, field.help) if field else (flag.option, flag.help, localized)))
+            text = " ".join((flag.option, flag.help, localized, field.label, field.help) if field else (flag.option, flag.help, localized))
             if query and query not in text.lower():
                 continue
             rows.append(self.flag_row(flag))
-        empty = tr('core.games.no_option_matches_278e25') if flags else tr('core.games.this_tool_takes_no_options_beyond_its_basic_fields_260710')
+        empty = tr('games.no_option_matches_278e25', 'No option matches.') if flags else tr('games.this_tool_takes_no_options_beyond_its_basic_fields_260710', 'This tool takes no options beyond its Basic fields.')
         self.flag_list.controls = rows[:200] or [t.text(empty, 12, t.MUTED)]
 
     def flag_row(self, flag) -> ft.Control:
@@ -649,7 +637,7 @@ class GamesView:
         if flag.kind == "switch":
             control = t.switch(bool(value), lambda e: store(e.control.value))
         elif flag.kind == "choice":
-            control = ft.Container(t.dropdown([(EMPTY, tr('core.games.default_choice'))] + [(c, choice_text(self.tool.key, flag.option, c)) for c in flag.choices],
+            control = ft.Container(t.dropdown([(EMPTY, tr("games.default_choice", "default"))] + [(c, translate(c)) for c in flag.choices],
                                               value or EMPTY,
                                               on_select=lambda e: store("" if e.control.value == EMPTY else e.control.value)),
                                    width=220)
@@ -665,7 +653,7 @@ class GamesView:
         lines = ([bound.help] if bound and bound.help else [help_text(self.tool.key, flag.option, flag.help)])
         if detail:
             lines.append(detail)
-        help_ = t.text(i18n.join((l for l in lines if l), "\n") or tr('core.games.no_description_06a694'), 12, t.MUTED, max_lines=4,
+        help_ = t.text("\n".join(l for l in lines if l) or tr('games.no_description_06a694', 'No description.'), 12, t.MUTED, max_lines=4,
                        overflow=ft.TextOverflow.ELLIPSIS)
 
         def toggle(e):
@@ -677,7 +665,7 @@ class GamesView:
                                t.text(flag.option, 12, t.BLUE if value != bound.default else t.MUTED,
                                       font_family=t.MONO)], spacing=8) if bound else
                        t.text(flag.option, 13, t.BLUE if value else t.TEXT, font_family=t.MONO),
-                       ft.Container(help_, on_click=toggle, tooltip=tr('core.games.show_all_2150d8') if len(lines) > 4 else None)],
+                       ft.Container(help_, on_click=toggle, tooltip=tr('games.show_all_2150d8', 'Show all') if len(lines) > 4 else None)],
                       spacing=3, expand=True),
             control,
         ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.START),
@@ -699,14 +687,15 @@ def pokemon_row(app, species: int, shiny: bool, summary: str, tip: str = "", for
 def amount_of(done: int, total: int, unit: str) -> str:
     """'1.20 of 5.20 GB' in the unit the total reads best in, or '3 of 12'."""
     if unit != "bytes":
-        return tr('core.games.of_ca6c5e', value0=done, value1=total)
+        return tr('games.of_ca6c5e', '{value0} of {value1}', value0=done, value1=total)
     scale, name = next(((s, n) for s, n in ((1e9, "GB"), (1e6, "MB"), (1e3, "KB")) if total >= s), (1, "B"))
-    return tr('core.games.of_75b2ec', value0=done / scale, value1=total / scale, value2=name)
+    return tr('games.of_75b2ec', '{value0:.2f} of {value1:.2f} {value2}',
+              value0=done / scale, value1=total / scale, value2=name)
 
 
 def per_second(rate: float, unit: str) -> str:
     if unit != "bytes":
-        return tr('core.games.a_second_5442a7', value0=rate)
+        return tr('games.a_second_5442a7', '{value0:.1f} a second', value0=rate)
     scale, name = (1e6, "MB/s") if rate >= 1e6 else (1e3, "KB/s")
     return f"{rate / scale:.2f} {name}"
 
@@ -716,10 +705,11 @@ def time_left(seconds: float | None) -> str:
         return ""
     minutes = round(seconds / 60)
     if minutes < 1:
-        return tr('core.games.under_a_minute_left_782d1a')
+        return tr('games.under_a_minute_left_782d1a', 'under a minute left')
     if minutes < 60:
-        return tr('core.games.min_left_5a8279', value0=minutes)
-    return tr('core.games.h_min_left_2f1238', value0=minutes // 60, value1=minutes % 60)
+        return tr('games.min_left_5a8279', '{value0} min left', value0=minutes)
+    return tr('games.h_min_left_2f1238', '{value0} h {value1:02d} min left', value0=minutes // 60,
+              value1=minutes % 60)
 
 
 class SessionPanel:
@@ -731,9 +721,9 @@ class SessionPanel:
         self.status_dot = ft.Container(width=10, height=10, border_radius=5, bgcolor=t.MUTED,
                                        animate_opacity=ft.Animation(800, ft.AnimationCurve.EASE_IN_OUT),
                                        on_animation_end=self._pulse)
-        self.status_label = ft.Semantics(content=self.status_dot, label=tr('core.games.idle_ab0171'))
+        self.status_label = ft.Semantics(content=self.status_dot, label=tr('games.idle_ab0171', 'Idle'))
         self.status = ft.Container(self.status_label, width=24, height=24,
-                                   alignment=ft.Alignment.CENTER, tooltip=tr('core.games.idle_ab0171'))
+                                   alignment=ft.Alignment.CENTER, tooltip=tr('games.idle_ab0171', 'Idle'))
         self.board_line = ft.Container()   # the checklist before Start, or one line once all is set
         self.offering = ft.Container(visible=False)
         self.transfer = ft.Container(visible=False)   # a save transfer's or a `[progress]` line's bar
@@ -756,15 +746,15 @@ class SessionPanel:
         self.command_text = command_block.text
         self.command_box = command_block.control
         self.command_box.visible = False
-        self.log = Log(app.page, tr('core.games.the_session_s_output_appears_here_07c340'),
+        self.log = Log(app.page, tr('games.the_session_s_output_appears_here_07c340', "The session's output appears here."),
                        private=lambda: [app.settings.ot] if app.settings.private_logs else None)
         tools = ft.Row([
-            t.icon_button("code", self._toggle_command, tr('core.games.show_the_command_324bde')),
-            t.icon_button("copy", self._copy_log, tr('core.games.copy_the_log_e01862')),
-            t.icon_button("folder", self._open_received, tr('core.games.open_the_received_folder_aae612')),
+            t.icon_button("code", self._toggle_command, tr('games.show_the_command_324bde', 'Show the command')),
+            t.icon_button("copy", self._copy_log, tr('games.copy_the_log_e01862', 'Copy the log')),
+            t.icon_button("folder", self._open_received, tr('games.open_the_received_folder_aae612', 'Open the Received folder')),
         ], spacing=0)
         self.control = t.panel(ft.Column([
-            t.panel_header(tr('core.games.session_6959b4'), self.status),
+            t.panel_header(tr('games.session_6959b4', 'Session'), self.status),
             # The checklist and the steps scroll; Start stays in view below them.
             ft.Container(t.fade(ft.Column([self.board_line, self.partner, self.offering, self.transfer, self.received,
                                                      self.steps],
@@ -773,17 +763,17 @@ class SessionPanel:
                          padding=ft.Padding(18, 8, 18, 0), expand=3),
             ft.Container(ft.Column([
                 self.action,
-                ft.Row([t.text(tr('core.games.output_b2439b'), 12, t.MUTED, weight=ft.FontWeight.W_600, expand=True), tools]),
+                ft.Row([t.text(tr('games.output_b2439b', 'Output'), 12, t.MUTED, weight=ft.FontWeight.W_600, expand=True), tools]),
                 self.command_box,
             ], spacing=12), padding=ft.Padding(18, 14, 18, 8)),
             ft.Container(self.log.control, padding=ft.Padding(12, 0, 12, 12), expand=2),
         ], spacing=0, expand=True), width=t.SESSION_WIDTH)
-        self.set_status(tr('core.games.ready_5fa7aa'), t.MUTED)
+        self.set_status(tr('games.ready_5fa7aa', 'Ready'), t.MUTED)
         app.board_listeners.append(lambda: self.refresh() if games.visible else None)
 
     def set_status(self, label: str, color: str) -> None:
-        description = tr('core.games.idle_ab0171') if label == tr('core.games.ready_5fa7aa') else label
-        running = label.startswith(tr('core.games.running_f4ccae'))
+        description = tr('games.idle_ab0171', 'Idle') if label == tr("games.ready_5fa7aa", "Ready") else label
+        running = label.startswith(tr('games.running_f4ccae', 'Running'))
         self.status_dot.bgcolor = color
         self.status.tooltip = description
         self.status_label.label = description
@@ -801,7 +791,7 @@ class SessionPanel:
     def show(self, tool: Tool) -> None:
         if tool is not self.tool and not (self.app.process and self.app.process.running):
             self.log.clear()
-            self.set_status(tr('core.games.ready_5fa7aa'), t.MUTED)
+            self.set_status(tr('games.ready_5fa7aa', 'Ready'), t.MUTED)
             self.seen, self.received.content, self.received.visible = {}, None, False
             self.transfer.content, self.transfer.visible = None, False
             self.partner.content, self.partner.visible, self.partner_state = None, False, None
@@ -815,19 +805,19 @@ class SessionPanel:
         steps = command.steps(self.tool, self.games.values)
         if steps != self.shown_steps:
             self.shown_steps = steps
-            self.steps.content = t.section(tr('core.games.on_the_console_b01a90'), t.step_list(steps))
+            self.steps.content = t.section(tr('games.on_the_console_b01a90', 'On the console'), t.step_list(steps))
 
     def checklist(self) -> list[tuple[str, str, str, str]]:
         """(state, what, how to fix it, the page that fixes it) for each thing Start needs.
         state is ok, wait, warn (Start still allowed) or block."""
         items = [
-            ("ok", tr('core.games.switch_keys_added_0e91df'), "", "") if keys_found(self.app.settings.keys) else
-            ("block", tr('core.games.add_your_switch_keys_c4f190'), tr('core.games.choose_prod_keys_in_settings_259956'), "settings"),
+            ("ok", tr('games.switch_keys_added_0e91df', 'Switch keys added'), "", "") if keys_found(self.app.settings.keys) else
+            ("block", tr('games.add_your_switch_keys_c4f190', 'Add your Switch keys'), tr('games.choose_prod_keys_in_settings_259956', 'Choose prod.keys in Settings.'), "settings"),
         ]
         if self.app.settings.radio:
             radio = self.app.plugin_radio()
-            items.append(("ok", tr('core.games.radio_78fa73', value0=radio.label), "", "") if radio else
-                         ("block", tr('core.games.radio_plugin_not_loaded_199762'), tr('core.games.turn_its_plugin_on_or_pick_the_board_d49846'),
+            items.append(("ok", tr('games.radio_78fa73', 'Radio: {value0}', value0=radio.label), "", "") if radio else
+                         ("block", tr('games.radio_plugin_not_loaded_199762', 'Radio plugin not loaded'), tr('games.turn_its_plugin_on_or_pick_the_board_d49846', 'Turn its plugin on, or pick the board.'),
                           "plugins"))
         else:
             status = self.app.board_status()
@@ -835,20 +825,20 @@ class SessionPanel:
                            "block" if status.state in ("missing", "choose", "controller") else "warn")
             items.append((board_state, status.title, "" if status.ready else status.detail, "board"))
         if missing := translate(command.missing_offer(self.tool, self.games.values)):
-            hint = tr('core.games.pick_a_species_then_press_build_e1b97f') if missing.startswith(tr('core.games.build_bdd254')) else ""
-            items.append(("block", tr('core.games.pokemon_to_offer_585ae1'), missing + hint, ""))
-        items += [("block", tr('core.games.check_the_options_c715a0'), translate(problem), "") for problem in
+            hint = tr('games.pick_a_species_then_press_build_e1b97f', ' Pick a species, then press Build.') if missing.startswith(tr('games.build_bdd254', 'Build')) else ""
+            items.append(("block", tr('games.pokemon_to_offer_585ae1', 'Pokemon to offer'), missing + hint, ""))
+        items += [("block", tr('games.check_the_options_c715a0', 'Check the options'), translate(problem), "") for problem in
                   command.problems(self.tool, self.games.values)]
         return items
 
     def render_checklist(self, items) -> ft.Control:
         if all(state == "ok" for state, *_ in items):
             return ft.Row([t.pixel_icon("checkbox-on", color=t.GREEN),
-                           t.text(tr('core.games.ready_to_start_bc403c'), 13, t.TEXT, expand=True),
-                           t.secondary_button(tr('core.games.board_4816cb'), lambda e: self.app.navigate("board"), "cpu")], spacing=8)
+                           t.text(tr('games.ready_to_start_bc403c', 'Ready to start'), 13, t.TEXT, expand=True),
+                           t.secondary_button(tr('games.board_4816cb', 'Board'), lambda e: self.app.navigate("board"), "cpu")], spacing=8)
         looks = {"ok": ("checkbox-on", t.GREEN), "wait": ("refresh", t.BLUE),
                  "warn": ("warning-diamond", t.AMBER), "block": ("warning-diamond", t.RED)}
-        labels = {"settings": tr('core.games.settings_74a883'), "board": tr('core.games.board_4816cb'), "plugins": tr('core.games.plugins_9514b7')}
+        labels = {"settings": tr('games.settings_74a883', 'Settings'), "board": tr('games.board_4816cb', 'Board'), "plugins": tr('games.plugins_9514b7', 'Plugins')}
         rows = []
         for state, what, how, page in items:
             icon, color = looks[state]
@@ -860,7 +850,7 @@ class SessionPanel:
             if page and state != "ok":
                 rows.append(ft.Row([t.secondary_button(labels[page], lambda e, k=page: self.app.navigate(k))],
                                    alignment=ft.MainAxisAlignment.END))
-        return t.section(tr('core.games.before_you_start_74e492'), ft.Column(rows, spacing=10))
+        return t.section(tr('games.before_you_start_74e492', 'Before you start'), ft.Column(rows, spacing=10))
 
     def refresh(self, update: bool = True) -> None:
         tool, s = self.tool, self.app.settings
@@ -871,12 +861,12 @@ class SessionPanel:
         self.board_line.content = None if here else self.render_checklist(items)
         blocked = any(state == "block" for state, *_ in items)
         if here:
-            action = t.button(tr('core.games.stop_cae7d5'), self._stop, "stop", t.RED, expand=True)
+            action = t.button(tr('games.stop_cae7d5', 'Stop'), self._stop, "stop", t.RED, expand=True)
         elif session:
-            action = t.button(tr('core.games.stop_and_start_7d52f6', value0=self.running_tool.name), self._start, "play", expand=True,
+            action = t.button(tr('games.stop_and_start_7d52f6', 'Stop {value0} and start', value0=self.running_tool.name), self._start, "play", expand=True,
                               disabled=self.restart or blocked or bool(tool.unavailable))
         else:
-            action = t.button(tr('core.games.start_e4bb9f'), self._start, "play", expand=True,
+            action = t.button(tr('games.start_e4bb9f', 'Start'), self._start, "play", expand=True,
                               disabled=self.app.busy or blocked or bool(tool.unavailable))
         self.action.content = ft.Row([action])
         self.render_steps()
@@ -898,36 +888,36 @@ class SessionPanel:
 
     def render_offering(self) -> None:
         entries = self.offered_entries()
-        shown = [(int(e.get("species") or 0), bool(e.get('shiny')), display_summary(e, game_of(self.games)),
+        shown = [(int(e.get("species") or 0), bool(e.get("shiny")), e.get("summary", ""),
                   int(e.get("form_id", e.get("options", {}).get("form", 0)))) for e in entries]
         if (shown, self.traded) == self.offered:
             return
         self.offered = (shown, self.traded)
         self.offering.visible = bool(shown)
-        done = t.text(tr('core.games.traded_55a859', value0=self.traded), 12, t.GREEN) if self.traded else None
+        done = t.text(tr('games.traded_55a859', '{value0} traded', value0=self.traded), 12, t.GREEN) if self.traded else None
         if not shown:
             self.offering.content = None
         elif len(shown) == 1:
             species, shiny, summary, form = shown[0]
-            self.offering.content = t.section(tr('core.games.offering_300e2b'), pokemon_row(self.app, species, shiny, summary, form=form),
+            self.offering.content = t.section(tr('games.offering_300e2b', 'Offering'), pokemon_row(self.app, species, shiny, summary, form=form),
                                               trailing=done)
         else:
             tiles = []
             for n, (species, shiny, summary, form) in enumerate(shown, start=1):
                 sprite = Sprite(self.app, species, shiny, size=MINI, form=form)
                 traded = n <= self.traded
-                sprite.frame.tooltip = tr('core.games.trade_f2b1e2', value0=n, value1=tr('core.games.done_28c78e') if traded else '', value2=summary_text(summary))
+                sprite.frame.tooltip = tr('games.trade_f2b1e2', 'Trade {value0}{value1}: {value2}', value0=n, value1=tr('games.done_28c78e', ' (done)') if traded else '', value2=summary_text(summary))
                 tiles.append(ft.Stack([sprite.control, ft.Container(
                     t.pixel_icon("checkbox-on", color=t.GREEN), right=0, bottom=0, visible=traded)]))
-            progress = (tr('core.games.of_traded_639878', value0=min(self.traded, len(shown)), value1=len(shown)) if self.traded
-                        else tr('core.games.trades_in_order_398ee7', value0=len(shown)))
-            self.offering.content = t.section(tr('core.games.offering_300e2b'), ft.Row(tiles, spacing=6, run_spacing=6, wrap=True),
+            progress = (tr('games.of_traded_639878', '{value0} of {value1} traded', value0=min(self.traded, len(shown)), value1=len(shown)) if self.traded
+                        else tr('games.trades_in_order_398ee7', '{value0} trades, in order', value0=len(shown)))
+            self.offering.content = t.section(tr('games.offering_300e2b', 'Offering'), ft.Row(tiles, spacing=6, run_spacing=6, wrap=True),
                                               trailing=t.text(progress, 12, t.GREEN if self.traded else t.MUTED))
 
     def show_transfer(self, what: str, done: int, total: int) -> None:
-        unit = tr('core.games.kb_59281a') if what == "backup" else tr('core.games.parts')
-        title = tr('core.games.backing_up_the_save_caed94') if what == "backup" else tr('core.games.putting_the_save_on_the_console_1871fd')
-        self.show_bar(title, done, total, tr('core.games.of_keep_the_switch_near_the_board_2c1cac', value0=done, value1=total, value2=unit))
+        unit = tr('games.kb_59281a', 'KB') if what == "backup" else tr('games.parts', 'parts')
+        title = tr('games.backing_up_the_save_caed94', 'Backing up the save') if what == "backup" else tr('games.putting_the_save_on_the_console_1871fd', 'Putting the save on the console')
+        self.show_bar(title, done, total, tr('games.of_keep_the_switch_near_the_board_2c1cac', '{value0} of {value1} {value2}. Keep the Switch near the board.', value0=done, value1=total, value2=unit))
 
     def show_progress(self, done: int, total: int, unit: str, title: str) -> None:
         """A run's `[progress]` line (pokeldn.progress): the bar, how much, the rate and the time left."""
@@ -937,7 +927,7 @@ class SessionPanel:
         if rate.per_second and done < total:
             parts.append(per_second(rate.per_second, unit))
             parts.append(time_left(rate.left(total)))
-        self.show_bar(title, done, total, i18n.join((parts), " · "))
+        self.show_bar(title, done, total, " · ".join(parts))
 
     def show_bar(self, title: str, done: int, total: int, detail: str) -> None:
         self.transfer.visible = True
@@ -959,22 +949,22 @@ class SessionPanel:
     def show_partner(self, partner) -> None:
         """Who the online trade meets, what they offer and whether they confirmed."""
         self.partner_state = partner
-        looks = {"looking": ("refresh", t.BLUE, tr('core.games.connecting_to_the_relays_0fd3c0')),
-                 "waiting": ("refresh", t.BLUE, tr('core.games.looking_for_a_partner_597a66')),
-                 "paired": ("user", t.GREEN, tr('core.games.trading_with_c3ae73', value0=partner.name)),
-                 "lost": ("warning-diamond", t.RED, tr('core.games.left_11e34c', value0=partner.name or tr('core.games.your_partner_95514f')))}
+        looks = {"looking": ("refresh", t.BLUE, tr('games.connecting_to_the_relays_0fd3c0', 'Connecting to the relays')),
+                 "waiting": ("refresh", t.BLUE, tr('games.looking_for_a_partner_597a66', 'Looking for a partner')),
+                 "paired": ("user", t.GREEN, tr('games.trading_with_c3ae73', 'Trading with {value0}', value0=partner.name)),
+                 "lost": ("warning-diamond", t.RED, tr('games.left_11e34c', '{value0} left', value0=partner.name or tr('games.your_partner_95514f', 'Your partner')))}
         icon, color, title = looks[partner.state]
         if partner.state in ("looking", "waiting"):
             code = partner.code.removeprefix("code ")
-            detail = (tr('core.games.anyone_trading_this_game_online_without_a_code_can_be_y_409f57')
-                      if partner.code == ref('core.games.no_code_c08cc4') else tr('core.games.your_partner_enters_the_same_code_c721c6', value0=code))
+            detail = (tr('games.anyone_trading_this_game_online_without_a_code_can_be_y_409f57', 'Anyone trading this game online without a code can be your partner.')
+                      if partner.code == tr('games.no_code_c08cc4', 'no code') else tr('games.your_partner_enters_the_same_code_c721c6', 'Your partner enters the same code: {value0}.', value0=code))
         elif partner.state == "lost":
-            detail = tr('core.games.back_out_of_the_trade_on_the_console_start_again_to_fin_0e7c9d')
+            detail = tr('games.back_out_of_the_trade_on_the_console_start_again_to_fin_0e7c9d', 'Back out of the trade on the console. Start again to find a partner.')
         elif partner.offer:
-            detail = tr('core.games.they_confirmed_confirm_on_your_console_to_trade_ca2f53') if partner.confirmed else \
-                tr('core.games.waiting_for_them_to_confirm_43192a')
+            detail = tr('games.they_confirmed_confirm_on_your_console_to_trade_ca2f53', 'They confirmed. Confirm on your console to trade.') if partner.confirmed else \
+                tr('games.waiting_for_them_to_confirm_43192a', 'Waiting for them to confirm.')
         else:
-            detail = tr('core.games.offer_a_pokemon_on_your_console_theirs_appears_here_onc_55e467')
+            detail = tr('games.offer_a_pokemon_on_your_console_theirs_appears_here_onc_55e467', 'Offer a Pokemon on your console; theirs appears here once they choose.')
         rows = [ft.Row([t.pixel_icon(icon, color=color),
                         ft.Column([t.text(title, 13, weight=ft.FontWeight.W_600),
                                    t.text(detail, 12, t.MUTED)], spacing=1, expand=True)],
@@ -983,11 +973,11 @@ class SessionPanel:
             species, shiny, summary = partner.offer
             rows.append(pokemon_row(self.app, species, shiny, summary))
             if partner.flag:
-                rows.append(t.text(tr('core.games.pkhex_flags_it_a53261', value0=partner.flag), 12, t.AMBER))
+                rows.append(t.text(tr('games.pkhex_flags_it_a53261', 'PKHeX flags it: {value0}', value0=partner.flag), 12, t.AMBER))
         if partner.note:
             rows.append(t.text(partner.note, 12, t.AMBER))
-        trailing = t.text(tr('core.games.traded_55a859', value0=partner.trades), 12, t.GREEN) if partner.trades else None
-        self.partner.content = t.section(tr('core.games.partner_29035e'), ft.Column(rows, spacing=10), trailing=trailing)
+        trailing = t.text(tr('games.traded_55a859', '{value0} traded', value0=partner.trades), 12, t.GREEN) if partner.trades else None
+        self.partner.content = t.section(tr('games.partner_29035e', 'Partner'), ft.Column(rows, spacing=10), trailing=trailing)
         self.partner.visible = True
         self.partner.update()
 
@@ -1025,14 +1015,14 @@ class SessionPanel:
         for path, (_, _, info) in list(self.seen.items()):
             name = os.path.basename(path)
             if info is None:
-                rows.append(pokemon_row(self.app, 0, False, tr('core.games.not_read_by_pkhex_ba6380', value0=name), path))
+                rows.append(pokemon_row(self.app, 0, False, tr('games.not_read_by_pkhex_ba6380', 'Not read by PKHeX · {value0}', value0=name), path))
             else:
-                rows.append(pokemon_row(self.app, int(info.get("species_id") or 0), bool(info.get('shiny')),
+                rows.append(pokemon_row(self.app, int(info.get("species_id") or 0), bool(info.get("shiny")),
                                         pokemon_summary(info), path))
         self.received.visible = True
-        self.received.content = t.section(tr('core.games.received_49f19b'), ft.Column(rows, spacing=8),
+        self.received.content = t.section(tr('games.received_49f19b', 'Received'), ft.Column(rows, spacing=8),
                                        trailing=t.icon_button("folder", self._open_received,
-                                                              tr('core.games.open_the_received_folder_aae612')))
+                                                              tr('games.open_the_received_folder_aae612', 'Open the Received folder')))
         self.received.update()
 
     def _toggle_command(self, e) -> None:
@@ -1060,22 +1050,22 @@ class SessionPanel:
         radio = self.app.plugin_radio() if s.radio else None
         port = radio.scheme if radio else "" if s.radio else self.app.radio_port()
         problems = [p for p in (
-            "" if port else tr('core.games.the_radio_plugin_is_not_loaded_3f5a2c') if s.radio else
-            tr('core.games.no_board_found_plug_it_in_or_pick_one_on_the_board_page_39a182'),
-            "" if os.path.isfile(os.path.expanduser(s.keys)) else tr('core.games.choose_your_prod_keys_in_settings_eb3db2'),
+            "" if port else tr('games.the_radio_plugin_is_not_loaded_3f5a2c', 'The radio plugin is not loaded.') if s.radio else
+            tr('games.no_board_found_plug_it_in_or_pick_one_on_the_board_page_39a182', 'No board found. Plug it in, or pick one on the Board page.'),
+            "" if os.path.isfile(os.path.expanduser(s.keys)) else tr('games.choose_your_prod_keys_in_settings_eb3db2', 'Choose your prod.keys in Settings.'),
             command.missing_offer(tool, self.games.values), *command.problems(tool, self.games.values)) if p]
         self.log.clear()
         if problems:
             for p in problems:
                 self.log.add(f'[app] {p}')
-            self.set_status(tr('core.games.not_started_ba35f0'), t.RED)
+            self.set_status(tr('games.not_started_ba35f0', 'Not started'), t.RED)
             self.refresh()
             return
         try:
             command.prepare(tool, self.games.values)
         except (OSError, ValueError) as error:
             self.log.add(f'[app] {error}')
-            self.set_status(tr('core.games.not_started_ba35f0'), t.RED)
+            self.set_status(tr('games.not_started_ba35f0', 'Not started'), t.RED)
             self.refresh()
             return
         stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -1109,7 +1099,7 @@ class SessionPanel:
             owner = plugins.owner(self.running_tool.key) if self.running_tool else None
             shown = panel.read(line)
             if shown is None:
-                self.log.add(f"[app] {tr('core.games.panel_unreadable')} {line[:160]}")
+                self.log.add(f"[app] {tr('games.panel_unreadable', 'A [panel] line the app cannot read:')} {line[:160]}")
             if owner is not None and shown is not None and panels.apply(owner.id, shown):
                 self.app.ui(lambda: self.games.plugin_changed(owner.id))
             elif owner is None and shown is not None and "id" in shown:
@@ -1142,7 +1132,7 @@ class SessionPanel:
         process = run[0]
         while process.running:
             elapsed = int(time.monotonic() - process.started)
-            self.app.ui(lambda e=elapsed: (self.set_status(tr('core.games.running_f261eb', value0=e // 60, value1=e % 60), t.BLUE),
+            self.app.ui(lambda e=elapsed: (self.set_status(tr('games.running_f261eb', 'Running {value0:02d}:{value1:02d}', value0=e // 60, value1=e % 60), t.BLUE),
                                            self.status.update())
                         if self.app.process is process and process.running else None)
             self.scan_received(run)
@@ -1157,11 +1147,11 @@ class SessionPanel:
     def _exited(self, code: int) -> None:
         def done():
             if self.stopping:
-                self.set_status(tr('core.games.stopped_1a4f63'), t.MUTED)
+                self.set_status(tr('games.stopped_1a4f63', 'Stopped'), t.MUTED)
             elif code == 0:
-                self.set_status(tr('core.games.finished_7804f7'), t.GREEN)
+                self.set_status(tr('games.finished_7804f7', 'Finished'), t.GREEN)
             else:
-                self.set_status(tr('core.games.failed_1df702', value0=code), t.RED)
+                self.set_status(tr('games.failed_1df702', 'Failed ({value0})', value0=code), t.RED)
             self.log.add(f'[app] Exited with code {code}.')
             self.run_cards = {}
             self.games.show_run_cards()

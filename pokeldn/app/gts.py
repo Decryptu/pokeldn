@@ -2,7 +2,6 @@
 players' listings, and the answers. Each listing and offer is a folder in the GTS folder holding its
 key, its record and its signed events, so an app opened later answers and settles where it stopped
 [pokeldn.online.gts, docs/online.md, The GTS]."""
-from pokeldn.app.i18n import message_ref as _message
 import json
 from collections import deque
 import os
@@ -175,7 +174,7 @@ class Service:
         with self.lock:
             state = self.states[state_id]
             if state["status"] != "active":
-                raise GtsError(_message('core.pokeldn.app.gts.this_listing_is_no_longer_open_03c77142'))
+                raise GtsError("This listing is no longer open.")
             event = self._relist(state, "withdrawn", expires=min(state["expires"], int(self.clock()) + 3 * 86400))
             state["status"] = "withdrawn"
             self._give_back(state)
@@ -188,7 +187,7 @@ class Service:
         their Pokemon comes back, or a refusal and ours comes back."""
         now = self.clock()
         if not listing.open(now):
-            raise GtsError(_message('core.pokeldn.app.gts.this_listing_is_no_longer_open_03c77142'))
+            raise GtsError("This listing is no longer open.")
         record = bank.data(entry)
         reason, info = self.validate(entry.game, record)
         if reason:

@@ -49,35 +49,33 @@ def test_frlg_gift_species_keep_working_without_pkhex(french_copy, monkeypatch):
     from pokeldn import pokemon
     def unavailable(*args):
         raise pokemon.BuilderError("PKHeX is missing")
-    monkeypatch.setattr(pokemon.SERVICE, "_ask", unavailable)
-    i18n._name_cache.clear()
-    expected = {gifts.frlg.national_species(n): label for n, label in gifts.frlg.species_names()}
+    monkeypatch.setattr(gifts.SERVICE, "names", unavailable)
+    expected = dict(gifts.frlg.species_names())
     localized = {n["id"]: n["name"] for n in gifts.species_frlg()}
     assert localized.keys() == expected.keys() and localized[7] == "Carapuce"
-    assert localized[252] == expected[252]
+    assert localized[277] == expected[277]
     monkeypatch.setattr(i18n, "_pack", None)
-    i18n._name_cache.clear()
-    assert gifts.species_frlg() == [{"id": gifts.frlg.national_species(n), "name": name} for n, name in gifts.frlg.species_names()]
+    assert gifts.species_frlg() == [{"id": n, "name": name} for n, name in gifts.frlg.species_names()]
 
 
-def test_frlg_gift_species_load_on_picker_worker_and_keep_national_ids(french_copy, monkeypatch):
+def test_frlg_gift_species_load_on_picker_worker_and_keep_cartridge_ids(french_copy, monkeypatch):
     from gui.views import gifts, pokemon
     workers, calls = [], []
     class DeferredThread:
         def __init__(self, target, **kwargs): self.target = target
         def start(self): workers.append(self.target)
     monkeypatch.setattr(pokemon.threading, "Thread", DeferredThread)
-    def name(kind, number, *, game):
-        calls.append((game, kind, number))
-        return "Arcko" if number == 252 else str(number)
-    monkeypatch.setattr(gifts.i18n, "name", name)
-    picker = pokemon.NamePicker(SimpleNamespace(ui=lambda fn: fn()), "frlg", "species", "252",
+    def names(game, kind):
+        calls.append((game, kind))
+        return [{"id": 277, "name": "Arcko"}]
+    monkeypatch.setattr(gifts.SERVICE, "names", names)
+    picker = pokemon.NamePicker(SimpleNamespace(ui=lambda fn: fn()), "frlg", "species", "277",
                                 lambda value: None, names=gifts.species_frlg)
     assert not calls and picker.dropdown.disabled
     workers.pop()()
-    assert ("frlg", i18n.EntityKind.SPECIES, 252) in calls
-    assert picker.dropdown.value == "252" and not picker.dropdown.disabled
-    assert any(option.key == "252" and option.text == "Arcko" for option in picker.dropdown.options)
+    assert calls == [("frlg", "species3")]
+    assert picker.dropdown.value == "277" and not picker.dropdown.disabled
+    assert any(option.key == "277" and option.text == "Arcko" for option in picker.dropdown.options)
 
 
 @pytest.fixture
@@ -89,7 +87,8 @@ def french_copy(monkeypatch):
     monkeypatch.setattr(i18n, "_pack", SimpleNamespace(locale="fr", resources={
         "messages": messages, "terms": {"Squirtle": "Carapuce"}}))
     monkeypatch.setattr(i18n, "_strings", {})
-    i18n._name_cache.clear()
+    monkeypatch.setattr(i18n, "_terms_pattern", None)
+    monkeypatch.setattr(i18n, "_message_rules", [])
 
 
 def test_a_pack_translates_a_whole_message_then_each_sentence_then_its_game_terms(french_copy):
@@ -230,15 +229,15 @@ def test_event_boss_choice_translates_display_without_changing_the_encoded_key(f
     from pokeldn.app.catalog import Field
     i18n._pack.resources["terms"].update({"Growlithe": "Caninos", "Sword": "Épée", "East": "Est"})
     event = object()
-    boss = SimpleNamespace(name="Growlithe", species=58, form=0, gigantamax=False, level=50)
-    monkeypatch.setattr(games.swsh_raid_event, "hostable", lambda _: [("sword", 3, 0, "Wild Area", boss)])
+    boss = SimpleNamespace(name="Growlithe", level=50)
+    monkeypatch.setattr(games.swsh_raid_event, "hostable", lambda _: [("sword", 3, 0, "East", boss)])
     field = Field("--raid-event-boss", "Event boss", "raideventboss")
-    view = SimpleNamespace(values={field.key: "sword:3:0:Wild Area"}, raid_event=lambda: event,
+    view = SimpleNamespace(values={field.key: "sword:3:0:East"}, raid_event=lambda: event,
                            set_value=lambda *args, **kw: None)
     dropdown = games.GamesView.input(view, field)
     assert [(option.key, option.text) for option in dropdown.options] == [
-        ("sword:3:0:Wild Area", "★★★ Caninos · Lv 50 · Épée")]
-    assert dropdown.value == view.values[field.key] == "sword:3:0:Wild Area"
+        ("sword:3:0:East", "★★★ Caninos · Lv 50 · Épée · Est")]
+    assert dropdown.value == view.values[field.key] == "sword:3:0:East"
     assert boss.name == "Growlithe"
 
 
@@ -249,7 +248,7 @@ def test_lair_rentals_and_encounter_tiles_use_translated_names(french_copy, monk
     picker.app = SimpleNamespace(settings=SimpleNamespace(sprites=False))
     assert picker._name(58) == "Caninos"
     assert picker._name(7) == "Carapuce"
-    assert picker._name(9999) == "species #9999"
+    assert picker._name(9999) == "#9999"
     assert "Caninos" in _texts(picker._tiles([(58, 0)]))
     assert picker.names == {"58": "Growlithe", "7": "Squirtle"}
     monkeypatch.setattr(i18n, "_pack", None)
@@ -263,8 +262,8 @@ def test_fixed_npc_names_translate_in_cards_and_summary_but_selection_keeps_ids(
     i18n._pack.resources["messages"]["Austin"] = "Patrice"
     saved = []
     picker = RaidPartnersPicker.__new__(RaidPartnersPicker)
-    picker.picks, picker.free, picker.level = ["0"], 2, 16
-    picker.value = {"picks": ["0"]}
+    picker.picks, picker.free, picker.level = ["Austin"], 2, 16
+    picker.value = {"picks": ["Austin"]}
     picker.field = Field("--raid-partner", "Partners", "raidpartners")
     picker.app = SimpleNamespace(settings=SimpleNamespace(sprites=False))
     picker.view = SimpleNamespace(tool=SimpleNamespace(fields=[Field("--raid-progress", "Progress", "choice")]),
@@ -276,7 +275,7 @@ def test_fixed_npc_names_translate_in_cards_and_summary_but_selection_keeps_ids(
     assert picker.value["picks"] == []
     picker.picks = []
     picker._card(raid_partners.pool(0)[0]).on_click(None)
-    assert saved[-1] == ((picker.field, {"picks": ["0"]}), {"rebuild": True})
+    assert saved[-1] == ((picker.field, {"picks": ["Austin"]}), {"rebuild": True})
 
 
 @pytest.mark.parametrize("localized_title", [None, "Child", "Titre du paquet"])

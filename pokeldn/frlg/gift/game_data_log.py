@@ -1,7 +1,6 @@
 """The ledger of what the console sends about itself each Mystery Gift session
 (`MysteryGiftLinkGameData` [decomp:src/mystery_gift.c:361]). Counters are evidence only as a
 difference between sessions of one console; the raw 0x64 bytes are kept for re-parsing."""
-from pokeldn.app.i18n import ref as _ref
 
 import json
 from datetime import datetime
@@ -81,7 +80,7 @@ def console_key(entry):
 _COUNTERS = (
     ("battles_won", "battles won"),
     ("battles_lost", "battles lost"),
-    ("num_trades", _ref("core.pokeldn.frlg.gift.game_data_log.trades_4e5f021c")),
+    ("num_trades", "trades"),
     ("num_stamps", "stamps"),
 )
 

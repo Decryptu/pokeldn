@@ -1,6 +1,5 @@
 """FRLG keeps the card and RAM script and appends each four-byte stamp to WonderCardMetadata; a
 Mystery Event wrapper runs right after an accepted stamp to make its reward eligible."""
-from pokeldn.app.i18n import message_ref as _message
 
 from dataclasses import dataclass
 
@@ -95,54 +94,56 @@ class MysteryGiftDistribution:
             object.__setattr__(self, "buffer_code", bytes(self.buffer_code))
             buffer_script.validate(self.buffer_code)
             if self.card is not None or self.ram_script is not None:
-                raise ValueError(_message('core.pokeldn.frlg.gift.stamp_rally.a_buffer_script_distribution_carries_no_card_or__8ed8b5e1'))
+                raise ValueError("a buffer script distribution carries no card or RAM script")
             if any(other is not None for other in
                    (self.news, self.stamp, self.trainer, self.mevent)):
                 raise ValueError(
-                    _message('core.pokeldn.frlg.gift.stamp_rally.a_buffer_script_cannot_share_a_session_with_news_4752fe97'))
+                    "a buffer script cannot share a session with news, a stamp, a visiting "
+                    "trainer or a Mystery Event script")
             return
         if self.news is not None:
             # Wonder News has no flagId, no metadata and no delivery script, so it travels alone.
             object.__setattr__(self, "news", bytes(self.news))
             if self.card is not None or self.ram_script is not None:
-                raise ValueError(_message('core.pokeldn.frlg.gift.stamp_rally.a_wonder_news_distribution_carries_no_card_or_ra_2cb08a3b'))
+                raise ValueError("a Wonder News distribution carries no card or RAM script")
             if len(self.news) not in (wonder_news.WONDER_NEWS_SIZE, wonder_news.JAPANESE_WONDER_NEWS_SIZE):
                 raise ValueError(
-                    _message('core.pokeldn.frlg.gift.stamp_rally.wonder_news_must_be_224_or_value0_bytes_22ca75ac', value0=wonder_news.WONDER_NEWS_SIZE))
+                    f"Wonder News must be 224 or {wonder_news.WONDER_NEWS_SIZE} bytes")
             if not wonder_news.validate(self.news):
-                raise ValueError(_message('core.pokeldn.frlg.gift.stamp_rally.news_id_0_fails_validatewondernews_7c2ba7f9'))
+                raise ValueError("news id 0 fails ValidateWonderNews")
             if (self.stamp is not None or self.trainer is not None
                     or self.mevent is not None):
                 raise ValueError(
-                    _message('core.pokeldn.frlg.gift.stamp_rally.wonder_news_cannot_carry_a_stamp_a_visiting_trai_f81dfccc'))
+                    "Wonder News cannot carry a stamp, a visiting trainer or a Mystery Event")
             return
         if self.card is None or self.ram_script is None:
-            raise ValueError(_message('core.pokeldn.frlg.gift.stamp_rally.a_mystery_gift_distribution_needs_a_card_and_a_r_92466211'))
+            raise ValueError("a Mystery Gift distribution needs a card and a RAM script")
         object.__setattr__(self, "card", bytes(self.card))
         object.__setattr__(self, "ram_script", bytes(self.ram_script))
         if len(self.card) not in (WONDER_CARD_SIZE, 164):
-            raise ValueError(_message('core.pokeldn.frlg.gift.stamp_rally.wonder_card_must_be_164_or_value0_bytes_705e4782', value0=WONDER_CARD_SIZE))
+            raise ValueError(f"Wonder Card must be 164 or {WONDER_CARD_SIZE} bytes")
         extras = (self.stamp, self.activation_script,
                   self.install_activation_script)
         if any(value is not None for value in extras):
             if any(value is None for value in extras):
-                raise ValueError(_message('core.pokeldn.frlg.gift.stamp_rally.stamp_distributions_require_both_activation_scri_1f56e164'))
+                raise ValueError("stamp distributions require both activation scripts")
             object.__setattr__(self, "stamp", bytes(self.stamp))
             object.__setattr__(self, "activation_script", bytes(self.activation_script))
             object.__setattr__(self, "install_activation_script",
                                bytes(self.install_activation_script))
             if len(self.stamp) != 4:
-                raise ValueError(_message('core.pokeldn.frlg.gift.stamp_rally.a_stamp_must_be_exactly_four_bytes_60896ab8'))
+                raise ValueError("a stamp must be exactly four bytes")
         if self.trainer is not None:
             object.__setattr__(self, "trainer", bytes(self.trainer))
             if len(self.trainer) != ereader_trainer.TRAINER_SIZE:
                 raise ValueError(
-                    _message('core.pokeldn.frlg.gift.stamp_rally.a_visiting_trainer_must_be_value0_bytes_b97c75ca', value0=ereader_trainer.TRAINER_SIZE))
+                    f"a visiting trainer must be {ereader_trainer.TRAINER_SIZE} bytes")
         if self.mevent is not None:
             object.__setattr__(self, "mevent", bytes(self.mevent))
             if self.stamp is not None or self.trainer is not None:
                 raise ValueError(
-                    _message('core.pokeldn.frlg.gift.stamp_rally.a_mystery_event_cannot_share_a_session_with_a_st_b51cf853'))
+                    "a Mystery Event cannot share a session with a stamp rally or a visiting "
+                    "trainer")
 
     @property
     def is_stamp(self):
@@ -215,7 +216,7 @@ class _FieldScriptBuilder:
 
     def label(self, name):
         if name in self.labels:
-            raise ValueError(_message('core.pokeldn.frlg.gift.stamp_rally.duplicate_script_label_value0_3e5bcd24', value0=name))
+            raise ValueError(f"duplicate script label {name}")
         self.labels[name] = len(self.code)
 
     def emit(self, data):
@@ -348,7 +349,7 @@ def build_stamp_rally_delivery_script(*, flag_id=STAMP_RALLY_FLAG_ID):
     b.emit(bytes([_OP_RELEASE, _OP_END]))
     result = b.finish(anchor=0)
     if len(result) > 995:
-        raise ValueError(_message('core.pokeldn.frlg.gift.stamp_rally.stamp_rally_ram_script_is_too_large_value0_bytes_8f893fc2', value0=len(result)))
+        raise ValueError(f"Stamp Rally RAM script is too large ({len(result)} bytes)")
     return result
 
 
@@ -357,7 +358,7 @@ def build_stamp_activation_script(state_var, *, flag_id=STAMP_RALLY_FLAG_ID,
     """``runscript`` relocates its zero-based pointer against the received buffer
     (CLI_RUN_MEVENT_SCRIPT)."""
     if state_var not in (VAR_MYSTERY_GIFT_1, VAR_MYSTERY_GIFT_2):
-        raise ValueError(_message('core.pokeldn.frlg.gift.stamp_rally.state_var_must_be_a_stamp_rally_state_variable_48d90a00'))
+        raise ValueError("state_var must be a Stamp Rally state variable")
     embedded = bytearray()
     if install:
         embedded += bytes([_OP_CLEARFLAG]) + _u16(flag_for_flag_id(flag_id))

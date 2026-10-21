@@ -8,7 +8,6 @@ A copy is GitHub's zip of the gallery unpacked to what the game's reader takes: 
 Wild Area Event index, as `Index NNN/<file>`, and the gallery's `readme.md` naming the indexes.
 `gallery.json` beside them names the newest raid event change the copy holds.
 """
-from pokeldn.app.i18n import message_ref as _message, ref
 import json
 import os
 import re
@@ -131,7 +130,7 @@ def _latest(game: str = "sv") -> tuple[str, str]:
     try:
         return found[0]["sha"], found[0]["commit"]["committer"]["date"]
     except (KeyError, IndexError, TypeError) as error:
-        raise OSError(_message('core.pokeldn.app.events_gallery.github_sent_no_commit_86d50960')) from error
+        raise OSError("GitHub sent no commit") from error
 
 
 def _newest(game: str) -> tuple[str, str]:
@@ -143,7 +142,7 @@ def check(root: Path | None = None, game: str = "sv") -> Check:
     """Whether master has a raid event change the copy lacks; a change elsewhere in the gallery is none."""
     found = state(root, game)
     if not found.present:
-        raise OSError(_message('core.pokeldn.app.events_gallery.the_event_gallery_is_not_downloaded_eea1dbfe'))
+        raise OSError("the event gallery is not downloaded")
     commit, date = _newest(game)
     return Check(commit != found.commit, commit, date)
 
@@ -184,7 +183,7 @@ def extract(archive: Path, folder: Path, game: str = "sv") -> int:
     under one top folder); -> how many files."""
     with archives.open_zip(archive, MAX_FILES) as z:
         if len(z.infolist()) > MAX_FILES:
-            raise OSError(_message('core.pokeldn.app.events_gallery.the_gallery_holds_too_many_files_ac3fb97e'))
+            raise OSError("the gallery holds too many files")
         for info in z.infolist():
             archives.relative(info.filename)
         inside = {info.filename.partition("/")[2]: info for info in z.infolist() if not info.is_dir()}
@@ -197,7 +196,7 @@ def extract(archive: Path, folder: Path, game: str = "sv") -> int:
             with z.open(inside[name]) as source, open(target, "wb") as out:
                 archives.copy(source, out, inside[name].file_size)
     if not wanted:
-        raise OSError(_message('core.pokeldn.app.events_gallery.the_download_holds_no_raid_events_3d85c614'))
+        raise OSError("the download holds no raid events")
     return len(wanted)
 
 
@@ -208,7 +207,7 @@ def download(root: Path | None = None, progress: Progress = lambda text, done, t
     """Puts master's raid events at `root`, a first copy or an update; a copy there is replaced only
     once the new one is complete."""
     root = _home(game) if root is None else Path(root)
-    progress(ref("core.gallery.asking"), 0, 0)
+    progress("Asking GitHub for the latest raid events...", 0, 0)
     commit, date = _newest(game)
     work = root.parent / f".{root.name}.download"
     shutil.rmtree(long_path(work), ignore_errors=True)
@@ -217,8 +216,8 @@ def download(root: Path | None = None, progress: Progress = lambda text, done, t
     try:
         archive = work / "gallery.zip"
         update.fetch(ZIP.format(commit=commit), archive,
-                     lambda done, total: progress(ref("core.gallery.downloading"), done, total), cancelled)
-        progress(ref("core.gallery.unpacking"), 0, 0)
+                     lambda done, total: progress("Downloading the event gallery...", done, total), cancelled)
+        progress("Unpacking the raid events...", 0, 0)
         extract(archive, fresh, game)
         (fresh / MANIFEST).write_text(json.dumps({"commit": commit, "date": date}), encoding="utf-8")
         old = root.parent / f".{root.name}.old"
@@ -243,7 +242,6 @@ class Entry:
     species: tuple          # boss names, table order
     catch_once: tuple       # the bosses a save catches once
     identifier: int
-    species_refs: tuple = ()  # (National Dex ID, form); English metadata remains canonical.
 
 
 _INDEX: dict = {}
@@ -295,8 +293,7 @@ def _swsh_index(root: Path) -> list[Entry]:
             continue
         number = re.search(r"\d+", key)
         found.append(Entry(key, named.get(key, key), int(number.group()) if number else -1,
-                           tuple(dict.fromkeys(b.name for b in event.bosses)), (), event.index,
-                           tuple(dict.fromkeys((b.species, b.form) for b in event.bosses))))
+                           tuple(dict.fromkeys(b.name for b in event.bosses)), (), event.index))
     found.sort(key=lambda e: (e.number, e.key))
     return found
 
@@ -320,8 +317,7 @@ def index(root: Path | None = None, game: str = "sv") -> list[Entry]:
         number = re.match(r"\d+", key)
         found.append(Entry(key, title(key), int(number.group()) if number else -1,
                            tuple(raid_event.bosses(r for r in event.rows if r["rate"])),
-                           tuple(raid_event.catch_once(event)), event.identifier,
-                           tuple(dict.fromkeys((r["species"], r.get("form", 0)) for r in event.rows if r["rate"]))))
+                           tuple(raid_event.catch_once(event)), event.identifier))
     found.sort(key=lambda e: (e.number, e.key))
     _INDEX[(game, base)] = found
     return found

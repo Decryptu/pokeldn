@@ -1,7 +1,6 @@
 """The Pokemon the app keeps between games: each record in the bank folder with a `.json` beside it
 [docs/gui.md, The bank]. A trade's received Pokemon is deposited on its own; one queued for a trade
 carries {"bank": id} in the offer queue and leaves the bank when that trade completes."""
-from pokeldn.app.i18n import message_ref as _message
 import base64
 import hashlib
 import json
@@ -9,7 +8,7 @@ import os
 import random
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from pokeldn.app.paths import BANK
@@ -33,7 +32,6 @@ class Entry:
     created: float
     origin: str           # the Received file it came from, "" when unknown
     home_tracker: str     # "empty" or "made" when its record's tracker is one HOME did not issue, else ""
-    display: dict = field(default_factory=dict)
 
     @property
     def when(self) -> str:
@@ -83,8 +81,7 @@ def _entry(path: Path) -> Entry | None:
         tracker = 0
     return Entry(path.stem, str(path), game, int(meta.get("species_id") or 0), bool(meta.get("shiny")),
                  str(meta.get("summary", "")), meta.get("legal") is not False, tracker,
-                 float(meta.get("created") or 0), str(meta.get("origin", "")), _home_tracker(game, meta),
-                 meta.get("display", {}) if isinstance(meta.get("display"), dict) else {})
+                 float(meta.get("created") or 0), str(meta.get("origin", "")), _home_tracker(game, meta))
 
 
 # Before the setting, an import through HOME's conversion into a game with a tracker always made one.
@@ -116,25 +113,6 @@ def data(entry: Entry) -> bytes:
     return Path(entry.path).read_bytes()
 
 
-def display_info(entry):
-    """Upgrade legacy sidecars from record identities, never by parsing English summaries."""
-    if entry.display.get("entity_schema") == 1:
-        return entry.display
-    meta = _read_meta(entry.path)
-    if meta.get("display", {}).get("entity_schema") == 1:
-        return meta["display"]
-    try:
-        from pokeldn.pokemon import SERVICE
-        identities = SERVICE.identity(entry.game, data(entry))
-        if meta:
-            _write_meta(entry.path, {**meta, "display": identities})
-        return identities
-    except (OSError, ValueError, RuntimeError):
-        return {"game": entry.game, "species_id": entry.species_id, "shiny": entry.shiny}
-    except Exception:
-        return {"game": entry.game, "species_id": entry.species_id, "shiny": entry.shiny}
-
-
 def deposit(game: str, source: str, info: dict, folder=None) -> Entry | None:
     """Keep a copy of the record at `source`, which PKHeX read as `info`. None when the bank already holds
     these bytes: a received file is read again while it grows, and on every later scan."""
@@ -150,7 +128,7 @@ def _keep(game: str, content: bytes, info: dict, folder: Path, origin: str, bank
     if digest in banked:
         return None
     banked.add(digest)
-    from pokeldn.pokemon import summary, identity_info
+    from pokeldn.pokemon import summary
     # Display-service replies also enter here when a trade's received file is banked.
     info = {**info, **info.get("canonical", {})}
     folder.mkdir(parents=True, exist_ok=True)
@@ -161,7 +139,6 @@ def _keep(game: str, content: bytes, info: dict, folder: Path, origin: str, bank
     _write_meta(path, {
         "game": game, "species": info.get("species", ""), "species_id": int(info.get("species_id") or 0),
         "shiny": bool(info.get("shiny")), "summary": summary(info), "legal": bool(info.get("legal")),
-        "display": identity_info(info, game),
         # HOME gives each Pokemon a tracker when it enters; a string, since JSON readers lose 64-bit precision.
         "tracker": str(int(info.get("tracker") or 0) or random.randrange(1, 1 << 63)), "created": time.time(),
         "home_tracker": str(info.get("home_tracker", "")), "origin": origin, "sha256": digest, **extra,
@@ -205,7 +182,7 @@ def import_file(path: str, trainers: dict[str, dict], folder=None) -> Imported:
     folder = Path(folder or BANK)
     source = Path(path)
     if source.stat().st_size > IMPORT_LIMIT:
-        raise BuilderError(_message('core.pokeldn.app.bank.this_file_is_too_big_to_be_a_pokemon_or_a_game_s_1e17a812'))
+        raise BuilderError("This file is too big to be a Pokemon or a game save.")
     reply = SERVICE.import_records(source.read_bytes(), source.name, trainers)
     ledger = folder / LEDGER
     try:
@@ -248,9 +225,7 @@ def edit(entry: Entry, fields: dict) -> Entry:
     tmp.write_bytes(content)
     os.replace(tmp, path)
     meta = _read_meta(path)
-    from pokeldn.pokemon import identity_info
     meta.update({"species": reply["species"], "species_id": int(reply["species_id"]), "shiny": bool(reply["shiny"]),
-                 "display": identity_info(reply, entry.game),
                  "summary": summary(reply), "legal": bool(reply["legal"]), "sha256": _digest(content),
                  "edited": time.time()})
     _write_meta(path, meta)
@@ -275,10 +250,9 @@ def destinations(entry: Entry, trainer: dict, *, service=None) -> dict[str, dict
 def offer(entry: Entry, game: str, trainer: dict) -> dict:
     """The queue item that trades this banked Pokemon into `game`: moved there by PKHeX's HOME conversion
     and legal there, or BuilderError with the reason. `trainer` is the bank's owner, who handles it."""
-    from pokeldn.pokemon import SERVICE, summary, identity_info
+    from pokeldn.pokemon import SERVICE, summary
     reply = SERVICE.move(entry.game, game, data(entry), entry.tracker, trainer)
     return {"file": SERVICE.keep(game, reply), "summary": summary(reply), "species": reply["species_id"],
-            "display": identity_info(reply, game),
             "shiny": reply["shiny"], "legal": reply["legal"], "encounter": reply["encounter"],
             "moves": reply["moves"], "report": "", "home_tracker": reply["home_tracker"], "bank": entry.id}
 
@@ -298,7 +272,7 @@ class TradeSession:
     def advance(self, count: int) -> int:
         """Apply a cumulative completed-trade count; repeats are harmless, invalid counts raise ValueError."""
         if type(count) is not int or count < 0:
-            raise ValueError(_message('core.pokeldn.app.bank.completed_trades_must_be_a_nonnegative_integer_5c8ad6f7'))
+            raise ValueError("Completed trades must be a nonnegative integer.")
         while self._completed < min(count, len(self._ids)):
             entry_id = self._ids[self._completed]
             if entry_id:

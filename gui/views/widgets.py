@@ -9,11 +9,11 @@ from typing import Callable
 import flet as ft
 
 from gui import drop, theme as t
-from pokeldn.app.i18n import text as tr, ref
+from pokeldn.app.i18n import t as tr
 
 
 class PixelActivity(ft.Container):
-    def __init__(self, label: str = ref('core.widgets.loading_dc3808')):
+    def __init__(self, label: str = tr('widgets.loading_dc3808', 'Loading')):
         positions = [(6, 0), (12, 0), (12, 6), (12, 12), (6, 12), (0, 12), (0, 6), (0, 0)]
         self._pixels = [ft.Container(width=3, height=3, left=x, top=y, bgcolor=t.BLUE,
                                      opacity=1 if i == 0 else 0.2)
@@ -76,7 +76,7 @@ class CodeBlock:
         self.control = ft.Container(ft.Row([
             ft.Container(content if content is not None else self.text, expand=True,
                          padding=ft.Padding(0, 6, 0, 6)),
-            t.icon_button("copy", self._copy, tr('core.widgets.copy_code_49a005')),
+            t.icon_button("copy", self._copy, tr('widgets.copy_code_49a005', 'Copy code')),
         ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START),
             bgcolor=t.BG, border_radius=10, padding=10)
 
@@ -288,7 +288,7 @@ class PathField:
         self.field = t.field(value=value, mono=True, expand=True,
                              on_change=lambda e: self._changed(e.control.value), **options)
         icon = "folder" if mode == "dir" else "file"
-        row = ft.Row([self.field, t.icon_button(icon, self._browse, tr('core.widgets.browse_3227aa'))], spacing=6,
+        row = ft.Row([self.field, t.icon_button(icon, self._browse, tr('widgets.browse_3227aa', 'Browse'))], spacing=6,
                      vertical_alignment=ft.CrossAxisAlignment.CENTER)
         self.control = (drop.target(ft.Container(row, border_radius=t.CONTROL_RADIUS), self._dropped)
                         if droppable else row)
@@ -311,10 +311,10 @@ class PathField:
         start = start if os.path.isdir(start) else None
         if self.mode == "dir":
             path = await self.picker.get_directory_path(
-                dialog_title=tr('core.widgets.choose_folder'), initial_directory=start)
+                dialog_title=tr("widgets.choose_folder", "Choose folder"), initial_directory=start)
         else:
             files = await self.picker.pick_files(
-                dialog_title=tr('core.widgets.choose_file'),
+                dialog_title=tr("widgets.choose_file", "Choose file"),
                 initial_directory=start, allowed_extensions=list(self.exts) or None,
                 file_type=ft.FilePickerFileType.CUSTOM if self.exts else ft.FilePickerFileType.ANY)
             path = files[0].path if files else None

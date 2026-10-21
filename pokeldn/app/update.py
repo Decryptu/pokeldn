@@ -4,7 +4,6 @@ Never waits longer than TIMEOUT for the check; no answer from GitHub raises OSEr
 downloads this machine's archive, checks it against the release's SHA256SUMS, unpacks it, and hands
 the swap to the new app (`--apply-update`) once this one has quit. docs/gui.md (Updates).
 """
-from pokeldn.app.i18n import message_ref as _message
 import hashlib
 import json
 import os
@@ -91,14 +90,14 @@ def github_json(url: str, timeout: float = TIMEOUT, what: str = "release", limit
         error.close()   # an HTTPError keeps its socket open until closed
         raise
     except (ValueError, RecursionError) as error:
-        raise OSError(_message('core.pokeldn.app.update.github_sent_no_value0_value1_6a814154', value0=what, value1=error)) from error
+        raise OSError(f"GitHub sent no {what}: {error}") from error
 
 
 def check(url: str = LATEST, current: str = __version__) -> Release | None:
     """A newer release, or None when this app is the latest."""
     data = github_json(url)
     if not isinstance(data, dict):
-        raise OSError(_message('core.pokeldn.app.update.github_sent_no_release_f915bfab'))
+        raise OSError("GitHub sent no release")
     return newer(data, current)
 
 
@@ -188,11 +187,11 @@ def _open(url: str, timeout: float = 30.0):
     class Redirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
             if not allowed(newurl):
-                raise OSError(_message('core.pokeldn.app.update.the_download_redirected_to_an_unsafe_address_0c6b397b'))
+                raise OSError("the download redirected to an unsafe address")
             return super().redirect_request(req, fp, code, msg, headers, newurl)
 
     if not allowed(url):
-        raise OSError(_message('core.pokeldn.app.update.the_download_is_not_an_https_address_0d125c4e'))
+        raise OSError("the download is not an HTTPS address")
     request = urllib.request.Request(url, headers={"User-Agent": "pokeldn-desktop"})
     opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=_context()), Redirect())
     return opener.open(request, timeout=timeout)
@@ -217,7 +216,7 @@ def chunks(reply, timeout: float):
     read = getattr(reply, "read1", reply.read)
     while True:
         if time.monotonic() > deadline:
-            raise OSError(_message('core.pokeldn.app.update.the_download_took_too_long_2777072b'))
+            raise OSError("the download took too long")
         chunk = read(65536)
         if not chunk:
             return
@@ -228,7 +227,7 @@ def read_bytes(reply, limit: int, timeout: float = 30.0) -> bytes:
     data = bytearray()
     for chunk in chunks(reply, timeout):
         if len(data) + len(chunk) > limit:
-            raise OSError(_message('core.pokeldn.app.update.the_response_is_too_large_5115222b'))
+            raise OSError("the response is too large")
         data.extend(chunk)
     return bytes(data)
 
@@ -241,13 +240,13 @@ def fetch(url: str, dest: Path, progress: Callable[[int, int], None] = lambda do
         with _open(url) as reply, dest.open("wb") as out:
             total = int(reply.headers.get("Content-Length") or 0)
             if total > MAX_ARCHIVE:
-                raise OSError(_message('core.pokeldn.app.update.the_download_is_value0_bytes_03993595', value0=total))
+                raise OSError(f"the download is {total} bytes")
             for chunk in chunks(reply, 600):
                 if cancelled():
                     raise Cancelled
                 done += len(chunk)
                 if done > MAX_ARCHIVE:
-                    raise OSError(_message('core.pokeldn.app.update.the_download_is_too_large_274f3163'))
+                    raise OSError("the download is too large")
                 digest.update(chunk)
                 out.write(chunk)
                 progress(done, total)
@@ -262,7 +261,7 @@ def _links_safe(names, links):
     for name in names:
         parts = name.casefold().split("/")
         if any("/".join(parts[:i]) in links for i in range(1, len(parts))):
-            raise OSError(_message('core.pokeldn.app.update.the_archive_writes_through_a_link_7166bfd2'))
+            raise OSError("the archive writes through a link")
     for name in links:
         pending = name.split("/")
         resolved, hops = [], 0
@@ -272,14 +271,14 @@ def _links_safe(names, links):
             if path in links:
                 hops += 1
                 if hops > 40:
-                    raise OSError(_message('core.pokeldn.app.update.the_archive_holds_a_link_cycle_f456261b'))
+                    raise OSError("the archive holds a link cycle")
                 pending = links[path].split("/") + pending
                 resolved = []
 
 
 def _target(name, target, hard=False):
     if not target or target.startswith("/") or "\\" in target:
-        raise OSError(_message('core.pokeldn.app.update.the_archive_holds_an_unsafe_link_1ca1acea'))
+        raise OSError("the archive holds an unsafe link")
     return archives.relative(posixpath.normpath(target if hard else posixpath.join(posixpath.dirname(name), target)))
 
 
@@ -295,7 +294,7 @@ def unpack(archive: Path, folder: Path, system: str = sys.platform) -> Path:
                 links = {}
                 for m in members:
                     if not (m.isfile() or m.isdir() or m.issym() or m.islnk()):
-                        raise OSError(_message('core.pokeldn.app.update.the_archive_holds_a_special_file_038ba4d0'))
+                        raise OSError("the archive holds a special file")
                     if m.issym() or m.islnk():
                         name = archives.relative(m.name)
                         links[name] = _target(name, m.linkname, m.islnk())
@@ -310,11 +309,11 @@ def unpack(archive: Path, folder: Path, system: str = sys.platform) -> Path:
                     mode = stat.S_IFMT(m.external_attr >> 16)
                     if mode == stat.S_IFLNK:
                         if system != "darwin" or m.file_size > 4096:
-                            raise OSError(_message('core.pokeldn.app.update.the_archive_holds_an_unsafe_link_1ca1acea'))
+                            raise OSError("the archive holds an unsafe link")
                         name = archives.relative(m.filename)
                         links[name] = _target(name, z.read(m).decode("utf-8"))
                     elif mode not in (0, stat.S_IFREG, stat.S_IFDIR):
-                        raise OSError(_message('core.pokeldn.app.update.the_archive_holds_a_special_file_038ba4d0'))
+                        raise OSError("the archive holds a special file")
                 _links_safe([archives.relative(m.filename) for m in members], links)
                 if system != "darwin":
                     z.extractall(folder, members=members)
@@ -334,7 +333,7 @@ def unpack(archive: Path, folder: Path, system: str = sys.platform) -> Path:
                                 out.chmod(mode)
         root = folder / ("pokeldn.app" if system == "darwin" else "pokeldn")
         if not executable_in(root, system).is_file():
-            raise OSError(_message('core.pokeldn.app.update.the_archive_holds_no_value0_759333a9', value0=executable_in(root, system).relative_to(folder)))
+            raise OSError(f"the archive holds no {executable_in(root, system).relative_to(folder)}")
         return root
     except BaseException:
         shutil.rmtree(folder, ignore_errors=True)
@@ -346,22 +345,22 @@ def prepare(release: Release, progress: Callable[[int, int], None] = lambda done
             system: str = sys.platform) -> Path:
     """Downloads, checks and unpacks the release; returns the new app, ready for start_swap."""
     if not release.installable:
-        raise OSError(_message('core.pokeldn.app.update.the_release_has_no_file_for_this_computer_or_no__a4f92196'))
+        raise OSError("the release has no file for this computer or no SHA256SUMS")
     name = release.download.rsplit("/", 1)[-1]
     if (name not in ASSETS.values() or not release_asset(release.page, release.download, name)
             or not release_asset(release.page, release.checksums, "SHA256SUMS")):
-        raise OSError(_message('core.pokeldn.app.update.the_release_files_are_not_from_the_pokeldn_relea_29c43b6a'))
+        raise OSError("the release files are not from the pokeldn release")
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
     with _open(release.checksums) as reply:
         data = read_bytes(reply, MAX_BYTES)
         expected = checksums(data.decode("utf-8", "replace")).get(name)
     if not expected:
-        raise OSError(_message('core.pokeldn.app.update.sha256sums_does_not_list_value0_9c2be5f2', value0=name))
+        raise OSError(f"SHA256SUMS does not list {name}")
     archive = work / name
     if fetch(release.download, archive, progress, cancelled) != expected:
         archive.unlink(missing_ok=True)
-        raise OSError(_message('core.pokeldn.app.update.value0_does_not_match_its_sha_256_in_sha256sums_3a61eb7d', value0=name))
+        raise OSError(f"{name} does not match its SHA-256 in SHA256SUMS")
     try:
         return unpack(archive, work / "new", system)
     finally:
@@ -406,7 +405,7 @@ def _run_as_admin(exe: Path, args: list[str], cwd: Path, folder: Path) -> None:
     if not shell.ShellExecuteExW(ctypes.byref(info)):
         error = ctypes.get_last_error()
         if error == 1223:             # ERROR_CANCELLED: the user said no on the UAC prompt
-            raise OSError(_message('core.pokeldn.app.update.windows_did_not_give_pokeldn_permission_to_chang_eda11598', value0=folder))
+            raise OSError(f"Windows did not give pokeldn permission to change {folder}")
         raise ctypes.WinError(error)
     if info.hProcess:
         ctypes.windll.kernel32.CloseHandle(info.hProcess)
@@ -541,7 +540,7 @@ def apply(new: Path, target: Path, pid: int, version: str, system: str = sys.pla
     try:
         _copy(new, target, system)
         if not executable_in(target, system).is_file():
-            raise OSError(_message('core.pokeldn.app.update.the_copied_app_has_no_executable_d5aeb815'))
+            raise OSError("the copied app has no executable")
     except (OSError, subprocess.CalledProcessError) as error:
         shutil.rmtree(target, ignore_errors=True)
         os.rename(old, target)

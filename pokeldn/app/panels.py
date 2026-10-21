@@ -1,6 +1,5 @@
 """What the Games page keeps of a plugin's `[panel]` lines (pokeldn.panel) and its library's sort order: one
 JSON file per plugin, kept after its runs and deleted with the plugin (plugin_store.remove)."""
-from pokeldn.app.i18n import message_ref as _message
 import json
 import os
 from pathlib import Path
@@ -55,7 +54,7 @@ def apply(plugin_id: str, message: dict) -> bool:
 
 def set_sort(plugin_id: str, sort: str) -> None:
     if sort not in library.SORTS:
-        raise ValueError(_message('core.pokeldn.app.panels.a_library_sort_is_one_of_value0_ae7a732f', value0=', '.join(library.SORTS)))
+        raise ValueError(f"a library sort is one of {', '.join(library.SORTS)}")
     data = load(plugin_id)
     data["sort"] = sort
     _save(plugin_id, data)

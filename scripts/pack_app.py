@@ -180,7 +180,7 @@ def main() -> int:
                        *[f"--collect-submodules={m}" for m in plugin_stdlib()],
                        *[f"--collect-all={m}" for m in PLUGIN_PACKAGES],
                        *[f"--exclude-module={m}" for m in platform_excludes()], "--collect-all=esptool", "--collect-submodules=unicorn",
-                       "--collect-all=esp_pylib", "--collect-all=babel", "--collect-submodules=pokeldn", "--collect-submodules=bleak",
+                       "--collect-all=esp_pylib", "--collect-submodules=pokeldn", "--collect-submodules=bleak",
                        "--collect-submodules=ldn"):
             args.append(f"--pyinstaller-build-args={option}")
         result = subprocess.run(args, cwd=stage, env=dict(os.environ, FLET_VIEW_PATH=str(client))).returncode

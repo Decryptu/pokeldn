@@ -56,24 +56,13 @@ def app_theme() -> ft.Theme:
         scrollbar_theme=ft.ScrollbarTheme(thickness=6, radius=3,
                                           thumb_color=ft.Colors.with_opacity(0.2, "#FFFFFF")),
         tooltip_theme=ft.TooltipTheme(decoration=ft.BoxDecoration(bgcolor=HOVER, border_radius=8),
-                                      text_style=ft.TextStyle(color=TEXT, size=12,
-                                          font_family=font_family() or CJK_FONT,
-                                          font_family_fallback=[CJK_FONT])),
+                                      text_style=ft.TextStyle(color=TEXT, size=12)),
     )
 
 
-class _Text(ft.Text):
-    def before_update(self):
-        from pokeldn.app.i18n import render
-        self.value = render(self.value)
-        super().before_update()
-
-
 def text(value: str, size: float = 13, color: str = TEXT, weight=None, **kwargs) -> ft.Text:
-    from pokeldn.app.i18n import render
-    value = render(value)
     kwargs.setdefault("style", ft.TextStyle(height=1.4, font_family_fallback=[CJK_FONT]))
-    return _Text(value, size=size, color=color, weight=weight, **kwargs)
+    return ft.Text(value, size=size, color=color, weight=weight, **kwargs)
 
 
 def backdrop(content: ft.Control) -> ft.Container:
@@ -261,8 +250,7 @@ def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, 
 
 
 def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, **kwargs) -> ft.Dropdown:
-    from pokeldn.app.i18n import render
-    return ft.Dropdown(value=value, options=[ft.DropdownOption(key=k, text=render(t)) for k, t in options],
+    return ft.Dropdown(value=value, options=[ft.DropdownOption(key=k, text=t) for k, t in options],
                        on_select=on_select, dense=True, filled=True, bgcolor=FIELD, border=_border(),
                        text_size=13, text_style=ft.TextStyle(font_family_fallback=[CJK_FONT]),
                        expand=True, height=CONTROL_HEIGHT, content_padding=CONTROL_PADDING,
