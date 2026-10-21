@@ -89,6 +89,7 @@ def french_copy(monkeypatch):
     monkeypatch.setattr(i18n, "_strings", {})
     monkeypatch.setattr(i18n, "_terms_pattern", None)
     monkeypatch.setattr(i18n, "_message_rules", [])
+    monkeypatch.setattr(localization, "_game_names", {})
 
 
 def test_a_pack_translates_a_whole_message_then_each_sentence_then_its_game_terms(french_copy):
