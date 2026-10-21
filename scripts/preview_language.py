@@ -1,6 +1,6 @@
-"""Install and verify the Chinese package in an isolated, offline app preview.
+"""Install any language plugin in an isolated, offline app preview.
 
-Usage: python scripts/preview_language.py --web 8815
+Usage: python scripts/preview_language.py path/to/language.pokeplugin --web 8815
 Only the requested preview directory is written. Radio, updates and sprites are
 disabled in this developer preview; the production application's behavior is unchanged.
 """
@@ -15,6 +15,9 @@ sys.path.insert(0, str(ROOT))
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("package", nargs="?", type=Path, default=ROOT / "examples/plugins/language_pack",
+                        help="A .pokeplugin file or language-plugin source folder.")
+    parser.add_argument("--locale", help="One of the plugin's locale tags; defaults to its first locale.")
     parser.add_argument("--data", type=Path, default=ROOT / "build/i18n-package-preview")
     parser.add_argument("--web", type=int)
     parser.add_argument("--prepare-only", action="store_true")
@@ -29,17 +32,19 @@ def main():
         os.environ["FLET_SERVER_PORT"] = str(args.web)
     from scripts.build_language_pack import build
     from pokeldn.app import i18n, plugin_store, settings
-    output = build()
+    output = build(args.package) if args.package.is_dir() else args.package.resolve()
     package = plugin_store.read(str(output))
     plugin_store.install(package)
+    installed = plugin_store.installed(package.id)
+    if installed is None or not installed.resources.get("locales"):
+        raise ValueError("The package must provide at least one language locale.")
     selected = settings.load()
-    selected.app_language, selected.app_locale = package.id, "zh-Hans"
+    language = args.locale or next(iter(installed.resources["locales"]))
+    selected.app_language, selected.app_locale = package.id, language
     selected.plugins = [package.id]
     selected.check_updates, selected.sprites = False, False
     selected.save()
-    i18n.select(package.id, "zh-Hans", strict=True)
-    assert i18n.text("core.common.save") == "保存"
-    assert i18n.name(i18n.EntityKind.MOVE, 94, game="sv") == "精神强念"
+    i18n.select(package.id, language, strict=True)
     print(f"Verified installed pack {package.id} {package.version}: {output}", flush=True)
     if args.prepare_only:
         return

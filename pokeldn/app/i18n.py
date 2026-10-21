@@ -15,14 +15,12 @@ from .i18n_types import (DisplayText, DocumentSection, EntityKind, EntityRef, Ga
 
 DATA = Path(__file__).with_name("data")
 FORMAT_VERSION = 1
-BUILTIN_CHINESE = "builtin-zh-hans"
 _log = logging.getLogger(__name__)
 _diagnostics, _catalog, _parameter_types = set(), {}, {}
 _strings, _selected, _locale, _pack, _resources = {}, "", "en", None, {}
 _revision, _listeners = 0, []
 _lock, _name_cache, _providers = threading.RLock(), {}, {}
 _provider_owners, _document_roots = {}, {}
-_builtin = DATA / "language-packs" / "zh-Hans"
 
 
 def _diagnostic(reason, identity):
@@ -278,12 +276,7 @@ def select(plugin_id="", language=None, *, strict=False):
     global _strings, _selected, _locale, _pack, _resources, _revision
     resources, pack, selected_locale = {}, None, "en"
     try:
-        if plugin_id == BUILTIN_CHINESE:
-            from types import SimpleNamespace
-            meta = tomllib.loads((_builtin / "plugin.toml").read_text(encoding="utf-8"))
-            loaded = read_resources(meta, lambda p: (_builtin / _safe_path(p)).read_bytes())
-            pack = SimpleNamespace(folder=_builtin, id=plugin_id, resources=loaded)
-        elif plugin_id:
+        if plugin_id:
             from pokeldn import plugins
             pack = next((p for p in plugins.discover() if p.id == plugin_id and p.locale and not p.error
                         and (plugins.named(p) or p.id in plugins.enabled())

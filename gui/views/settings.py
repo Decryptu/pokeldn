@@ -177,7 +177,7 @@ class SettingsView:
     def _language(self, plugin_id: str) -> None:
         from pokeldn.app import i18n
         plugin_id, _, locale = plugin_id.partition("|")
-        if plugin_id and plugin_id != i18n.BUILTIN_CHINESE and plugin_id not in self.app.settings.plugins:
+        if plugin_id and plugin_id not in self.app.settings.plugins:
             self.save("plugins", [*self.app.settings.plugins, plugin_id])
         try:
             i18n.select(plugin_id, locale or None, strict=True)
@@ -194,7 +194,7 @@ class SettingsView:
 
     def language_choices(self):
         from pokeldn.app import i18n
-        choices = [("", tr('core.settings.english_ba118b')), (i18n.BUILTIN_CHINESE, "简体中文")]
+        choices = [("", tr('core.settings.english_ba118b'))]
         for plugin in plugins.discover():
             if plugin.locale and not plugin.error:
                 locales = plugin.resources.get("locales", {})

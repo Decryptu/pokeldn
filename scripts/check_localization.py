@@ -1,5 +1,6 @@
-"""Validate semantic call sites, English contracts, bundled packs and documents."""
+"""Validate semantic call sites, English contracts, language plugins and documents."""
 import ast
+import argparse
 import re
 from pathlib import Path
 import sys
@@ -62,7 +63,7 @@ def check_display_sources():
     return errors
 
 
-def check(root=ROOT):
+def check(root=ROOT, *, language_packs=None, require_complete=False):
     errors = []
     for path in [*root.glob("gui/**/*.py"), *root.glob("pokeldn/**/*.py")]:
         if path.name.startswith("i18n"):
@@ -107,16 +108,19 @@ def check(root=ROOT):
                             break
                 if not in_function:
                     errors.append(f"{location}: store a ref or entity ID in module/class constants")
-    packs = [root / "examples/plugins/zh_hans", root / "pokeldn/app/data/language-packs/zh-Hans"]
+    packs = list(language_packs) if language_packs is not None else [root / "examples/plugins/language_pack"]
     for folder in packs:
-        meta = tomllib.loads((folder / "plugin.toml").read_text(encoding="utf-8"))
+        folder = Path(folder)
         try:
+            meta = tomllib.loads((folder / "plugin.toml").read_text(encoding="utf-8"))
             resources = i18n.read_resources(meta, lambda p: (folder / p).read_bytes())
+            if not resources.get("locales"):
+                errors.append(f"{folder}: a language plugin must declare at least one locale")
             for locale, spec in resources["locales"].items():
                 missing = {k for k in i18n._catalog if k.startswith("core.")} - set(spec["strings"])
-                if missing:
+                if missing and require_complete:
                     errors.append(f"{folder}: {locale} missing {len(missing)} declared strings")
-        except ValueError as exc:
+        except (ValueError, OSError) as exc:
             errors.append(f"{folder}: {exc}")
     for doc_id, spec in i18n._documents.items():
         try:
@@ -130,7 +134,11 @@ def check(root=ROOT):
 
 
 if __name__ == "__main__":
-    errors = check()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--language-pack", type=Path, action="append", help="Validate an external language-plugin source folder.")
+    parser.add_argument("--require-complete", action="store_true", help="Require every core English key in each supplied locale.")
+    args = parser.parse_args()
+    errors = check(language_packs=args.language_pack, require_complete=args.require_complete)
     if errors:
         raise SystemExit("\n".join(errors))
-    print(f"Validated {len(i18n._catalog)} English keys, both Chinese packs and {len(i18n._documents)} documents.")
+    print(f"Validated {len(i18n._catalog)} English keys, language-pack resources and {len(i18n._documents)} documents.")

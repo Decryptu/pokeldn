@@ -15,7 +15,7 @@ from scripts.check_localization import check
 
 
 @pytest.fixture(autouse=True)
-def language(monkeypatch):
+def language(monkeypatch, semantic_pack):
     previous = i18n.identity()
     i18n.select()
     monkeypatch.setattr(i18n, "_providers", dict(i18n._providers))
@@ -23,7 +23,7 @@ def language(monkeypatch):
     i18n.select(previous[0], previous[1])
 
 
-def test_declared_calls_and_bundled_resources_are_valid():
+def test_declared_calls_and_example_resources_are_valid():
     assert check() == []
 
 
@@ -33,7 +33,7 @@ def test_text_and_plural_keep_literal_parameters():
     assert i18n.text("core.queue.count", count=1) == "1 Pokémon queued."
     assert i18n.text("core.plugins.source_count", count=1) == "1 plugin"
     assert i18n.text("core.plugins.source_count", count=2) == "2 plugins"
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     assert i18n.text("core.gift.egg.description", species=path) == f"赠送{path}的蛋。"
     assert i18n.text("core.queue.count", count=2) == "已将 2 只宝可梦加入队列。"
     assert i18n.text("core.plugins.source_count", count=2) == "2 个插件"
@@ -42,7 +42,7 @@ def test_text_and_plural_keep_literal_parameters():
 
 
 def test_missing_entry_falls_back_as_a_complete_english_entry(monkeypatch, caplog):
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     monkeypatch.setattr(i18n, "_strings", {})
     assert i18n.text("core.queue.count", count=1) == "1 Pokémon queued."
     assert "missing-text" in caplog.text
@@ -51,14 +51,14 @@ def test_missing_entry_falls_back_as_a_complete_english_entry(monkeypatch, caplo
 def test_typed_numbers_dates_and_finite_plural_counts():
     from datetime import datetime
     assert "12,345" in i18n.text("core.gift.money.description", quantity=12345, maximum=9999999)
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     assert "12,345" in i18n.text("core.gift.money.description", quantity=12345, maximum=9999999)
     assert "2020年" in i18n.text("core.presentation.timestamp", value=datetime(2020, 6, 15, 12))
     assert "parameters" in i18n.text("core.queue.count", count=float("nan"))
 
 
-def test_resources_reject_wrong_fields_unknown_kinds_and_unsafe_paths():
-    root = i18n._builtin
+def test_resources_reject_wrong_fields_unknown_kinds_and_unsafe_paths(semantic_pack):
+    root = semantic_pack.folder
     meta = tomllib.loads((root / "plugin.toml").read_text(encoding="utf-8"))
     strings = meta["locales"]["zh-Hans"]["strings"]
     def read(path):
@@ -82,7 +82,7 @@ def test_resources_reject_wrong_fields_unknown_kinds_and_unsafe_paths():
 
 
 def test_failed_switch_is_atomic():
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     before = i18n.identity()
     with pytest.raises(ValueError, match="Cannot load"):
         i18n.select("missing-language", strict=True)
@@ -121,7 +121,7 @@ def test_language_change_during_name_request_cannot_publish_old_labels():
     def provider(kind, language):
         asked.append(language)
         if len(asked) == 1:
-            i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+            i18n.select("semantic-test-language", strict=True)
         return {"version": "v1", "names": {94: "精神强念" if language == "zh-Hans" else "Psychic"}}
     i18n.register_name_provider("demo", provider)
     assert i18n.name(EntityKind.MOVE, 94, game="demo") == "精神强念"
@@ -134,7 +134,7 @@ def test_temporary_name_service_failure_does_not_cache_english_fallback():
             raise OSError("temporary failure")
         return {"version": "v1", "names": {94: "精神强念" if language == "zh-Hans" else "Psychic"}}
     i18n.register_name_provider("temporary", provider)
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     assert i18n.name(EntityKind.MOVE, 94, game="temporary") == "Psychic"
     available = True
     assert i18n.name(EntityKind.MOVE, 94, game="temporary") == "精神强念"
@@ -146,7 +146,7 @@ def test_mounted_controls_relabel_without_changing_input_or_selected_id():
     selected = ft.Dropdown(value="94", options=[ft.DropdownOption(key="94", text=i18n.text("core.common.save"))])
     root = ft.Column([label, field, selected])
     localize_controls(root)
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     localize_controls(root)
     assert label.value == field.hint_text == selected.options[0].text == "保存"
     assert selected.value == selected.options[0].key == "94"
@@ -162,7 +162,7 @@ def test_dynamic_catalog_assignment_resolves_at_control_update():
     from gui import theme
     control = theme.text("initial")
     control.value = i18n.ref("core.common.save")
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     control.before_update()
     assert control.value == "保存"
 
@@ -172,13 +172,13 @@ def test_structured_messages_round_trip_and_do_not_translate_names():
     decoded = MessageRef.from_wire(json.loads(json.dumps(value.to_wire())))
     assert decoded == value
     assert copy.deepcopy(decoded) == value
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     assert i18n.render(decoded) == "赠送皮卡丘的蛋。"
 
 
 def test_documents_fallback_body_title_and_sections_together():
     english = {doc.id: doc for doc in i18n.documents()}
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     for doc in i18n.documents():
         if doc.id not in i18n._resources["documents"]:
             assert doc == english[doc.id]
@@ -190,7 +190,7 @@ def test_documents_fallback_body_title_and_sections_together():
 
 def test_document_search_uses_localized_content():
     from gui.views import docs
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     sections = docs.index(docs.pages(), i18n.document("core.guide.guide").title)
     assert docs.search(sections, "礼物")
 
@@ -216,7 +216,7 @@ def test_npc_records_resolve_real_form_moves_and_ability():
 
 def test_real_pkhex_names_preserve_ids_and_do_not_filter_availability():
     from pokeldn import pokemon
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     assert i18n.name(EntityKind.MOVE, 94, game=Game.SV) == "精神强念"
     assert i18n.name(EntityKind.SPECIES, 252, game=Game.FRLG) == "木守宫"
     assert i18n.name(EntityKind.ITEM, 68, game=Game.FRLG) == "神奇糖果"
@@ -230,7 +230,7 @@ def test_real_pkhex_names_preserve_ids_and_do_not_filter_availability():
 
 def test_real_helper_errors_carry_a_semantic_message():
     from pokeldn import pokemon
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     with pytest.raises(pokemon.BuilderError) as error:
         pokemon.SERVICE._ask({"cmd": "name_table", "game": "sv", "kind": "missing"})
     assert error.value.message.key.startswith("core.pkhex.")
@@ -251,7 +251,7 @@ def test_gift_event_facts_keep_entity_ids_across_language_switches(monkeypatch):
     event = DisplayService()._ask({"cmd": "gift_events", "game": "sv"})["events"][0]
     message = facts(event)
     assert "Pikachu" in message and event["held_item"] == ""
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     assert "皮卡丘" in i18n.render(message) and "超能力" in i18n.render(message)
     assert i18n.render(event["moves"][0]) == "精神强念"
     assert (event["species_id"], event["move_ids"]) == (25, [94])
@@ -265,7 +265,7 @@ def test_plugin_catalog_registers_after_a_language_pack_is_selected():
     spec = importlib.util.spec_from_file_location("localized_example", folder / "plugin.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     try:
         module.register(plugins.API(plugin))
         assert i18n.text("hello-localized.result", name="Pikachu Save") == "你好，Pikachu Save！"
@@ -276,7 +276,7 @@ def test_plugin_catalog_registers_after_a_language_pack_is_selected():
 
 def test_advanced_help_and_choice_labels_have_semantic_contracts(monkeypatch):
     from scripts.check_localization import check_display_sources
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     assert "训练家" in i18n.help_text("frlg-trade-host", "--language", "untranslated")
     assert i18n.choice_text("frlg-trade-host", "--language", "english") == "英语"
     key = "core.help.frlg-trade-host.language"
@@ -290,7 +290,7 @@ def test_gift_metadata_is_translated_without_changing_its_identity():
     from pokeldn.swsh import events, gift_builder as swsh
     card = events.load()[0]
     original = events.record(card["key"])
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     assert dict((key, i18n.render(label)) for key, label in frlg.STEPS)["item"] == "道具"
     assert dict((key, i18n.render(label)) for key, label in frlg.STEPS)["egg"] == "蛋"
     assert "关闭所有" in i18n.render(frlg.STOPS_BOOSTS)
@@ -309,7 +309,7 @@ def test_official_swsh_preview_uses_ids_and_form_in_the_current_language():
     from pokeldn.swsh import gift_builder
     picker = GiftBuilder.__new__(GiftBuilder)
     picker.game, picker.module = "swsh", gift_builder
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     card = gift_builder.OFFICIAL.load()[0]
     description = i18n.render(picker._event_summary(card))
     assert "火焰鸟" in description and "伽勒尔" in description and "70" in description
@@ -319,7 +319,7 @@ def test_official_swsh_preview_uses_ids_and_form_in_the_current_language():
 
 def test_tooltip_theme_uses_the_cjk_font_and_fallback():
     from gui import theme
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     style = theme.app_theme().tooltip_theme.text_style
     assert style.font_family == theme.CJK_FONT
     assert theme.CJK_FONT in style.font_family_fallback

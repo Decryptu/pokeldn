@@ -146,16 +146,27 @@ Trainer language and record text are independent from display language.
 
 ```bash
 python scripts/check_localization.py
-python scripts/build_language_pack.py
-python scripts/preview_language.py --prepare-only
-python scripts/preview_language.py --web 8815
+python scripts/build_language_pack.py examples/plugins/language_pack
+python scripts/preview_language.py dist/example-french-0.1.0.pokeplugin --prepare-only
+python scripts/preview_language.py dist/example-french-0.1.0.pokeplugin --web 8815
 python -m pytest tests/test_semantic_i18n.py tests/test_i18n_bilingual.py
 ```
 
-The Chinese pack ships under `pokeldn/app/data/language-packs/zh-Hans`, and Settings always
-offers it. `build_language_pack.py` also creates an installable `.pokeplugin` and SHA-256 file.
-The preview installs that package into a separate data directory and disables radio access,
-updates and sprite downloads. It does not modify the user's normal app settings.
+The application ships the English catalog. Additional languages are independently distributed
+data-only plugins; Settings lists their locales after installation. The minimal French example
+demonstrates partial overrides and English fallback. It is not a complete French translation.
+`hello_localized` demonstrates a functional plugin with its own semantic namespace.
+
+The builder accepts any language-plugin source folder and creates an installable `.pokeplugin`
+and SHA-256 file. The preview accepts a package or source folder, installs it into a separate
+data directory and disables radio access, updates and sprite downloads. It does not modify
+the user's normal app settings. For a complete translation maintained outside this repository:
+
+```bash
+python scripts/check_localization.py --language-pack /path/to/language-plugin --require-complete
+python scripts/build_language_pack.py /path/to/language-plugin --require-complete
+python scripts/preview_language.py /path/to/language-plugin --locale zh-Hans --web 8815
+```
 
 The checker rejects source-text lookups in application code, undeclared literal keys,
 incorrect named arguments and translations evaluated in module constants. English is
@@ -163,6 +174,8 @@ authoritative; `extract_strings.py --check` validates it without overwriting it 
 It also checks dynamic display sources: CLI help and choice labels, gift metadata,
 cartridge labels, and bundled event titles and groups. CLI tokens, entity IDs and card
 records retain their original values; localized labels are presentation metadata.
-The bilingual tests render every English/Chinese template, switch each tool's mounted
-advanced controls in both directions, and check ID-based raid, rental and GTS names.
+The bilingual tests use a generated test language with small regression fixtures. They render
+every template, switch each tool's mounted advanced controls in both directions, and check
+ID-based raid, rental and GTS names. Set `POKELDN_TEST_LANGUAGE_PACK` to a complete external
+Simplified Chinese plugin source folder to run these checks against that translation.
 They also verify that changing display language cannot change a connected controller's state.

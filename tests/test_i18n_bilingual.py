@@ -17,7 +17,7 @@ TOOLS = [tool for game in GAMES for tool in game.tools if not tool.unavailable]
 
 
 @pytest.fixture(autouse=True)
-def language():
+def language(semantic_pack):
     previous = i18n.identity()
     i18n.select()
     yield
@@ -47,7 +47,7 @@ def display_strings(root):
 
 
 def test_every_catalog_template_renders_in_both_languages_and_english_has_no_chinese():
-    for selected in ("", i18n.BUILTIN_CHINESE, ""):
+    for selected in ("", "semantic-test-language", ""):
         i18n.select(selected, strict=True)
         for key, english in i18n._catalog.items():
             types = i18n._parameter_types.get(key, {})
@@ -69,11 +69,11 @@ def test_each_advanced_tab_relabels_both_directions_without_changing_values(tool
     from gui.views.games import GamesView
     view = SimpleNamespace(tool=tool, search="", values={}, extra={}, flag_list=ft.Column())
     view.flag_row = lambda flag: GamesView.flag_row(view, flag)
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     GamesView._fill_flags(view)
     original = display_strings(view.flag_list)
     assert original and any(HAN.search(value) for value in original)
-    for selected in ("", i18n.BUILTIN_CHINESE, ""):
+    for selected in ("", "semantic-test-language", ""):
         i18n.select(selected, strict=True)
         localize_controls(view.flag_list)
         values = display_strings(view.flag_list)
@@ -93,7 +93,7 @@ def test_dynamic_raid_and_gts_names_follow_ids_in_both_languages():
     picker = LairSeedPicker.__new__(LairSeedPicker)
     boss = SimpleNamespace(species=146, form=1, gigantamax=False, level=70)
     den = SimpleNamespace(stars=(4, 5), species=(6, 25))
-    i18n.select(i18n.BUILTIN_CHINESE, strict=True)
+    i18n.select("semantic-test-language", strict=True)
     labels = [picker._name(25), wanted_text(Wants(7, "Squirtle")), den_label(den),
               swsh_boss_label("sword", 5, "Isle of Armor", boss)]
     assert all(HAN.search(label) for label in labels)
@@ -114,7 +114,7 @@ def test_connected_controller_keeps_its_state_after_switching_language():
     view.status = ft.Column()
     view.where = lambda board: ft.Text("COM7")
     view.render_footer = lambda: None
-    for selected, label in ((i18n.BUILTIN_CHINESE, "断开连接"), ("", "Disconnect")):
+    for selected, label in (("semantic-test-language", "断开连接"), ("", "Disconnect")):
         i18n.select(selected, strict=True)
         view.render_status(update=False)
         assert label in display_strings(view.status)
