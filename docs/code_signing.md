@@ -3,7 +3,6 @@ title: Code signing policy
 nav_order: 12
 ---
 
-<a id="code-signing-policy"></a>
 # Code signing policy
 
 Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)
@@ -17,7 +16,6 @@ SignPath signs the files that build produced and nothing built elsewhere. The ar
 is [.github/signpath/artifact-configuration.xml](https://github.com/Decryptu/pokeldn/blob/main/.github/signpath/artifact-configuration.xml).
 Third-party files bundled unchanged keep their own publisher's signature or none.
 
-<a id="team-roles"></a>
 ## Team roles
 
 | role | members |
@@ -28,7 +26,6 @@ Third-party files bundled unchanged keep their own publisher's signature or none
 Every signing request for a release is approved by hand. Contributions from other people reach the
 repository only as pull requests a committer reviews.
 
-<a id="privacy-policy"></a>
 ## Privacy policy
 
 This program will not transfer any information to other networked systems unless specifically

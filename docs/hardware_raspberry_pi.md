@@ -4,7 +4,6 @@ parent: Hardware and setup
 nav_order: 4
 ---
 
-<a id="raspberry-pi-4-mystery-gift-host"></a>
 # Raspberry Pi 4 Mystery Gift host
 
 A 64-bit Raspberry Pi 4 with the TP-Link Archer T3U / AC1300 (`2357:012d`, `rtw88_8822bu`) hosts
@@ -15,14 +14,11 @@ Deployment pushes committed Git objects through an SSH alias to a bare repositor
 no GitHub, no `rsync` and no ignored files (reference repositories, `.venv`, captures, Pokemon files,
 Switch keys).
 
-<a id="first-deployment"></a>
 ## First deployment
 
-On the desktop, with the SSH alias and the Pi login user:
+On the desktop, from a committed checkout, with the SSH alias and the Pi login user:
 
 ```bash
-git add -A
-git commit -m "Prepare Raspberry Pi deployment"
 ./scripts/deploy_pi.sh --host pi-ldn --user PI_USER
 ```
 
@@ -51,7 +47,6 @@ Trixie 3.13). It builds the virtual environment from `requirements.txt`, install
 (`--no-networkmanager` skips it). Keep SSH on Ethernet or the built-in Wi-Fi: hosting takes the
 TP-Link adapter exclusively.
 
-<a id="configuration-and-switch-keys"></a>
 ## Configuration and Switch keys
 
 The tracked `config/host.toml` is the TP-Link live profile:
@@ -69,7 +64,6 @@ phy = "auto"
 The ignored `config/host.local.toml` holds the absolute key path (the host runs under `sudo`); how to
 install `prod.keys` is in [Switch keys on the Pi](hardware_switch_keys.md).
 
-<a id="verify-and-run"></a>
 ## Verify and run
 
 With the TP-Link adapter plugged in:
@@ -117,7 +111,6 @@ unless diagnosing other hardware. For the ALFA `mt76x0u`, pass its current PHY (
 after a replug) and `--no-accept-decrypted-ccmp`; preflight then checks that PHY's AP and monitor
 modes and the `mt76x0u` CCMP profile.
 
-<a id="mt7601u-adapter-with-the-custom-ap-driver"></a>
 ### MT7601U adapter with the custom AP driver
 
 The stock `mt7601u` driver has no AP mode. Hosting needs the pinned `mt7601u-ap` DKMS module
@@ -141,7 +134,6 @@ kernel has none. Replug the adapter (or reboot), read its PHY from `iw dev`, and
 --no-accept-decrypted-ccmp`. Preflight confirms the loaded `mt7601u` comes from `updates/dkms` and
 has AP and monitor mode.
 
-<a id="deploying-changes"></a>
 ## Deploying changes
 
 Commit on the desktop and run `./scripts/deploy_pi.sh --host pi-ldn --user PI_USER` again. It

@@ -1,10 +1,8 @@
-<a id="start-here"></a>
 # Start here
 
 pokeldn trades with Pokemon games on a Switch or Switch 2 over local wireless. An ESP32 board on USB is
 the radio. Nothing is installed on the console.
 
-<a id="what-you-need"></a>
 ## What you need
 
 - A classic ESP32 board (ESP32-D0WD, WROOM-32E) with a USB serial bridge, or an ESP32-S3,
@@ -15,7 +13,6 @@ the radio. Nothing is installed on the console.
 - `prod.keys` dumped from your own Switch. The app asks for it once.
 - One of the seven games on the Games page.
 
-<a id="first-run"></a>
 ## First run
 
 1. Board: plug the board in and choose Install beside Wireless. The app detects the chip, writes the
@@ -49,7 +46,6 @@ Bank. The Bank's plus button, or a drop on its grid, imports a Pokemon file or a
 legal Pokemon in it is banked once, and the file itself is left as it is. One from an older game leaves
 its held item behind and forgets its HMs, as HOME's way in asks.
 
-<a id="free-up-storage"></a>
 ## Free up storage
 
 Settings, Storage shows how much space can be freed. Press Clear local files, then Clear files to
@@ -57,7 +53,6 @@ remove saved session records, logs, temporary offers and unused built Pokemon. S
 needed for a bug report first. Received Pokemon, selected offers, keys, firmware and settings are
 kept. Finish the current run before clearing files.
 
-<a id="firered-and-leafgreen-language"></a>
 ## FireRed and LeafGreen language
 
 Mystery Gift's Console card shows the version and automatic language detection. Choose FireRed
@@ -71,7 +66,6 @@ A `.pokegift` keeps all variants and selects the right one when the console conn
 Trainer language in Advanced describes pokeldn's own trainer on the link. It does not select
 the console's language.
 
-<a id="basic-and-advanced"></a>
 ## Basic and Advanced
 
 Basic shows the fields most runs need; the tested settings for each game are applied underneath.
@@ -83,13 +77,11 @@ before a session stops on its own, the wireless channel, and New PID each run. N
 offered Pokemon a new PID so a save that already received it takes it again; turn it off for a file
 whose PID must stay, such as an event Pokemon.
 
-<a id="your-own-pokemon-files"></a>
 ## Your own Pokemon files
 
 Or use a Pokemon file takes a file exported from PKHeX. The app checks it with PKHeX and shows whether
 it is legal before you offer it. An illegal Pokemon can crash the other game when it is drawn.
 
-<a id="mystery-gift"></a>
 ## Mystery Gift
 
 Each Mystery Gift tool starts with four choices. Use a preset sends a ready-made gift. On
@@ -135,7 +127,6 @@ the trainer, the party and the PC boxes: change the name, money or coins, reorde
 Pokemon, add one built for this save's trainer, and check a box's legality. Keep as a new save adds
 the result beside the original, which stays unchanged.
 
-<a id="when-a-run-fails"></a>
 ## When a run fails
 
 - Stop, then back out of the console's search screen and search again. Most games keep a stale session

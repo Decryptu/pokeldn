@@ -4,36 +4,27 @@ nav_order: 5
 has_children: true
 ---
 
-<a id="brilliant-diamond-and-shining-pearl"></a>
 # Brilliant Diamond and Shining Pearl
 
-Brilliant Diamond and Shining Pearl are built in Unity by ILCA, with IL2CPP game code directly on
-Pia.
+Brilliant Diamond and Shining Pearl are Unity titles by ILCA whose IL2CPP game code speaks directly
+on Pia. The pages describe version 1.3.0, in the Union Room (Pokemon Center 2F, the left attendant,
+the plain "yes") and the Grand Underground.
 
-Measured against a French Shining Pearl, version 1.3.0, in the Union Room (Pokemon Center 2F, the
-left attendant, the plain "yes") and in the Grand Underground.
-
-<a id="status"></a>
 ## Status
 
 Working on retail hardware:
 
-- A seat in the console's session with only `prod.keys` and the LDN passphrase; every packet
-  decrypted; the send path byte-exact against the console's own ciphertext.
-- The Local, Mesh Station and Mesh Protocol handshakes, the RTT timer and the reliable transport
-  in both directions.
-- A character walking in a retail Union Room, showing a trade emote, and running the game's own
-  greeting dialogue with the player.
-- A complete trade: the console's offer, an assembled Pokemon accepted, the save written; trades
-  chain in one association ([Trading](bdsp_trade.md#the-completed-trade)).
-- Hosting: a console entering the Union Room joins a room pokeldn hosts, draws its character, and
-  completes a trade with it ([Hosting](bdsp_session.md#hosting)).
-- A composed ball capsule exchanged in the Union Room; the console stores it in its collection with
-  the seals the player has in stock ([the protocol page](bdsp_protocol.md)).
-- Record mixing and a battle lobby, up to the console's record and its six chosen Pokemon.
-- A character walking on the Grand Underground floor, and the console's secret base read out.
+| feature | detail |
+|---|---|
+| a seat in the console's session | needs only `prod.keys` and the LDN passphrase; every packet decrypts; the send path matches the console's ciphertext byte for byte |
+| transport | the Local, Mesh Station and Mesh Protocol handshakes, the RTT timer, the reliable transport in both directions |
+| a character in the Union Room | walks, shows a trade emote, runs the game's greeting dialogue |
+| trade | an assembled Pokemon accepted and saved; trades chain in one association ([Trading](bdsp_trade.md#the-completed-trade)) |
+| hosting | a console entering the Union Room joins a hosted room and trades ([Hosting](bdsp_session.md#hosting)) |
+| ball capsule | a composed capsule lands in the collection with the seals the player holds ([the protocol page](bdsp_protocol.md)) |
+| record mixing, battle lobby | up to the console's record and its six chosen Pokemon |
+| Grand Underground | a character walks on the floor; the console's secret base is read out |
 
-<a id="pages"></a>
 ## Pages
 
 | page | contents |
@@ -42,16 +33,13 @@ Working on retail hardware:
 | [The game protocol](bdsp_protocol.md) | the 65 messages BDSP speaks, the Union Room, and controlling a character |
 | [Trading](bdsp_trade.md) | the trade flow, the PB8, the save, and the disconnect penalty |
 
-<a id="unresolved"></a>
 ## Unresolved
 
 - A substituted greeting name on a console's screen
   ([The name in the greeting](bdsp_protocol.md#the-name-in-the-greeting)).
-- What a retail console shows when a 0x08 reaches it with no battle recruited: the code stores to
-  address 0x18 with no null check and no user exception handler in the game's module; no 0x08 has
-  reached that path, because those sent went out under sequence ids the reliable window had already
-  seen ([The battle ladder](bdsp_protocol.md#the-battle-ladder)).
+- What a retail console shows when a 0x08 reaches it with no battle recruited. The code stores to
+  address 0x18 with no null check and the game's module has no user exception handler
+  ([The battle ladder](bdsp_protocol.md#the-battle-ladder)).
 - Whether a retail console that is not the Grand Underground session host adopts a 0x61 from
-  pokeldn; the Underground sessions measured had the console as host, and pokeldn does not host one.
-  The common dispatch and the `UgNetworkManager` handler have no sender filter
+  pokeldn. The common dispatch and the `UgNetworkManager` handler have no sender filter
   ([the protocol page](bdsp_protocol.md#the-grand-underground)).
