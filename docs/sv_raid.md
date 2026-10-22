@@ -230,7 +230,7 @@ records' inactive with `gameLimit` 300, the rest zero. With it inactive the time
 `C2D7F486425487755.F0C64BA9B6853E61A` uses game limit 300, command limit 60, revive time 30, AI
 interval 17 and randomness 6. Actions are 0 none, 1 reset the boss's stat changes, 2 reset the
 players', 3 a move, 4 drain the Tera orb; timings 0 none, 1 time, 2 HP; a value is the HP or time
-share that triggers it. HP coefficients are 500, 500, 800, 1200, 2000 and 2500 for one to six stars.
+share that triggers it. An HP trigger at P percent fires once 100 x the boss's HP / its HP pool, in integer division, is P or less: at 414 of 816 HP the 50 percent action fires. HP coefficients are 500, 500, 800, 1200, 2000 and 2500 for one to six stars.
 
 A retail point's reward rows are the seed's fixed rows (subject = the table's `SubjectType`: 0 every
 player, 1 the host, 2 guests, 3 once), its lottery draws under subject 0, three more lottery draws
@@ -601,7 +601,12 @@ has the rule). A confusion secondary steps the generator once, through a call ou
 `chance`, before its `chance(p)`: 20 of 20 confusion draws with every draw logged (Confusion, Psybeam,
 Water Pulse, Strange Steam, Magical Torque), whatever the step's output. A confusion that lands draws
 no duration. A stat-lowering secondary of 100 percent (Spirit Break, Bulldoze) draws `chance(0)` in
-some rounds and nothing in others. Two battlers of equal speed draw `below(2)` before the first move.
+some rounds and nothing in others. Two battlers of equal speed draw `below(2)` before the first move. A flinch secondary draws
+nothing against the boss or a target with Inner Focus (ability 39); against a player that already
+moved in the round it draws its `chance(p)`, and a flinch that lands there adds nothing to the queue.
+A contact move into Static, Poison Point, Flame Body or Cute Charm (abilities 9, 38, 49, 56), or from a
+user with Poison Touch (143), draws `chance(30)` after the move's secondaries. Over the 156 oracle
+battles that log every draw, the draws of every round the plugin builds equal the logged ones.
 
 A battle draws `below(100)` once before its first round. The damage is Showdown's Gen 9 formula (data
 from Pokemon Showdown's `moves.json` and `typechart`) with the party record's stats and the boss
@@ -624,28 +629,57 @@ move hits the boss and the boss's reply hits a player:
 
 | command | meaning |
 |---|---|
-| `0x05 (A, 0, pp)` | a player's move begins, spending pp (2 against a target with Pressure, else 1); the boss's has none |
-| `0x07 (A, 0)` | the move is used |
+| `0x05 (A, slot, pp)` | a player's move begins, spending pp (2 against a target with Pressure, else 1); the boss's has none; `slot` is the move's index in the moveset, as in `0x07 (A, slot)` and `0x08 (A, slot)`, 0 for the boss |
+| `0x07 (A, slot)` | the move is used |
 | `0xc9 (A, 0, M, T's position, 0)` | the move and its target |
 | `0x7b (M, n, A)` | n counts the rounds before this one |
 | six `0xcf` groups of zeros | 20, 5, 5, 5, 19 and 20 bytes |
 | `0x7e (0, ...)`, `0x7e (1, 0, 0, 0, 0, 0)`, `0x7e (2, e, e, e, e, e)` | the first: 1 at T's position + 1; the third: an effectiveness code per position, 7 for none |
-| `0x8b (A's position, T's position, M, type, 0, 0, 1, tera, 0, 0)` | the hit; `tera` is 1 when the boss uses a damaging move of its Tera type (448 of 448 such hits), else 0 |
+| `0x8b (A's position, T's position, M, type, 0, 0, 1, tera, class, 0)` | the hit; `tera` is 1 when the boss uses a damaging move of its Tera type (448 of 448 such hits), else 0; `class` is the move's target class: 0 one target, 1 adjacent ally or self, 4 all adjacent, 5 all adjacent foes, 6 allies, 7 self, 9 a random foe, 10 the field, 11 the foe side, 12 the ally side, 13 scripted (Showdown's `target` names, over 19,245 oracle hits) |
 | `0x37 (T, 2, damage)`, `0x37 (T, 5, 1)`, `0x02 (T, A, damage, 3)` | the damage |
 | `0xd0` with bytes `T, e` | e is the effectiveness: 7 neutral, 6 not very effective, 8 super effective |
 | `0x8e (1, 1, M)`; `0x8e (1, 3, M)` and `0xca (A, 575, 0xffff0000)` when not very effective; `0x8e (1, 2, M)` and `0xca (A, 574, 0xffff0000)` when super effective | the effectiveness message |
 | `0x20 (A, 24)` | only for a super-effective hit |
 | `0x42 (T, A, A's position, type, cat, M, damage)` | the hit's record |
-| the drain, when the move drains and its user is below full HP | `0xa7 (T, 51)`, `0x03 (A, heal)`, `0x9a (A, heal)`, `0xcb (A, 290, T)`; heal is damage times the drain fraction, rounded half up, capped at the HP the user lacks |
+| `0x25 (T)`, `0xc7 (T, 0)`, `0x0c (T, 5, 1)`, `0x92 (T, 5, 1, 0)`, `0xcb (T, 15, T)`, `0xc8 (T)` | Rattled (ability 155) raising T's Speed after a Bug, Dark or Ghost hit |
+| `0xcb (T, 138, T)`, `0x1e (T, 15)`, `0x26 (T, 0)`, `0x4f (T, 0)`, `0x62 (T)` | T's Air Balloon (item 541) popping; it leaves T |
+| the drain, when the move drains and its user is below full HP | `0xa7 (T, 51)`, `0x03 (A, heal)`, `0x9a (A, heal)`, `0xcb (A, 290, T)`; heal is damage times the drain fraction, rounded half up, uncapped even when the user lacks less (2 of 2 such rounds); the HP it restores stops at full |
 | the secondary effect, if any | for example a paralysis: `0x13`, `0x90`, `0xa7`, `0xcb (2, 92, T)` |
 | `0xd1` with bytes `01 00`, `0x2e (2, A − 1)` | |
 | `0x85 (7, damage)` | only for damage to the boss |
 | `0x7c ()`, `0x08 (A, 0)`, `0x1d (A, T's position, type, 1, 0, M, M)`, `0x5b (A, M)` twice, `0x1e (A, 0)` | the move ends |
 
 A round ends with `0xb2 (0)`, `0x37 (b, 7, 1)` for each battler that moved, `0x75 (3, n)`, `0xc5 (1)`,
-`0x43 (b)` for each battler in speed order (party record speed, the boss among them), `0x23 (b)` for
+`0x43 (b)` for each battler in speed order (party record speed at its stat stage, the boss among them), `0x23 (b)` for
 each of the round's actors in id order, or all five in the battle's first round, and `0x2d (0)`;
-`0x75 (3, n)` counts the rounds so far, this one included.
+`0x75 (3, n)` counts the command rounds of the current turn, this one included. A turn ends with every
+fourth command round, whichever slots sent them (3,606 of 4,090 turn ends in the oracle corpora; the rest
+have one or two raid-action rounds between, which do not count): its `0x75 (3, 0)` is followed by
+`0xc5 (0)`, `0x50 (0)`, `0x19 (b, k)` for each end-of-turn kind k in the order 36, 21, 18, 5, 4, 9, 10, 8,
+46, 43, 48, 11, 12, 23, 13, 31, 33, 15, 19, 29, 30, 38, 37, 39, 40, 41, 24, 45, 14, 20, 1, 2, 3, 7, 6,
+16, 17, 22, 25, 26, 27, 28, 32, 34, 35, each over the battlers in speed order, then `0x44 (k)` for k 1
+to 13, before the usual `0xc5 (1)`. Measured on turn ends with no held item, status or weather acting;
+what those add is unmeasured.
+
+A damaging move the target's types are immune to draws nothing, not even its accuracy, and runs
+`0x05`, `0x07`, `0xc9 (A, 0, M, P, 1)`, `0x7b`, five `0xcf` groups (20, 5, 5, 5 and 19 zero bytes), `0xcb
+(A, 72, T)`, `0x52 (A, 3)`, `0x08 (A, slot)`, `0x52 (A, 0)`, `0x1d (A, P, type, 0, 0, M, M)`, `0x5b (A, M)`
+twice and `0x1e (A, 0)`: 5,353 of the 5,550 message-72 runs in the oracle corpora (the rest open an ability activation).
+
+A status move whose only effect is stat stages runs `0x05` (a player's), `0x07 (A, 0)`, `0xc9 (A, 0,
+M, P, 0)` with P the commanded position, `0x7b (M, n, A)`, one `0xcf` group of 20 zero bytes, `0x7e (0,
+0, 0, 0, 0, 0)`, `0x7e (1, 0, 0, 0, 0, 0)`, `0x7e (2, 7, 7, 7, 7, 7)`, `0x8b (A's position, T's position,
+M, type, 0, 0, 0, 0, class, 0)` (T is A for a move on itself, class 7), the stat changes, then `0x7c ()`,
+`0x08 (A, 0)`, `0x1d (A, P, type, 1, 0, M, M)`, `0x5b (A, M)` twice and `0x1e (A, 0)`. A raise is `0x0c
+(b, stat, n)`, `0x92 (b, stat, n, 0)` and `0xcb (b, text, b)`; a drop is `0x0d (b, stat, n)`, `0x93 (b,
+stat, n, 0)` and `0xcb (A, text, b, stat)`. The text is 10, 17 or 24 plus the stat for a raise of 1, 2 or
+3 stages and 31 or 38 plus the stat for a drop of 1 or 2 (stats 1 Attack to 7 evasion), over every
+stat change in the oracle corpora. A move that cannot miss (Showdown accuracy `true`) draws no accuracy.
+
+A spread move (Showdown target `allAdjacent` or `allAdjacentFoes`) hits only the position its
+command names, with the single-target damage and no spread modifier: every oracle round holding one
+builds equal as a one-target hit, with `class` 4 or 5. Moves run in priority bracket order, then by
+Speed at its stat stage: a boss's Aqua Jet or Shadow Sneak moves before a faster player.
 
 A hit that knocks the boss out wins the battle. After its `0x42` come `0x49 (2, A, M)`, `0x09 (A, 0)`,
 `0x37 (2, 1, 1)`, `0xcb (2, 0, 2)`, `0x94 (2, 0)`, `0x37 (2, 8, 1)`, `0x5f (2)`, `0x62 (2)`, `0x6c (2)`,
@@ -656,7 +690,7 @@ and the damage commands carry the HP the boss had left.
 
 The prefix starts with `0xb5 (0)`, then runs `0x51 (b, 1)` once for the round's actors in id order and
 once in the order they move; in the second run a battler with Stall (ability 100) moves last and
-carries `0x51 (b, 0)`. A battler whose chosen move registers its own handler adds `0x5a (b, M, speed)`
+carries `0x51 (b, 0)`. A battler whose chosen move registers its own handler adds `0x5a (b, M, speed)`, speed at its stat stage,
 and `0x5b (b, M)` after each run, in that run's order, then twice more in move order. Before each
 battler after the first moves, every such battler repeats the pair once more, and a mover whose move
 registers a handler adds `0x5a (b, M, 0x72000 + speed)` just before its `0x05`. 347 of 631 moves register one (Facade and Body Slam among them, Night Slash not).
@@ -783,6 +817,8 @@ events, then ends with `0x2b (0)`:
 | Frisk (119) | the activation around `0xcb (0, 146, id, target, item)` per foe holding an item |
 | Unnerve (127) | `0x25 (id)`, `0xc7 (id, 127)`, `0xca (id, 679, side, 0xffff0000)`, `0xc8 (id)`, before every other event; `side` is 1 for a player's Unnerve, 0 for the boss's |
 | Anticipation (107) | the activation around `0xcb (id, 145, id)` when a foe knows a damaging move super effective on it or a one-hit KO move |
+| Trace (36) | `0x25 (id)`, `0xc7 (id, A)`, `0x89 (id, 36, A)`, `0xcb (id, 128, S, A)`, `0x5f (id)`, `0x24 (id, A)`, `0x5e (id, A)`, `0xc8 (id)` twice, copying ability A from S: a player's Trace copies the boss, the boss's copies the player that `below(4)` picks among battlers 1, 3, 4 and 5 (6 of 6 battles) |
+| Shields Down (197) | none for Minior in a Meteor form (forms 0 to 6) above half HP; a Core form (7 to 13) shows `0x25`, `0xc7`, `0x57 (id, form − 7, 0)`, `0xac (id)`, `0xca (id, 842)`, `0xc8` (9 of 9 battles) |
 | Air Balloon (541) held | `0xcb (id, 137, id)`, after the battler's ability |
 
 The events run in the battlers' speed order (party record speed), Unnerve first. Intimidate
@@ -850,6 +886,15 @@ A list without a shield starts at state 2. The per-frame machine checks the prof
 copy of the list while the boss's list is empty (`0xf6d62c`); when one fires it sends the copy as message
 0x51 (`0xf71b74`). The 0x51 comes back to the machine through the server's own slot and fills its list ([The
 server's flow](#the-servers-flow)); a machine list holding actions posts a raid action (`0xf6d8d4`).
+
+A raid action's round queue, over the 547 such rounds of the oracle corpora: `0xb5 (0)`, `0x51 (2, 1)`,
+`0x85 (kind, x)`, `0xc1 (kind, y)`, the action's effect, `0xb2 (0)`, `0x37 (2, 7, 1)` (twice after a move
+or a stat reset), `0xc5 (1)`, `0x43`, `0x23 (2)` and `0x2d (0)`. For an extra action `x` is its index (213 of 213)
+and `y` the profile action's kind (1 to 4); kind 3 has `x` and `y` 0 and no effect commands (121
+rounds); a shield start has both equal to its value (95 with value 0, the rest the timer's). An extra action that
+resets the players' stat changes ends its effect with `0xc2 (60, 2, 0)`, after `0x10 (b)` and `0x13 (b,
+16, 0, w, 2)` for each player it clears; one that resets the boss's ends with `0x0f (2)`, `0xc2 (3, 2,
+2)`.
 
 ### The battle timer
 
