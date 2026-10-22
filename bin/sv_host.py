@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
-from pokeldn import config, receiver_gift
+from pokeldn import config, receiver_gift, trade_back
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
 from pokeldn.sv import (pokemon, port2, raid, raid_encounter, raid_event, raid_partners, reference,
@@ -326,6 +326,7 @@ def build_parser():
                          "host does (pokeldn.sv.trade). Repeatable: the second and later records "
                          "are offered in the same seat, one per trade, as each trade closes")
     receiver_gift.add_arguments(ap, "--trade-offer")
+    trade_back.add_arguments(ap)
     ap.add_argument("--offer-set", action="append", metavar="FIELD=VALUE", default=[],
                     help="a field written into the offered record before it is sealed, by its "
                          "pokeldn.sv.pokemon name: nickname=SHINY, species=906, level=50, "
@@ -489,6 +490,7 @@ def prepare_raid(ap, args):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    trade_back.check(ap, args, "--trade-offer", "--online", "--for-receiver", "--raid-seed")
     raiding = args.raid_seed is not None
     raid_group = prepare_raid(ap, args) if raiding else None
     offer_check = {}            # a gift made for the receiving player takes it too (pokeldn.receiver_gift)
@@ -568,7 +570,9 @@ def main(argv=None):
         """One console's trade. A gift made for the receiving player is made for each console's own
         save, so each has its own ReceiverGift."""
         helper = partner
-        if receiving is not None:
+        if args.trade_back:
+            helper = trade_back.TradeBack("sv", trade_offers)
+        elif receiving is not None:
             helper = receiver_gift.ReceiverGift("sv", *receiving, log=print,
                                                 shown=lambda body: screen.offer("sv", body),
                                                 notify=receiver_gift.pop_up(f"gift-{ip}"))

@@ -34,7 +34,7 @@ from pokeldn.ldn import api as ldn, radios
 
 from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
-from pokeldn import gen9, panel, progress, sv
+from pokeldn import gen9, panel, progress, sv, trade_back
 from pokeldn.ldn import ldn_mitm, pia6, pia_connect, reliable5
 from pokeldn.sv import circle, pokemon, port2, raid, reference, streams, trade, wild
 from pokeldn.ldn import channel_table, game_channel
@@ -302,6 +302,7 @@ def build_parser():
                          "echoes the four exchange steps the way a pair's joiner does "
                          "(pokeldn.sv.trade). Repeatable: the second and later records are "
                          "offered in the same seat, one per trade, as each trade closes")
+    trade_back.add_arguments(ap)
     ap.add_argument("--offer-set", action="append", metavar="FIELD=VALUE", default=[],
                     help="a field written into the offered record before it is sealed, by its "
                          "pokeldn.sv.pokemon name: nickname=SHINY, species=906, ivs=31,31,31,31,"
@@ -422,6 +423,20 @@ def build_parser():
     return ap
 
 
+def trade_stage(args):
+    """-> the joiner's trade stage for --trade-offer, None without one. --fresh-pid and --offer-set
+    apply to the queued records alone: a --trade-back round returns the console's bytes."""
+    if not args.trade_offer:
+        return None
+    offers = [trade.load_offer(Path(path).read_bytes(), args.offer_set, fresh=args.fresh_pid)
+              for path in args.trade_offer]
+    for n, one in enumerate(offers, 1):
+        print(f"[sv] offer {n} of {len(offers)}: {describe_offer(one)}")
+    return trade.JoinerTradeStage(offers, confirm_delay=args.confirm_delay,
+                                  commit_delay=args.commit_delay,
+                                  rounds=trade_back.Rounds(offers) if args.trade_back else None)
+
+
 def describe_offer(body):
     """-> what a 348-byte offer holds, or why it does not read as a record."""
     try:
@@ -540,6 +555,7 @@ def species_level(text):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    trade_back.check(ap, args, "--trade-offer", "--raid-pokemon", "--union-circle")
     if args.raid_pokemon:
         raid_guest(ap, args)
     if args.union_circle:
@@ -722,6 +738,8 @@ def host_argv(args, channel, seconds):
                    *(["--code", args.code] if args.code else code.unset))
     for path in args.trade_offer:
         argv += ["--trade-offer", path]
+    if args.trade_back:
+        argv.append("--trade-back")
     if args.offer_out:
         argv += ["--offer-out", args.offer_out]
     if args.capture:
@@ -841,15 +859,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     record_seq = 1
     channel = {"opened": False, "table": None, "key80": False, "port2": False,
                "keys": None, "keys_at": None, "port2_at": None}
-    stage = None
-    if args.trade_offer:
-        stage = trade.JoinerTradeStage(
-            [trade.load_offer(Path(path).read_bytes(), args.offer_set,
-                              fresh=args.fresh_pid)
-             for path in args.trade_offer],
-            confirm_delay=args.confirm_delay, commit_delay=args.commit_delay)
-        for n, one in enumerate(stage.offers, 1):
-            print(f"[sv] offer {n} of {len(stage.offers)}: {describe_offer(one)}")
+    stage = trade_stage(args)
+    if stage is not None:
         screen.offer("sv", stage.offer)
     pending_trade = []          # (due, port, payload) the trade stage asked to send
 

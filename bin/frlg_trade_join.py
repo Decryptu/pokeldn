@@ -28,6 +28,7 @@ from pokeldn.ldn import pia_connect  # noqa: E402
 from pokeldn.frlg.link import trade_runtime as runtime  # noqa: E402
 from pokeldn.ldn import show_done  # noqa: E402
 from pokeldn.app import screen  # noqa: E402
+from pokeldn import trade_back  # noqa: E402
 
 
 def make_engine(run_config, lg, *, default_anim_delay=None):
@@ -401,6 +402,7 @@ def build_parser():
     ap.add_argument("--trades", type=int, default=1, choices=range(1, 7), metavar="N",
                     help="number of sequential trades to perform, 1..6 (default 1; 6 = swap both "
                          "entire parties). After the Nth trade the sim cancels-to-leave.")
+    trade_back.add_arguments(ap)
     ap.add_argument("--self-id", type=int, default=1, choices=(1,),
                     help="wire mpId / gLocalLinkPlayerId (joiner = 1 = right seat; the only valid "
                          "value - mpId 0 is the host/parent) [trade.c:1816; link_rfu_2.c:1633-1638]")
@@ -451,6 +453,11 @@ def build_parser():
 def _build_run_config(ap, args):
     try:
         offered_slots = runtime.parse_slots(args.slots, args.trades, len(args.party))
+        trades = args.trades
+        if args.trade_back:
+            offered_slots = trade.trade_back_slots(trade.resolve_offered_slots(
+                offered_slots, args.slot, trades, party_size=len(args.party)))
+            trades *= 2
         profile = configmod.profile_from_overrides(
             ot=args.ot, version=args.version, language=args.language,
             trainer_id=args.id)
@@ -459,7 +466,7 @@ def _build_run_config(ap, args):
             output_size=args.out_size, output_format=args.out_format,
             trade_slot=args.slot,
             offered_slots=None if offered_slots is None else tuple(offered_slots),
-            trades=args.trades, anim_delay=args.anim_delay,
+            trades=trades, anim_delay=args.anim_delay,
             trust_pia=args.trust_pia)
         ldn = configmod.LdnConfig(
             password=host_cli.parse_hex_bytes(ap, "--password", args.password),

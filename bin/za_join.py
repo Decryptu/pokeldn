@@ -26,7 +26,7 @@ import trio
 from pokeldn.ldn import api as ldn, radios
 
 from pokeldn.host_support import open_output
-from pokeldn import pokemon as pokemon_service
+from pokeldn import pokemon as pokemon_service, trade_back
 from pokeldn import za
 from pokeldn.za import host as za_host, streams
 from pokeldn.za.host import (MSG_CANCEL, OFFER_PICK, OFFER_PREVIEW,  # noqa: F401
@@ -124,6 +124,8 @@ class GameStreams:
         self.offers = [Path(p).read_bytes() for p in ([paths] if isinstance(paths, str) else paths)]
         self.offer = self.preview = None
         self.received = None          # the console's pick, the record a trade delivers
+        # --trade-back offers the console's pick back as it came (pokeldn/trade_back.py)
+        self.rounds = trade_back.Rounds(self.offers) if getattr(args, "trade_back", False) else None
         if self.offers:
             self._load_offer(self.offers[0], renew=getattr(args, "fresh_pid", False))
             screen.offer("za", self.offer)
@@ -141,7 +143,8 @@ class GameStreams:
 
     @property
     def queue_done(self):
-        return self.traded_at is not None and self.trades >= len(self.offers)
+        queued = len(self.offers) * (2 if self.rounds else 1)
+        return self.traded_at is not None and (self.rounds.round if self.rounds else self.trades) >= queued
 
     def _emit(self, proto, seq, flags_a, inner):
         link = self.links[proto]
@@ -222,6 +225,9 @@ class GameStreams:
                 show_done()
                 screen.received("za", self.received)
                 self.arriving = True
+                if self.rounds:
+                    self.rounds.done(self.received)
+                    self.received = None
                 print(f"[za] trade_complete at {elapsed:.2f}s (trade {self.trades})")
                 self._next_trade(elapsed)
 
@@ -235,7 +241,14 @@ class GameStreams:
         previewed, as a station does when its cursor moves (docs/za.md)."""
         self.round = 0
         self.picked = False
-        if self.trades < len(self.offers):
+        if self.rounds:
+            # a returned record is the console's bytes: never under a new PID
+            renew = (not self.rounds.returning and self.rounds.round // 2 >= len(self.offers)
+                     and getattr(self.args, "renew_offer", False))
+            self._load_offer(self.rounds.current(), renew=renew)
+            screen.offer("za", self.offer)
+            self.scheduled.append((elapsed + za_host.PREVIEW_DELAY, self.preview))
+        elif self.trades < len(self.offers):
             self._load_offer(self.offers[self.trades])
             screen.offer("za", self.offer)
             self.scheduled.append((elapsed + za_host.PREVIEW_DELAY, self.preview))
@@ -373,6 +386,7 @@ def build_parser():
     ap.add_argument("--trade-offer", action="append", default=[],
                     help="a 354-byte offer message to send once the streams are open. Repeatable, "
                          "one per trade in the seat; the last serves every later trade")
+    trade_back.add_arguments(ap)
     ap.add_argument("--selection-delay", type=float, default=0.5,
                     help="seconds after the identity before the selection record starts; a "
                          "reference joiner waits about 0.46 s")
@@ -768,6 +782,7 @@ def main_ip(args):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    trade_back.check(ap, args, "--trade-offer", "--scan-only", "--net-probe", "--no-answer")
     # Every queued record gets its own PID here; a later trade on the last record renews it again.
     args.trade_offer = [pokemon_service.prepare_file("za", path, fresh=args.fresh_pid)
                         for path in args.trade_offer]

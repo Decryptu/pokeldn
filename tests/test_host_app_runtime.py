@@ -48,10 +48,10 @@ def _raises(exception_type, message):
 def test_host_run_config_rejects_invalid_values():
     cases = [
         ({"party_paths": ()}, "party"),
-        ({"party_paths": ("a",), "trades": 2, "offered_slots": (0, 0),
-          "trade_slot": 0}, "trades"),
+        ({"party_paths": ("a",), "trades": 2, "offered_slots": None, "trade_slot": 0}, "trades"),
         ({"offered_slots": ()}, "one slot per trade"),
-        ({"trades": 2, "offered_slots": (0, 0)}, "distinct"),
+        # Only the next trade may offer a slot again: it returns what came (pokeldn.trade_back).
+        ({"trades": 3, "offered_slots": (0, 0, 0)}, "distinct"),
         ({"offered_slots": (2,)}, "configured party"),
         ({"trade_slot": 2}, "trade_slot"),
         ({"output_size": 81}, "output_size"),

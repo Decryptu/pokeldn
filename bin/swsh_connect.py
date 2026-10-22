@@ -31,7 +31,7 @@ from pokeldn.swsh import raid as swsh_raid
 from pokeldn.swsh import raid_battle
 from pokeldn.swsh import lair as swsh_lair
 from pokeldn.ldn import sync_clock
-from pokeldn import gen8
+from pokeldn import gen8, trade_back
 from pokeldn.swsh import pokemon as swsh_pokemon
 from pokeldn.swsh import trade_payload
 from pokeldn.ldn import show_done
@@ -290,6 +290,7 @@ async def main_async(args):
               "block_out": 0, "block_acked": None}
 
         accepted = trio.Event()           # station handshake closed; a mesh join waits for it
+        rounds = trade_back.Rounds([]) if args.trade_back else None
         nonce = int.from_bytes(os.urandom(8), "big")
 
         def run_until(extra=0.0):
@@ -351,7 +352,11 @@ async def main_async(args):
             Contents 50 and 40 and pings 130 and 120 are built anew for every trade; content 30
             and ping 110 last the session (docs/swsh_trade.md, Trades in a row on one session)."""
             n = st["trades"] + 1
-            st["our_pk8"] = queued_offer(n)
+            if rounds is not None and rounds.returning:
+                # The console's 0x158 record as it came off the wire: never validated nor renewed.
+                st["our_pk8"] = rounds.current()
+            else:
+                st["our_pk8"] = queued_offer(rounds.round // 2 + 1 if rounds is not None else n)
             for key in ("offered_pk8", "confirm_queue", "confirm_last_step"):
                 st[key] = None
             for key in ("pk8_offer_sent", "trade_ready_sent", "ladder_finished",
@@ -470,6 +475,8 @@ async def main_async(args):
                         if step is not None and step[0] >= LADDER_FINAL_PHASE:
                             if not st["ladder_finished"]:
                                 st["trades"] += 1
+                                if rounds is not None:
+                                    rounds.done(st["offered_pk8"])
                                 show_done()
                                 screen.received("swsh", st["offered_pk8"])
                                 print(f"\n[rx] *** THE LADDER IS FINISHED - phase {step[0]} is the "
@@ -2422,6 +2429,7 @@ def build_parser():
                          "ids become the snapshot's unless --offer-file-as-is. Repeatable, one per "
                          "trade on the session: the console's player picks again from the box; the "
                          "last serves every later trade")
+    trade_back.add_arguments(ap)
     ap.add_argument("--fresh-pid", action="store_true",
                     help="draw a new encryption constant and PID for every offered Pokemon")
     ap.add_argument("--offer-file-as-is", action="store_true",
@@ -2533,6 +2541,7 @@ def main(argv=None):
     if preset == "trade" and not args.send_snapshot:
         args.send_snapshot = "live"
     args.raid_join = args.raid_join or args.lair_join
+    trade_back.check(build_parser(), args, "--offer-file", "--raid-join", "--lair-join", "--offer-echo")
     args.connect_station_first = int(_expand(args.connect_station)[0], 0)
     try:
         offer_edits(args)

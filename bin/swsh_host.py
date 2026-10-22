@@ -33,6 +33,7 @@ from pokeldn.ldn.pia5 import password_crc
 from pokeldn.swsh.session import COMM_ID, PASSPHRASE, session_keys
 from pokeldn.app import screen
 from pokeldn.online import session as online
+from pokeldn import trade_back
 
 SCENE_ID = 60001  # a retail Sword's Link Trade network
 RAID_SCENE_ID = 60006  # a den lobby (docs/swsh_raid.md)
@@ -244,6 +245,7 @@ def build_parser():
                     help="leave this long after the legendary is sent; a computer partner then takes "
                          "our seat and picks our rental")
     online.add_arguments(ap)
+    trade_back.add_arguments(ap)
     return ap
 
 
@@ -350,7 +352,9 @@ def show_lobby(app_data, boss_pk8, legendary, code):
 
 
 def main(argv=None):
-    args = build_parser().parse_args(argv)
+    ap = build_parser()
+    args = ap.parse_args(argv)
+    trade_back.check(ap, args, "--offer-file", "--online", "--raid-boss", "--raid-event", "--lair-legendary")
     if args.online and args.offer_file:
         print("[sw] --online offers the partner's Pokemon; --offer-file is ignored")
         args.offer_file = []
@@ -477,6 +481,9 @@ def main(argv=None):
             "session_key": keys.session_key.hex()})
 
     partner = online.partner("swsh", args, code=args.code, name=args.trainer_name)
+    if args.trade_back:
+        partner = trade_back.TradeBack("swsh", [offer_record(args, path, False, None)
+                                                for path in args.offer_file])
     trades = {}
     party = [None]      # the raid lobby every joined console shares
     completed = [0]     # trades that reached the end of the ladder, every session

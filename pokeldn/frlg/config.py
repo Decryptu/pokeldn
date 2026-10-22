@@ -4,7 +4,7 @@ from typing import Mapping
 from dataclasses import dataclass, field, replace
 
 from pokeldn.frlg.gift import gift_composer, gift_registry, mg_script, stamp_rally, wonder_card, wonder_news
-from pokeldn.frlg.link import linkplayer, uroom_chat
+from pokeldn.frlg.link import linkplayer, trade, uroom_chat
 from pokeldn.frlg.rom import buffer_script, builds, rng_script
 from pokeldn.frlg.text import charmap
 from pokeldn.gba import ni
@@ -155,7 +155,8 @@ class TradePlan:
     def __post_init__(self):
         if not 1 <= len(self.party_paths) <= 6:
             raise ValueError("party must contain 1..6 Pokemon files")
-        if not 1 <= self.trades <= 6 or self.trades > len(self.party_paths):
+        if (not 1 <= self.trades <= trade.MAX_TRADES
+                or (self.offered_slots is None and self.trades > min(6, len(self.party_paths)))):
             raise ValueError("trades must be 1..6 and cannot exceed party size")
         if self.output_size not in (80, 100):
             raise ValueError("output_size must be 80 or 100")
@@ -180,7 +181,7 @@ class TradePlan:
         if self.offered_slots is not None:
             if len(self.offered_slots) != self.trades:
                 raise ValueError("offered_slots must contain one slot per trade")
-            if len(set(self.offered_slots)) != len(self.offered_slots):
+            if not trade.distinct_but_returned(list(self.offered_slots)):
                 raise ValueError("offered_slots must be distinct")
             if any(type(slot) is not int or not 0 <= slot < len(self.party_paths)
                    for slot in self.offered_slots):

@@ -229,6 +229,7 @@ def test_event_boss_choice_translates_display_without_changing_the_encoded_key(f
     from gui.views import games
     from pokeldn.app.catalog import Field
     i18n._pack.resources["terms"].update({"Growlithe": "Caninos", "Sword": "Épée", "East": "Est"})
+    monkeypatch.setattr(i18n, "_terms_pattern", None)    # built from the terms before this update
     event = object()
     boss = SimpleNamespace(name="Growlithe", level=50)
     monkeypatch.setattr(games.swsh_raid_event, "hostable", lambda _: [("sword", 3, 0, "East", boss)])

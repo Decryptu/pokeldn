@@ -14,7 +14,7 @@ if os.path.isdir(BUNDLED):
 
 import trio, ldn
 from pokeldn.host_support import open_output
-from pokeldn import pokemon as pokemon_service
+from pokeldn import pokemon as pokemon_service, trade_back
 from pokeldn.bdsp import COMM_ID, PASSPHRASE, PIA_PORT, pokemon, room, session_keys
 from pokeldn.bdsp.host import player_info
 from pokeldn.bdsp.session import answer_departure
@@ -164,8 +164,16 @@ async def main_async(args):
             offered = pokemon.read(poke)
             print(f"[cx] trade {n} offers species {offered['species']}, {offered['nickname']!r}, "
                   f"OT {offered['ot_name']!r}, IVs {offered['ivs']}, pid {offered['pid']:08x}")
+        # --trade-back: every other round returns the console's last PB8 as it came (docs/architecture.md)
+        rounds = trade_back.Rounds(st["our_pokes"]) if args.trade_back else None
+
+        def our_offer():
+            if rounds:
+                return rounds.current()
+            return st["our_pokes"][min(st["trades"], len(st["our_pokes"]) - 1)]
+
         if st["our_pokes"]:
-            screen.offer("bdsp", st["our_pokes"][0])
+            screen.offer("bdsp", our_offer())
 
         # Read now, so a missing file fails before the console waits on us.
         answer_with = {}
@@ -1127,8 +1135,10 @@ async def main_async(args):
                     show_done()
                     record(rec="security_phase_end", t=now)
                     screen.received("bdsp", st["their_raw"])
+                    if rounds:
+                        rounds.done(st["their_raw"])
                     if st["our_pokes"]:
-                        screen.offer("bdsp", st["our_pokes"][min(st["trades"], len(st["our_pokes"]) - 1)])
+                        screen.offer("bdsp", our_offer())
                 reply = room.build_trade_ready_ok(st["our_security_state"], is_trade_ok=1)
                 st["ready_oks_sent"] += 1
                 label = (f"our state {room.TRADE_STATE_NAMES.get(st['our_security_state'])} "
@@ -1177,7 +1187,7 @@ async def main_async(args):
                 if not st["our_pokes"]:
                     print("[cx] no --trade-template, so nothing to offer back")
                     return
-                reply = room.build_trade_poke(st["our_pokes"][min(st["trades"], len(st["our_pokes"]) - 1)])
+                reply = room.build_trade_poke(our_offer())
                 label = "our Pokemon"
             send_trade_message(reply, label, now)
 
@@ -1597,6 +1607,7 @@ def build_parser():
                          "from nothing. Repeatable, one per trade in order; the last is offered "
                          "again after the list")
     ap.add_argument("--trade-nickname", metavar="TEXT", help="nickname for the offered Pokemon")
+    trade_back.add_arguments(ap)
     ap.add_argument("--answer-return-select", action="store_true",
                     help="answer the console's NetDataReturnSelectData, a round reset, ONCE; "
                          "the answer has no measured effect")
@@ -1757,6 +1768,9 @@ def build_parser():
 def main():
     ap = build_parser()
     args = ap.parse_args()
+    trade_back.check(ap, args, "--trade-template", "--answer-with", "--ug-join")
+    if args.trade_back and not args.complete_trade:
+        ap.error("--trade-back needs --complete-trade: no trade completes without it")
     fields = {k: v for k, v in (("nickname", args.trade_nickname), ("ot_name", args.trade_ot))
               if v is not None}
     args.trade_template = [pokemon_service.prepare_file("bdsp", path, fresh=args.fresh_pid, fields=fields)

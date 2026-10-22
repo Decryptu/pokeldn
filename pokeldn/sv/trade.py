@@ -185,9 +185,13 @@ class TradeStage:
 
 class JoinerTradeStage:
     """The joiner's side of a trade: it answers rather than leads, and commits first, `commit_delay`
-    after its own confirmation. `offer` is one 348-byte record or a list, one per trade."""
+    after its own confirmation. `offer` is one 348-byte record or a list, one per trade; with `rounds`
+    (pokeldn.trade_back.Rounds) each trade's record comes from it instead."""
 
-    def __init__(self, offer, confirm_delay=1.0, commit_delay=1.5, open_delay=0.35):
+    def __init__(self, offer, confirm_delay=1.0, commit_delay=1.5, open_delay=0.35, rounds=None):
+        self.rounds = rounds
+        if rounds is not None:
+            offer = [rounds.current()]
         offers = [offer] if isinstance(offer, (bytes, bytearray)) else list(offer)
         if not offers:
             raise ValueError("a joiner needs at least one offer")
@@ -243,6 +247,10 @@ class JoinerTradeStage:
             if (self.step_index is not None and self.step_index >= len(STEPS)
                     and payload == table_update(KEY_EXCHANGE, False)):
                 self.trades += 1
+                if self.rounds is not None:
+                    self.rounds.done(self.host_offers[-1] if self.host_offers else None)
+                    if not self.rounds.finished:
+                        self.offers.append(bytes(self.rounds.current()))
                 if self.index + 1 < len(self.offers):
                     self.index += 1
                     self._start()

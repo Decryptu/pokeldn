@@ -162,6 +162,30 @@ Each completed trade calls `pokeldn.ldn.show_done()`, which flashes the LED and 
 path with a suffix: `_tradeN_` and the species (FireRed/LeafGreen), `.N` (Scarlet/Violet), `_N`
 (Brilliant Diamond/Shining Pearl host), `-N` (Legends Z-A, Sword/Shield).
 
+### Trade back
+
+`--trade-back`, on every trade host and joiner (the app's Send it back switch), follows each queued
+trade with one that offers the Pokemon the console just sent, so a Pokemon that evolves by trade
+evolves on the console. The player offers ours back in that second trade. `pokeldn/trade_back.py`
+holds the order:
+
+| trade | offers |
+|---|---|
+| 1, 3, 5, ... | queued offer 1, 2, 3, ... |
+| 2, 4, 6, ... | the record the console sent in the trade before, byte for byte |
+
+A returned record never takes `--fresh-pid` or any other offer edit. A launcher that stops after its
+last queued trade stops after twice as many; one that offers its last again keeps alternating.
+
+| launcher | how the record comes back |
+|---|---|
+| native hosts | `TradeBack` stands in for the online partner (`pokeldn.online.link.Partner`): the console's last offer before `done` is the next round's record |
+| FireRed/LeafGreen host and join | each offered party slot is offered again; TradeMons has put the received Pokemon there [trade_scene.c:1054-1083]. A session runs up to 12 trades |
+| native joiners | `Rounds` chooses each trade's record in the launcher's own offer path |
+
+`--trade-back` refuses `--online`, the gift made for the receiving player, and the raid, lair and
+Union Circle modes. Mystery Gift - Simulated never offers it.
+
 ### Ending a run
 
 | role | ends when |

@@ -25,7 +25,7 @@ from pokeldn.ldn import clone, pia3, pia4, reliable3, station4, station9, sync_c
 from pokeldn.lgpe import pb7
 from pokeldn.lgpe.trade import (keep_received, TRADE_IN_PROGRESS, _answer_offer, _send_step,
                                 _warn_if_mid_trade, show_offer)
-from pokeldn import receiver_gift
+from pokeldn import receiver_gift, trade_back
 from pokeldn.app import screen
 from pokeldn.online import session as online
 from pokeldn.ldn import local_protocol as lp
@@ -158,6 +158,7 @@ def build_parser():
     ap.add_argument("--our-ip", default=None, help="with --ip-host, the address to advertise")
     online.add_arguments(ap)
     receiver_gift.add_arguments(ap, "--offer and --next-offer")
+    trade_back.add_arguments(ap)
     return ap
 
 
@@ -191,7 +192,11 @@ def boxed(raw):
 
 
 def main(argv=None):
-    args = build_parser().parse_args(argv)
+    ap = build_parser()
+    args = ap.parse_args(argv)
+    trade_back.check(ap, args, "--offer", "--online", "--for-receiver")
+    if args.trade_back and args.offer == "echo":
+        ap.error("--trade-back needs a Pokemon file for --offer")
     if args.online and (args.offer or args.next_offer):
         print("[lgh] --online offers the partner's Pokemon; --offer and --next-offer are ignored")
         args.offer, args.next_offer = None, []
@@ -205,7 +210,7 @@ def main(argv=None):
                 print(f"[lgh] next offer {path} is not a valid {pb7.BOX_SIZE}-byte box structure")
                 return 2
     # A gift made for the receiving player stands in for an online partner (pokeldn.receiver_gift).
-    receiving = None
+    receiving = offers = None
     if not args.online and args.offer and args.offer != "echo":
         offers = [boxed(Path(path).read_bytes()) for path in (args.offer, *args.next_offer)]
         receiving = receiver_gift.setup("lgpe", args, offers, boxed, fresh=fresh)
@@ -267,7 +272,9 @@ def main(argv=None):
            our_ip=host.our_ip, our_mac=host.our_mac.hex())
 
     partner = online.partner("lgpe", args, code=args.code, name=args.trainer_name)
-    if receiving is not None:
+    if args.trade_back:
+        partner = trade_back.TradeBack("lgpe", offers)
+    elif receiving is not None:
         partner = receiver_gift.ReceiverGift("lgpe", *receiving, shown=lambda body: screen.offer("lgpe", body),
                                              notify=receiver_gift.pop_up())
     session = Session(host, adv, args, record, partner=partner)
