@@ -55,7 +55,10 @@ S3 builds set it to `n` (allowed with a v5.2+ bootloader; every merged image car
 900 C6 opens and 300 of 300 S3 opens answered. The C3 has no such option and no fault.
 
 The C6 and S3 builds carry a USB watch (`usbwatch.c`): a SOF frame number stalled for 2 s restarts
-the chip, and the next HELLO carries the USB and clock registers as LOG lines. Built with `POKELDN_USB_BEACON=1`, either image also broadcasts those registers once a second as a
+the chip, and the next HELLO carries the USB and clock registers as LOG lines. It arms on the first
+SOF frame or the first host byte read from the cable, and never restarts while a Bluetooth host is
+linked: a board on a charger sees no SOF frame, and up to firmware 1.7.0 the Bluetooth host's bytes
+armed it, so a C6 on a charger restarted every 2 to 3 s under the iPhone app. Built with `POKELDN_USB_BEACON=1`, either image also broadcasts those registers once a second as a
 vendor action frame to `03:55:53:42:57:00` (layout in `usbwatch.c`), which `esp32_sniff.py --mac
 03:55:53:42:57:00` keeps while USB is dead.
 

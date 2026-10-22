@@ -28,6 +28,8 @@ uint32_t wire_dropped(void);
 void wire_set_host_away(bool away);
 /* Host bytes the reader has taken since boot (the CREDIT count before any reset of it). */
 uint32_t wire_consumed(void);
+/* The part of them that came over the cable: Bluetooth bytes say nothing about the USB host. */
+uint32_t wire_cable_consumed(void);
 /* Host commands lost: frames that failed COBS or their CRC; the 128-byte hardware FIFO
    overflowing before the driver drained it; the driver's 16 KB ring full. */
 uint32_t wire_rx_bad(void);
