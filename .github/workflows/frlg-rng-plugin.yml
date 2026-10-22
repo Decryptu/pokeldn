@@ -1,0 +1,42 @@
+name: FRLG RNG Assist plugin
+on:
+  push:
+    branches: [main, 'codex/frlg-rng-assist-plugin']
+    paths: ['tools/plugins/frlg_rng_assist/**', '.github/workflows/frlg-rng-plugin.yml']
+  pull_request:
+    paths: ['tools/plugins/frlg_rng_assist/**', '.github/workflows/frlg-rng-plugin.yml']
+permissions:
+  contents: read
+jobs:
+  plugin:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        host: [c1f2b953800834c3387fa5b2fe44cccf1e86cea0, af33b4cd257cf960954391e45b65a4eebd5f89cd]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: plugin-source
+      - uses: actions/checkout@v7
+        with:
+          repository: Decryptu/pokeldn
+          ref: ${{ matrix.host }}
+          path: host-source
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Install host and test dependencies
+        working-directory: host-source
+        run: python -m pip install -r requirements.txt pytest==9.1.1
+      - name: Test plugin against pinned host
+        working-directory: host-source
+        run: >-
+          python -m pytest
+          "$GITHUB_WORKSPACE/plugin-source/tools/plugins/frlg_rng_assist/tests"
+          --confcutdir="$GITHUB_WORKSPACE/plugin-source/tools/plugins/frlg_rng_assist/tests" -q -ra
+      - name: Check installable package
+        working-directory: host-source
+        run: >-
+          python scripts/pack_plugin.py
+          "$GITHUB_WORKSPACE/plugin-source/tools/plugins/frlg_rng_assist"
+          -o "$RUNNER_TEMP/frlg-rng-assist.pokeplugin"
