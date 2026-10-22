@@ -590,13 +590,17 @@ A move use draws, in this order:
 | draw | when | what it decides |
 |---|---|---|
 | `chance(25)` | the user is paralysed | a full paralysis |
+| `chance(33)` | the user is confused | hitting itself, whose roll is a `below(16)` that replaces the move's draws |
 | `chance(accuracy)` | the move has an accuracy; 100 still draws | a hit |
 | `below(24)`, `below(8)`, `below(2)` | a damaging move, by critical-hit stage 0, 1, 2 | a critical hit when 0 |
 | `below(16)` | a damaging move | the roll r: the damage times (100 − r) / 100 |
 | `chance(p)` | a secondary effect of chance p (Body Slam's 30) | the effect |
 
 A flinch secondary against the boss draws nothing ([A move in the round queue](#a-move-in-the-round-queue)
-has the rule). A stat-lowering secondary of 100 percent (Spirit Break, Bulldoze) draws `chance(0)` in
+has the rule). A confusion secondary steps the generator once, through a call outside `below` and
+`chance`, before its `chance(p)`: 20 of 20 confusion draws with every draw logged (Confusion, Psybeam,
+Water Pulse, Strange Steam, Magical Torque), whatever the step's output. A confusion that lands draws
+no duration. A stat-lowering secondary of 100 percent (Spirit Break, Bulldoze) draws `chance(0)` in
 some rounds and nothing in others. Two battlers of equal speed draw `below(2)` before the first move.
 
 A battle draws `below(100)` once before its first round. The damage is Showdown's Gen 9 formula (data
