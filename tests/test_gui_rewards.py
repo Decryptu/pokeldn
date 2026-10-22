@@ -48,7 +48,7 @@ def launch(rows):
     return tool, values
 
 
-@pytest.mark.parametrize("template", ["training", "shards", "herba", "treasure", "balls"])
+@pytest.mark.parametrize("template", [key for key, _, _ in rewards.TEMPLATES["sv"]])
 def test_a_bundle_survives_saving_and_reaches_the_scripted_console(picker, monkeypatch, tmp_path, template):
     from test_sv_raid import run_raid_host, lobby_rows
     select(picker, template)
