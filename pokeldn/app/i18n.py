@@ -2,7 +2,6 @@
 import os
 import re
 import string
-import tomllib
 from pathlib import Path, PurePosixPath
 
 _strings: dict[str, str] = {}
@@ -21,7 +20,8 @@ def _table(name: str, read, *, formatted=False) -> dict[str, str]:
     if not _basename(name):
         raise ValueError("Language pack resources must name a TOML file beside plugin.toml.")
     try:
-        values = tomllib.loads(read(name).decode("utf-8"))
+        from pokeldn.plugins import toml_loads
+        values = toml_loads(read(name).decode("utf-8"))
     except (OSError, KeyError, UnicodeError, ValueError, RecursionError) as error:
         raise ValueError(f"Language pack {name} does not parse: {error}") from None
     if any(not isinstance(value, str) for value in values.values()):

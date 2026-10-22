@@ -115,7 +115,7 @@ def _read(path: str) -> Package:
         if any(not n.startswith(prefix) for n in names):
             raise PackageError("plugin.toml must sit at the top of the package, beside the plugin's files.")
         try:
-            meta = tomllib.loads(archive.read(tomls[0]).decode("utf-8"))
+            meta = plugins.toml_loads(archive.read(tomls[0]).decode("utf-8"))
         except (UnicodeDecodeError, tomllib.TOMLDecodeError, RecursionError) as error:
             raise PackageError(f"plugin.toml does not parse: {error}") from None
         plugin_id = str(meta.get("id", ""))
@@ -392,7 +392,7 @@ def pack(folder: str, out: str, key=None) -> Package:
     """Writes a folder holding plugin.toml as a package, signed with the author's `key`, then reads it
     back as the app would. Hidden files and plugin.toml's `exclude` paths stay out."""
     source = Path(folder)
-    meta = tomllib.loads((source / "plugin.toml").read_text(encoding="utf-8"))
+    meta = plugins.toml_loads((source / "plugin.toml").read_text(encoding="utf-8"))
     exclude = meta.get("exclude", [])
     exclude = [PurePosixPath(e).parts for e in exclude if isinstance(e, str) and e] if isinstance(exclude, list) else []
 

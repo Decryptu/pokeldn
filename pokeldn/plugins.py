@@ -253,10 +253,54 @@ def enabled() -> list[str]:
     return [i for i in ids if isinstance(i, str)]
 
 
+MAX_TOML_NESTING = 64
+
+
+def _escaped(text: str, at: int) -> bool:
+    slashes = 0
+    while text[at - 1 - slashes] == "\\":
+        slashes += 1
+    return slashes % 2 == 1
+
+
+def _toml_nesting(text: str) -> int:
+    """-> the deepest run of open [ and { outside strings and comments."""
+    depth = deepest = i = 0
+    while i < len(text):
+        char = text[i]
+        if char == "#":
+            i = text.find("\n", i)
+            if i < 0:
+                break
+        elif char in "\"'":
+            quote = char * 3 if text.startswith(char * 3, i) else char
+            end = text.find(quote, i + len(quote))
+            while end > 0 and char == '"' and _escaped(text, end):
+                end = text.find(quote, end + 1)
+            if end < 0:
+                break
+            i = end + len(quote) - 1
+        elif char in "[{":
+            depth += 1
+            deepest = max(deepest, depth)
+        elif char in "]}":
+            depth -= 1
+        i += 1
+    return deepest
+
+
+def toml_loads(text: str) -> dict:
+    """tomllib.loads for a file a plugin supplies. Nesting deep enough to reach the recursion limit is
+    refused unparsed: a finalizer that runs at that depth raises as well."""
+    if _toml_nesting(text) > MAX_TOML_NESTING:
+        raise tomllib.TOMLDecodeError(f"nested deeper than {MAX_TOML_NESTING} arrays or tables")
+    return tomllib.loads(text)
+
+
 def _read_folder(path: Path) -> Plugin:
     plugin = Plugin(id=path.name, name=path.name, folder=path)
     try:
-        meta = tomllib.loads((path / "plugin.toml").read_text(encoding="utf-8"))
+        meta = toml_loads((path / "plugin.toml").read_text(encoding="utf-8"))
     except (OSError, ValueError, RecursionError) as error:
         plugin.error = f"plugin.toml: {error}"
         return plugin

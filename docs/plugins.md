@@ -94,6 +94,9 @@ module = "plugin"           # optional; the module holding register()
 exclude = ["tests"]         # optional; left out by pack_plugin.py
 ```
 
+A `plugin.toml` or language pack file nested deeper than 64 arrays or tables is refused unparsed
+(`pokeldn.plugins.toml_loads`); brackets inside strings and comments do not count.
+
 `register(api)` runs when the plugin is on, in the app and in every run it starts:
 
 ```python

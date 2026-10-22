@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 import textwrap
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -129,14 +130,30 @@ def test_an_unknown_radio_is_refused_before_any_ldn_call(isolated, monkeypatch):
         trio.run(open_factory)
 
 
-@pytest.mark.parametrize("toml", ['id = "badtoml"\napi = \n',
-                                  pytest.param("api = " + "[" * 5000 + "]" * 5000, id="deep")])
-def test_a_plugin_toml_that_does_not_parse_runs_no_code(isolated, tmp_path, monkeypatch, toml):
+@pytest.mark.parametrize("toml, error", [('id = "badtoml"\napi = \n', "plugin.toml: "),
+                                         pytest.param("api = " + "[" * 5000 + "]" * 5000,
+                                                      "plugin.toml: nested deeper than 64", id="deep")])
+def test_a_plugin_toml_that_does_not_parse_runs_no_code(isolated, tmp_path, monkeypatch, toml, error):
     folder = make(tmp_path, "badtoml", "raise SystemExit('imported')")
     (folder / "plugin.toml").write_text(toml)
     monkeypatch.setenv("POKELDN_PLUGINS", str(folder))
+    parsed, loads = [], tomllib.loads
+    monkeypatch.setattr(tomllib, "loads", lambda text: parsed.append(text) or loads(text))
     [plugin] = plugins.load()
-    assert plugin.error.startswith("plugin.toml:") and not plugin.loaded
+    assert plugin.error.startswith(error) and not plugin.loaded
+    assert bool(parsed) != ("nested" in error)    # the deep file never reaches the recursive parser
+
+
+def test_brackets_in_strings_and_comments_are_not_nesting():
+    """A deep refusal must not catch a real file: brackets quoted or commented out do not count."""
+    text = ('name = "' + "[" * 80 + '\\" ' + "{" * 80 + '"  # ' + "[" * 80 + "\n"
+            "pattern = '" + "[" * 80 + "'\n"
+            'notes = """\n' + "[" * 80 + '\n"""\n'
+            "raw = '''\n" + "{" * 80 + "\n'''\n"
+            "nested = " + "[" * 64 + "1" + "]" * 64 + "\n")
+    assert plugins.toml_loads(text) == tomllib.loads(text)
+    with pytest.raises(tomllib.TOMLDecodeError, match="nested deeper than 64"):
+        plugins.toml_loads("nested = " + "[" * 65 + "1" + "]" * 65)
 
 
 def test_a_plugin_in_the_data_folder_loads_only_once_enabled(isolated):
