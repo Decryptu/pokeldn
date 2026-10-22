@@ -1,14 +1,26 @@
-# pokeldn 0.33.2
+# pokeldn 0.34.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The Pokemon builder no longer refuses, now and then, a wild Pokemon asked for at a level inside its
-  encounter's range (a level-50 Chingling in Legends Arceus was refused about once in 2000 builds).
+- Sword/Shield: Max Raid (Join) joins a den raid the console hosts and fights at its side with a
+  chosen move; Dynamax Adventure (Join) joins a Max Lair adventure as the player's partner with a
+  rental Pokemon.
+- Tera Raid (Host): new reward templates for mints, battle items, berries and evolution items; the
+  training and treasure templates now hold their whole category.
+- Language packs now also show species, moves, natures, Dynamax Adventure rentals, raid partners'
+  Pokemon and FireRed gift species in the display language, and tooltips get the CJK font fallback.
+  `scripts/check_language_pack.py` lists what a pack leaves untranslated.
+- An ESP32-C6 running the Bluetooth firmware no longer restarts every 2 to 3 seconds when it is
+  powered from a charger.
+- Curly quotes and middle dots no longer show as wide gaps, and pressing Enter in a species picker
+  no longer crashes it.
+- Windows: the in-place update works for an app on a drive's root or a mapped drive.
 
-The radio firmware stays at 1.7.0 and the controller firmware at 1.3.0; no board update is needed.
+The radio firmware is now 1.7.1 for the ESP32-C6 and ESP32-S3 Bluetooth fix: the Board page offers
+the update. The controller firmware stays at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
