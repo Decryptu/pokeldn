@@ -2039,11 +2039,12 @@ def offer_edits(args):
 
 
 # The flags that completed a retail trade (docs/swsh_trade.md); later flags override them.
-_TRANSPORT = (
+_SEAT = (
     "--channels 1,6,11 --dwell 2.5 --listen-first 6 --station-sweep 0 --ack-seconds 12 --connect "
     "--no-variable-id --request-platform 9 --request-flags 0x09 --connect-station 0 --nat-flags 0 "
-    "--nat-location 0 --respond --respond-with theirs --join --answer-rtt --ack-reliable "
-    "--send-data 610000000a00 --sync-answers --send-protocol 0x7c --send-after 4 --send-count 1200 "
+    "--nat-location 0 --respond --respond-with theirs --join --answer-rtt --ack-reliable ")
+_TRANSPORT = (
+    _SEAT + "--send-data 610000000a00 --sync-answers --send-protocol 0x7c --send-after 4 --send-count 1200 "
     "--send-period 0.3 --send-seconds 350 --send2-data 60ea000012020801 "
     "--send2-trigger 60ea000012020801 --send2-protocol 0x80 --ack-snapshot")
 PRESETS = {
@@ -2054,6 +2055,12 @@ PRESETS = {
               "--box-period 0.35 --confirm-commands 0,1,2,3,0,1,2,3,0,1,2,3 "
               "--confirm-final-delta 9 --abort-on-stall 15 --hold 240 --send-seconds 0 "
               "--send-count 0 --answer-migration --update-mesh --leave-with-host"),
+    # The flags that seated a retail Max Raid and Max Lair guest (docs/swsh_raid.md).
+    "raid": (_SEAT + "--update-mesh --ack-snapshot --send-snapshot live --snapshot-port 1 "
+             "--offer-slot 1 --leave-with-host --scene 60006 --scans 20 --raid-join --raid-ready 3 "
+             "--hold 400"),
+    "lair": (_SEAT + "--update-mesh --ack-snapshot --send-snapshot live --snapshot-port 1 "
+             "--offer-slot 1 --leave-with-host --scene 50000 --scans 40 --lair-join --hold 1800"),
 }
 
 
@@ -2062,7 +2069,8 @@ def build_parser():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--preset", choices=sorted(PRESETS),
                     help="the tested flag set: 'capture' records the console's party snapshot, "
-                         "'trade' needs --send-snapshot")
+                         "'trade' needs --send-snapshot, 'raid' a Max Raid den guest, 'lair' a "
+                         "Dynamax Adventure guest")
     ap.add_argument("--comm-id", default=None, help="hex; defaults to Sword's 0x0100abf008968000")
     ap.add_argument("--keys", default=None)
     ap.add_argument("--phy", default="auto")

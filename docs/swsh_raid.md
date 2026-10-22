@@ -9,8 +9,9 @@ nav_order: 5
 A local Max Raid Battle is a Sword/Shield session of up to four stations on LDN scene 60006. The
 host opens it from a den with "Invite Others"; a guest finds it in its Y-Comm list and joins with
 "Start Battle" over the host's name. The lobby runs on the reliable broadcast protocol 0x80, the
-battle on 0x7C. `bin/swsh_connect.py --scene 60006 --raid-join --offer-slot N` takes a guest seat
-in a console's lobby.
+battle on 0x7C. `bin/swsh_connect.py --preset raid` takes a guest seat in a console's lobby, readies and fights
+with the chosen Pokemon (`--offer-file`) and move (`--raid-move`); the app's Max Raid (Join) tool runs
+it.
 
 ## The network
 
@@ -277,8 +278,8 @@ Den messages (id 2000) sent into a Max Lair lobby are acknowledged and seat no o
 - after the guest's Pokemon fainted, the host sends type 0x04 with data `01 00 ff ff ff ff`; the
   guest answers with an 88-byte action whose entry 2 is zero.
 
-`pokeldn/swsh/lair.py` is the guest's side of both holders; `bin/swsh_connect.py --lair-join` seats as
-player 1 and takes the first offer place the host left (rentals go in turns, the host's first). A
+`pokeldn/swsh/lair.py` is the guest's side of both holders; `bin/swsh_connect.py --preset lair` (the
+app's Dynamax Adventure (Join)) seats as player 1 and takes the first offer place the host left (rentals go in turns, the host's first). A
 rental built by `lair.rental_pk8` is the recorded rental's record with the row's species, form,
 level 65 and moves, four IVs of 31 and the others random, a random nature, ability slot 1 or 2,
 gender, PID and encryption constant; OT Scientist, Poke Ball, met at level 65, party stats with no
