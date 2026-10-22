@@ -10,10 +10,23 @@ from pokeldn.app.i18n import t as tr
 
 TEMPLATES = {
     "sv": (
-        ("training", tr('rewards.training_bundle_514868', 'Training bundle'), (1128, 50, 53, 795, 796, 1606)),
+        ("training", tr('rewards.training_bundle_514868', 'Training bundle'),
+         (1128, 50, 45, 46, 47, 49, 52, 48) + tuple(range(169, 175)) + (51, 53, 795, 796, 645, 1606)),
+        ("mints", tr('rewards.mint_bundle_457074', 'Mint bundle'), tuple(range(1231, 1252))),
+        ("battle", tr('rewards.battle_item_bundle_6c7167', 'Battle item bundle'),
+         (214, 219, 220, 232, 234) + tuple(range(265, 274)) + (275, 281, 287, 297, 326, 538, 540, 541, 542, 547,
+          639, 640, 650) + tuple(range(1118, 1124)) + tuple(range(1880, 1887))),
+        # Every held berry but the EV-lowering ones, Oran and the six that cure one status.
+        ("berries", tr('rewards.berry_bundle_985a0f', 'Berry bundle'),
+         (154, 157, 158) + tuple(range(159, 164)) + tuple(range(184, 213)) + (686, 687, 688)),
+        ("evolution", tr('rewards.evolution_item_bundle_60294c', 'Evolution item bundle'),
+         tuple(range(80, 86)) + tuple(range(107, 111)) + (221, 233, 235, 252) + tuple(range(321, 328))
+         + (537, 849) + tuple(range(1109, 1118))
+         + (1253, 1254, 1582, 1592, 1861, 2137, 2344, 2402, 2403, 2404, 2482)),
         ("shards", tr('rewards.tera_shard_bundle_6365de', 'Tera shard bundle'), tuple(range(1862, 1880)) + (2549,)),
         ("herba", tr('rewards.herba_mystica_bundle_2f20ef', 'Herba Mystica bundle'), (1904, 1905, 1906, 1907, 1908)),
-        ("treasure", tr('rewards.treasure_bundle_c68d29', 'Treasure bundle'), (92, 581, 91, 583)),
+        ("treasure", tr('rewards.treasure_bundle_c68d29', 'Treasure bundle'),
+         (86, 87, 88, 89, 90, 91, 92, 106, 580, 581, 582, 583)),
         ("balls", tr('rewards.ball_bundle_5f0879', 'Ball bundle'), (2, 3, 6, 7, 9, 10, 11, 12, 13, 15)),
     ),
 }

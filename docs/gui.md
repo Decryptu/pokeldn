@@ -281,9 +281,9 @@ offers "Let it be caught again" (`--raid-catch-normal`). Folding the card revert
 
 ## Hosted raid rewards
 
-The Rewards card offers templates (training items, Tera Shards, Herba Mystica, treasure, balls) with a
-shared quantity of 1 to 999; editing switches to Custom rewards, up to 45 rows. Raid's own rewards
-clears the overrides ([Hosting](sv_raid.md#hosting); `gui/views/rewards.py`).
+The Rewards card offers templates (training items, mints, battle items, berries, evolution items, Tera
+Shards, Herba Mystica, treasure, balls) with a shared quantity of 1 to 999; editing switches to Custom
+rewards, up to 45 rows. Raid's own rewards clears the overrides ([Hosting](sv_raid.md#hosting); `gui/views/rewards.py`).
 
 ## Raid NPC partners
 
