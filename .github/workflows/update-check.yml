@@ -8,6 +8,9 @@ on:
       release_run:
         description: "The id of a Release workflow run whose archives to test"
         required: true
+      from_run:
+        description: "A Release run whose older archives are installed first (the from cases)"
+        required: false
 
 permissions:
   contents: read
@@ -62,6 +65,28 @@ jobs:
             flags: --busy
             drive: P
             user: true
+          # A network share mapped to a letter, the share on this machine.
+          - name: a mapped network drive
+            folder: M:\Games
+            flags: --busy
+            share: M
+          # The older release's own update code installs the new one, as a player's update does.
+          - name: from the older release, another drive's root
+            folder: P:\.
+            flags: --busy --from old\pokeldn-windows-x64.zip
+            drive: P
+            from: true
+          - name: from the older release, a folder on another drive
+            folder: P:\Games
+            flags: --busy --from old\pokeldn-windows-x64.zip
+            drive: P
+            from: true
+          - name: from the older release, another drive's root, standard user
+            folder: P:\.
+            flags: --busy --from old\pokeldn-windows-x64.zip
+            drive: P
+            user: true
+            from: true
     name: windows (${{ matrix.name }})
     timeout-minutes: 30
     steps:
@@ -77,6 +102,20 @@ jobs:
           name: pokeldn-windows-x64.zip
           run-id: ${{ inputs.release_run }}
           github-token: ${{ github.token }}
+      - if: matrix.from
+        uses: actions/download-artifact@v8
+        with:
+          name: pokeldn-windows-x64.zip
+          path: old
+          run-id: ${{ inputs.from_run }}
+          github-token: ${{ github.token }}
+      - if: matrix.share
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force C:\pokeldn-share | Out-Null
+          New-SmbShare -Name pokeldn -Path C:\pokeldn-share -FullAccess Everyone | Out-Null
+          net use ${{ matrix.share }}: \\localhost\pokeldn
+          New-Item -ItemType Directory -Force "${{ matrix.folder }}"
       - if: matrix.drive
         shell: pwsh
         run: |

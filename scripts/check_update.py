@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Update a packed app in place from a release served on 127.0.0.1, end to end (docs/gui.md, Updates).
 
-    python scripts/check_update.py ARCHIVE FOLDER [--admin] [--busy]
+    python scripts/check_update.py ARCHIVE FOLDER [--admin] [--busy] [--from OLD_ARCHIVE]
 
 Installs the app from ARCHIVE (a release workflow's pokeldn-*.zip or .tar.gz) in FOLDER, serves the
 same app with a marker file as release 99.0.0, and runs the installed app's own update code through
 `--run`; the dialog's Update now calls the same functions. Passes when the marker is in FOLDER, the
 new app has read the outcome, and no `.old` copy is left. `--admin` takes the Windows administrator
-path (POKELDN_UPDATE_ADMIN); `--busy` keeps a second process running from the installed folder.
+path (POKELDN_UPDATE_ADMIN); `--busy` keeps a second process running from the installed folder;
+`--from` installs an older release's archive, whose own update code then installs ARCHIVE.
 Needs a desktop session (xvfb-run on Linux): the helper and the new app open windows.
 """
 import argparse
@@ -87,13 +88,16 @@ def main() -> int:
     parser.add_argument("folder", type=Path)
     parser.add_argument("--admin", action="store_true")
     parser.add_argument("--busy", action="store_true")
+    parser.add_argument("--from", dest="old", type=Path)
     args = parser.parse_args()
 
     scratch = Path(tempfile.mkdtemp(prefix="pokeldn-update-check-"))
     source = unpack(args.archive.resolve(), scratch / "source")
-    target = args.folder.resolve() / "pokeldn"
+    # abspath, not resolve(): resolve() turns a mapped or subst letter into the folder behind it.
+    target = Path(os.path.abspath(args.folder)) / "pokeldn"
     shutil.rmtree(target, ignore_errors=True)
-    shutil.copytree(source, target, symlinks=True)
+    installed = unpack(args.old.resolve(), scratch / "old") if args.old else source
+    shutil.copytree(installed, target, symlinks=True)
     (source / MARKER).write_text("99.0.0")
     files = scratch / "serve"
     files.mkdir()
