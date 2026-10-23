@@ -308,6 +308,18 @@ def test_the_helper_never_runs_inside_the_folder_it_renames(tmp_path, monkeypatc
     assert target.resolve() not in (helper_cwd, *helper_cwd.parents)
 
 
+def test_the_administrators_helper_gets_the_folder_behind_a_drive_letter(tmp_path, monkeypatch):
+    # A subst or mapped letter exists only in the user's logon session, not the elevated one; a
+    # symlink stands in for the letter here.
+    real = packed_app(tmp_path / "real", "win32", "0.1.0")
+    (tmp_path / "S").symlink_to(tmp_path / "real")
+    new = packed_app(tmp_path / "data/update/new", "win32", "9.0.0")
+    started = []
+    monkeypatch.setattr(update, "_run_as_admin", lambda exe, args, cwd, folder: started.append(args))
+    update.start_swap(new, tmp_path / "S" / real.name, "9.0.0", "win32", admin=True)
+    assert started[0][2] == str(real.resolve())
+
+
 @pytest.mark.parametrize("system", SYSTEMS)
 @pytest.mark.parametrize("limit", ["bytes", "files", "file"])
 def test_update_archives_are_bounded_before_extraction(tmp_path, monkeypatch, system, limit):

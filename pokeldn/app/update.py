@@ -383,6 +383,9 @@ def start_swap(new: Path, target: Path, version: str, system: str = sys.platform
     """Starts the new app as the helper that replaces target once this process (os.getpid()) exits."""
     args = ["--apply-update", str(new), str(target), str(os.getpid()), version]
     if admin:
+        # An elevated process sees no subst or mapped drive letter of the user's session: pass the
+        # folder the letter stands for (docs/gui.md, Updates).
+        args[2] = str(target.resolve())
         _run_as_admin(executable_in(new, system), args, new.parent, target.parent)
         return
     # Launched from Explorer, this app's working folder is target: inherited, Windows refuses the rename.

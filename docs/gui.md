@@ -386,7 +386,7 @@ detects corruption and does not authenticate the release.
 | no archive or `SHA256SUMS`, a source checkout, App Translocation, an unwritable folder (macOS, Linux) | Download only |
 | Windows, `C:\Program Files` | Update now behind UAC (`ShellExecuteExW` `runas`) |
 | Windows, the root of another drive (`D:\pokeldn`) | Update now without UAC: the swap only adds folders beside the app, which a volume's root allows users |
-| Windows, a mapped or `subst` drive | the drive letter is kept; the helper finds the old app's processes under either spelling |
+| Windows, a mapped or `subst` drive | the drive letter is kept; the helper finds the old app's processes under either spelling; behind UAC the helper gets the folder the letter stands for, since an elevated process sees no letter the user's session mapped |
 | a session, flash or cleanup running | asks to finish first |
 
 `scripts/check_update.py ARCHIVE FOLDER` tests a packed app's update against 127.0.0.1;
