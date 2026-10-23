@@ -14,7 +14,7 @@ from gui import board
 from gui.app import NO_FIRMWARE, PORT_BUSY, PORT_DENIED
 from pokeldn.pad import service
 from pokeldn.app import android, ios, runner
-from pokeldn.app.paths import SESSION
+from pokeldn.app.paths import LOGS, SESSION
 from gui import drop, theme as t
 from gui.views.widgets import CodeBlock, Log, PixelActivity
 
@@ -64,6 +64,7 @@ class BoardView:
         self.pad: dict | None = None    # the S3 controller's status over Bluetooth
         self.pad_error = ""
         self.pad_checking = False
+        self.reporting = False
         self.list = ft.ListView(spacing=4, padding=8, expand=True)
         self.detail = ft.Column(spacing=t.GAP)
         self.log = Log(app.page, tr('boards.checks_and_installs_show_their_output_here_effc3a', 'Checks and installs show their output here.'),
@@ -245,6 +246,8 @@ class BoardView:
                        if status.state == "denied" else
                        [t.secondary_button(tr('boards.android_settings', 'Open Settings'), lambda e: android.open_settings(), "gear")])
             rows.append(ft.Row(actions, alignment=ft.MainAxisAlignment.END))
+        elif not ios.active():
+            rows.append(ft.Row([self.report_button()], alignment=ft.MainAxisAlignment.END))
         return t.surface(ft.Container(ft.Column(rows, spacing=14), padding=ft.Padding(18, 16, 18, 18)))
 
     def header(self, f: Facts) -> ft.Control:
@@ -367,6 +370,8 @@ class BoardView:
                                                                  tr('boards.save_the_name_4a4b36', 'Save the name'))], spacing=4)))
             rows.append(ft.Row([t.secondary_button(tr('boards.blink_the_led_8c40f1', 'Blink the LED'), self._blink, "lightbulb",
                                                    disabled=self.app.busy)]))
+        if f.key != CONTROLLER and not android.active() and not ios.active():
+            rows.append(ft.Row([self.report_button()]))
         if f.gift:
             rows.append(info(tr('boards.kept_gift_243af7', 'Kept gift'), ft.Row([
                 t.text(tr('boards.sent_on_its_own_from_any_usb_charger_14f369', 'Sent on its own from any USB charger'), 13),
@@ -402,6 +407,52 @@ class BoardView:
 
     def _blink(self, e) -> None:
         self._identify(e, blink=True)
+
+    def report_button(self) -> ft.Control:
+        return t.secondary_button(tr('boards.making_a_report_f51b35', 'Making a report...') if self.reporting else
+                                  tr('boards.copy_a_report_for_help_f03a3b', 'Copy a report for help'), self._report, "copy",
+                                  disabled=self.reporting or bool(self.installing))
+
+    def _report(self, e) -> None:
+        """Everything the system and the board say about it, copied and saved for a help request
+        (gui/board_report.py, docs/gui.md A board report)."""
+        from gui import board_report
+        device = self.selected if self.selected and self.selected != CONTROLLER else ""
+        running = bool(self.app.process and self.app.process.running)
+        identity, activity = self.app.identities.get(device), self.log.text()
+        self.reporting = True
+        self.log.add(f'[app] Making a board report{" for " + device + "; the board may restart" if device and not running else ""}.')
+        self.render()
+        self.control.update()
+
+        def work():
+            path = ""
+            try:
+                text = board_report.report(device, probe=bool(device) and not running,
+                                           identity=identity, activity=activity)
+                try:
+                    LOGS.mkdir(parents=True, exist_ok=True)
+                    target = LOGS / time.strftime("board-report-%Y%m%d-%H%M%S.txt")
+                    target.write_text(text, encoding="utf-8")
+                    path = str(target)
+                except OSError:
+                    pass
+                self.app.page.run_task(self.app.copy, text)
+                self.log.add('[app] The board report is copied: paste it into your message.'
+                             + (f' A copy is in {path}.' if path else ''))
+            except Exception as error:   # never leave the button stuck
+                self.log.add(f'[app] The board report failed: {error}')
+            finally:
+                self.reporting = False
+                self.app.identities.pop(device, None)    # the probes may have restarted it
+
+                def done():
+                    self.render()
+                    self.control.update()
+                    self._check_selected()
+                self.app.ui(done)
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _remove_gift(self, e) -> None:
         if self.app.busy:

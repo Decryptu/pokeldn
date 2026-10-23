@@ -236,6 +236,24 @@ The shipped version is the ESP-IDF app descriptor's `version` (magic `0xABCD5432
 merged image). An S3 running the Controller firmware gets the download command over Bluetooth; the app
 waits 20 s for the loader port and flashes with `--from-loader`.
 
+A board kept as a [portable beacon](hardware_esp32.md#portable-beacon) shows Kept gift with Remove.
+
+### A board report
+
+Copy a report for help, on the Board page with or without a board selected, copies a plain-text report
+and saves it as `logs/board-report-DATE.txt` in the data folder (`gui/board_report.py`). Making one
+opens the selected port, so the board may restart; during a run it lists the ports only.
+
+| section | what it holds |
+|---|---|
+| This computer | app version, packaged or source, system, Python, pyserial and esptool versions |
+| USB serial ports | every port pyserial lists, with its USB ids, serial number, location and `hwid` |
+| Drivers | Windows bridges with no driver, Linux bridges with no tty, controller boards on USB |
+| Opening the port | the open's error with `errno`/`winerror`, or the bytes read in the first 2 s |
+| pokeldn firmware | HELLO and STATUS, or why none answered |
+| ESP32 bootloader | esptool's chip, description, features, crystal, MAC and USB-Serial/JTAG mode |
+| Activity | the page's last 80 lines |
+
 ## The controller
 
 The Control page presses a Switch's buttons through the Controller firmware
