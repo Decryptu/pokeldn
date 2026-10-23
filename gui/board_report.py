@@ -1,5 +1,5 @@
 """A plain-text report of this computer's USB serial ports and one board, for a player to send when a
-board does not work (docs/gui.md, A board report). Every probe is caught: a report always comes back."""
+board does not work (docs/gui.md, Board details). Every probe is caught: a report always comes back."""
 import os
 import platform
 import sys

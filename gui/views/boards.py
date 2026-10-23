@@ -409,19 +409,19 @@ class BoardView:
         self._identify(e, blink=True)
 
     def report_button(self) -> ft.Control:
-        return t.secondary_button(tr('boards.making_a_report_f51b35', 'Making a report...') if self.reporting else
-                                  tr('boards.copy_a_report_for_help_f03a3b', 'Copy a report for help'), self._report, "copy",
+        return t.secondary_button(tr('boards.copying_ad61bf', 'Copying...') if self.reporting else
+                                  tr('boards.copy_board_details_e0d595', 'Copy board details'), self._report, "copy",
                                   disabled=self.reporting or bool(self.installing))
 
     def _report(self, e) -> None:
         """Everything the system and the board say about it, copied and saved for a help request
-        (gui/board_report.py, docs/gui.md A board report)."""
+        (gui/board_report.py, docs/gui.md Board details)."""
         from gui import board_report
         device = self.selected if self.selected and self.selected != CONTROLLER else ""
         running = bool(self.app.process and self.app.process.running)
         identity, activity = self.app.identities.get(device), self.log.text()
         self.reporting = True
-        self.log.add(f'[app] Making a board report{" for " + device + "; the board may restart" if device and not running else ""}.')
+        self.log.add(f'[app] Gathering board details{" for " + device + "; the board may restart" if device and not running else ""}.')
         self.render()
         self.control.update()
 
@@ -438,10 +438,10 @@ class BoardView:
                 except OSError:
                     pass
                 self.app.page.run_task(self.app.copy, text)
-                self.log.add('[app] The board report is copied: paste it into your message.'
+                self.log.add('[app] Board details copied: paste them into your message.'
                              + (f' A copy is in {path}.' if path else ''))
             except Exception as error:   # never leave the button stuck
-                self.log.add(f'[app] The board report failed: {error}')
+                self.log.add(f'[app] Could not gather board details: {error}')
             finally:
                 self.reporting = False
                 self.app.identities.pop(device, None)    # the probes may have restarted it

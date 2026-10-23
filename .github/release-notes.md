@@ -1,17 +1,22 @@
-# pokeldn 0.35.1
+# pokeldn 0.36.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Windows: the in-place update now also works with the app on a `subst` drive or a mapped network
-  drive when Windows has to ask for administrator permission.
-- Windows: an app at the root of a drive (`D:\pokeldn`) updates itself without asking for
-  administrator permission since 0.34.0. A copy older than 0.34.0 there stops with "Windows did not
-  give pokeldn permission"; download this version by hand once, and later updates install in place.
+- Sword/Shield Mystery Gift: a new switch, Keep it on the board, saves the gift on the board. Powered
+  from any USB charger, the board then hands the gift to every Sword and Shield nearby with no
+  computer, until the app opens it again. The Board page shows a kept gift and removes it. This is
+  new and not yet tried with a console: tell us how it goes.
+- Board page: Copy board details puts everything the app can learn about your ports and board
+  on the clipboard (USB ids, drivers, what the board answers, the chip esptool finds). Paste it when
+  you ask for help with a board that does not work.
+- Plugins: API 1.10 adds offer edits. A plugin can change the Pokemon a built-in Trade tool sends;
+  PKHeX's legality check still runs last and refuses an illegal result.
 
-The radio firmware stays at 1.7.1 and the controller firmware at 1.3.0; no board update is needed.
+The radio firmware is now 1.8.0; update the board from the Board page to keep a gift on it. The
+controller firmware stays at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.

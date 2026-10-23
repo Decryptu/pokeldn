@@ -238,10 +238,10 @@ waits 20 s for the loader port and flashes with `--from-loader`.
 
 A board kept as a [portable beacon](hardware_esp32.md#portable-beacon) shows Kept gift with Remove.
 
-### A board report
+### Board details
 
-Copy a report for help, on the Board page with or without a board selected, copies a plain-text report
-and saves it as `logs/board-report-DATE.txt` in the data folder (`gui/board_report.py`). Making one
+Copy board details, on the Board page with or without a board selected, copies the details as plain text
+and saves them as `logs/board-report-DATE.txt` in the data folder (`gui/board_report.py`). Copying them
 opens the selected port, so the board may restart; during a run it lists the ports only.
 
 | section | what it holds |
