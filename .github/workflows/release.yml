@@ -183,11 +183,14 @@ jobs:
           flutter-version: ${{ steps.flet.outputs.flutter }}
           channel: stable
           cache: true
+      # Without recommends: 251 MB with them, fetched at a few kB/s from a slow Azure mirror, held the job for hours.
       - name: Flutter's Linux build dependencies
         if: runner.os == 'Linux'
+        timeout-minutes: 20
         run: |
           sudo apt-get update
-          sudo apt-get install -y $(python -c "import json; print(' '.join(json.load(open('flet.json'))['linux_dependencies']))")
+          sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
+            $(python -c "import json; print(' '.join(json.load(open('flet.json'))['linux_dependencies']))")
       - name: Build the Flet client
         if: steps.client.outputs.cache-hit != 'true'
         run: python scripts/build_client.py
