@@ -433,7 +433,9 @@ asks for a 15 ms interval (again once the central subscribes; `ble_itvl_us` in S
 
 The classic ESP32 (Bluetooth 4.2, no 2M PHY) benches 28.1 KB/s and completes a FireRed host trade
 but is too slow for a FireRed joiner (2318-0013). The XIAO ESP32C6 benches 33.6 KB/s and completes a
-FireRed joiner trade. The C6 BLE image fills the 1 MB app partition to within 13 KB.
+FireRed joiner trade. Every radio build takes ESP-IDF's single-app-large table (a 1500 KB factory
+app at 0x10000; nvs at 0x9000 and phy_init at 0xf000 as before); the C6 BLE image (0xfd000 bytes)
+leaves 488 KB of it.
 
 On macOS, bleak aborts (SIGABRT) in a process whose responsible app has no Bluetooth grant; a script
 started with `open -n -a Terminal FILE.command` runs under Terminal's.
