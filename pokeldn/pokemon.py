@@ -388,13 +388,28 @@ def offer_bytes(game, data):
 
 
 def prepare_offer(game, data, *, fresh=False, fields=None, transform=None):
-    """-> `data` as a host offers it, through the offer check every offer takes: `transform`, PKHeX's check
-    (`prepare`) and the game's offer form. A Mystery Gift made during the trade takes it too
-    (pokeldn.receiver_gift)."""
+    """-> `data` as a host offers it, through the offer check every offer takes: `transform`, the
+    plugins' offer edits, PKHeX's check (`prepare`) and the game's offer form. A Mystery Gift made
+    during the trade takes it too (pokeldn.receiver_gift)."""
     data = entity_bytes(game, data)
     if transform is not None:
         data = entity_bytes(game, transform(data))
-    return offer_bytes(game, prepare(game, data, fresh=fresh, fields=fields))
+    return offer_bytes(game, prepare(game, plugin_edits(game, data), fresh=fresh, fields=fields))
+
+
+def plugin_edits(game, data):
+    """`data` through each loaded plugin's offer edit for `game` (docs/plugins.md, Offer edits)."""
+    from pokeldn import plugins
+    for edit in plugins.offer_edits(game):
+        try:
+            out = edit.edit(bytes(data))
+        except Exception as error:
+            raise BuilderError(f"The plugin {edit.label} could not edit the Pokemon: {error}") from error
+        if not isinstance(out, (bytes, bytearray)) or not out:
+            raise BuilderError(f"The plugin {edit.label} returned no Pokemon to offer.")
+        data = entity_bytes(game, out)
+        print(f"[pokemon] the plugin {edit.label} edited the offer", flush=True)
+    return data
 
 
 def prepare_file(game, path, *, fresh=False, fields=None, transform=None):

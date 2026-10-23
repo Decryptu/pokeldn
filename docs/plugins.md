@@ -270,6 +270,35 @@ bootstrap bytes and the two partners' 0x158-byte records.
 Slots: 0 the program's Pokemon, 1 the boss, 2 the console, 3 and 4 the partners. An exception stops
 serving and the console fights its own battle.
 
+### Offer edits (1.10)
+
+`api.add_offer_edit(game, edit, label="")` runs `edit(record) -> record` on every Pokemon a built-in
+launcher of `game` (`frlg`, `lgpe`, `swsh`, `bdsp`, `pla`, `sv`, `za`) prepares from a file: trade
+offers, queued offers, a raid partner, a Mystery Gift Pokemon remade for its receiver. The record is
+the file's bytes as PKHeX reads them (`pokeldn.pokemon.RECORD_SIZES`, encrypted or not);
+`SERVICE.check(game, path)` reads one. The edit returns the record to offer.
+
+```python
+def rename(record):              # FireRed: the nickname at +0x08 is outside the checksum
+    out = bytearray(record)
+    out[8:18] = bytes((0xC6, 0xBE, 0xC8)) + b"\xff" * 7      # "LDN"
+    return bytes(out)
+
+def register(api):
+    api.add_offer_edit("frlg", rename, "Renamer")
+```
+
+| step | |
+|---|---|
+| 1 | the launcher's own edits (offer options, a fresh PID, a game's format) |
+| 2 | each plugin's offer edit, in load order; the run logs `the plugin LABEL edited the offer` |
+| 3 | PKHeX's legality check |
+
+PKHeX's legality check is the last step of every offer, and no plugin turns it off: an edit whose
+result PKHeX refuses stops the run with PKHeX's reason. An edit that raises, or returns no bytes,
+stops it with the plugin's label. Edits run when the launcher reads a file, and again on a Mystery
+Gift Pokemon remade during the trade.
+
 ### Packing, testing, signing and updates
 
 ```bash
@@ -397,6 +426,7 @@ major still served is listed in `DEPRECATED` with its last release; one dropped 
 | 1.7 | `pokeldn.ldn.network`, `pokeldn.ldn.radio_lost`, `library` and `api.library`, `pokeldn.popup.choose`, `pokeldn.progress`, the `{keys}` token |
 | 1.8 | `pokeldn.panel`, `library_sort` |
 | 1.9 | language-pack messages, templates, terms, tool help, documents and font preference |
+| 1.10 | `add_offer_edit` |
 
 ## The API, version 1
 
@@ -406,8 +436,9 @@ major still served is listed in `DEPRECATED` with its last release; one dropped 
 | `api.add_game(game, icon="")` | a game section |
 | `api.add_radio(scheme, install, label="")` | a radio |
 | `api.add_battle_server(game, name, factory, label="")` | a raid battle server (1.6) |
+| `api.add_offer_edit(game, edit, label="")` | an edit to every offer of a built-in launcher, before PKHeX's check (1.10, [Offer edits](#offer-edits-110)) |
 | `api.folder` | the plugin's folder, or None for a package |
-| `api.version`, `api.level` | the app's API, `1` and `8` |
+| `api.version`, `api.level` | the app's API, `1` and `10` |
 | `api.data` | the kept data folder (1.1) |
 | `pokeldn.plugins.data_folder(plugin_id)` | the same from a script (1.1) |
 | `api.library`, `pokeldn.plugins.library_folder(plugin_id)` | the library folder (1.7, [A library](#a-library-17)) |

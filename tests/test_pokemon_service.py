@@ -768,3 +768,57 @@ def test_a_game_name_from_module_data_reads_in_the_display_language(service, dis
         ["驹刀小兵", "钢", "水之波动", "冷静"]
     assert localization.translate("Moltres, level 70") == "火焰鸟，70 级"
     assert localization.translate("Return to the menu") == "Return to the menu"
+
+
+OFFER_EDIT_PLUGIN = '''
+SEEN = []
+
+def rename(record):
+    """Gen 3 nickname at +0x08, outside the checksummed substructures: "LDN", then the terminator."""
+    out = bytearray(record)
+    out[8:18] = bytes((0xC6, 0xBE, 0xC8)) + b"\\xff" * 7
+    return bytes(out)
+
+def break_checksum(record):
+    out = bytearray(record)
+    out[0x1C] ^= 1
+    return bytes(out)
+
+def register(api):
+    import os
+    for game in ("frlg", "lgpe", "swsh", "bdsp", "pla", "sv", "za"):
+        api.add_offer_edit(game, lambda record, game=game: SEEN.append((game, len(record))) or record)
+    api.add_offer_edit("frlg", break_checksum if os.environ.get("BREAK") else rename, "Renamer")
+'''
+
+
+@pytest.fixture
+def offer_plugin(tmp_path, monkeypatch):
+    from pokeldn import plugins
+    folder = tmp_path / "offer-edit"
+    folder.mkdir()
+    (folder / "plugin.toml").write_text('id = "offer-edit"\nname = "Offer edit"\napi = "1.10"\n')
+    (folder / "plugin.py").write_text(OFFER_EDIT_PLUGIN)
+    monkeypatch.setenv("POKELDN_PLUGINS", str(folder))
+    plugins._reset()
+    yield lambda: sys.modules["pokeldn_plugin_offer-edit"]
+    plugins._reset()
+
+
+@pytest.mark.parametrize("game", FORMATS)
+def test_a_plugin_edits_every_games_offer_before_pkhex_checks_it(service, offer_plugin, game, capsys):
+    """Through `prepare_file`, the step every launcher's offer takes: each game's edit sees the record,
+    and FireRed's rename reaches the bytes the launcher sends."""
+    built = service.make(game, 25, TRAINER)
+    offer = Path(pokemon.prepare_file(game, built["file"])).read_bytes()
+    assert offer_plugin().SEEN == [(game, len(pokemon.entity_bytes(game, Path(built["file"]).read_bytes())))]
+    if game == "frlg":
+        assert service.check_bytes("frlg", offer)["nickname"] == "LDN"
+        assert "the plugin Renamer edited the offer" in capsys.readouterr().out
+
+
+def test_a_plugin_edit_that_makes_the_pokemon_illegal_is_refused(service, offer_plugin, monkeypatch):
+    monkeypatch.setenv("BREAK", "1")
+    built = service.make("frlg", 25, TRAINER)
+    with pytest.raises(pokemon.BuilderError, match="(?i)checksum"):
+        pokemon.prepare_file("frlg", built["file"])

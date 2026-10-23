@@ -31,7 +31,7 @@ def __getattr__(name):
 
 # docs/plugins.md, Versions: a removal or a change of meaning raises the major, an addition the level.
 API_VERSION = 1                    # the major this pokeldn serves
-API_LEVEL = 9                      # 1.9 language-pack resources; docs/plugins.md, Versions
+API_LEVEL = 10                     # 1.10 offer edits; docs/plugins.md, Versions
 API_OLDEST = 1                     # an older major is refused
 DEPRECATED: dict[int, str] = {}    # a served major due for removal -> the release that drops it
 ENTRY_POINT_GROUP = "pokeldn.plugins"
@@ -62,6 +62,7 @@ class Plugin:
     games: list = field(default_factory=list)
     radios: list = field(default_factory=list)   # scheme names
     battle_servers: list = field(default_factory=list)   # (game, name)
+    offer_edits: list = field(default_factory=list)      # game keys
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,14 @@ class BattleServer:
     name: str
     label: str
     factory: Callable      # (bootstrap, partners) -> a server (docs/plugins.md, A battle server)
+    plugin: str = ""
+
+
+@dataclass(frozen=True)
+class OfferEdit:
+    game: str
+    label: str
+    edit: Callable[[bytes], bytes]   # a record PKHeX reads -> the record to offer (docs/plugins.md, Offer edits)
     plugin: str = ""
 
 
@@ -148,6 +157,17 @@ class API:
         _battle_servers[(game, name)] = BattleServer(game, name, label or name, factory, self.plugin.id)
         self.plugin.battle_servers.append((game, name))
 
+    def add_offer_edit(self, game: str, edit: Callable, label: str = "") -> None:
+        """Runs `edit(record) -> record` on every Pokemon a built-in launcher of `game` offers, after
+        the launcher's own edits and before PKHeX's legality check, which still refuses an illegal
+        result (1.10)."""
+        if game not in OFFER_GAMES:
+            raise ValueError(f"no game {game!r} takes an offer edit")
+        if not callable(edit):
+            raise ValueError("an offer edit is a function from bytes to bytes")
+        _offer_edits.append(OfferEdit(game, label or self.plugin.name, edit, self.plugin.id))
+        self.plugin.offer_edits.append(game)
+
 
 def parse_api(value) -> tuple | None:
     """plugin.toml's api: 1 is (1, 0), "1.1" is (1, 1)."""
@@ -183,6 +203,8 @@ _loaded: dict[str, Plugin] = {}
 _radios: dict[str, Radio] = {}
 _battle_servers: dict[tuple, BattleServer] = {}
 BATTLE_GAMES = ("sv",)
+_offer_edits: list[OfferEdit] = []
+OFFER_GAMES = ("frlg", "lgpe", "swsh", "bdsp", "pla", "sv", "za")
 _done = False
 generation = 0          # counts reloads, so a view knows its catalog is stale
 
@@ -409,7 +431,7 @@ def load() -> list[Plugin]:
                 plugin.error = f"its library {plugin.library!r} is already the plugin {owner!r}'s"
         if plugin.error:          # plugin.toml did not parse, or names another's library
             continue
-        radios_before, servers_before = dict(_radios), dict(_battle_servers)
+        radios_before, servers_before, edits_before = dict(_radios), dict(_battle_servers), list(_offer_edits)
         if watch:
             _marker().write_text(plugin.id, encoding="utf-8")
         try:
@@ -425,6 +447,8 @@ def load() -> list[Plugin]:
             plugin.battle_servers.clear()
             _battle_servers.clear()
             _battle_servers.update(servers_before)
+            plugin.offer_edits.clear()
+            _offer_edits[:] = edits_before
         finally:
             if watch:
                 _marker().unlink(missing_ok=True)
@@ -522,6 +546,12 @@ def battle_server(game: str, name: str = "") -> BattleServer | None:
     return found[0] if found else None
 
 
+def offer_edits(game: str) -> list[OfferEdit]:
+    """The loaded plugins' offer edits for `game`, in load order."""
+    load()
+    return [e for e in _offer_edits if e.game == game]
+
+
 def _reset() -> None:
     """Forgets every loaded plugin; for tests."""
     global _done
@@ -530,6 +560,7 @@ def _reset() -> None:
     _loaded.clear()
     _radios.clear()
     _battle_servers.clear()
+    _offer_edits.clear()
     plugin_guard.clear()
 
 
