@@ -117,6 +117,7 @@ jobs:
           $run = Start-Process $python -Credential $credential -LoadUserProfile -PassThru `
             -WorkingDirectory $env:GITHUB_WORKSPACE -RedirectStandardOutput out.txt -RedirectStandardError err.txt `
             -ArgumentList "scripts\check_update.py", "pokeldn-windows-x64.zip", "`"${{ matrix.folder }}`"", "${{ matrix.flags }}"
+          # Not Start-Process -Wait: it also waits for the relaunched app, which never quits.
           $run | Wait-Process -Timeout 900 -ErrorAction SilentlyContinue
           Get-Content out.txt, err.txt -ErrorAction SilentlyContinue
           if (-not $run.HasExited) { "check_update.py still running after 900 s"; exit 1 }
