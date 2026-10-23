@@ -184,6 +184,7 @@ def _launcher(tmp_path, monkeypatch, version, *extra):
                                     "--keys", str(keys), *extra])
     finally:
         radio.close()
+        wlan.set_factory(None)     # esp32_wlan.use routes every later LDN call in this process
     return code, board
 
 
