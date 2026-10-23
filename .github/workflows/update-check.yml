@@ -94,8 +94,10 @@ jobs:
         name: check_update.py as a standard user
         shell: pwsh
         run: |
-          $password = "Aa1!" + [guid]::NewGuid().ToString()
-          net user pokeldn-check $password /add | Out-Null
+          # net user asks for a yes before taking a password longer than 14 characters.
+          $password = "Aa1!" + [guid]::NewGuid().ToString("N").Substring(0, 10)
+          net user pokeldn-check $password /add
+          if ($LASTEXITCODE) { exit 1 }
           $credential = [pscredential]::new("pokeldn-check", (ConvertTo-SecureString $password -AsPlainText -Force))
           $python = (Get-Command python).Source
           $run = Start-Process $python -Credential $credential -LoadUserProfile -Wait -PassThru `
