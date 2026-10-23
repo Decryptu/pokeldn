@@ -469,6 +469,13 @@ for the acked stream, or a sender overruns the console's window and it stops ack
 
 Growing sequence ids over a fixed `lowest_pending` mean a growing backlog.
 
+A message too long for one payload is split over consecutive sequence ids, flag 0x02 on the first,
+0x04 on the last, and 0x10 on each fragment that is deflated on its own. A Shield host's battle turn
+log (2074 to 2657 bytes) goes as two: flags 0x03 with 1407 bytes unchanged, then 0x15 with the rest
+as a zlib stream; the message is the first body followed by the second inflated. On an emulated
+loopback the closing fragment arrived before its opener for 3 of 11 split messages: reassemble in
+sequence order, never in arrival order.
+
 ## Protocol 0x80, the broadcast reliable window
 
 `nn::pia::transport::BroadcastReliableProtocol`. Its messages are compressed (version-4 flag 0x10):

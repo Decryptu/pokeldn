@@ -4,6 +4,8 @@ import collections
 import json
 from pathlib import Path
 
+import pytest
+
 from pokeldn.swsh import lair, raid_battle
 
 DATA = json.loads((Path(__file__).parent / "data" / "swsh_lair_emulated.json").read_text())
@@ -77,6 +79,17 @@ def test_the_seed_gives_the_recorded_offer_and_first_encounter():
     assert [offer[0][0], offer[2][0]] == [869, 861] and encounters[0][0] == 479
     assert 226 in [row[0] for row in encounters]
     assert len(lair.legendaries()) == 47 and 480 in lair.legendaries()
+
+
+@pytest.mark.parametrize("seed, taken, partners", [
+    # The species whose moves the computer partners used in battle 1 (host type-0x10 commands).
+    (173502832, [0, 2], {51, 428}),                 # emulated Shield host and guest
+    (16847932608126258080, [0, 1], {707, 573}),     # retail Sword host, our guest
+    (13256743828012754374, [0, 2], {426, 738}),     # emulated Shield host, our guest
+])
+def test_the_seed_names_the_computer_partners_rentals(seed, taken, partners):
+    offer, _ = lair.adventure(seed)
+    assert {offer[place][0] for place in lair.partner_places(seed, taken)} == partners
 
 
 def test_our_guest_takes_our_hosts_adventure_to_the_legendary():

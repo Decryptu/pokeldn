@@ -362,9 +362,14 @@ while more than 2, 1 and 0 computer partners are seated, then draws of 0 to 2 an
 encounter picks, each followed by one more output when the row has two types. With three computer
 partners a draw of 0 to 27 comes first.
 
-A taken rental is replaced on the screen for the next player; what draws the replacements is
-unknown, as is where the computer partners' own Pokemon come from. ChikaRentalPokemonSeed gives
-none of these. Which encounters a path meets is unknown.
+The rental screen shows offer places 0 to 2. Each seat chooses in turn, the host's first, and the
+place it took is refilled with the next unused place (3, then 4, then 5). The computer partners
+choose after the players, never over the wire: each takes the screen position its 0-to-2 draw
+gives, the first partner the first draw. `lair.partner_places(seed, taken)` computes it; it names
+both partners' rentals in three recorded adventures (an emulated host and guest, our guest against
+an emulated host and against a retail Sword host), read from the moves each battle position used
+in the host's type 0x10 commands. The rule needs only ChikaBattleSeed. Which encounters a
+path meets is unknown.
 
 ## Leaving
 
@@ -380,6 +385,8 @@ A guest that does not leave holds the host's player frozen in the overworld unti
 - The meaning of PlayerInfo's u32 and final bytes.
 - The action's other ten entries, Dynamax, and the target codes beyond 8 and 2. Replayed unchanged, a
   recorded Water Gun action makes any guest Pokemon use Water Gun, on a retail Sword host too.
+- Dynamax Adventures: the partners' order with three computer partners; a partner that took the
+  seat of a host which left on the rental screen took place 1 where `partner_places` gives place 2.
 - Dynamax Adventures: PlayerInfo's trailing bytes, BigBoss, the byte after the player index in
   RaidCapture and the result records, and the unsent fields of both holders.
 - Whether a retail guest takes an event boss from a den advertisement whose den record is zero, and

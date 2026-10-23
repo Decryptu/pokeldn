@@ -231,8 +231,28 @@ def _mt19937(seed):
 def adventure(seed, partners=2, rows=None):
     """-> (offer, encounters): the six rental rows and the ten encounter rows ChikaBattleSeed `seed`
     gives with `partners` computer partners (docs/swsh_raid.md, The adventure seed)."""
-    rows = table() if rows is None else rows
-    rng, picked = _Xoroshiro(seed), []
+    picked, _ = _walk(seed, partners, table() if rows is None else rows)
+    return picked[:OFFER], picked[OFFER:]
+
+
+def partner_places(seed, taken, partners=2):
+    """-> the offer places the computer partners take, in seat order, once the players took the
+    places `taken` in turn order (docs/swsh_raid.md, The adventure seed)."""
+    _, draws = _walk(seed, partners, table())
+    # The screen shows three places; a taken one is refilled with the next unused place.
+    screen, refill, out = [0, 1, 2], 3, []
+    for place in taken:
+        screen[screen.index(place)] = refill
+        refill += 1
+    for slot in draws:
+        out.append(screen[slot])
+        screen[slot] = refill
+        refill += 1
+    return out
+
+
+def _walk(seed, partners, rows):
+    rng, picked, draws = _Xoroshiro(seed), [], []
 
     def pick():
         mt = _mt19937(rng.next()).__next__
@@ -251,7 +271,7 @@ def adventure(seed, partners=2, rows=None):
         pick()
     for threshold in (2, 1, 0):
         if partners > threshold:
-            rng.draw(2)
+            draws.append(rng.draw(2))
         if threshold:
             pick()
     rng.draw(2)
@@ -259,7 +279,7 @@ def adventure(seed, partners=2, rows=None):
     for _ in range(ENCOUNTERS):
         if pick()[4] != picked[-1][5]:
             rng.next()
-    return picked[:OFFER], picked[OFFER:]
+    return picked, draws
 
 
 RENTAL_FLAWLESS_IVS = 4               # every recorded rental and catch had four IVs of 31
