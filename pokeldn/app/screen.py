@@ -174,13 +174,19 @@ def arrived() -> bool:
     return _submit(lambda: _send(esp32.display_show_payload("arrived")))
 
 
+def gift_payloads(title: str, line: str, *, species: int | None = None) -> list[bytes]:
+    """The DISPLAY commands of a Mystery Gift on offer; a portable beacon stores them."""
+    from pokeldn.ldn import esp32
+    bits = sprite_bits(species, 40) if species else None
+    return [esp32.display_sprite_payload("gift", bits or []),     # an empty slot draws a gift box
+            esp32.display_show_payload("gift", 0, ascii_text(title), ascii_text(line))]
+
+
 def gift(title: str, line: str, *, species: int | None = None) -> bool:
     """A Mystery Gift on offer: its card, with the Pokemon it carries when it carries one."""
     def job():
-        from pokeldn.ldn import esp32
-        bits = sprite_bits(species, 40) if species else None
-        _send(esp32.display_sprite_payload("gift", bits or []))     # an empty slot draws a gift box
-        _send(esp32.display_show_payload("gift", 0, ascii_text(title), ascii_text(line)))
+        for payload in gift_payloads(title, line, species=species):
+            _send(payload)
     return _submit(job)
 
 

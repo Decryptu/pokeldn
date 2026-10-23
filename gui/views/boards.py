@@ -39,6 +39,7 @@ class Facts:
     port: board.Port | None = None
     mac: str = ""
     stock: bool = True      # False: a board-specific build the app's images would replace
+    gift: bool = False      # a Mystery Gift kept on the board, sent with no computer
 
     @property
     def firmware(self) -> board.Firmware | None:
@@ -158,6 +159,7 @@ class BoardView:
         if isinstance(ident, board.Identity):
             f.kind, f.version, f.mac = "radio_ble" if ident.ble else "radio", ident.firmware_version, ident.sta_mac
             f.stock = ident.stock
+            f.gift = bool(ident.gift_fragments)
             f.chip = ident.chip or f.chip
             f.state = "ready" if ident.current else "old"
         elif isinstance(ident, board.PadIdentity):
@@ -365,6 +367,11 @@ class BoardView:
                                                                  tr('boards.save_the_name_4a4b36', 'Save the name'))], spacing=4)))
             rows.append(ft.Row([t.secondary_button(tr('boards.blink_the_led_8c40f1', 'Blink the LED'), self._blink, "lightbulb",
                                                    disabled=self.app.busy)]))
+        if f.gift:
+            rows.append(info(tr('boards.kept_gift_243af7', 'Kept gift'), ft.Row([
+                t.text(tr('boards.sent_on_its_own_from_any_usb_charger_14f369', 'Sent on its own from any USB charger'), 13),
+                t.secondary_button(tr('boards.remove_c3812f', 'Remove'), self._remove_gift, "trash", disabled=self.app.busy)],
+                spacing=8, wrap=True)))
         return t.card(tr('boards.about_this_board_8bfcb1', 'About this board'), ft.Column(rows, spacing=10))
 
     def _rename(self, field, mac: str) -> None:
@@ -395,6 +402,15 @@ class BoardView:
 
     def _blink(self, e) -> None:
         self._identify(e, blink=True)
+
+    def _remove_gift(self, e) -> None:
+        if self.app.busy:
+            return
+        self.app.identities.pop(self.selected, None)
+        self.log.add(f'[app] Removing the gift kept on {self.selected}.')
+        self.app.check_board(self.selected, log=self.log.add, erase_gift=True)
+        self.render()
+        self.control.update()
 
     # The controller's version, over Bluetooth: it has no serial port
 

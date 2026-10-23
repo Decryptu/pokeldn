@@ -462,6 +462,15 @@ id in bits 0-14, count in bits 15-29, bit 30 the new-item flag. The save block i
 | 7 | Ingredients | 100 |
 | 8 | Key | 64 |
 
+## The board as a gift beacon
+
+`bin/swsh_gift_host.py --save-to-board` (the app's Keep it on the board) stores the card's
+advertisement cycle on the ESP32 board and exits. Powered from any USB charger, the board then
+advertises the card on its own, three fragments at the launcher's `--dwell`, until a host opens it
+([Portable beacon](hardware_esp32.md#portable-beacon)). Every power-up uses the same network and keys;
+the advertisement nonce starts at a random value each time. A retail console receiving a card from
+the board alone is unmeasured.
+
 ## Official event cards
 
 The desktop app's Official events mode offers 189 cards from projectpokemon EventsGallery

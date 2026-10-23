@@ -28,9 +28,9 @@ if(DEFINED ENV{POKELDN_BLE})
 endif()
 
 idf_component_register(
-    SRCS "radio.c" "ble.c" "wire.c" "led.c" "usbwatch.c" "display.c" ${panel_source} "scene.c" "screen.c"
+    SRCS "radio.c" "advert.c" "beacon.c" "ble.c" "wire.c" "led.c" "usbwatch.c" "display.c" ${panel_source} "scene.c" "screen.c"
     INCLUDE_DIRS "."
-    PRIV_REQUIRES esp_app_format esp_wifi wpa_supplicant ${wire_driver} esp_driver_ledc esp_driver_gpio ${panel_driver} esp_timer nvs_flash esp_event ${ble_component})
+    PRIV_REQUIRES esp_app_format esp_wifi wpa_supplicant ${wire_driver} esp_driver_ledc esp_driver_gpio ${panel_driver} esp_timer nvs_flash esp_event mbedtls ${ble_component})
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE POKELDN_DISPLAY_${POKELDN_DISPLAY}
                            POKELDN_FIRMWARE_VERSION="${POKELDN_FIRMWARE_VERSION}")

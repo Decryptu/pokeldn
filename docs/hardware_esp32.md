@@ -8,7 +8,7 @@ nav_order: 1
 
 An ESP32 board on USB serial is the radio. It runs `firmware/esp32/` and carries LDN's vendor
 action frames and Ethernet frames; advertisement crypto, LDN authentication, IP and Pia stay on the
-host. `pokeldn.ldn.esp32_wlan` gives the LDN library a factory backed by the board, so `ldn.scan`,
+host, except in the [portable beacon](#portable-beacon). `pokeldn.ldn.esp32_wlan` gives the LDN library a factory backed by the board, so `ldn.scan`,
 `ldn.connect` and `ldn.create_network` run unchanged and the host needs no Wi-Fi driver.
 
 ## Supported boards
@@ -129,6 +129,7 @@ the ROM's boot text included, fails the checksum and is discarded.
 | `0x0D` LED | host | u8 pattern, u8 peak brightness, u16 period ms (0: the pattern's default), u16 duration ms (0: until the next LED); RESULT |
 | `0x0E` DISPLAY | host | a screen command ([The screen](#the-screen)); RESULT `0x105` without a screen |
 | `0x0F` ALIVE | host | none, no reply; arms [the host watchdog](#the-host-watchdog); sent only to firmware 1.4.0 and later |
+| `0x10` BEACON | host | u8 op: 0 WRITE u32 offset and bytes into the staging buffer, 1 COMMIT u16 length (checks and stores the staged image), 2 ERASE, 3 START, 4 QUERY (answered by BEACON); RESULT for the others. Firmware 1.8.0 and later ([Portable beacon](#portable-beacon)) |
 | `0x81` INFO | board | u8 protocol version (1), 6 station MAC, 6 AP MAC, u8 chip revision, text |
 | `0x82` RESULT | board | u8 command, i32 `esp_err_t` |
 | `0x83` LOG | board | text |
@@ -144,6 +145,7 @@ the ROM's boot text included, fails the checksum and is discarded.
 | `0x8D` TX_DONE | board | the driver's TX-done of one frame, station or access point: u32 board time µs, u32 µs since the ETH_TX it completes (all ones if none), u8 acked by the peer's radio, u8 interface, u16 length, the frame's first 24 bytes (its 802.11 header) |
 | `0x8E` BUTTON | board | a BOOT press, debounced over 30 ms: u32 board time µs, u16 press count since boot; the host prints `BOOT button, mark N` and the trace keeps it |
 | `0x8F` RX_CENSUS | board | every frame received, FCS failures and control frames included: u32 receive time µs, i8 RSSI, i8 noise floor, u8 `rx_state` (0 good), u8 packet type (0 management, 1 control, 2 data, 3 other), u8 `sig_mode`, u8 rate code, u8 MCS with bit 7 for 40 MHz, u16 `sig_len` with FCS, the frame's first 16 bytes |
+| `0x90` BEACON | board | u8 an image is stored, u8 it is running, u8 fragments, u16 image length, u32 image CRC-32 (`zlib.crc32` of the whole image) |
 
 `rx_state` 98 marks two-stream HT (MCS 8 to 15), which the single-stream ESP32 never decodes; 65 marks
 a corrupted frame of any other modulation.
@@ -180,6 +182,47 @@ station disconnects. It then discards every message for the host, uncounted, unt
 command again; otherwise each queued message costs a 500 ms write, a `wire_dropped` and a
 constant `flash3` on the LED. With the host killed during a FireRed trade room, the console shows
 2318-0006 and a later JOIN search lists no host.
+
+## Portable beacon
+
+From firmware 1.8.0 the board stores one LDN advertisement cycle in NVS and sends it with no host.
+With an image stored and no host command in the 3 s after power-up, it starts the image's access
+point, replays up to four screen commands, and sends one advertisement every `interval_ms` (100),
+moving to the next fragment every `dwell_ms` (500). HELLO, CHANNEL, SNIFF, STA_JOIN, STOP and
+AP_START end it; a host the watchdog judges gone leaves it running. `pokeldn.ldn.portable` builds the image from the
+network `ldn.create_network` would create; `bin/swsh_gift_host.py --save-to-board` stores a Sword and
+Shield Mystery Gift ([Sword and Shield Mystery Gift](swsh_gift.md)).
+
+The board builds each frame as the host does (`firmware/esp32/main/advert.c`, PSA SHA-256, AES-CTR
+and AES-GCM): the stored header, the fragment's payload, and a nonce that starts at a random value
+at each start and rises by one per fragment, as `set_application_data` raises it on the host.
+`tests/test_esp32_beacon.py` compiles `advert.c` and compares its frames with the LDN library's,
+byte for byte, for protocols 1 and 3.
+
+| offset | size | field (little-endian) |
+|---|---|---|
+| 0 | 4 | `PKSA` |
+| 4 | 1 | layout, 1 |
+| 5 | 1 | kind, 1 (an advertisement cycle) |
+| 6 | 2 | image length, CRC included |
+| 8 | 1 | channel |
+| 9 | 6 | BSSID |
+| 15 | 32 | SSID, as AP_START takes it |
+| 47 | 16 | data key |
+| 63 | 1 | max stations |
+| 64 | 16 | advertise key |
+| 80 | 40 | advertisement header: network id, version, format, u16 BE size, u32 BE nonce |
+| 120 | 2 | `interval_ms`, 20 to 1000 |
+| 122 | 2 | `dwell_ms`, at least `interval_ms` |
+| 124 | 1 | fragments, 1 to 8 |
+| 125 | 1 | screen commands, 0 to 4 |
+| 126 | 2 | zero |
+| 128 | | per fragment u16 length and the advertisement's plaintext; per screen command u16 length and a DISPLAY payload |
+| end | 4 | `zlib.crc32` of everything before it |
+
+The image holds the advertise and data keys derived for its one network, never `prod.keys`. An image
+is at most 12288 bytes. A board left on a computer's USB with no app open starts the beacon as on a
+charger.
 
 ## The serial ceiling
 

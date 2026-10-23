@@ -18,6 +18,7 @@
 #include "freertos/task.h"
 #include "nvs_flash.h"
 
+#include "beacon.h"
 #include "display.h"
 #include "led.h"
 #include "private_wifi.h"
@@ -31,7 +32,7 @@ enum {
     CMD_HELLO = 0x01, CMD_BAUD = 0x02, CMD_CHANNEL = 0x03, CMD_STA_JOIN = 0x04, CMD_STOP = 0x05,
     CMD_AP_START = 0x06, CMD_AP_KICK = 0x07, CMD_ETH_TX = 0x08, CMD_RAW_TX = 0x09,
     CMD_SNIFF = 0x0A, CMD_STATUS = 0x0B, CMD_BENCH = 0x0C, CMD_LED = 0x0D, CMD_DISPLAY = 0x0E,
-    CMD_ALIVE = 0x0F,
+    CMD_ALIVE = 0x0F, CMD_BEACON = 0x10,
 };
 /* A host that sent CMD_ALIVE and then nothing for this long is gone: the board leaves the network,
    so the console does not keep a seat nobody answers. docs/hardware_esp32.md, The host watchdog. */
@@ -40,6 +41,7 @@ enum {
     MSG_INFO = 0x81, MSG_RESULT = 0x82, MSG_RX_MGMT = 0x84, MSG_RX_ETH = 0x85, MSG_LINK = 0x86,
     MSG_STA_JOINED = 0x87, MSG_STA_LEFT = 0x88, MSG_STATUS = 0x89, MSG_BENCH = 0x8A,
     MSG_RX_SNIFF = 0x8C, MSG_TX_DONE = 0x8D, MSG_BUTTON = 0x8E, MSG_RX_CENSUS = 0x8F,
+    MSG_BEACON = 0x90,
 };
 enum { AP_FLAG_STOCK_JOIN = 1, AP_FLAG_NO_QOS = 2, AP_FLAG_NO_DATA_TRACE = 4, AP_FLAG_LONG_BEACON = 0x40,
        AP_FLAG_NO_PROMISC = 0x80 };
@@ -710,12 +712,118 @@ static void send_info(void)
 }
 
 static _Atomic int64_t s_host_seen;   /* when the host last sent a command */
+
+/* The portable beacon: with no command in BEACON_GRACE_US after boot, the stored image's access point
+   comes up and its advertisements cycle; a host command that takes the radio ends it.
+   docs/hardware_esp32.md, Portable beacon. */
+#define BEACON_GRACE_US 3000000
+enum { BEACON_WRITE = 0, BEACON_COMMIT = 1, BEACON_ERASE = 2, BEACON_START = 3, BEACON_QUERY = 4 };
+static atomic_bool s_beacon_on, s_beacon_busy;
+static TaskHandle_t s_beacon_task;
+
+static void beacon_task(void *arg)
+{
+    static uint8_t frame[ADVERT_FRAME_MAX];
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        atomic_store(&s_beacon_busy, true);
+        const advert_image_t *image = beacon_image();
+        /* A fresh nonce per start, as a host takes a random one per network. */
+        uint32_t nonce = esp_random();
+        unsigned index = 0;
+        int64_t switched = esp_timer_get_time();
+        while (image && atomic_load(&s_beacon_on) && atomic_load(&s_mode) == MODE_AP) {
+            const size_t n = advert_frame(image, index, nonce, &beacon_crypto, frame);
+            const esp_err_t r = n ? esp_wifi_80211_tx(WIFI_IF_AP, frame, n, true) : ESP_FAIL;
+            atomic_fetch_add(r == ESP_OK ? &s_tx_raw : &s_tx_raw_failed, 1);
+            vTaskDelay(pdMS_TO_TICKS(image->interval_ms));
+            if (esp_timer_get_time() - switched >= (int64_t)image->dwell_ms * 1000) {
+                index = (index + 1) % image->count;
+                ++nonce;                  /* the host advances it with every new application data */
+                switched = esp_timer_get_time();
+            }
+        }
+        atomic_store(&s_beacon_on, false);
+        atomic_store(&s_beacon_busy, false);
+    }
+}
+
+static esp_err_t beacon_start(void)
+{
+    const advert_image_t *image = beacon_image();
+    if (!image) return ESP_ERR_NOT_FOUND;
+    uint8_t p[1 + 6 + 32 + 16 + 1 + 1] = {image->channel};
+    memcpy(p + 1, image->bssid, 6);
+    memcpy(p + 7, image->ssid, 32);
+    memcpy(p + 39, image->data_key, 16);
+    p[55] = image->max_stations;
+    const esp_err_t r = ap_start(p, sizeof(p));
+    if (r != ESP_OK) return r;
+    for (unsigned i = 0; i < image->display_count; ++i)
+        display_command(image->display[i], image->display_len[i]);
+    if (!s_beacon_task) xTaskCreatePinnedToCore(beacon_task, "beacon", 6144, NULL, 4, &s_beacon_task, 0);
+    atomic_store(&s_beacon_on, true);
+    xTaskNotifyGive(s_beacon_task);
+    return ESP_OK;
+}
+
+/* Ends the cycle and waits out the frame in flight, so the image can be replaced. */
+static void beacon_stop(void)
+{
+    atomic_store(&s_beacon_on, false);
+    for (int i = 0; i < 200 && atomic_load(&s_beacon_busy); ++i) vTaskDelay(pdMS_TO_TICKS(10));
+}
+
+/* QUERY: u8 stored, u8 running, u8 fragments, u16 image length, u32 image CRC-32. */
+static void beacon_query(void)
+{
+    const advert_image_t *image = beacon_image();
+    uint16_t length;
+    uint32_t crc;
+    beacon_identity(&length, &crc);
+    uint8_t head[9] = {image != NULL, atomic_load(&s_beacon_on), image ? image->count : 0};
+    memcpy(head + 3, &length, 2);
+    memcpy(head + 5, &crc, 4);
+    wire_send(MSG_BEACON, head, sizeof(head), NULL, 0);
+}
+
+/* BEACON: u8 op, then WRITE u32 offset and bytes, COMMIT u16 length. */
+static void beacon_command(const uint8_t *p, size_t n)
+{
+    if (!n) { result(CMD_BEACON, ESP_ERR_INVALID_SIZE); return; }
+    switch (p[0]) {
+    case BEACON_WRITE: {
+        uint32_t offset;
+        if (n < 5) { result(CMD_BEACON, ESP_ERR_INVALID_SIZE); return; }
+        memcpy(&offset, p + 1, 4);
+        result(CMD_BEACON, beacon_write(offset, p + 5, n - 5));
+        return;
+    }
+    case BEACON_COMMIT: {
+        uint16_t length;
+        if (n != 3) { result(CMD_BEACON, ESP_ERR_INVALID_SIZE); return; }
+        memcpy(&length, p + 1, 2);
+        beacon_stop();
+        result(CMD_BEACON, beacon_commit(length));
+        return;
+    }
+    case BEACON_ERASE: beacon_stop(); result(CMD_BEACON, beacon_erase()); return;
+    case BEACON_START: beacon_stop(); result(CMD_BEACON, beacon_start()); return;
+    case BEACON_QUERY: beacon_query(); return;
+    default: result(CMD_BEACON, ESP_ERR_NOT_SUPPORTED);
+    }
+}
 static atomic_bool s_host_watched;    /* armed by CMD_ALIVE, disarmed by HELLO: an older host never sends it */
 
 static void command(uint8_t type, const uint8_t *p, size_t n)
 {
     atomic_store(&s_host_seen, esp_timer_get_time());
     wire_set_host_away(false);
+    if (atomic_load(&s_beacon_on) && (type == CMD_HELLO || type == CMD_CHANNEL || type == CMD_SNIFF ||
+                                      type == CMD_STA_JOIN || type == CMD_STOP || type == CMD_AP_START)) {
+        beacon_stop();
+        go_idle();
+    }
     switch (type) {
     case CMD_HELLO: atomic_store(&s_host_watched, false); wire_credit_reset(); display_reset(); send_info(); break;
     case CMD_ALIVE: atomic_store(&s_host_watched, true); break;   /* no reply: it only keeps the watch fed */
@@ -809,6 +917,7 @@ static void command(uint8_t type, const uint8_t *p, size_t n)
         result(type, led_set(p[0], p[1], period, duration) ? 0 : ESP_ERR_INVALID_ARG);
         break;
     }
+    case CMD_BEACON: beacon_command(p, n); break;
     case CMD_DISPLAY:   /* scene.h; ESP_ERR_NOT_FOUND without a screen */
         result(type, display_command(p, n) ? 0 : ESP_ERR_NOT_FOUND);
         break;
@@ -858,6 +967,8 @@ void app_main(void)
     led_start(led_state, button_pressed);
     display_start(display_state);
     send_info();
+    beacon_load();
+    bool beacon_due = beacon_image() != NULL;
 
     int64_t last_status = 0;
     for (;;) {
@@ -869,10 +980,17 @@ void app_main(void)
         while (xQueueReceive(s_ap_joins, joined, 0) == pdTRUE) {
             if (atomic_load(&s_mode) == MODE_AP) ap_open_station(joined);
         }
+        if (beacon_due && esp_timer_get_time() > BEACON_GRACE_US) {
+            beacon_due = false;
+            if (!atomic_load(&s_host_seen)) {
+                wire_set_host_away(true);   /* no host reads the link: its messages go nowhere, no alarm */
+                beacon_start();
+            }
+        }
         if (atomic_load(&s_host_watched) && atomic_load(&s_mode) != MODE_IDLE &&
             esp_timer_get_time() - atomic_load(&s_host_seen) > HOST_SILENT_US) {
             atomic_store(&s_host_watched, false);
-            go_idle();
+            if (!atomic_load(&s_beacon_on)) go_idle();   /* a beacon outlives its host */
             wire_set_host_away(true);   /* its queue and what is heard next go nowhere: no alarm */
         }
         if (atomic_load(&s_mode) == MODE_STA_JOINING) {
