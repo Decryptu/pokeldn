@@ -63,6 +63,7 @@ jobs:
             drive: P
             user: true
     name: windows (${{ matrix.name }})
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -101,7 +102,9 @@ jobs:
           $credential = [pscredential]::new("pokeldn-check", (ConvertTo-SecureString $password -AsPlainText -Force))
           $python = (Get-Command python).Source
           # Start-Process passes this job's environment on: point it at the user's own profile.
-          Start-Process cmd -ArgumentList "/c", "exit" -Credential $credential -LoadUserProfile -Wait
+          $first = Start-Process cmd -ArgumentList "/c", "exit" -Credential $credential -LoadUserProfile -PassThru
+          $first | Wait-Process -Timeout 60
+          "profile created, exit $($first.ExitCode)"
           $profile = (Get-CimInstance Win32_UserProfile | Where-Object { $_.LocalPath -like "*\pokeldn-check*" }).LocalPath
           $env:USERPROFILE = $profile
           $env:HOMEDRIVE, $env:HOMEPATH = $profile.Substring(0, 2), $profile.Substring(2)
@@ -111,10 +114,12 @@ jobs:
           New-Item -ItemType Directory -Force $env:APPDATA, $env:TEMP | Out-Null
           Remove-Item Env:HOME -ErrorAction Ignore
           "profile $profile"
-          $run = Start-Process $python -Credential $credential -LoadUserProfile -Wait -PassThru `
+          $run = Start-Process $python -Credential $credential -LoadUserProfile -PassThru `
             -WorkingDirectory $env:GITHUB_WORKSPACE -RedirectStandardOutput out.txt -RedirectStandardError err.txt `
             -ArgumentList "scripts\check_update.py", "pokeldn-windows-x64.zip", "`"${{ matrix.folder }}`"", "${{ matrix.flags }}"
-          Get-Content out.txt, err.txt
+          $run | Wait-Process -Timeout 900 -ErrorAction SilentlyContinue
+          Get-Content out.txt, err.txt -ErrorAction SilentlyContinue
+          if (-not $run.HasExited) { "check_update.py still running after 900 s"; exit 1 }
           exit $run.ExitCode
 
   linux:
