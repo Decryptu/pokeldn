@@ -601,7 +601,8 @@ has the rule). A confusion secondary steps the generator once, through a call ou
 `chance`, before its `chance(p)`: 20 of 20 confusion draws with every draw logged (Confusion, Psybeam,
 Water Pulse, Strange Steam, Magical Torque), whatever the step's output. A confusion that lands draws
 no duration. A stat-lowering secondary of 100 percent (Spirit Break, Bulldoze) draws `chance(0)` in
-some rounds and nothing in others. Two battlers of equal speed draw `below(2)` before the first move. A flinch secondary draws
+some rounds and nothing in others. Battlers of equal Speed draw `below(2)` in the speed sorts ([Speed
+ties](#speed-ties)). A flinch secondary draws
 nothing against the boss or a target with Inner Focus (ability 39); against a player that already
 moved in the round it draws its `chance(p)`, and a flinch that lands there adds nothing to the queue.
 A contact move into Static, Poison Point, Flame Body or Cute Charm (abilities 9, 38, 49, 56), or from a
@@ -619,6 +620,30 @@ A boss's HP pool is its record's HP times the RaidPoint's HP coefficient over 10
 bootstrap](#the-battle-bootstrap)): of the oracle battles won, 78 at one star, 84 at two, 125 at three and 35 at
 four ended after exactly 5, 5, 8 and 12 times the record's HP in `0x37 (2, 2, damage)`; the others took
 less, through the shield and moves with their own rules.
+
+### Speed ties
+
+The battle orders battlers and actions by Speed with an exchange sort: each entry is compared with
+every later one, and the later one moves ahead when its key is greater. Equal keys draw `below(2)`,
+and 1 moves the later one ahead, so a tie draws once per comparison of the two tied entries. Battler
+ids are 1 to 5, the boss 2. Over 142 oracle battles with two battlers forced to one Speed, the sort
+over the five battlers in id order gives the logged number of draws at the battle start in 142.
+
+| when | over, in this input order | sorts | what reads the result |
+|---|---|---|---|
+| the battle start, before Trace's draw | the five battlers, id order | 1 | the switch-in events |
+| a round's start | the round's actions, command order; key priority, then not Stall, then Speed | 3, each of the previous one's result | the first: the second `0x51` pass; the third: the order of the moves |
+| after each move but the last | the actions | 1 | nothing in the queue |
+| a round's end | the five battlers, id order each time | 3 | the second: `0x43` |
+| a turn's end (every fourth round) | the five battlers, id order each time | 8 | the fourth and fifth agree with `0x19`; the seventh: `0x43` |
+
+The round-end `0x43` order matched the second sort in 109 of 123 battles; the 14 others had a battler's
+Speed changed by a move in that round. The chained action sorts matched the `0x51` and move orders in
+27 of 27 rounds whose two actors tied, and the draw after the first move came in 3 of 3 rounds that
+reached both moves. The turn-end orders matched in 8 of 8 turn ends whose sorts disagreed.
+
+The boss's Trace draws `below(N)` over the players whose ability it can copy, in id order: `below(3)`
+with one player holding Embody Aspect. A move into Shell Armor (ability 75) draws no critical hit.
 
 ### A move in the round queue
 
@@ -865,7 +890,8 @@ count +0x7c), after a copy of the RaidPoint's action profile at +0x10. The round
 | 4 | the six extra actions (`0xf6fa5c`: kind, timing 1 time / 2 HP, threshold, move at +0x24 + 8i), each once (record +0x86 + i) | the action's index |
 | 5 | the double action (`0xf6de7c`): HP at or below profile +0x54 | 0 |
 
-None of them draws a random number: every trigger is a threshold on the boss's HP share or the time
+A double action whose value is 0 fires when a hit leaves the boss standing at an HP share of 0 (2 of 2
+oracle battles with an all-zero profile), between that move and the next. None of them draws a random number: every trigger is a threshold on the boss's HP share or the time
 left (`0xf91070` on the battle timer). As request block actions (`0x114fb2c`) the word's kind is 12,
 bits 4..11 the list's kind, bits 32..47 its value, and the actor the raid battler's id (`0x114fc70`).
 
@@ -1143,6 +1169,9 @@ tool runs it. `pokeldn.sv.raid.RaidGuest` and the joiner do, in order:
 
 - What the `chance(0)` draws before some stat-drop secondaries stand for, when the target is not
   knocked out.
+- Which of the fourth and fifth turn-end speed sorts orders the residuals (`0x19`) and the
+  sandstorm, what the second action sort and the other turn-end sorts order, and whether the round
+  that knocks the boss out runs the three round-end sorts ([Speed ties](#speed-ties)).
 - Why a player's Whirlpool (a move that registers a handler and traps) hit a Fairy-Tera boss for 7
   where the damage formula gives 14 to 17.
 - Whether a listener of the GlueCode dispatcher `0x18beef4` reads `+0x4c` as a word (listeners
