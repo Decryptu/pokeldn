@@ -264,3 +264,19 @@ def _format_config_value(name, value):
     if isinstance(value, bool):
         return f"{name} = {'true' if value else 'false'}"
     return f"{name} = {value}"
+
+
+def transport_factory(parser, args):
+    """The host transport: the radio, or ldn_mitm over the LAN for --over-ip."""
+    import functools
+    from pokeldn.host_support import needs_root
+    from pokeldn.ldn import ldn_mitm_host, transport
+    if args.over_ip:
+        our_ip = None if args.over_ip == "auto" else args.over_ip
+        factory = functools.partial(ldn_mitm_host.IpHostTransport, our_ip=our_ip)
+        # functools.partial hides the class attribute the phy resolution reads.
+        factory.NEEDS_RADIO = False
+        return factory
+    if needs_root():
+        parser.error("live LDN hosting requires root; run with sudo -E")
+    return transport.HostTransport

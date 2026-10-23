@@ -154,3 +154,29 @@ def test_explicit_phy_wins_over_the_named_adapter_profile():
         transport.find_adapter_phy = old_find
     assert phy == "phy9"
     assert keys == __file__
+
+
+def test_the_trade_host_hosts_an_emulated_console_over_ip_without_root(monkeypatch, tmp_path):
+    from pokeldn import host_support
+    from pokeldn.frlg.save import mevent_pokemon
+    from pokeldn.ldn import ldn_mitm_host
+    party = tmp_path / "PARTY1.pk3"
+    party.write_bytes(mevent_pokemon.build_party_mon(
+        129, 5, nickname="CARPY", language=mevent_pokemon.LANGUAGE_FRENCH).party_bytes())
+    monkeypatch.setattr(host_support, "needs_root", lambda: True)
+    monkeypatch.setattr(frlg_trade_host.pokemon_service, "prepare_file", lambda game, path: path)
+    seen = {}
+
+    class Recorder:
+        def __init__(self, config, *, transport_factory, **unused):
+            seen["factory"] = transport_factory
+
+        def run(self):
+            return True
+
+    monkeypatch.setattr(frlg_trade_host, "HostApplication", Recorder)
+    assert frlg_trade_host.main(["--no-local-config", "--over-ip", "192.0.2.7", "--trade-back", "--slot", "0",
+                                 str(party)]) == 0
+    factory = seen["factory"]
+    assert factory.func is ldn_mitm_host.IpHostTransport
+    assert factory.keywords == {"our_ip": "192.0.2.7"} and factory.NEEDS_RADIO is False

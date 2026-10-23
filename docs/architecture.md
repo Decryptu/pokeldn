@@ -183,6 +183,9 @@ last queued trade stops after twice as many; one that offers its last again keep
 | FireRed/LeafGreen host and join | each offered party slot is offered again; TradeMons has put the received Pokemon there [trade_scene.c:1054-1083]. A session runs up to 12 trades |
 | native joiners | `Rounds` chooses each trade's record in the launcher's own offer path |
 
+An emulated French FireRed hosted by `bin/frlg_trade_host.py --over-ip --trade-back` traded its Kadabra
+in trade 1, took it back in trade 2 and evolved it into Alakazam; the save kept a legal Alakazam.
+
 `--trade-back` refuses `--online`, the gift made for the receiving player, and the raid, lair and
 Union Circle modes. Mystery Gift - Simulated never offers it.
 

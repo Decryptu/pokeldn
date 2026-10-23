@@ -8,7 +8,6 @@ Cards -> Friend; the delivery man in any Pokemon Center hands the gift over.
 """
 
 import argparse
-import functools
 import os
 import sys
 
@@ -20,7 +19,6 @@ BUNDLED_LDN = os.path.join(PROJECT_ROOT, "vendor", "LDN")
 if os.path.isdir(os.path.join(BUNDLED_LDN, "ldn")):
     sys.path.insert(0, BUNDLED_LDN)
 
-from pokeldn.host_support import needs_root
 from pokeldn.frlg import config as configmod, host_cli  # noqa: E402
 from pokeldn.frlg.gift import gift_artifact, gift_registry, wonder_news  # noqa: E402
 from pokeldn.frlg.link import trade_runtime  # noqa: E402
@@ -31,7 +29,6 @@ from pokeldn.frlg.gift.host_mg_app import (  # noqa: E402
     WonderNewsHostApplication)
 from pokeldn.frlg.gift import wonder_card_events  # noqa: E402
 from pokeldn.frlg.gift.wonder_card import GIFT_BEAST_CUTSCENE  # noqa: E402
-from pokeldn.ldn import ldn_mitm_host, transport  # noqa: E402
 
 HOST_GIFT_CHOICES = gift_registry.GIFT_REGISTRY.live_choices
 
@@ -836,18 +833,6 @@ def build_run_config(parser, args):
         parser.error(str(exc))
 
 
-def _transport(parser, args):
-    factory = transport.HostTransport
-    if args.over_ip:
-        our_ip = None if args.over_ip == "auto" else args.over_ip
-        factory = functools.partial(ldn_mitm_host.IpHostTransport, our_ip=our_ip)
-        # functools.partial hides the class attribute the phy resolution reads.
-        factory.NEEDS_RADIO = False
-    elif needs_root():
-        parser.error("live LDN hosting requires root; run with sudo -E")
-    return factory
-
-
 def _save_session(parser, args, config):
     if args.export_gift:
         parser.error("--export-gift saves a gift; a save session sends none")
@@ -862,7 +847,7 @@ def _save_session(parser, args, config):
             parser.error("--save-restore: the save has no whole copy of a game in it")
     app = SaveTransferHostApplication(
         config, backup=args.save_backup, restore=args.save_restore,
-        resume_dir=args.save_resume_dir, transport_factory=_transport(parser, args),
+        resume_dir=args.save_resume_dir, transport_factory=host_cli.transport_factory(parser, args),
         log=trade_runtime.ConsoleLog(args.verbose))
     app.run()
     if app.interrupted:
@@ -931,7 +916,7 @@ def main(argv=None):
         except OSError as exc:
             parser.error(f"could not write --artifact-dir {args.artifact_dir!r}: {exc}")
         print(f"wrote Mystery Gift artifact: {artifact_path}")
-    factory = _transport(parser, args)
+    factory = host_cli.transport_factory(parser, args)
     application = (WonderNewsHostApplication if plan.distribution.is_news
                    else BufferScriptHostApplication if plan.distribution.buffer_code is not None
                    else MysteryGiftHostApplication)

@@ -17,11 +17,9 @@ if os.path.isdir(os.path.join(BUNDLED_LDN, "ldn")):
     sys.path.insert(0, BUNDLED_LDN)
 
 from pokeldn import pokemon as pokemon_service
-from pokeldn.host_support import needs_root
 from pokeldn.frlg import config as configmod, host_cli  # noqa: E402
 from pokeldn.frlg.link import trade_runtime  # noqa: E402
 from pokeldn.frlg.link import beacon as beaconmod
-from pokeldn.ldn import transport  # noqa: E402
 from pokeldn.frlg.link.host_app import HostApplication  # noqa: E402
 from pokeldn.online import session as online  # noqa: E402
 from pokeldn import trade_back  # noqa: E402
@@ -197,13 +195,13 @@ def main(argv=None):
         parser.error("the following arguments are required: MON")
     if not args.live:
         parser.error("hosting only supports live mode; omit --no-live")
-    if needs_root():
-        parser.error("live LDN hosting requires root; run with sudo -E")
+    factory = host_cli.transport_factory(parser, args)
     run_config = build_run_config(parser, args)
     partner = online.partner("frlg", args, name=run_config.profile.to_link_player().name)
     try:
         joined = HostApplication(
-            run_config, log=trade_runtime.ConsoleLog(args.verbose), partner=partner).run()
+            run_config, log=trade_runtime.ConsoleLog(args.verbose), partner=partner,
+            transport_factory=factory).run()
     finally:
         if partner:
             partner.close()
