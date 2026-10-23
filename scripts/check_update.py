@@ -122,6 +122,7 @@ def main() -> int:
     print(driver.stdout, driver.stderr, f"driver exit {driver.returncode}", sep="\n", flush=True)
 
     seen: dict[str, float] = {}
+    written: dict[str, str] = {}
 
     def done() -> bool:
         # A timeline of the swap: when each file appeared or went, from the driver's start.
@@ -131,6 +132,12 @@ def main() -> int:
             if now and name not in seen:
                 seen[name] = time.monotonic() - started
                 print(f"{seen[name]:6.1f} s  {name}", flush=True)
+        if state["outcome written"] and "outcome" not in written:
+            try:   # the app that opens removes it; its error names what failed
+                written["outcome"] = outcome.read_text()
+                print(f"         outcome {written['outcome']}", flush=True)
+            except OSError:
+                pass
         if "outcome written" in seen and not outcome.exists() and "outcome read" not in seen:
             seen["outcome read"] = time.monotonic() - started
             print(f"{seen['outcome read']:6.1f} s  outcome read", flush=True)

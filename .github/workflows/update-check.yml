@@ -35,6 +35,33 @@ jobs:
             folder: P:\Games
             flags: --busy
             drive: P
+          # A USB stick's file systems: no ACLs, and FAT keeps no hard links or owners.
+          - name: an exFAT drive's root
+            folder: P:\.
+            flags: --busy
+            drive: P
+            fs: exfat
+          - name: a FAT32 drive's root
+            folder: P:\.
+            flags: --busy
+            drive: P
+            fs: fat32
+          # subst maps a letter to a folder per logon session, as a mapped network drive does.
+          - name: a subst drive
+            folder: S:\Games
+            flags: --busy
+            subst: S
+          # A standard user (no administrator token) runs the install and the update.
+          - name: another drive's root, standard user
+            folder: P:\.
+            flags: --busy
+            drive: P
+            user: true
+          - name: a folder on another drive, standard user
+            folder: P:\Games
+            flags: --busy
+            drive: P
+            user: true
     name: windows (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v7
@@ -52,10 +79,30 @@ jobs:
       - if: matrix.drive
         shell: pwsh
         run: |
-          "create vdisk file=C:\pokeldn-drive.vhdx maximum=2048 type=expandable`nattach vdisk`ncreate partition primary`nformat fs=ntfs quick`nassign letter=${{ matrix.drive }}" | Set-Content drive.txt
+          "create vdisk file=C:\pokeldn-drive.vhdx maximum=2048 type=expandable`nattach vdisk`ncreate partition primary`nformat fs=${{ matrix.fs || 'ntfs' }} quick`nassign letter=${{ matrix.drive }}" | Set-Content drive.txt
           diskpart /s drive.txt
           New-Item -ItemType Directory -Force "${{ matrix.folder }}"
-      - run: python scripts/check_update.py pokeldn-windows-x64.zip "${{ matrix.folder }}" ${{ matrix.flags }}
+      - if: matrix.subst
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force C:\pokeldn-subst
+          subst ${{ matrix.subst }}: C:\pokeldn-subst
+          New-Item -ItemType Directory -Force "${{ matrix.folder }}"
+      - if: "!matrix.user"
+        run: python scripts/check_update.py pokeldn-windows-x64.zip "${{ matrix.folder }}" ${{ matrix.flags }}
+      - if: matrix.user
+        name: check_update.py as a standard user
+        shell: pwsh
+        run: |
+          $password = "Aa1!" + [guid]::NewGuid().ToString()
+          net user pokeldn-check $password /add | Out-Null
+          $credential = [pscredential]::new("pokeldn-check", (ConvertTo-SecureString $password -AsPlainText -Force))
+          $python = (Get-Command python).Source
+          $run = Start-Process $python -Credential $credential -LoadUserProfile -Wait -PassThru `
+            -WorkingDirectory $env:GITHUB_WORKSPACE -RedirectStandardOutput out.txt -RedirectStandardError err.txt `
+            -ArgumentList "scripts\check_update.py", "pokeldn-windows-x64.zip", "`"${{ matrix.folder }}`"", "${{ matrix.flags }}"
+          Get-Content out.txt, err.txt
+          exit $run.ExitCode
 
   linux:
     runs-on: ubuntu-22.04
