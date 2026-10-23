@@ -1,14 +1,15 @@
-# pokeldn 0.35.0
+# pokeldn 0.35.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Send it back: a new switch on every Trade tool, in all seven games and both roles. After each
-  trade, pokeldn trades again and offers back the Pokemon the console just sent, unchanged, so a
-  Pokemon that evolves by trade, such as Kadabra, evolves on the console. Give pokeldn's Pokemon
-  back in that second trade. With it on, a FireRed or LeafGreen session runs up to 12 trades.
+- Windows: the in-place update now also works with the app on a `subst` drive or a mapped network
+  drive when Windows has to ask for administrator permission.
+- Windows: an app at the root of a drive (`D:\pokeldn`) updates itself without asking for
+  administrator permission since 0.34.0. A copy older than 0.34.0 there stops with "Windows did not
+  give pokeldn permission"; download this version by hand once, and later updates install in place.
 
 The radio firmware stays at 1.7.1 and the controller firmware at 1.3.0; no board update is needed.
 
