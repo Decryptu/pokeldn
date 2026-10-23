@@ -100,6 +100,17 @@ jobs:
           if ($LASTEXITCODE) { exit 1 }
           $credential = [pscredential]::new("pokeldn-check", (ConvertTo-SecureString $password -AsPlainText -Force))
           $python = (Get-Command python).Source
+          # Start-Process passes this job's environment on: point it at the user's own profile.
+          Start-Process cmd -ArgumentList "/c", "exit" -Credential $credential -LoadUserProfile -Wait
+          $profile = (Get-CimInstance Win32_UserProfile | Where-Object { $_.LocalPath -like "*\pokeldn-check*" }).LocalPath
+          $env:USERPROFILE = $profile
+          $env:HOMEDRIVE, $env:HOMEPATH = $profile.Substring(0, 2), $profile.Substring(2)
+          $env:APPDATA = "$profile\AppData\Roaming"
+          $env:LOCALAPPDATA = "$profile\AppData\Local"
+          $env:TEMP = $env:TMP = "$profile\AppData\Local\Temp"
+          New-Item -ItemType Directory -Force $env:APPDATA, $env:TEMP | Out-Null
+          Remove-Item Env:HOME -ErrorAction Ignore
+          "profile $profile"
           $run = Start-Process $python -Credential $credential -LoadUserProfile -Wait -PassThru `
             -WorkingDirectory $env:GITHUB_WORKSPACE -RedirectStandardOutput out.txt -RedirectStandardError err.txt `
             -ArgumentList "scripts\check_update.py", "pokeldn-windows-x64.zip", "`"${{ matrix.folder }}`"", "${{ matrix.flags }}"
