@@ -190,6 +190,8 @@ def _launcher(tmp_path, monkeypatch, version, *extra):
 def test_the_launcher_saves_a_gift_the_board_sends_alone(board, tmp_path, monkeypatch):
     """--save-to-board through the host link to the simulated board's flash; the stored image,
     run by the board's own builder, carries the same record --dump writes."""
+    fixed = wc8.pack_date()           # each run dates the record when it sends; keep one date
+    monkeypatch.setattr(wc8, "pack_date", lambda t=None: fixed)
     code, _ = _launcher(tmp_path, monkeypatch, "1.8.0", "--dump", str(tmp_path / "card.wc8"))
     assert code == 0
     code, sim = _launcher(tmp_path, monkeypatch, "1.8.0", "--save-to-board", "--channel", "11")
