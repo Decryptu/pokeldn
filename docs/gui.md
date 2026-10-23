@@ -385,7 +385,7 @@ detects corruption and does not authenticate the release.
 | Updates off in Settings | no launch request |
 | no archive or `SHA256SUMS`, a source checkout, App Translocation, an unwritable folder (macOS, Linux) | Download only |
 | Windows, `C:\Program Files` | Update now behind UAC (`ShellExecuteExW` `runas`) |
-| Windows, the root of another drive (`D:\pokeldn`) | Update now without UAC: the swap only adds folders beside the app, which a volume's root allows users |
+| Windows, the root of another drive (`D:\pokeldn`) | Update now without UAC: the swap only adds folders beside the app, which a volume's root allows users. A release before 0.34.0 probed the root with a file, asked for UAC there, and a standard user's update stopped on "Windows did not give pokeldn permission to change D:\"; from such a release the next version is downloaded once by hand |
 | Windows, a mapped or `subst` drive | the drive letter is kept; the helper finds the old app's processes under either spelling; behind UAC the helper gets the folder the letter stands for, since an elevated process sees no letter the user's session mapped |
 | a session, flash or cleanup running | asks to finish first |
 

@@ -9,7 +9,7 @@ on:
         description: "The id of a Release workflow run whose archives to test"
         required: true
       from_run:
-        description: "A Release run whose older archives are installed first (the from cases)"
+        description: "A Release run whose older archives are installed first; without it the from cases skip"
         required: false
 
 permissions:
@@ -128,9 +128,9 @@ jobs:
           New-Item -ItemType Directory -Force C:\pokeldn-subst
           subst ${{ matrix.subst }}: C:\pokeldn-subst
           New-Item -ItemType Directory -Force "${{ matrix.folder }}"
-      - if: "!matrix.user"
+      - if: "!matrix.user && (!matrix.from || inputs.from_run)"
         run: python scripts/check_update.py pokeldn-windows-x64.zip "${{ matrix.folder }}" ${{ matrix.flags }}
-      - if: matrix.user
+      - if: matrix.user && (!matrix.from || inputs.from_run)
         name: check_update.py as a standard user
         shell: pwsh
         run: |
