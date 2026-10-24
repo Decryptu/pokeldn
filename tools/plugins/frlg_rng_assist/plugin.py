@@ -25,6 +25,7 @@ def register(api):
                 Field("--sid", "Game SID", "number", required=True),
                 Field("--method", "Model", "choice", default="1",
                       choices=(("1", "Method 1"), ("2", "Method 2"), ("4", "Method 4"))),
+                Field("--start", "Start advance", "number", default="0"),
                 Field("--advances", "Candidates", "number", default="100000"),
                 Field("--max-results", "Maximum targets", "number", default="10"),
                 Field("--any-shininess", "Allow non-shiny targets", "switch", default=False),
@@ -36,6 +37,57 @@ def register(api):
                       help="Optional upper bounds in HP, Attack, Defense, Sp. Atk, Sp. Def, Speed order."),
                 Field("--offset", "Measured offset (advances)", "number",
                       help="Optional HIT-to-pre-PID offset; omitted means no trigger prediction.")),
+    ))
+    live_common = (
+        Field("--build", "Cartridge", "choice", default="BPRE", choices=BUILDS),
+        Field("--radio", "Radio override", help="Optional, for example esp32:COM8; normally use Board."),
+        Field("--keys", "prod.keys path", help="Optional; normally supplied by the PokeLDN host."),
+        Field("--output", "Capture/report path", help="Optional; defaults to the FRLG RNG Assist library."),
+    )
+    api.add_tool("frlg", Tool(
+        "frlg-rng-assist-trace", "RNG Assist: trace seed", "trace.py",
+        "Read gRngValue samples from the live cartridge; the default mode is read-only and the optional ROM call can verify LCG continuity.",
+        ("Start this before using the result as a seed; default mode writes no console memory or save.",
+         "On the console choose Mystery Gift -> Wonder Cards -> Friend when the host asks."),
+        fields=(*live_common,
+                Field("--samples", "Frames", "number", default="60"),
+                Field("--trace-call", "Optional ROM call", help="Advanced hexadecimal THUMB address; default 0.")),
+    ))
+    api.add_tool("frlg", Tool(
+        "frlg-rng-assist-state", "RNG Assist: read state", "state.py",
+        "Read and decode the resident tracker state; this is a read-only memory dump.",
+        ("Install the observer first; a soft reset clears its state.",
+         "The state includes current seed/index, hit flags and the recorded target."),
+        fields=(*live_common,
+                Field("--state-address", "State address", help="Default 0x0203FF80.")),
+    ))
+    api.add_tool("frlg", Tool(
+        "frlg-rng-assist-install", "RNG Assist: install observer", "install.py",
+        "Install the read-only resident tracker until the next soft reset; Auto-A is off by default.",
+        ("This replaces the VBlank handler in volatile RAM and never writes the save.",
+         "Use the separate arm tool only after a live state and calibrated offset are confirmed."),
+        fields=(*live_common,
+                Field("--state-address", "State address", help="Default 0x0203FF80."),
+                Field("--trigger-index", "Trigger index", "number", default="0"),
+                Field("--offset", "Trigger offset", "number", default="0"),
+                Field("--target-pid", "Target PID", default="0"),
+                Field("--target-nature", "Target nature", "number", default="0"),
+                Field("--mode", "Mode", default="0"),
+                Field("--enable-auto-a", "Enable one-shot A", "switch", default=False)),
+    ))
+    api.add_tool("frlg", Tool(
+        "frlg-rng-assist-arm", "RNG Assist: configure one-shot A", "arm.py",
+        "Write the resident trigger parameters in volatile RAM; no save write is performed.",
+        ("The runtime does not search for a target on the console; supply a measured trigger index and offset.",
+         "Enable the switch only when the target and timing came from the same live session."),
+        fields=(*live_common,
+                Field("--trigger-index", "Trigger index", "number", default="0"),
+                Field("--state-address", "State address", help="Must match install observer; default 0x0203FF80."),
+                Field("--offset", "Trigger offset", "number", default="0"),
+                Field("--target-pid", "Target PID", default="0"),
+                Field("--target-nature", "Target nature", "number", default="0"),
+                Field("--mode", "Mode", default="0"),
+                Field("--enable-auto-a", "Enable one-shot A", "switch", default=False)),
     ))
     api.add_tool("frlg", Tool(
         "frlg-rng-assist-calibrate", "RNG Assist: calibration", "calibrate.py",

@@ -120,7 +120,7 @@ def test_report_uses_exclusive_files_and_preserves_previous_records(tmp_path):
     result = search(0, 0, 0, advances=1)
     assert save_report(result, path) == path
     before = path.read_bytes()
-    assert json.loads(before)["plugin_version"] == "0.1.0"
+    assert json.loads(before)["plugin_version"] == "0.2.0"
     with pytest.raises(FileExistsError):
         save_report(result, path)
     assert path.read_bytes() == before
@@ -147,7 +147,8 @@ def test_registered_tools_use_real_plugin_api_and_pack_successfully(tmp_path, mo
         loaded = next(p for p in plugins.load() if p.id == "frlg-rng-assist")
         assert loaded.loaded and not loaded.error
         assert {tool.key for game, tool in loaded.tools if game == "frlg"} == {
-            "frlg-rng-assist-search", "frlg-rng-assist-calibrate"}
+            "frlg-rng-assist-search", "frlg-rng-assist-calibrate", "frlg-rng-assist-trace",
+            "frlg-rng-assist-state", "frlg-rng-assist-install", "frlg-rng-assist-arm"}
         for _, tool in loaded.tools:
             spec = importlib.util.spec_from_file_location("rng_script_under_test", tool.script)
             module = importlib.util.module_from_spec(spec)

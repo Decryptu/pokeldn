@@ -29,7 +29,7 @@ def show_report(report):
 
 def save_report(report, output=None, *, no_save=False):
     report["created_at"] = datetime.now(timezone.utc).isoformat()
-    report["plugin_version"] = "0.1.0"
+    report["plugin_version"] = "0.2.0"
     if no_save:
         return None
     if output is None:

@@ -1,7 +1,7 @@
 id = "frlg-rng-assist"
 name = "FRLG RNG Assist"
-version = "0.1.0"
+version = "0.2.0"
 api = "1.8"
-description = "Offline natural-RNG predictions and calibration records for FireRed/LeafGreen. No console writes or automatic inputs."
+description = "Offline FRLG RNG search plus read-only live seed tracing, resident observation and opt-in one-shot A configuration."
 library = "FRLG RNG Assist"
 exclude = ["tests"]

@@ -77,3 +77,26 @@ def test_a_chain_past_one_session_goes_through_the_save():
     with pytest.raises(bs.BufferScriptError, match="receive buffer"):
         bs.build_install_resident("turbo+noclip")
     assert len(bs.build_resident_save_blob("turbo+noclip")) <= bs.RESIDENT_SAVE_SIZE
+
+
+def test_rng_assist_is_a_standalone_bounded_resident_hook():
+    """The live plugin's hook is relocatable, reserves 64 bytes, and keeps offset bounded."""
+    destination = ns.RESIDENT_BASE + 0x20
+    params = {"state": 0x0203FF80, "offset": 7, "auto_a": 0}
+    blob, entry, original = bs.resident_blob("rng-assist", build=BUILD, dest=destination, **params)
+    from pokeldn.frlg.rom.resident_stubs import STUBS
+    symbols = STUBS["rng-assist"][2]
+    assert len(blob) % 4 == 0 and len(blob) < 0x400
+    assert entry == symbols["rng_assist_hook"]
+    assert original == symbols["p_original"]
+    shim = int.from_bytes(blob[symbols["p_input_shim"]:symbols["p_input_shim"] + 4], "little")
+    assert shim == destination + symbols["rng_assist_input_shim"]
+    with pytest.raises(bs.BufferScriptError, match="0..255"):
+        bs.resident_blob("rng-assist", offset=256)
+    installed = bs.build_install_resident("rng-assist", build=BUILD, **params)
+    assert len(installed) <= bs.MAX_BUFFER_SCRIPT_SIZE
+
+
+def test_rng_assist_cannot_be_added_to_the_legacy_chain():
+    with pytest.raises(bs.BufferScriptError, match="runs alone"):
+        bs.build_install_resident("rng-assist+turbo")

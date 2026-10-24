@@ -1,75 +1,70 @@
-# FRLG RNG Assist 0.1.0
+# FRLG RNG Assist 0.2.0
 
-这是 **零售 Switch + PokeLDN** 方向的第一阶段离线插件。
-目前提供自然 RNG 候选搜索、单次校准分析和 PC 端 JSON 记录；不连接游戏、不安装 Hook、不按键、不修改游戏 Seed 或存档。
+这是一个给零售 FireRed / LeafGreen 使用的 PokeLDN 插件。现在已经有一条可测试的闭环：
 
-## 已实现
+1. 用主机的只读 `rng-trace` 采集游戏当前的 `gRngValue`。
+2. 用插件的离线 LCG/Method 1/2/4 模型搜索目标 PID、性格和 IV。
+3. 用实机的 PID/IV 样本做 offset 校准。
+4. 在易失 RAM 安装 resident observer，持续记录 seed、RNG advance、触发点和状态。
+5. 需要时把 trigger index、offset、PID 和性格写入 resident 参数，并显式选择是否启用一次性 A。
+6. 再读一次状态确认 `fired` / `hit_locked` / `missed`，然后在游戏里手动检查结果。
 
-- FRLG 页面下独立的“离线搜索”和“校准”工具，PokeLDN 公共插件 API 1.8。
-- 复用 PokeLDN 的 LCG/Method 1 数学模型，隔离内部接口依赖并做已知向量检查。
-- Method 1/2/4 的 PID、性格和 IV 预测；闪光、指定 PID、性格、六项 IV 下限/上限。
-- 按 RNG advance 搜索，支持起始 index、上限、结果数量；不输出伪精确的帧倒计时。
-- 手填 offset 后给出预测 trigger；未提供则保持为空。目标已过不做 32 位回绕补按。
-- 从 HIT + 实际 PID/IV 恢复有限范围内的候选 offset，保留歧义，不自动批准场景。
-- PokeLDN 进度条与状态卡；报告保存在插件资料库 `FRLG RNG Assist`，更新插件不覆盖这些记录。
+安装 observer 和配置参数会改写掌机的易失 RAM、VBlank 链和一次性回调；软复位后消失。插件不写存档、不写 `gRngValue`，也不持续模拟手柄。Auto-A 默认关闭，只有勾选“Enable one-shot A”才会启用一次尝试；运行时还会要求触发前的 `gMain.intrCheck` 表示主循环空闲，避免在 lag 帧接管输入。
 
-**所有场景均未实机校准。** Mewtwo/三鸟/Snorlax 是记录标签，不能当作已实现的遭遇 profile。
-一个 Method 1 数学候选不等于“在此刻按 A 会生成这只宝可梦”。
-手填 Seed 是离线输入；不宣称实时同步。TID/SID 请填游戏实际值，不是 PokeLDN 的交易身份。
+## 使用步骤
 
-## 输入约定
+先在 Board 页面连接 ESP32，确认 PokeLDN 主机使用当前版本的 FRLG runtime，并选择正确的游戏构建：
 
-- Seed/PID：十六进制，可省略 `0x`；例如 `12345678` 表示 `0x12345678`。
-- TID/SID、advance、offset：十进制。
-- UI/JSON 的 IV 顺序：**HP / Atk / Def / SpA / SpD / Spe**。
-- `--iv-min` 与 `--iv-max` 都按上述顺序填写；每一项的下限不能大于上限，默认范围是 `0,0,0,0,0,0` 到 `31,31,31,31,31,31`。
-- `--hit-boundary post-vblank` 只用于确认来自原 VBlank handler 返回后采样的数据；默认 `unspecified`。
-- `predicted_generation_seed` 位于第一笔 PID Random 调用之前；它不是从 CreateMon 实际采到的值。
+- `BPRE` / `BPRF`：FireRed 英文 / 法文。
+- `BPGE` / `BPGF`：LeafGreen 英文 / 法文。
 
-## 开发运行与打包
+主机要求的游戏路径一直是 **Mystery Gift → Wonder Cards → Friend**。每个 live 工具都会提示这一点。
 
-需使用带插件 API 的 PokeLDN。用户原有旧工作分支不因此自动升级。
-在 PokeLDN 源码根目录，设置插件源目录的绝对路径后：
+### 1. 采集 seed
+
+运行 **RNG Assist: trace seed**，默认采样 60 帧。默认模式只读 `gRngValue`，并保存 `.trace.bin` 和 `.trace.bin.json` 到 `Documents\pokeldn\FRLG RNG Assist`（也可以在 Capture/report path 中指定路径）。报告里的 `samples` 每项是 `before -> after`。高级的 `Trace ROM call` 保持为 `0`；填入 `Random` 等地址会执行 ROM 并可能推进 `gRngValue`，用于验证 LCG 连续性时必须把这次推进计入校准。
+
+### 2. 搜索离线目标
+
+从 trace 报告复制一个测量到的 seed，填入 **RNG Assist: offline search**，并填写游戏实际的 TID/SID。TID/SID 不是 PokeLDN 的联机身份。搜索结果的 index 单位是 LCG advance，不是 VBlank 帧；没有经过实机 offset 校准时，不要把它当作按键倒计时。
+
+### 3. 做实机校准
+
+用游戏里实际生成的宝可梦填写 **RNG Assist: calibration** 的 HIT seed、PID 和六项 IV（顺序 HP / Atk / Def / SpA / SpD / Spe）。可以保存多条记录；单条记录不会自动把遭遇 profile 标为已验证。
+
+### 4. 安装 observer
+
+运行 **RNG Assist: install observer**，保持 **Enable one-shot A** 关闭。安装完成后马上运行 **RNG Assist: read state**，确认 `initialized`、`current_seed` 和 `current_index` 在变化。状态地址默认 `0x0203FF80`，这是易失 EWRAM；如果你手动改过安装地址，读取时必须填写同一个地址。
+
+### 5. 配置一次性 A
+
+用离线搜索结果和已经校准的 offset 填写 **RNG Assist: configure one-shot A**：
+
+- `Trigger index`：observer 当前 RNG epoch 中的触发 advance。
+- `Trigger offset`：从触发 RNG 到目标生成的已校准 advance，范围 `0..255`。
+- `Target PID` / `Target nature`：写入状态供记录和核对；resident 本身不会在掌机上搜索目标。
+
+先不勾选 Enable one-shot A 可以只更新参数；确认所有值来自同一会话后再勾选并运行一次。运行结束后读状态：`fired` + `hit_locked` 表示 shim 已经执行；`missed` 表示场景、回调或时序不再匹配，插件不会在晚到的帧补按 A。
+
+一次性回调只在正常 overworld callback pair 仍然存在、且请求只等待一个主循环窗口时执行。切换地图、重置或游戏重新播种都会使旧请求失效。实际命中仍须在游戏中检查，并把新的 PID/IV 记录回来做校准。
+
+## 安全边界和固件
+
+插件不会自动按键，也不会写存档；`install observer` 和 `configure one-shot A` 的 RAM 写入由主机的 `--write-unsafe` 保护，但它们只覆盖本次运行的易失地址。Wireless 1.8.0 与本插件 API 1.8 的工具调用兼容；关键是 PokeLDN 主机源码也要包含 `rng-assist` resident runtime 和生成的 `resident_stubs.py`。如果插件能安装但主机报 “no rng-assist resident runtime”，更新 PokeLDN 主程序后再试。
+
+FireRed / LeafGreen 的 ROM 构建、语言和地址必须匹配。插件不把 Mewtwo、三鸟或 Snorlax 标签当作已经验证的 timing profile；它们只是报告分类。
+
+## 开发、测试和打包
+
+从 PokeLDN 源码根目录运行：
 
 ```powershell
-$env:POKELDN_PLUGINS = 'C:\path\to\frlg_rng_assist'
-python -m pokeldn --plugins
-python -m pokeldn frlg-rng-assist-search -- --seed 12345678 --tid 50425 --sid 50923 --advances 100000
+python -m pytest tools/plugins/frlg_rng_assist/tests --confcutdir=tools/plugins/frlg_rng_assist/tests -q
+$env:Path = 'D:\Codex\ch32\EasyMCU_CH32\.tools\bin;' + $env:Path
+python scripts/gen_resident_stubs.py --check
+python scripts/pack_plugin.py tools/plugins/frlg_rng_assist -o "$env:USERPROFILE\Downloads\frlg-rng-assist-0.2.0.pokeplugin"
 ```
 
-正常插件运行默认保存到其资料库；`--no-save` 仅打印，`--output FILE` 创建指定 JSON 文件且拒绝覆盖旧文件。
-指定 PID 筛选时若不要求闪光，添加 `--any-shininess`；默认仍要求闪光，其他条件同时成立才算目标。
+插件包不带 `.s` 源码；runtime 由 PokeLDN 主程序提供。开发包未签名，安装页显示“Not signed”是预期的，安装前应确认包来自自己的构建目录。
 
-```powershell
-python scripts/pack_plugin.py 'C:\path\to\frlg_rng_assist' -o frlg-rng-assist-0.1.0.pokeplugin
-```
-
-在 PokeLDN 的 Plugins 页安装该包，由用户完成插件安装界面。开发包未签名，不自动安装到当前用户配置。
-包不携带任何 ARM Hook 或游戏数据。包内 `LICENSE` 与 PokeLDN 根目录一致，为 GNU AGPL v3；复用的 PokeLDN 代码及模型归其原作者。
-
-## 测试
-
-从要验证的 **PokeLDN 主程序源码根目录** 运行（插件路径可在另一个目录）：
-
-```powershell
-python -m pytest 'C:\path\to\frlg_rng_assist\tests' --confcutdir='C:\path\to\frlg_rng_assist\tests' -q
-```
-
-测试覆盖数学向量、Method/IV 顺序、单 advance 搜索、PID/性格/IV 组合条件、offset 单位与过期、反查歧义/范围、报告防覆盖、内部 API 异常、真实插件注册/打包、真实主程序子进程启动。
-使用缺乏 `pokeldn.plugins` 的旧主程序会跳过集成测试；不能把这种部分通过当作插件兼容验证。
-
-2026-10-22 验证基线：
-
-- 上游 main `af33b4cd257cf960954391e45b65a4eebd5f89cd`（提交标记 0.34.0）：**33 passed**。
-- 正式 Release `v0.33.2` / `c1f2b953800834c3387fa5b2fe44cccf1e86cea0`：**33 passed**。
-- main 现有 LCG、countdown、resident chain/save 回归：**85 passed, 1 skipped**；跳过项需要本地 `bs15_dump.bin`。
-
-以上是数学与主程序集成验证，没有进行零售 Switch 实机命中验证。
-
-详细设计、最新版差异和 Resident 草稿问题见仓库 `docs/frlg_rng_assist_plugin_plan_zh.md`。
-
-## 后续阶段
-
-运行时只读 Seed Overlay → 具体场景的 20 次 offset 校准 → 独立、限时的一次 A callback shim。
-插件不会直接部署上游 `rng-*-hunt`：它们会写回 `gRngValue`；`hunt-log` 还写入游戏存档区域。
-不会复用 Game boosts 的“代码太大就改走存档”回退，也不会把 TV 313/314 当作固定推进值。
+离线工具可以在没有掌机时测试。live 工具在没有 radio/console 时会停在 host session，不会伪造 seed 或报告成功。
