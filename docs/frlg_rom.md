@@ -1969,23 +1969,28 @@ VCount enabled in a handler [crt0.s], so `m4aSoundVSync` runs, and the hook call
 (`0x081DF53D`, `gPcmDmaCounter` `0x03002F68` from `gSoundInfo` `0x03005F80`) per waited V-blank and
 clears it in `REG_IF`. State is 36 bytes at `0x0203FF80`.
 
-`shiny-press` (`asm/resident/shiny-press.s`, 860 bytes) is the same source assembled with
+`shiny-press` (`asm/resident/shiny-press.s`, 872 bytes) is the same source assembled with
 `SHINY_PRESS`: no slow motion, `method=1`, and A pressed by the hook. On an idle frame whose countdown
 is 0, while `callback1`/`callback2` are `CB1_Overworld`/`CB2_Overworld` and `sGlobalScriptContext`
 (`0x03000FB0` on all twelve cartridges, the first literal of `ScriptContext_SetupScript`) has mode 2
 and `nativePtr` `WaitForAorBPress` (the literal of `ScrCmd_waitbuttonpress`, `gScriptCmdTable[0x6D]`;
-`0x0806F159` French), it stores a shim, found by `adr`, in `callback1`. `ReadKeys` runs first in the
-next main-loop pass [main.c:81]; the shim puts `CB1_Overworld` back, ORs A into `gMain.newKeys` and
-calls it, and the waiting script returns at once [scrcmd.c:1313]. Outside a button wait nothing is
-pressed.
+`0x0806F159` French), or runs no script (mode 0) while B is held, it stores a shim, found by `adr`,
+in `callback1`. `ReadKeys` runs first in the next main-loop pass [main.c:81]; the shim puts
+`CB1_Overworld` back, ORs A into `gMain.newKeys` and calls it. A waiting script returns at once [scrcmd.c:1313]; with no script, A talks to what the
+player faces. Held B is no new press at a wait and does nothing standing still.
 
-Mewtwo is the only static encounter whose `setwildbattle` follows a `waitbuttonpress`
-[CeruleanCave_B1F/scripts.inc:37]; Articuno, Zapdos and Moltres run it on the talk press, before
-their wait. From the hook's seed at the press frame, Mewtwo's personality is drawn from the next
-call: `offset=1`, measured in mGBA on French FireRed (three presses, `tests/test_shiny.py`). With
-offset 1 the app's payload gave a shiny Mewtwo on French, English, Spanish, German and Italian
-cartridges, FireRed and LeafGreen; Japanese is untried. A target whose countdown is odd when the game
-advances two calls a frame is skipped; the next one is held.
+| Pokemon | the press that creates it | `offset` |
+|---|---|---|
+| Mewtwo | its `waitbuttonpress`; `setwildbattle` follows [CeruleanCave_B1F/scripts.inc:37] | 1 |
+| Articuno, Zapdos, Moltres | the talk: `lock`, `faceplayer`, `setwildbattle`, then the wait | 2 |
+
+`offset` counts calls from the hook's seed at the press frame to the one before the personality,
+measured in mGBA on French FireRed (A held for one frame, three presses each, `tests/test_shiny.py`)
+and run end to end with the app's payload while the player holds B: offsets 0 to 8 at Zapdos give
+one shiny, at 2. With the table's offsets the app's payload gave all four shiny on seven cartridges:
+French, English, Spanish and German FireRed, French, English and Italian LeafGreen. Japanese is
+untried. A target whose countdown is odd when the game advances two calls a frame is skipped; the
+next one is held.
 
 `ivs` (`asm/resident/ivs.s`) shows the lead's IVs on two rows (`OVERLAY_TWO_ROWS`, the second in
 `gMain.oamBuffer[112..117]` at y 10): HP, Attack, Defense, Speed, then Sp. Atk, Sp. Def and

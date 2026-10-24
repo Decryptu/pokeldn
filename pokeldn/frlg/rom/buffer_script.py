@@ -2107,7 +2107,9 @@ INSTALL_ENTRY_OFFSET = 0x10
 INSTALL_ORIGINAL_OFFSET = 0x14
 INSTALL_BLOB_OFFSET = 0x18
 # Entry symbol and tunable parameters per hook.
-SHINY_PRESS_OFFSET = 1  # measured on Mewtwo in mGBA: its PID is two calls after the press frame's seed
+# Calls from the press frame's seed to the one before the personality, measured in mGBA: Mewtwo's
+# press answers its button wait, the birds' is the talk press [docs/frlg_rom.md, shiny-press].
+SHINY_PRESS_OFFSETS = {"mewtwo": 1, "birds": 2}
 RESIDENT_HOOKS = {
     "turbo": ("turbo_hook", {"extra": 4, "field": 0, "battle": 0, "overlay": 0, "hold": 0,
                              "help": 0, "budget": 0, "ring": 0,
@@ -2120,7 +2122,7 @@ RESIDENT_HOOKS = {
                              "overlay": 0x0203FF98}),
     # shiny with no slow motion: A pressed at a waitbuttonpress when the countdown is 0, a scripted
     # CreateMon by default [asm/resident/shiny.inc, PRESS]
-    "shiny-press": ("shiny_hook", {"method": 1, "offset": SHINY_PRESS_OFFSET, "search": 16,
+    "shiny-press": ("shiny_hook", {"method": 1, "offset": SHINY_PRESS_OFFSETS["mewtwo"], "search": 16,
                                    "state": 0x0203FF80, "overlay": 0x0203FF98}),
     "ivs": ("ivs_hook", {"mon": 0x02024280, "words": 0x0203FF80, "overlay": 0x0203FF80,
                          "overlay2": 0x0203FF84}),

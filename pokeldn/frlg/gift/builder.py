@@ -171,6 +171,7 @@ KEEP = Option("keep", "Save boosts for later", False,
 SPEEDS = (("1", "x1"), ("2", "x2"), ("3", "x3"), ("4", "x4"))
 WHERE = (("both", "Overworld and battles"), ("field", "Overworld only"), ("battle", "Battles only"))
 SLOWER = (("1", "x2 slower"), ("3", "x4 slower"), ("7", "x8 slower"))
+LEGENDARIES = (("mewtwo", "Mewtwo"), ("birds", "Articuno, Zapdos or Moltres"))
 # A pass budget in scanlines: measured smooth at field=3 battle=3, stuttering without it [frlg_rom.md].
 BUDGET = 228
 RESIDENT_AREA = 0x400                       # 0x0203FC00..0x02040000
@@ -201,6 +202,13 @@ def _shiny(o):
         f"The game runs {dict(SLOWER)[o['slower']]} while {BUTTON_NAME[o['button']]} is held, to hit the frame"]
 
 
+def _legendary(o):
+    return {"offset": buffer_script.SHINY_PRESS_OFFSETS[o["legendary"]]}, [
+        f"Counts down to the next shiny {dict(LEGENDARIES)[o['legendary']]}, top right of the screen",
+        "Stand facing it and hold B. The game presses A by itself on a shiny frame, at the talk and at its "
+        "cry; keep holding B until the battle starts. This can take a few minutes"]
+
+
 def _noclip(o):
     return {"hold": int(o["button"], 0)}, [
         f"Walk through walls, trees and water while {BUTTON_NAME[o['button']]} is held; people still block the way"]
@@ -221,11 +229,8 @@ BOOST_LIST = (
           _plain("No grass, water or roaming encounters; fishing and Sweet Scent still work")),
     Boost("hook-shiny", "Shiny countdown", "Counts down to the next shiny in the grass.", "shiny", _shiny,
           (Option("button", "Slow the game down", R, BUTTONS), Option("slower", "By", "3", SLOWER))),
-    Boost("hook-shiny-press", "Shiny Mewtwo", "Presses A for you at Mewtwo's cry, on a shiny frame.",
-          "shiny-press", _plain(
-              "Counts down to the next shiny Mewtwo, top right of the screen",
-              "Talk to Mewtwo, then let go of the buttons: when its cry ends, the game presses A by itself "
-              "on a shiny frame. This can take a few minutes")),
+    Boost("hook-shiny-press", "Shiny legendary", "Presses A for you on a shiny frame in front of a legendary.",
+          "shiny-press", _legendary, (Option("legendary", "Pokemon", "mewtwo", LEGENDARIES),)),
     Boost("hook-ivs", "Lead's IVs on screen", "The lead Pokemon's IVs and nature, top right.", "ivs",
           _plain("The lead Pokemon's six IVs and its nature, top right of the overworld")),
     Boost("hook-follower", "Pokemon follower", "Your lead Pokemon walks behind you.", "follower",

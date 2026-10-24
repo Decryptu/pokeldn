@@ -21,7 +21,8 @@
 @
 @ PRESS (shiny-press.s, SHINY_PRESS set; no slow motion). On an idle frame whose countdown is 0, while
 @ callback1/callback2 are CB1_Overworld/CB2_Overworld and sGlobalScriptContext waits in
-@ WaitForAorBPress (mode 2, nativePtr) [scrcmd.c:1313, 1407], callback1 becomes the shim below.
+@ WaitForAorBPress (mode 2, nativePtr) [scrcmd.c:1313, 1407], or runs no script (mode 0) while B is
+@ held (the talk press), callback1 becomes the shim below.
 @ ReadKeys runs first in that main-loop pass [main.c:81], so the shim's A in gMain.newKeys reaches the
 @ waiting script; it puts CB1_Overworld back and calls it.
 @
@@ -306,11 +307,19 @@ shiny_hook:
     ldr     r3, p_script_context
     ldrb    r0, [r3, #1]            @ mode
     cmp     r0, #2                  @ SCRIPT_MODE_NATIVE
+    beq     .Lpr_native
+    cmp     r0, #0                  @ SCRIPT_MODE_STOPPED: the talk press, B held
     bne     .Lpr_done
+    ldrh    r0, [r2, #0x2C]         @ heldKeys
+    lsr     r0, r0, #2              @ B_BUTTON into carry
+    bcc     .Lpr_done
+    b       .Lpr_arm
+.Lpr_native:
     ldr     r0, [r3, #4]            @ nativePtr
     ldr     r1, p_wait_button
     cmp     r0, r1
     bne     .Lpr_done
+.Lpr_arm:
     adr     r0, .Lpress_shim        @ forward and inside the hook: position independent
     add     r0, #1
     str     r0, [r2]

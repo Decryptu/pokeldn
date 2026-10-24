@@ -16,6 +16,7 @@ CB1_OVERWORLD = 0x08059E49
 CB2_OVERWORLD = 0x08059EC9
 SCRIPT_CONTEXT = 0x03000FB0
 WAIT_BUTTON = 0x0806F159                    # WaitForAorBPress, French
+OFFSET = bs.SHINY_PRESS_OFFSETS["mewtwo"]
 RNG = 0x03004220
 SB2_PTR = 0x0300422C
 SB2 = 0x02024584
@@ -58,7 +59,7 @@ def first_shiny(seed, tid, sid, method=0, limit=100000):
 class Console:
     """One installed hook and the memory it reads; frame() enters it the way IntrMain does."""
 
-    def __init__(self, seed, tid, sid, name="shiny", waiting=True, **params):
+    def __init__(self, seed, tid, sid, name="shiny", mode=2, **params):
         self.machine = bs._Machine(bs.build_install_resident(name, **params), memory={
             ns.GINTRTABLE_VBLANK: (VBLANK_INTR | 1).to_bytes(4, "little"),
             VBLANK_INTR: _counting_stub(COUNTERS),
@@ -67,7 +68,7 @@ class Console:
             SB2 + 0x0A: tid.to_bytes(2, "little") + sid.to_bytes(2, "little"),
             GMAIN: CB1_OVERWORLD.to_bytes(4, "little") + CB2_OVERWORLD.to_bytes(4, "little"),
             CB1_OVERWORLD & ~1: _counting_stub(COUNTERS + 8),
-            SCRIPT_CONTEXT: bytes((0, 2 if waiting else 1, 0, 0)) + WAIT_BUTTON.to_bytes(4, "little"),
+            SCRIPT_CONTEXT: bytes((0, mode, 0, 0)) + WAIT_BUTTON.to_bytes(4, "little"),
             RNG: seed.to_bytes(4, "little"),
             VCOUNT: (160).to_bytes(2, "little")})
         assert self.machine.call().param == VBLANK_INTR | 1
@@ -200,12 +201,12 @@ def test_r_is_kept_off_the_help_system():
     assert console.read(0x0203F171, 1) == 1
 
 
-def _press_run(seed, tid, sid, frames, lag_at=None, **params):
+def _press_run(seed, tid, sid, frames, lag_at=None, held=0, **params):
     """-> [(index followed, newKeys after callback1)] a frame, the game advancing two calls a frame."""
     console = Console(seed, tid, sid, name="shiny-press", search=64, **params)
     out, rng = [], seed
     for f in range(frames):
-        console.frame(lag=f == lag_at)
+        console.frame(lag=f == lag_at, held=held)
         out.append((console.read(STATE + 4), console.main_loop()))
         rng = lcg.step(lcg.step(rng))
         console.write(RNG, rng)
@@ -216,40 +217,50 @@ def _reachable(seed, tid, sid):
     """A seed whose first shiny CreateMon is an even number of calls past the offset."""
     while True:
         target, _ = first_shiny(seed, tid, sid, method=1)
-        if target > 64 and (target - bs.SHINY_PRESS_OFFSET) % 2 == 0:
+        if target > 64 and (target - OFFSET) % 2 == 0:
             return seed, target
         seed = lcg.step(seed)
 
 
 def test_the_press_is_one_a_at_the_waiting_script_on_the_frame_the_countdown_reaches_zero():
     seed, target = _reachable(0x00C0FFEE, 50425, 50923)
-    console, frames = _press_run(seed, 50425, 50923, (target - bs.SHINY_PRESS_OFFSET) // 2 + 4)
+    console, frames = _press_run(seed, 50425, 50923, (target - OFFSET) // 2 + 4)
     pressed = [index for index, keys in frames if keys & 1]
-    assert pressed == [target - bs.SHINY_PRESS_OFFSET]
+    assert pressed == [target - OFFSET]
     assert console.read(GMAIN) == CB1_OVERWORLD          # the game's callback1 is back
     assert console.read(COUNTERS + 8) == len(frames)     # and CB1_Overworld ran every pass
 
 
-@pytest.mark.parametrize("before, personality", [
-    (0x8DEFC2AD, 0xF63E4E65), (0xFB34FA1C, 0x0CF1F63E), (0xA65852CF, 0x717DBAC6)])
-def test_the_offset_is_where_mewtwos_personality_was_drawn_in_mgba(before, personality):
-    """French FireRed in mGBA at Mewtwo's last line: gRngValue at the frame boundary before the
-    frame A was held, and the personality setwildbattle then gave gEnemyParty[0]. The hook's seed is
-    one call later, VBlankIntr's [main.c:412]."""
-    assert wild(lcg.advance(lcg.step(before), bs.SHINY_PRESS_OFFSET), method=1)[0] == personality
+@pytest.mark.parametrize("legendary, before, personality", [
+    ("mewtwo", 0x8DEFC2AD, 0xF63E4E65), ("mewtwo", 0xFB34FA1C, 0x0CF1F63E), ("mewtwo", 0xA65852CF, 0x717DBAC6),
+    ("birds", 0x7EBEF391, 0xBF74DA99), ("birds", 0x58AA4330, 0xE2E9BF74), ("birds", 0x39ABCAF2, 0x6577FD73)])
+def test_the_offset_is_where_the_legendarys_personality_was_drawn_in_mgba(legendary, before, personality):
+    """French FireRed in mGBA, A held for one frame at Mewtwo's last line or facing Zapdos: gRngValue
+    at the frame boundary before it, and the personality setwildbattle gave gEnemyParty[0]. The hook's
+    seed is one call later, VBlankIntr's [main.c:412]."""
+    start = lcg.advance(lcg.step(before), bs.SHINY_PRESS_OFFSETS[legendary])
+    assert wild(start, method=1)[0] == personality
+
+
+@pytest.mark.parametrize("held, pressed", [(0x2, True), (0x2 | 0x100, True), (0x1, False), (0, False)])
+def test_with_no_script_running_the_press_needs_b_held(held, pressed):
+    """The talk press in front of a bird: script mode 0 (stopped), B (0x2) held."""
+    seed, target = _reachable(0x00C0FFEE, 50425, 50923)
+    _, frames = _press_run(seed, 50425, 50923, (target - OFFSET) // 2 + 4, held=held, mode=0)
+    assert [index for index, keys in frames if keys & 1] == ([target - OFFSET] if pressed else [])
 
 
 def test_no_press_without_a_waiting_script_or_on_a_lag_frame():
     seed, target = _reachable(0x00C0FFEE, 50425, 50923)
-    count = (target - bs.SHINY_PRESS_OFFSET) // 2 + 4
-    console = Console(seed, 50425, 50923, name="shiny-press", waiting=False, search=64)
+    count = (target - OFFSET) // 2 + 4
+    console = Console(seed, 50425, 50923, name="shiny-press", mode=1, search=64)
     rng = seed
     for _ in range(count):
         console.frame()
         assert console.read(GMAIN) == CB1_OVERWORLD
         rng = lcg.step(lcg.step(rng))
         console.write(RNG, rng)
-    _, frames = _press_run(seed, 50425, 50923, count, lag_at=(target - bs.SHINY_PRESS_OFFSET) // 2)
+    _, frames = _press_run(seed, 50425, 50923, count, lag_at=(target - OFFSET) // 2)
     assert not any(keys & 1 for _, keys in frames)
 
 

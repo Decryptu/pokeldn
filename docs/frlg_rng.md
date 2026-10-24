@@ -116,7 +116,7 @@ so a press hits one chosen frame about 9% of the time; a shiny frame comes every
 This is the route when the RAM script slot holds a Wonder Card.
 
 At a script's button wait the hook can press instead, on the exact frame and without writing
-`gRngValue`: [`shiny-press`](frlg_rom.md#shiny-shiny-press-ivs-noencounter), the app's Shiny Mewtwo.
+`gRngValue`: [`shiny-press`](frlg_rom.md#shiny-shiny-press-ivs-noencounter), the app's Shiny legendary.
 
 ## The stub that does the search
 
