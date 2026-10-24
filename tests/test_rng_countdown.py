@@ -12,7 +12,7 @@ CONSOLE_TID, CONSOLE_SID = 12345, 2791
 
 def test_the_mon_it_computes_is_the_one_the_console_actually_built():
     """Frame 0 of a scan reproduces the measured samples exactly."""
-    mon = rng_countdown._mon_from(MEV11_BEFORE, CONSOLE_TID, CONSOLE_SID)
+    mon = rng_countdown.mon_from(MEV11_BEFORE, CONSOLE_TID, CONSOLE_SID)
 
     assert mon["personality"] == MEV11_PID
     assert mon["ivs"] == MEV11_IVS
@@ -37,7 +37,7 @@ def test_every_frame_it_calls_shiny_really_is_shiny_and_none_are_missed():
     state = MEV11_BEFORE
     expected = set()
     for k in range(frames + 1):
-        mon = rng_countdown._mon_from(state, CONSOLE_TID, CONSOLE_SID)
+        mon = rng_countdown.mon_from(state, CONSOLE_TID, CONSOLE_SID)
         if (CONSOLE_TID ^ CONSOLE_SID ^ (mon["personality"] >> 16)
                 ^ (mon["personality"] & 0xFFFF)) < 8:
             expected.add(k)

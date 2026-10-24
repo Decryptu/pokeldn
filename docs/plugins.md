@@ -427,6 +427,7 @@ major still served is listed in `DEPRECATED` with its last release; one dropped 
 | 1.8 | `pokeldn.panel`, `library_sort` |
 | 1.9 | language-pack messages, templates, terms, tool help, documents and font preference |
 | 1.10 | `add_offer_edit` |
+| 1.11 | FireRed/LeafGreen RNG: `lcg`, `rng_countdown.mon_from`, `scan`, `buffer_script.read_rng_trace` |
 
 ## The API, version 1
 
@@ -455,7 +456,7 @@ major still served is listed in `DEPRECATED` with its last release; one dropped 
 
 This table and the next are the supported surface; any other import can change in any release.
 
-## The program surface (1.3, Bank added in 1.4, language packs in 1.5)
+## The program surface (1.3, Bank added in 1.4, language packs in 1.5, RNG in 1.11)
 
 A plugin or a separate program on a pokeldn checkout can use these; `tests/test_plugin_surface.py`
 resolves each.
@@ -491,6 +492,10 @@ resolves each.
 | `pokeldn.app.bank.TradeSession(offers, folder=)` | the run's ordered offers (1.4) |
 | `pokeldn.app.bank.TradeSession.advance(count)` | apply a cumulative trade count; `.completed` is the highest seen (1.4) |
 | `pokeldn.app.received.trades_done(line)` | the count in a `[done] trade N complete` line, or `None` (1.4) |
+| `pokeldn.frlg.rom.lcg.step(value)`, `.advance(value, n)`, `.distance(start, target)`, `.draws(value, count)` | FireRed/LeafGreen's `gRngValue` generator: the next state, n ahead, the steps between two, the next `count` `Random()` results and the state left (1.11, [The RNG](frlg_rng.md)) |
+| `pokeldn.frlg.rom.lcg.recover_wild_state(personality, ivs, max_gap=)` | the states that build a Pokemon, IVs in stored order (1.11) |
+| `pokeldn.frlg.rom.rng_countdown.mon_from(state, tid, sid)`, `.scan(state, tid, sid, frames=, want=)` | the scripted `CreateMon` a state builds: `personality`, `ivs`, `nature`, `shiny`; the shiny presses within `frames` (1.11) |
+| `pokeldn.frlg.rom.buffer_script.read_rng_trace(dump)` | the samples of a `--buffer-script rng-trace` session's `--dump-file` (1.11) |
 
 Stop a launcher run with SIGINT to its PID, then SIGTERM after 15 s; never `pkill -f`.
 

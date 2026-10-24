@@ -149,7 +149,7 @@ def test_the_species_and_level_are_checked_before_a_console_ever_sees_them():
 def test_the_stub_lands_on_a_state_whose_encounter_is_shiny(state):
     """The stub's landing state is shiny by `rng_countdown`, written from the other direction."""
     landed = int.from_bytes(_run(state)["memory"][rom_map.GRNG_VALUE], "little")
-    mon = rng_countdown._mon_from(landed, CONSOLE_TID, CONSOLE_SID)
+    mon = rng_countdown.mon_from(landed, CONSOLE_TID, CONSOLE_SID)
     assert mon["shiny"], f"0x{state:08X} -> 0x{landed:08X} is not shiny"
     assert mon["shiny_value"] < native_script.SHINY_ODDS
     # 1 state in 8192 is shiny.
@@ -174,15 +174,15 @@ def test_the_trainer_id_is_read_off_the_console_and_actually_used():
     theirs = int.from_bytes(result["memory"][rom_map.GRNG_VALUE], "little")
     ours = int.from_bytes(_run(state)["memory"][rom_map.GRNG_VALUE], "little")
     assert theirs != ours
-    assert rng_countdown._mon_from(theirs, other_tid, other_sid)["shiny"]
-    assert not rng_countdown._mon_from(theirs, CONSOLE_TID, CONSOLE_SID)["shiny"]
-    assert rng_countdown._mon_from(ours, CONSOLE_TID, CONSOLE_SID)["shiny"]
+    assert rng_countdown.mon_from(theirs, other_tid, other_sid)["shiny"]
+    assert not rng_countdown.mon_from(theirs, CONSOLE_TID, CONSOLE_SID)["shiny"]
+    assert rng_countdown.mon_from(ours, CONSOLE_TID, CONSOLE_SID)["shiny"]
 
 
 @needs_unicorn
 def test_the_stub_leaves_the_rng_untouched_when_the_cap_runs_out():
     state = 0x12345678
-    assert not rng_countdown._mon_from(state, CONSOLE_TID, CONSOLE_SID)["shiny"]
+    assert not rng_countdown.mon_from(state, CONSOLE_TID, CONSOLE_SID)["shiny"]
     result = _run(state, cap=4)
     assert int.from_bytes(result["memory"][rom_map.GRNG_VALUE], "little") == state
 
@@ -356,12 +356,12 @@ def test_the_bigger_stub_still_fits_the_only_budget_that_binds():
 def test_the_stub_lands_on_the_first_state_that_satisfies_everything_asked_for(state, criteria):
     """The landing state passes and no state before it does."""
     landed, _instructions = _mon_run(state, criteria)
-    assert _accepts(rng_countdown._mon_from(landed, CONSOLE_TID, CONSOLE_SID), criteria)
+    assert _accepts(rng_countdown.mon_from(landed, CONSOLE_TID, CONSOLE_SID), criteria)
     walked = lcg.distance(state, landed)
     assert walked < native_script.cap_for(criteria)
     current = state
     for _ in range(walked):
-        assert not _accepts(rng_countdown._mon_from(current, CONSOLE_TID, CONSOLE_SID), criteria)
+        assert not _accepts(rng_countdown.mon_from(current, CONSOLE_TID, CONSOLE_SID), criteria)
         current = lcg.advance(current, 1)
     assert current == landed
 
@@ -374,7 +374,7 @@ def test_a_floor_lands_on_the_stat_it_names(index):
     floors[index] = 24
     criteria = native_script.MonCriteria(iv_minimums=tuple(floors))
     landed, _instructions = _mon_run(0x52E6B438, criteria)
-    mon = rng_countdown._mon_from(landed, CONSOLE_TID, CONSOLE_SID)
+    mon = rng_countdown.mon_from(landed, CONSOLE_TID, CONSOLE_SID)
     assert mon["shiny"] and mon["ivs"][index] >= 24
 
 
@@ -394,8 +394,8 @@ def test_the_trainer_id_still_comes_off_the_console_when_the_criteria_are_richer
     ours, _ = _mon_run(0x52E6B438, criteria)
     theirs, _ = _mon_run(0x52E6B438, criteria, tid=0x1234, sid=0x5678)
     assert ours != theirs
-    assert _accepts(rng_countdown._mon_from(theirs, 0x1234, 0x5678), criteria)
-    assert not rng_countdown._mon_from(theirs, CONSOLE_TID, CONSOLE_SID)["shiny"]
+    assert _accepts(rng_countdown.mon_from(theirs, 0x1234, 0x5678), criteria)
+    assert not rng_countdown.mon_from(theirs, CONSOLE_TID, CONSOLE_SID)["shiny"]
 
 
 @needs_unicorn
@@ -447,7 +447,7 @@ def test_the_bytes_the_console_will_actually_be_sent_search_for_what_the_card_sa
         _SAV2: bytes(save),
     }, instruction_limit=1 << 26)
     landed = int.from_bytes(result["memory"][rom_map.GRNG_VALUE], "little")
-    assert _accepts(rng_countdown._mon_from(landed, CONSOLE_TID, CONSOLE_SID),
+    assert _accepts(rng_countdown.mon_from(landed, CONSOLE_TID, CONSOLE_SID),
                     w.RNG_MON_HUNT_CRITERIA)
 
 
@@ -512,7 +512,7 @@ def test_the_whole_script_finds_the_mon_it_was_asked_for_from_the_body():
     criteria = native_script.MonCriteria(natures=(13,), iv_minimums=(0, 0, 0, 20, 0, 0))
     for state in (0x12345678, 0x7041F74F, 1, 0xFFFFFFFF):
         result = _far(state, criteria)
-        mon = rng_countdown._mon_from(result["rng"], CONSOLE_TID, CONSOLE_SID)
+        mon = rng_countdown.mon_from(result["rng"], CONSOLE_TID, CONSOLE_SID)
         assert _accepts(mon, criteria), (hex(state), mon)
 
 
@@ -588,7 +588,7 @@ def test_two_words_cover_all_three_methods_docs_rng_records():
     methods = {"1 (clean)": _ivs_from(d[2], d[3]),
                "2": _ivs_from(d[3], d[4]),
                "4": _ivs_from(d[2], d[4])}
-    mon = rng_countdown._mon_from(result["rng"], CONSOLE_TID, CONSOLE_SID)
+    mon = rng_countdown.mon_from(result["rng"], CONSOLE_TID, CONSOLE_SID)
     assert mon["shiny"] and mon["nature"] == 13
     for name, ivs in methods.items():
         assert all(iv >= floor for iv, floor in zip(ivs, criteria.iv_minimums)), (name, ivs)
@@ -652,7 +652,7 @@ def test_the_hunt_writes_down_the_state_it_found_and_what_it_cost():
     assert log["start"] == 0x12345678
     assert log["found"] == result["rng"], "the log and gRngValue must not be able to disagree"
     assert log["found_one"] and 0 < log["iterations"] <= log["cap"]
-    mon = rng_countdown._mon_from(log["found"], CONSOLE_TID, CONSOLE_SID)
+    mon = rng_countdown.mon_from(log["found"], CONSOLE_TID, CONSOLE_SID)
     assert mon["shiny"] and mon["nature"] == 13
     # The stub's count and the host model are computed from opposite ends.
     assert log["frames"] == pytest.approx(
