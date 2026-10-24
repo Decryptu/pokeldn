@@ -30,7 +30,7 @@ RISKS = (
 
 
 def plugin_icon(source: str | bytes = "", size: int = 48) -> ft.Control:
-    """The plugin's own image, or the blocks mark on the brand gradient."""
+    """The plugin's own image, or the blocks mark in brand blue."""
     if isinstance(source, str) and source:
         try:
             source = Path(source).read_bytes()
@@ -41,7 +41,7 @@ def plugin_icon(source: str | bytes = "", size: int = 48) -> ft.Control:
                          filter_quality=ft.FilterQuality.NONE)
         return ft.Container(image, width=size, height=size, border_radius=size * 0.22,
                             clip_behavior=ft.ClipBehavior.ANTI_ALIAS)
-    return ft.Container(t.tinted(t.pixel_icon("blocks", size=24 if size < 48 else 48), t.BRAND_BLUE),
+    return ft.Container(t.pixel_icon("blocks", size=24 if size < 48 else 48, color=t.BLUE),
                         width=size, height=size, border_radius=size * 0.22, alignment=ft.Alignment.CENTER,
                         bgcolor=ft.Colors.with_opacity(0.08, "#FFFFFF"))
 
@@ -133,7 +133,7 @@ class PluginsView:
 
     def _zone(self, compact: bool) -> ft.Container:
         title = (tr('plugins.drop_a_pokeplugin_file_here_dabba6', 'Drop a .pokeplugin file here') if drop.AVAILABLE else tr('plugins.add_a_pokeplugin_file_42b275', 'Add a .pokeplugin file'))
-        lead = t.tinted(t.pixel_icon("archive", size=24 if compact else 48), t.BRAND_BLUE)
+        lead = t.pixel_icon("archive", size=24 if compact else 48, color=t.BLUE)
         body = [t.text(title, 15 if not compact else 13, weight=ft.FontWeight.W_600),
                 t.text(tr('plugins.plugins_add_tools_and_radios_made_by_other_people_you_s_580f52', 'Plugins add tools and radios made by other people. You see what a plugin is and accept its risks before anything is installed.'), 12, t.MUTED,
                        text_align=None if compact else ft.TextAlign.CENTER)]
@@ -373,7 +373,7 @@ class PluginsView:
                 actions.append(t.icon_button("trash", lambda e, s=source: self._remove_source(s),
                                              tr('plugins.remove_source', 'Stop following'), color=t.RED))
             rows.append(t.surface(ft.Container(ft.Row([
-                t.tinted(t.pixel_icon("globe", size=24), t.BRAND_BLUE),
+                t.pixel_icon("globe", size=24, color=t.BLUE),
                 ft.Column(lines, spacing=4, expand=True), ft.Row(actions, spacing=0),
             ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START), padding=ft.Padding(16, 14, 8, 14))))
         return [add, t.section(tr('plugins.followed_sources', 'Followed'), ft.Column(rows, spacing=8), trailing=t.icon_button(

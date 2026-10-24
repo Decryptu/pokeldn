@@ -556,7 +556,7 @@ class OfferOptions:
         self.total = effort.get("total")
         limit = f"0-{effort['max']}" + (tr('pokemon.in_all_09ffde', ', {value0} in all', value0=effort['total']) if effort.get("total") else "")
         return [
-            t.flow(first + second, 150),
+            t.field_grid(first + second, 150),
             self._moves(found["move_names"]),
             self._stats("ivs", tr('pokemon.ivs_39e3d6', 'IVs'), 31, "0-31"),
             self._stats("effort", EFFORT[effort["kind"]], effort["max"], limit, effort.get("total")),

@@ -322,21 +322,21 @@ one, three none (`raid_partners.slots`); extra `--raid-partner` flags are refuse
 ### Favoured partners
 
 Raiders rate ten partners of the stage 3 and 4 pool (Serebii's level 80) above the rest.
-`raid_partners.RECOMMENDED` holds them, and the app's card for each ends on why and a star: gold for
+`raid_partners.RECOMMENDED` holds them, and the app's card for each ends on why and a star: blue for
 the four raiders favour, silver for the next tier.
 
 | rank | trainer | Pokemon | why |
 |---|---|---|---|
-| gold | Eli | Gardevoir | Life Dew heals the whole team; seven-star solo guides ask for it, often with Bellibolt. |
-| gold | Hailey | Bellibolt | Light Screen, when she sets it, cuts the boss's special damage; Discharge can paralyze. |
-| gold | Logan | Arboliva | Safeguard keeps status conditions off the team; Grassy Terrain heals each turn and also powers a boss's Grass moves. |
-| gold | Charlotte | Staraptor | Intimidate on every respawn and Feather Dance cut the boss's physical Attack. |
-| silver | Austin | Arcanine | Intimidate on every respawn; Leer lowers the boss's Defense. |
-| silver | Kylie | Tauros | Intimidate on every respawn; Raging Bull breaks the boss's screens. |
-| silver | Hunter | Drifblim | Will-O-Wisp burns the boss, halving its physical damage. |
-| silver | Gianna | Umbreon | Thunder Wave paralysis can give a free turn, by chance. |
-| silver | Evan | Dudunsparce | Glare paralyzes at 100% accuracy, except a boss with an Electric Tera type. |
-| silver | Samantha | Weavile | Leer lowers the boss's Defense before its shield; Ice Punch can freeze. |
+| favoured | Eli | Gardevoir | Life Dew heals the whole team; seven-star solo guides ask for it, often with Bellibolt. |
+| favoured | Hailey | Bellibolt | Light Screen, when she sets it, cuts the boss's special damage; Discharge can paralyze. |
+| favoured | Logan | Arboliva | Safeguard keeps status conditions off the team; Grassy Terrain heals each turn and also powers a boss's Grass moves. |
+| favoured | Charlotte | Staraptor | Intimidate on every respawn and Feather Dance cut the boss's physical Attack. |
+| next tier | Austin | Arcanine | Intimidate on every respawn; Leer lowers the boss's Defense. |
+| next tier | Kylie | Tauros | Intimidate on every respawn; Raging Bull breaks the boss's screens. |
+| next tier | Hunter | Drifblim | Will-O-Wisp burns the boss, halving its physical damage. |
+| next tier | Gianna | Umbreon | Thunder Wave paralysis can give a free turn, by chance. |
+| next tier | Evan | Dudunsparce | Glare paralyzes at 100% accuracy, except a boss with an Electric Tera type. |
+| next tier | Samantha | Weavile | Leer lowers the boss's Defense before its shield; Ice Punch can freeze. |
 
 Intimidate raises the Attack of a Defiant or Competitive boss, such as Annihilape, on every respawn.
 The earlier stages' pools have no Life Dew, Light Screen or Safeguard. The partners' moves changed

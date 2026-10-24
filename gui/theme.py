@@ -25,8 +25,6 @@ RED = "#FD474D"
 GREEN = "#3DD68C"
 AMBER = "#FF9F0A"
 SILVER = "#BCC3CE"
-BRAND_BLUE = ("#4FD9F5", "#4E61FC")   # the logo's two gradients (assets/logo.svg)
-BRAND_RED = ("#FAA555", "#FD474D")
 SELECTED = ft.Colors.with_opacity(0.14, BLUE)
 MONO = "monospace"
 CJK_FONT = "Noto Sans CJK SC"
@@ -84,9 +82,7 @@ def glass(content: ft.Control, radius: float = 20, **kwargs) -> ft.Container:
     # One colour on all four sides: Flutter leaves the corners of a mixed-colour border square.
     return ft.Container(
         content, blur=ft.Blur(30, 30), border_radius=radius, clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
-        gradient=ft.LinearGradient(begin=ft.Alignment.TOP_CENTER, end=ft.Alignment.BOTTOM_CENTER,
-                                   colors=[ft.Colors.with_opacity(0.72, "#26262A"),
-                                           ft.Colors.with_opacity(0.64, "#18181B")]),
+        bgcolor=ft.Colors.with_opacity(0.68, "#1F1F22"),
         border=ft.Border.all(1, ft.Colors.with_opacity(0.1, "#FFFFFF")),
         **kwargs)
 
@@ -221,14 +217,17 @@ def section(title: str, body: ft.Control | None = None, trailing: ft.Control | N
     return ft.Column([ft.Row(head, spacing=8), *([body] if body else [])], spacing=8, tight=True)
 
 
-def grid_rows(tiles: list[ft.Control], columns: int = 2, spacing: float = 6) -> list[ft.Control]:
-    """Tiles in rows of `columns`; the tiles of a row share its tallest tile's height."""
+def grid_rows(tiles: list[ft.Control], columns: int = 2, spacing: float = 6,
+              stretch_last: bool = False) -> list[ft.Control]:
+    """Tiles in rows of `columns`; the tiles of a row share its tallest tile's height. `stretch_last`
+    lets a short last row's tiles share its width, as a lone raid seed does."""
     rows = []
     for i in range(0, len(tiles), columns):
         cells = tiles[i:i + columns]
         for cell in cells:
             cell.expand = 1
-        cells += [ft.Container(expand=1) for _ in range(columns - len(cells))]
+        if not stretch_last:
+            cells += [ft.Container(expand=1) for _ in range(columns - len(cells))]
         rows.append(ft.Row(cells, spacing=spacing, intrinsic_height=True,
                            vertical_alignment=ft.CrossAxisAlignment.STRETCH))
     return rows
@@ -242,8 +241,9 @@ class Flow:
     """Tiles or fields in rows of as many as the measured width gives each `min_width`; a fixed count
     per row squeezes a dropdown's text or a tile's summary out of a narrow column."""
 
-    def __init__(self, controls: list[ft.Control], min_width: float = 160, spacing: float = 10):
-        self.min_width, self.spacing, self.width = min_width, spacing, 0.0
+    def __init__(self, controls: list[ft.Control], min_width: float = 160, spacing: float = 10,
+                 stretch_last: bool = False):
+        self.min_width, self.spacing, self.width, self.stretch_last = min_width, spacing, 0.0, stretch_last
         self.box = ft.Column(spacing=spacing, tight=True)
         self.control = ft.Container(self.box, size_change_interval=50, on_size_change=self._resized)
         self.columns = 0
@@ -261,7 +261,8 @@ class Flow:
 
     def _lay(self) -> None:
         self.columns = 1 if self.single else self._fit()
-        self.box.controls = list(self.items) if self.single else grid_rows(list(self.items), self.columns, self.spacing)
+        self.box.controls = (list(self.items) if self.single else
+                             grid_rows(list(self.items), self.columns, self.spacing, self.stretch_last))
 
     def _resized(self, e) -> None:
         self.width = e.width
@@ -270,8 +271,9 @@ class Flow:
             self.control.update()
 
 
-def flow(controls: list[ft.Control], min_width: float = 160, spacing: float = 10) -> ft.Container:
-    return Flow(controls, min_width, spacing).control
+def field_grid(controls: list[ft.Control], min_width: float = 160) -> ft.Container:
+    """Labelled fields in a Flow; a short last row's fields share its width."""
+    return Flow(controls, min_width, 10, stretch_last=True).control
 
 
 def card(title: str, body: ft.Control | None = None, description: str = "",
@@ -447,13 +449,6 @@ def badge(label: str, color: str = MUTED, icon: str = "circle-info") -> ft.Row:
                   spacing=6, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
 
-def tinted(control: ft.Control, colors: tuple[str, ...]) -> ft.ShaderMask:
-    """The control's opaque pixels painted with a diagonal gradient, such as a brand gradient over pixel icons."""
-    return ft.ShaderMask(content=control, blend_mode=ft.BlendMode.SRC_IN,
-                         shader=ft.LinearGradient(begin=ft.Alignment.TOP_LEFT, end=ft.Alignment.BOTTOM_RIGHT,
-                                                  colors=list(colors)))
-
-
 def chip(label: str, icon: str | None = None, color: str = MUTED) -> ft.Container:
     """A small capsule holding a fact: an icon in its colour and a label."""
     row = [pixel_icon(icon, size=12, color=color)] if icon else []
@@ -536,7 +531,7 @@ def step_list(steps: list[str]) -> ft.Column:
     rows = []
     for index, step in enumerate(steps):
         first, last = index == 0, index == len(steps) - 1
-        lead = 22 if first else 0
+        lead = 0
         gap = 0 if last else 14
 
         def resize(e, initial=first, final=last, top=lead, bottom=gap):
@@ -544,12 +539,6 @@ def step_list(steps: list[str]) -> ft.Column:
             stroke = ft.Paint(color=MUTED, stroke_width=1, style=ft.PaintingStyle.STROKE)
             shapes = [cv.Circle(9, center, 4,
                                 paint=ft.Paint(color=MUTED, stroke_width=1.5, style=ft.PaintingStyle.STROKE))]
-            if initial:
-                end = center - 7
-                shapes.append(cv.Line(9, 0, 9, end, paint=ft.Paint(
-                    stroke_width=1, style=ft.PaintingStyle.STROKE,
-                    gradient=ft.PaintLinearGradient(begin=ft.Offset(9, 0), end=ft.Offset(9, end),
-                                                   colors=[ft.Colors.with_opacity(0, MUTED), MUTED]))))
             ranges = ([] if initial else [(0, center - 7)])
             if not final:
                 ranges.append((center + 7, e.height))

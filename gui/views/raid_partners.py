@@ -18,7 +18,7 @@ COLUMNS = 3
 CARD_WIDTH = 150
 GAP = 8
 REASON_HEIGHT = 48                          # two 11 px lines at the theme's 1.4 line height, padded
-RANKS = {1: (t.AMBER, tr('raid_partners.favoured_by_raiders_ebd6ac', 'Favoured by raiders')), 2: (t.SILVER, tr('raid_partners.next_tier_for_raiders_4c1d2f', 'Next tier for raiders'))}
+RANKS = {1: (t.BLUE, tr('raid_partners.favoured_by_raiders_ebd6ac', 'Favoured by raiders')), 2: (t.SILVER, tr('raid_partners.next_tier_for_raiders_4c1d2f', 'Next tier for raiders'))}
 
 
 def columns(width: float) -> int:
@@ -137,7 +137,7 @@ class RaidPartnersPicker:
                              for move in partner.moves], spacing=1)
         column = [title, facts, moves]
         if footer:
-            # Wanted by raiders: a strip tinted gold for the favoured, silver for the next tier; its
+            # Wanted by raiders: a strip tinted blue for the favoured, silver for the next tier; its
             # tooltip says why at more length. A card without one keeps the strip's room.
             strip = ft.Container(height=REASON_HEIGHT)
             if partner.why:

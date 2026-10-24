@@ -72,26 +72,20 @@ CRYSTALS = {"standard": tr('raid_seed.standard_crystal_3b5674', 'Standard crysta
             "might": tr('raid_seed.seven_star_event_crystal_2ea5df', 'Seven-star event crystal')}
 
 
-def crystal_colors(context) -> tuple[str, str]:
-    return t.BRAND_RED if context["content"] in ("black", "might") else t.BRAND_BLUE
+def crystal_color(context) -> str:
+    """The crystal's colour, flat: red for a black or seven-star crystal, blue for the rest."""
+    return t.RED if context["content"] in ("black", "might") else t.BLUE
 
 
-def stars_row(count: int, context) -> ft.ShaderMask:
-    """The raid's stars as pixel stars in the crystal's brand gradient: blue standard, red black."""
-    return t.tinted(ft.Row([t.pixel_icon("star", color="#FFFFFF") for _ in range(count)], spacing=1,
-                           tight=True), crystal_colors(context))
+def stars_row(count: int, context) -> ft.Row:
+    return ft.Row([t.pixel_icon("star", color=crystal_color(context)) for _ in range(count)], spacing=1, tight=True)
 
 
 def framed_sprite(app, species: int, shiny: bool, size: int, context) -> ft.Container:
-    """The sprite inside a ring of the crystal's gradient."""
+    """The sprite in a hairline of the crystal's colour."""
     sprite = Sprite(app, species, shiny, size=size)
-    sprite.frame.border = None
-    radius = 12 if size >= SIZE else 10
-    return ft.Container(sprite.control, padding=1.5, border_radius=radius + 1.5,
-                        gradient=ft.LinearGradient(begin=ft.Alignment.TOP_LEFT, end=ft.Alignment.BOTTOM_RIGHT,
-                                                   colors=list(crystal_colors(context))),
-                        shadow=ft.BoxShadow(blur_radius=18, spread_radius=-6,
-                                            color=ft.Colors.with_opacity(0.45, crystal_colors(context)[1])))
+    sprite.frame.border = ft.Border.all(1, ft.Colors.with_opacity(0.5, crystal_color(context)))
+    return sprite.control
 
 
 def iv_tile(label: str, iv: int, stat: int, compact: bool) -> ft.Container:
@@ -105,7 +99,8 @@ def iv_tile(label: str, iv: int, stat: int, compact: bool) -> ft.Container:
         rows.append(t.text(f"{stat}", 10, t.FAINT, tooltip=tr('raid_seed.the_stat_at_the_boss_s_level_f98bbf', "The stat at the boss's level")))
     return ft.Container(ft.Column(rows, spacing=3 if compact else 4, tight=True,
                                   horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                        width=46 if compact else 62, padding=ft.Padding(6, 6, 6, 8), border_radius=10,
+                        width=46 if compact else None, expand=None if compact else 1,
+                        padding=ft.Padding(6, 6, 6, 8), border_radius=10,
                         bgcolor=ft.Colors.with_opacity(0.04, "#FFFFFF"))
 
 
@@ -163,13 +158,12 @@ def boss_card(app, seed, stars, boss, context, *, compact=False, rewards=None, a
     name = translate(raid_encounter.tables()["species_names"][str(boss["species"])])
     title = [t.text(name, 14 if compact else 17, weight=ft.FontWeight.W_700)]
     if shiny:
-        title.append(t.tinted(t.pixel_icon("sparkles", color="#FFFFFF", tooltip=tr('raid_seed.shiny_039a0a', 'Shiny')), crystal_colors(context)))
+        title.append(t.pixel_icon("sparkles", color=crystal_color(context), tooltip=tr('raid_seed.shiny_039a0a', 'Shiny')))
     mark = SIZE_MARKS.get(boss["scale"])
     if mark:
-        title.append(t.tinted(t.pixel_icon(f"{mark.lower()}-mark", color="#FFFFFF", tooltip=translate(f"{mark} mark")),
-                              crystal_colors(context)))
+        title.append(t.pixel_icon(f"{mark.lower()}-mark", color=crystal_color(context), tooltip=translate(f"{mark} mark")))
     title.append(stars_row(stars, context))
-    accent = t.RED if context["content"] in ("black", "might") else t.BLUE
+    accent = crystal_color(context)
     facts = ft.Row([
         t.chip(tr('raid_seed.level_6095a3', 'Level {value0}', value0=boss['level']), "sword", accent),
         t.chip(tr('raid_seed.tera_1d43ce', '{value0} Tera', value0=TERA_TYPES[boss['tera_type_original']]), "diamond-gem", accent),
@@ -180,8 +174,9 @@ def boss_card(app, seed, stars, boss, context, *, compact=False, rewards=None, a
     ], spacing=6, run_spacing=6, wrap=True)
     where = (tr('raid_seed._c00a83', '{value0} · {value1} · {value2} · {value3}', value0=VERSIONS[context['version']], value1=REGIONS[context['map_name']], value2=dict(PROGRESS)[context['progress']], value3=CRYSTALS[context['content']])
              + (tr('raid_seed._940234', ' · {value0}', value0=translate(context['den'])) if context.get("den") else ""))
+    # The six share one row: a wrap left one alone on a second line.
     ivs = ft.Row([iv_tile(label, iv, stat, compact)
-                  for label, iv, stat in zip(STATS, boss["ivs"], boss["stats"])], spacing=6, wrap=True)
+                  for label, iv, stat in zip(STATS, boss["ivs"], boss["stats"])], spacing=6, wrap=compact)
     # The stars wrap under the name in a narrow card rather than run past its edge.
     column = [ft.Row(title, spacing=8, run_spacing=4, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
               facts, ivs]
@@ -206,10 +201,7 @@ def boss_card(app, seed, stars, boss, context, *, compact=False, rewards=None, a
     if len(parts) > 1:
         body = ft.Column(parts, spacing=10, tight=True)
     return ft.Container(body, padding=12 if compact else 16, border_radius=14,
-                        border=ft.Border.all(1, ft.Colors.with_opacity(0.08, "#FFFFFF")),
-                        gradient=ft.LinearGradient(begin=ft.Alignment.TOP_LEFT, end=ft.Alignment.BOTTOM_RIGHT,
-                                                   colors=[ft.Colors.with_opacity(0.08, accent), t.FIELD],
-                                                   stops=[0, 0.55]))
+                        bgcolor=t.FIELD, border=ft.Border.all(1, t.OUTLINE))
 
 
 class RaidSeedPicker:
@@ -220,9 +212,10 @@ class RaidSeedPicker:
         self.context, self.on_context_change = context, on_context_change
         self.seed = t.field(value=str(value or ""), mono=True, expand=True, on_change=self._typed)
         self.preview = ft.Container()
-        self.control = ft.Column([
+        # A row around it: in the card's column the boss card would shrink to its content.
+        self.control = ft.Row([ft.Column([
             ft.Row([self.seed, t.secondary_button(tr('raid_seed.find_a_raid_493258', 'Find a raid'), self._open, "search")], spacing=8),
-            self.preview], spacing=8, tight=True)
+            self.preview], spacing=8, tight=True, expand=True, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)])
         self._show(str(value or ""), update=False)
 
     def _show(self, text: str, update: bool = True) -> None:
@@ -506,7 +499,7 @@ def heading(icon: str, title: str) -> ft.Container:
 
 def empty_results(searched: bool = False) -> ft.Container:
     return ft.Container(ft.Column([
-        t.tinted(t.pixel_icon("diamond-gem", size=48, color="#FFFFFF"), t.BRAND_BLUE),
+        t.pixel_icon("diamond-gem", size=48, color=t.BLUE),
         t.text(tr('raid_seed.no_raid_matches_widen_a_filter_or_search_more_seeds_f6f3f7', 'No raid matches. Widen a filter or search more seeds.') if searched else
                tr('raid_seed.the_raids_the_search_finds_appear_here_cb237f', 'The raids the search finds appear here.'), 13, t.MUTED, text_align=ft.TextAlign.CENTER),
     ], spacing=12, tight=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER),

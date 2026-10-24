@@ -154,7 +154,7 @@ class GiftBuilder:
                                      settings=bool(b.options)) for b in preset.members]
                 if on:
                     body.append(self.boost_settings(preset))
-            body.insert(0, t.flow(tiles, 220, 6))
+            body.insert(0, t.Flow(tiles, 220, 6).control)
             intro = getattr(self.module, "GROUP_INTROS", {}).get(group, "")
             if intro:
                 body.insert(0, t.text(translate(intro), 12, t.MUTED))

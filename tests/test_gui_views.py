@@ -1194,7 +1194,7 @@ def test_each_console_joining_takes_a_partner_s_slot():
 
 
 def test_a_favoured_raid_partner_s_card_shows_a_star_and_why(tmp_path):
-    """The level-80 cards of the partners raiders want end on a star and its reason, gold for the
+    """The level-80 cards of the partners raiders want end on a star and its reason, blue for the
     favoured and silver for the next tier; a pool without any, such as level 40's, shows neither. Each
     card names the Pokemon and, on a line of its own, its level: four fifths of Our Pokemon's, unknown
     until Our Pokemon is built."""
@@ -1216,7 +1216,7 @@ def test_a_favoured_raid_partner_s_card_shows_a_star_and_why(tmp_path):
                                app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
                                                    ui=lambda work: None))
         card = list(raid_controls(RaidPartnersPicker(view, field).control))
-        for rank, ink, tier in ((1, theme.AMBER, "Favoured by raiders"),
+        for rank, ink, tier in ((1, theme.BLUE, "Favoured by raiders"),
                                 (2, theme.SILVER, "Next tier for raiders")):
             reasons = [why for r, why, _ in wanted.values() if r == rank]
             assert [c.value for c in card if isinstance(c, ft.Text) and c.color == ink] == reasons

@@ -428,7 +428,7 @@ class GamesView:
             else:
                 fields = groups[item]
                 sprite = self.species_sprite(fields)
-                rows = [t.flow([t.labeled_control(f.label, self.input(f, grouped=True)) for f in fields], 200)]
+                rows = [t.field_grid([t.labeled_control(f.label, self.input(f, grouped=True)) for f in fields], 200)]
                 if item == tr('catalog.console_29a408', 'Console') and self.tool.key == "frlg-gift":
                     rows.append(ft.Column([
                         t.text(tr('games.game_language_233497', 'Game language'), 12, t.MUTED),

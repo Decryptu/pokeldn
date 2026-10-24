@@ -323,7 +323,7 @@ rewards, up to 45 rows. Raid's own rewards clears the overrides ([Hosting](sv_ra
 The Raid NPC partners card fills slots the consoles leave empty ([Partners](sv_raid.md#partners);
 `gui/views/raid_partners.py`); with nothing chosen the host draws them as a console does. Partners'
 progress passes `--raid-partner-progress`; each card shows trainer, Pokemon (level four fifths of Our
-Pokemon's), Tera type, ability and moves, and favoured partners carry a gold or silver strip
+Pokemon's), Tera type, ability and moves, and favoured partners carry a blue or silver strip
 ([Favoured partners](sv_raid.md#favoured-partners)). Each click passes `--raid-partner` in slot
 order; a pick the stage lacks is dropped.
 
