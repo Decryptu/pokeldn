@@ -47,7 +47,10 @@ class Loopback:
 
 
 class ScriptedConsole:
-    """A console that sends a TRADE_POKE, waits for ours, then reports SEND_READYOK, once per trade."""
+    """A console that sends a TRADE_POKE, waits for ours, then reports SEND_READYOK and its character
+    state, once per trade. Its reliable id is shared with the joiner's: a joiner message under an id
+    below the console's last send is acknowledged and dropped (docs/bdsp_protocol.md), as a retail
+    Shining Pearl dropped a returned Pokemon sent under 27 after its own 27 and 28."""
 
     def __init__(self):
         self.sock = None
@@ -84,6 +87,8 @@ class ScriptedConsole:
                 if not d["flags"] & rl.FLAG_APPLICATION_DATA:
                     continue
                 await self.ack(d["sequence_id"] + 1)
+                if d["sequence_id"] < self.seq - 1:
+                    continue
                 g = room.parse(d["payload"])
                 if g["data_id"] == room.TRADE_POKE:
                     return d["payload"][room.HEADER_SIZE:]
@@ -92,6 +97,7 @@ class ScriptedConsole:
         await self.send_data(room.build_trade_poke(ours))
         got = await self.their_poke()
         await self.send_data(room.build_trade_ready_ok(room.TRADE_STATE_SEND_READYOK, is_trade_ok=1))
+        await self.send_data(room.build_state(18))
         return got
 
 

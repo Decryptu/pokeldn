@@ -366,6 +366,9 @@ async def main_async(args):
                             print(f"[rx]     {d['payload'].hex(' ')}\n")
                         if d["flags"] & rl.FLAG_APPLICATION_DATA:
                             st["rel_max_seq"] = max(st["rel_max_seq"], d["sequence_id"])
+                            # The id is shared: ours under one below the console's last is dropped in
+                            # silence (docs/bdsp_protocol.md, Sending messages the game acts on).
+                            st["our_next_seq"] = max(st["our_next_seq"], d["sequence_id"])
                             st["rel_streams"].add(d["stream_id"])
                             # A message may span packets: a 697-byte record need not arrive
                             # START|END in one.

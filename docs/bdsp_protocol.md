@@ -120,7 +120,9 @@ sequence is ignored.
 ## Sending messages the game acts on
 
 The reliable sequence id is shared with the console's sends; a message below the acked id is dropped
-in silence. Read the id immediately before each send. A join at the acknowledged sequence is acted
+in silence. Read the id immediately before each send. A retail Shining Pearl acted on a reply under
+the id of its own last message and dropped one under an id below it: after its state message (27)
+and its Pokemon (28), a returned Pokemon under 27 was acknowledged and never checked. A join at the acknowledged sequence is acted
 on; `--room-pattern fixed` stops at the first 0x04 request, `--join-wait` seconds apart (default 1.0).
 
 `UnionOpcManager` calls `CreateCharacter(joinData)` on each join: forty joins are forty arrivals. A
