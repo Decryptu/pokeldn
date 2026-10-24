@@ -5,6 +5,7 @@ The console ignores SEND_BLOCK_INIT unless its slot is RECV_STATE_READY
 from collections import Counter, deque
 from dataclasses import dataclass
 
+from pokeldn import console_trainer
 from pokeldn.frlg.gift import mg_link, mystery_gift
 from pokeldn.frlg.link import linkplayer, trade
 from pokeldn.gba import block, rfu
@@ -341,6 +342,7 @@ class HostMysteryGiftEngine:
                 self._reject_link_player("invalid GameFreak magic", data)
                 return
             self.child_link_player = parsed
+            console_trainer.from_link_player("frlg", parsed)
             self._expected = None
             self._link_player_seen = True
             self._link_phase = "send_host_block"

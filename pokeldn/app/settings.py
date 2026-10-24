@@ -1,9 +1,11 @@
 import json
 import os
 import random
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from pokeldn import console_trainer
 from pokeldn.app.paths import DATA, RECEIVED
 
 PATH = DATA / "settings.json"
@@ -12,6 +14,7 @@ LANGUAGES = (("2", "English"), ("3", "French"), ("5", "German"), ("4", "Italian"
 # Switch titles show the 32-bit trainer id as id % 10**6 and id // 10**6 (docs/gui.md, Your trainer).
 SWITCH_TID_LIMIT = 1_000_000
 GEN3 = ("frlg", "rse")      # games whose records keep a 16-bit TID and SID and a Gen III name
+TRAINER_LANGUAGES = {1, 2, 3, 4, 5, 7, 8, 9, 10}   # PKHeX LanguageID Settings offers
 
 
 @dataclass
@@ -41,6 +44,8 @@ class Settings:
     # 0 male, 1 female. Legends Z-A checks it before taking a Pokemon back as its trainer's, and Legends
     # Arceus's data exchange record carries it.
     gender: int = 0
+    # "gba" or "switch" -> the newest console trainer a run reported (pokeldn.console_trainer), for Find mine.
+    found_trainers: dict = field(default_factory=dict)
     board_names: dict = field(default_factory=dict)   # MAC -> name the user gave the board
     tool_values: dict = field(default_factory=dict)   # tool key -> {"values": {...}, "extra": {...}}
 
@@ -72,6 +77,31 @@ class Settings:
             if name and charmap.decode(encoded, language=int(self.language)) == name and len(encoded) <= limit:
                 return name
         return Settings.ot[:limit]
+
+    def found(self, message: dict) -> None:
+        """Keeps a run's `[trainer]` message as the newest of its row."""
+        row = "gba" if message["game"] in GEN3 else "switch"
+        self.found_trainers[row] = {**message, "when": time.time()}
+        self.save()
+
+    def take_found(self, row: str) -> dict | None:
+        """Takes `row`'s ("gba" or "switch") newest found trainer as this trainer: its IDs, and its name, gender
+        and language where known. -> what it took, None when no run reported one."""
+        found = self.found_trainers.get(row)
+        if not found:
+            return None
+        ids = console_trainer.shown(found["game"], found["tid"], found["sid"])
+        if row == "gba":
+            self.tid, self.sid = ids
+        else:
+            self.switch_tid, self.switch_sid = ids
+        self.ot = str(found["ot"])[:12] or self.ot
+        if found.get("gender") in (0, 1):
+            self.gender = found["gender"]
+        if found.get("language") in TRAINER_LANGUAGES:
+            self.language = found["language"]
+        self.save()
+        return found
 
     def trainer(self, game: str) -> dict:
         tid, sid = self.ids(game)

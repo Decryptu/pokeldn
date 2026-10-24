@@ -1,12 +1,13 @@
 import copy
 import os
 import threading
+import time
 
 import flet as ft
 
 from gui import theme as t
 from gui.app import keys_found
-from pokeldn import __version__, pokemon, plugins
+from pokeldn import __version__, console_trainer, pokemon, plugins
 from pokeldn.app.paths import SESSION
 from pokeldn.app.sprites import CACHE
 from pokeldn.app.settings import switch_ids_valid
@@ -35,6 +36,7 @@ class SettingsView:
         self.keys_state = ft.Container()
         self.sprite_state = t.text("", 12, t.MUTED)
         self.update_state = t.text("", 12, t.MUTED)
+        self.trainer_state = t.text("", 12, t.MUTED, visible=False)
         self.storage_state = t.text(tr('settings.checking_local_files_77c76c', 'Checking local files...'), 12, t.MUTED)
         self.storage_result = t.text("", 12, t.MUTED, visible=False)
         self.storage_inventory = storage.Inventory()
@@ -102,9 +104,14 @@ class SettingsView:
             ft.Row([
                 number("tid", tr('settings.id_firered_and_leafgreen_d6b2c2', 'ID, FireRed and LeafGreen'), gba, 5),
                 number("sid", tr('settings.secret_id_795924', 'Secret ID'), gba, 5),
+                self._find_button("gba"),
+            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.END),
+            ft.Row([
                 number("switch_tid", tr('settings.id_switch_games_296c3a', 'ID, Switch games'), lambda v: switch_ids_valid(v, s.switch_sid), 6),
                 number("switch_sid", tr('settings.secret_id_795924', 'Secret ID'), lambda v: switch_ids_valid(s.switch_tid, v), 4),
-            ], spacing=10, intrinsic_height=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH),
+                self._find_button("switch"),
+            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.END),
+            self.trainer_state,
         ], spacing=10)
 
         def switch(name, label, help_):
@@ -142,7 +149,7 @@ class SettingsView:
             t.card(tr('settings.switch_keys_f1b42d', 'Switch keys'), ft.Column([keys.control, self.keys_state], spacing=8),
                    tr('settings.prod_keys_dumped_from_your_own_console_needed_to_talk_t_26673c', 'prod.keys dumped from your own console. Needed to talk to the games; it never leaves this computer.')),
             t.card(tr('settings.your_trainer_d70afb', 'Your trainer'), trainer,
-                   tr('settings.the_original_trainer_of_every_pokemon_the_app_builds_fo_3e4326', 'The original trainer of every Pokemon the app builds for you. Put your own name, gender and IDs to make them yours, so a traded Pokemon keeps its friendship: FireRed and LeafGreen show a five-digit ID, the Switch games a six-digit one. The IDs were drawn at random on first launch.')),
+                   tr('settings.your_trainer_detail', 'The original trainer of every Pokemon the app builds for you. Put your own name, gender and IDs to make them yours, so a traded Pokemon keeps its friendship: FireRed and LeafGreen show a five-digit ID, the Switch games a six-digit one. The IDs were drawn at random on first launch; Find mine takes the ones of the last game you traded with.')),
             t.card(tr('settings.received_pokemon_1d657d', 'Received Pokemon'), ft.Row([ft.Container(received.control, expand=True),
                                                t.icon_button("external-link",
                                                              lambda e: open_folder(os.path.expanduser(s.received)),
@@ -172,6 +179,27 @@ class SettingsView:
             t.card(tr('settings.about_pokeldn_7bfa4b', 'About pokeldn {value0}', value0=__version__), ft.Row([link(label, url) for label, url in LINKS], spacing=4),
                    tr('settings.pokeldn_is_agplv3_pokemon_are_checked_with_pkhex_core_g_689838', 'pokeldn is AGPLv3. Pokemon are checked with PKHeX.Core (GPLv3).')),
         ]
+
+    def _find_button(self, row: str) -> ft.Control:
+        return ft.Container(t.button(tr('settings.find_mine', 'Find mine'), lambda e: self._find_trainer(row),
+                                     "search", filled=False), height=48, alignment=ft.Alignment.CENTER)
+
+    def _find_trainer(self, row: str) -> None:
+        """Fills the trainer from the newest one a run read off a console (pokeldn.console_trainer)."""
+        found = self.app.settings.take_found(row)
+        if found is None:
+            text = (tr('settings.find_mine_none_gba', 'No FireRed or LeafGreen trainer read yet. Trade with your game, or open Mystery Gift with it, then press Find mine again.')
+                    if row == "gba" else
+                    tr('settings.find_mine_none_switch', 'No Switch trainer read yet. Do one trade with your game, offering a Pokemon you caught yourself, then press Find mine again.'))
+            color = t.MUTED
+        else:
+            when = time.strftime("%d %b %Y", time.localtime(found.get("when", time.time())))
+            text = tr('settings.find_mine_found', 'From your {game} on {when}: {name}.',
+                      game=console_trainer.title(found), when=when, name=found["ot"])
+            color = t.GREEN
+        self.render()
+        self.trainer_state.value, self.trainer_state.color, self.trainer_state.visible = text, color, True
+        self.column.update()
 
     def _language(self, plugin_id: str) -> None:
         if plugin_id and plugin_id not in self.app.settings.plugins:

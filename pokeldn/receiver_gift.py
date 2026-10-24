@@ -12,6 +12,8 @@ asks the app for a pop-up (`pop_up`) when the gift goes with the trainer from Se
 import base64
 import threading
 
+from pokeldn import console_trainer
+
 # PKHeX's numbers and names for the versions a save of each game can be.
 VERSIONS = {"lgpe": {42: "GP", 43: "GE"}, "bdsp": {48: "BD", 49: "SP"}, "pla": {47: "PLA"},
             "sv": {50: "SL", 51: "VL"}, "za": {52: "ZA"}}
@@ -221,19 +223,24 @@ def maker(game, load, **check):
     return make
 
 
-def hear(partner, parse, *data, log=print):
+def hear(partner, parse, *data, log=print, game=None):
     """A host passes what the console's session data says of its trainer, `parse(*data)`, to `partner` when
-    it is a ReceiverGift; an online partner takes none."""
+    it is a ReceiverGift; an online partner takes none. With `game`, the app is told of it too
+    (pokeldn.console_trainer)."""
     take = getattr(partner, "hear", None)
-    if take is None:
+    if take is None and game is None:
         return
     try:
         fields = parse(*data)
     except Exception as exc:    # the console's bytes, in a shape not measured
-        log(f"[gift] the session's trainer does not read: {exc}")
+        if take is not None:
+            log(f"[gift] the session's trainer does not read: {exc}")
         return
     if fields:
-        take(fields)
+        if game is not None:
+            console_trainer.show(game, fields, "session")
+        if take is not None:
+            take(fields)
 
 
 class Offer:

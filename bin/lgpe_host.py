@@ -829,7 +829,7 @@ class Session:
         print(f"[lgh] game: kind {msg['kind']} step {msg['step']} body {msg['size']} B")
         if msg["kind"] == pb7.FIRST_MESSAGE:
             # The console's save, for a gift made for it (pokeldn.receiver_gift).
-            receiver_gift.hear(self.partner, pb7.first_trainer, msg["body"])
+            receiver_gift.hear(self.partner, pb7.first_trainer, msg["body"], game="lgpe")
         if msg["kind"] == pb7.FIRST_MESSAGE and self.args.first and not self.trade.get("first"):
             self.trade["first"] = True
             body = (pb7.build_message(msg["kind"], msg["body"]) if self.args.first == "echo"

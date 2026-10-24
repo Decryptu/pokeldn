@@ -34,7 +34,7 @@ from pokeldn.ldn import api as ldn, radios
 
 from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
-from pokeldn import gen9, panel, progress, sv, trade_back
+from pokeldn import console_trainer, gen9, panel, progress, sv, trade_back
 from pokeldn.ldn import ldn_mitm, pia6, pia_connect, reliable5
 from pokeldn.sv import circle, pokemon, port2, raid, reference, streams, trade, wild
 from pokeldn.ldn import channel_table, game_channel
@@ -1517,6 +1517,13 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                             note = f" zlib -> {len(body)}B"
                         except Exception as exc:
                             note = f" zlib failed: {exc}"
+                    if (key == (streams.PROTOCOL_STREAM, streams.HOST_INDEX) and addr[0] == host_ip
+                            and note.startswith(" zlib ->")):
+                        # Record 1 of the host's identity block names its save (docs/sv.md, The records).
+                        try:
+                            console_trainer.show("sv", reference.identity_trainer(body), "session")
+                        except ValueError as exc:
+                            print(f"[sv] the host's identity record 1 does not read: {exc}")
                     if args.print_packets:
                         print(f"[sv] <- RECORD 0x{msg.protocol:02x}:{msg.port} seq {rm['sequence_id']} "
                               f"{reliable5.flag_names(rm['flags'])} {len(rm['payload'])}B{note}")

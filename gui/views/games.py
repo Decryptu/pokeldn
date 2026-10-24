@@ -8,7 +8,7 @@ from pathlib import Path
 import flet as ft
 
 from gui.app import keys_found
-from pokeldn import panel, progress
+from pokeldn import console_trainer, panel, progress
 from pokeldn.app import bank, command, panels, events_gallery, gift_builder, online, received, runner
 from pokeldn.swsh import raid_event as swsh_raid_event
 from pokeldn.sv import raid_event as raid_events
@@ -739,6 +739,7 @@ class SessionPanel:
         self.run_cards: dict[str, dict] = {}          # a built-in run's `[panel]` cards by id
         self.offered = None                # what the offering card shows, to rebuild it only on a change
         self.traded = 0                    # the run's completed trades, from its `[done] trade N` lines
+        self.last_trainer = None           # the console trainer the run last named (take_trainer)
         self.bank_trades = bank.TradeSession([])
         self.running_tool: Tool | None = None
         self.restart = False               # Start on another tool: stop this run, then start that one
@@ -1011,8 +1012,30 @@ class SessionPanel:
                     bank.deposit(game, path, info)
                 except OSError as error:
                     self.app.ui(lambda m=f'[app] Not banked: {error}': self.log.add(m))
+                self.learn_trainer(game, path)
         if changed:
             self.app.ui(lambda: self.render_received(process))
+
+    def learn_trainer(self, game: str, path: str) -> None:
+        """A Pokemon a Switch console traded names its save when that save caught it (pokeldn.console_trainer)."""
+        if game not in console_trainer.GAME_VERSIONS:
+            return
+        try:
+            found = console_trainer.own(game, SERVICE.owner(game, Path(path).read_bytes()))
+        except Exception:     # a file still growing, or the service is missing
+            return
+        if found:
+            self.take_trainer({"game": game, "source": "pokemon", **found})
+
+    def take_trainer(self, found: dict) -> None:
+        """A run named the console's trainer: Settings keeps it for Find mine, the log says so once."""
+        key = (found["game"], found["ot"], found["tid"], found["sid"])
+        if key == self.last_trainer:
+            return
+        self.last_trainer = key
+        self.app.ui(lambda: self.app.settings.found(found))
+        tid, sid = console_trainer.shown(found["game"], found["tid"], found["sid"])
+        self.log.add(f"[app] {tr('games.trainer_found', 'Your trainer in {game}: trainer={name!r}, TID={tid}, SID={sid}. Settings, Your trainer, Find mine takes it.', game=console_trainer.title(found), name=found['ot'], tid=tid, sid=sid)}")
 
     def render_received(self, process) -> None:
         if self.run is None or self.run[0] is not process:
@@ -1085,6 +1108,7 @@ class SessionPanel:
         self.partner.content, self.partner.visible, self.partner_state = None, False, None
         self.run_cards = {}
         self.traded = 0
+        self.last_trainer = None
         self.bank_trades = bank.TradeSession(self.offered_entries())
         self.stopping = False
         self.app.process_label = tool.name
@@ -1110,6 +1134,9 @@ class SessionPanel:
                 self.app.ui(lambda: self.games.plugin_changed(owner.id))
             elif owner is None and shown is not None and "id" in shown:
                 self.app.ui(lambda: self.show_card(shown))
+            return
+        if found := console_trainer.read(line):
+            self.take_trainer(found)
             return
         self.log.add(line)
         if saving := received.save_progress(line):

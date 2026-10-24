@@ -27,7 +27,7 @@ from pokeldn.ldn import api as ldn, radios
 
 from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service, trade_back
-from pokeldn import za
+from pokeldn import console_trainer, za
 from pokeldn.za import host as za_host, streams
 from pokeldn.za.host import (MSG_CANCEL, OFFER_PICK, OFFER_PREVIEW,  # noqa: F401
                              build_command, command_round)
@@ -294,6 +294,14 @@ class GameStreams:
             return
         link.note_received(r.seq)
         head = r.payload[4:8] if proto == GAME_BROADCAST else r.payload[:4]
+        if head[:2] == b"\x14\x00":
+            # The console host's save, for the app (docs/gui.md, Find your trainer); a protocol-11
+            # frame's declared length leaves out the station prefix.
+            inner = streams.frame_payload(payload)[4:] if proto == GAME_BROADCAST else r.payload
+            try:
+                console_trainer.show("za", za.reference.identity_trainer(inner), "session")
+            except Exception:    # the console's bytes, in a shape not measured
+                pass
         if proto == GAME_RELIABLE and r.seq not in self.acted:
             self.acted.add(r.seq)
             print(f"[za] host {head[:2].hex()} ({len(r.payload)} bytes) at {elapsed:.2f}s")

@@ -148,6 +148,18 @@ def test_the_trade_trainer_record_reads_and_agrees_with_the_pokemon_it_came_with
         room.parse_trade_traner(TRADE_TRANER_SP82[:-1])
 
 
+def test_the_joiner_names_the_console_trainer_its_trade_record_carries(monkeypatch, capsys):
+    """The joiner's TRADE_TRANER branch tells the app whose save the console holds."""
+    import bdsp_connect
+    from pokeldn import console_trainer
+    monkeypatch.setattr(console_trainer, "_shown", set())
+    bdsp_connect.show_their_trainer(TRADE_TRANER_SP82)
+    bdsp_connect.show_their_trainer(TRADE_TRANER_SP82[:-1])
+    lines = [console_trainer.read(line) for line in capsys.readouterr().out.splitlines()]
+    assert lines == [{"game": "bdsp", "source": "session", "ot": "Player", "tid": 44466, "sid": 4080,
+                      "language": 3, "version": 49}]
+
+
 def test_a_payload_whose_struct_is_not_blittable_has_no_layout_and_says_so():
     # NetPlayerNameData carries a C# string and NetPosData an array; neither size is in the source
     for data_id in (room.PLAYER_NAME, room.POS):

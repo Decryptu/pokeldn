@@ -589,7 +589,7 @@ class TradePartner:
         if data_id == room.TRADE_TRANER:
             self.record(rec="their_trainer", t=now, fields=room.parse_trade_traner(body))
             # The console's save, for a gift made for it (pokeldn.receiver_gift).
-            receiver_gift.hear(self.remote, room.traner_trainer, body)
+            receiver_gift.hear(self.remote, room.traner_trainer, body, game="bdsp")
             return [self.trainer]
         if data_id == room.TRADE_POKE:
             if self.arriving:                  # the next round's first Pokemon

@@ -230,6 +230,19 @@ def test_two_trades_on_one_seat_against_a_scripted_console_host():
     assert s.trades == theirs
 
 
+def test_the_console_hosts_record_names_its_trainer_to_the_app(monkeypatch, capsys):
+    from pokeldn import console_trainer
+    monkeypatch.setattr(console_trainer, "_shown", set())
+    keys, _, s = _session()
+    _seat(keys, s)
+    s.receive([_msg(data_exchange.build_content_message(data_exchange.REFERENCE_RECORD, 0x02),
+                    joiner.PROTO_STREAM, port=0)])
+    lines = [console_trainer.read(line) for line in capsys.readouterr().out.splitlines()]
+    assert [m for m in lines if m] == [{"game": "pla", "source": "session", "ot": "FreeShkreli",
+                                        "tid": 40327, "sid": 1779, "gender": 0, "language": 2,
+                                        "version": 47}]
+
+
 def test_unacknowledged_messages_are_sent_again_and_acknowledged_ones_are_not():
     keys, clock, s = _session()
     _seat(keys, s)

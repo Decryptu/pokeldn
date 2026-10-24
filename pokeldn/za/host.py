@@ -357,7 +357,7 @@ class HostSession:
                      f"{self._elapsed(now):.2f}s")
         if head == MSG_IDENTITY:
             # The console's save, for a gift made for it (pokeldn.receiver_gift).
-            receiver_gift.hear(self.partner, reference.identity_trainer, inner, log=self.log)
+            receiver_gift.hear(self.partner, reference.identity_trainer, inner, log=self.log, game="za")
         if proto != streams.PROTO_RELIABLE:
             return
         if head == MSG_OFFER:

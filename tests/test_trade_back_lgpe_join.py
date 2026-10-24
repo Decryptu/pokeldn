@@ -57,3 +57,24 @@ def test_the_second_trade_offers_the_console_s_first_record_back(tmp_path):
     assert console(5, 8, two) == [(5, 8, two)]
     assert console(6, 9, box(1, 9)) == []
 
+
+
+def test_the_console_hosts_first_message_names_its_trainer_to_the_app(monkeypatch, capsys):
+    """The recorded console kind 1, under a known trainer, as the joiner's reliable channel delivers it:
+    the app is told that trainer (pokeldn.console_trainer)."""
+    from pokeldn import console_trainer
+    from pokeldn.ldn import reliable3
+    from pokeldn.lgpe import reference
+    monkeypatch.setattr(console_trainer, "_shown", set())
+    mod = _join()
+    args = mod.build_parser().parse_args([])
+    console = pb7.parse_message(Path(reference.IDENTITY).read_bytes())["body"]
+    console = pb7.set_trainer_id(pb7.set_trainer_name(console, "CONSOLE"), 41234, 12345)
+    r = reliable3.parse(reliable3.build(pb7.build_message(pb7.FIRST_MESSAGE, console),
+                                        reliable3.FIRST_SEQUENCE, reliable3.FIRST_SEQUENCE))
+    mod.answer(args, {}, pb7.parse_message(r["payload"]), lambda b, p: None)
+    told = [m for line in capsys.readouterr().out.splitlines() for m in [console_trainer.read(line)] if m]
+    assert len(told) == 1
+    assert (told[0]["game"], told[0]["source"], told[0]["ot"], told[0]["tid"], told[0]["sid"]) == \
+        ("lgpe", "session", "CONSOLE", 41234, 12345)
+    assert told[0]["version"] in (42, 43)

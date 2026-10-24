@@ -211,3 +211,32 @@ def test_the_sync_message_is_the_checksum_a_console_sent_for_its_identity():
 def test_a_name_the_identity_cannot_hold_is_refused(name):
     with pytest.raises(ValueError):
         za.reference.named(za.reference.load("identity10"), name)
+
+
+@pytest.mark.parametrize("proto,name", [(10, "identity10"), (11, "identity11")])
+def test_the_joiner_tells_the_app_the_console_hosts_trainer(proto, name, capsys, monkeypatch):
+    """The console host's 1400 names its save; a protocol-11 frame's length leaves out the prefix."""
+    import za_join
+    from pokeldn import console_trainer
+    from pokeldn.app.command import build
+    from pokeldn.app.introspect import parser_of
+    from pokeldn.app.settings import Settings
+    from pokeldn.ldn import reliable
+
+    monkeypatch.setattr(console_trainer, "_shown", set())
+    tool = _za_tool("za-join")
+    args = parser_of(tool.script).parse_args(build(tool, {}, {}, Settings(ot="ASH"), stamp="t"))
+    streams = za_join.GameStreams(args, lambda proto, body, **kw: None, lambda bundle, **kw: None,
+                                  lambda **row: None)
+    streams.open(0)
+    if proto == 10:
+        frame = reliable.build_reliable(0xFFF0, 0xFFF0, za.reference.named(za.reference.load(name), "MAYA"))
+    else:
+        identity = za.streams.PREFIX_HOST + za.reference.load(name)[za.streams.PREFIX_SIZE:]
+        frame = za.streams.frame(0xFFF0, 0xFFF0, za.reference.named(identity, "MAYA", 4), 0x07, 3)
+    capsys.readouterr()
+    streams.on_message(proto, frame, 1.0)
+    lines = [m for m in map(console_trainer.read, capsys.readouterr().out.splitlines()) if m]
+    # the recorded save: 0x378913cf, female, English (docs/za.md)
+    assert lines == [{"game": "za", "source": "session", "ot": "MAYA", "tid": 5071, "sid": 14217,
+                      "gender": 1, "language": 2}]

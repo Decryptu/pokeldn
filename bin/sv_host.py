@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
-from pokeldn import config, receiver_gift, trade_back
+from pokeldn import config, console_trainer, receiver_gift, trade_back
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
 from pokeldn.sv import (pokemon, port2, raid, raid_encounter, raid_event, raid_partners, reference,
@@ -590,7 +590,8 @@ def main(argv=None):
         except ValueError as exc:
             print(f"[sv] {ip}: identity record 1 does not read: {exc}")
             return
-        if fields:
+        console_trainer.show("sv", fields, "session")
+        if fields and receiving is not None:
             identities[ip] = fields
             if ip in stages:
                 stages[ip].partner.hear(fields)
@@ -1428,7 +1429,7 @@ def main(argv=None):
                                        seq=rm["sequence_id"], flags=rm["flags"],
                                        payload=rm["payload"].hex(), t=time.time())
                                 stream_high[key] = max(stream_high.get(key, 0), rm["sequence_id"])
-                                if receiving is not None and identity_chunk(
+                                if identity_chunk(
                                         msg.protocol, msg.port, rm["flags"], seat_of(src_ip)):
                                     hear_identity(src_ip, rm["payload"])
                                 if (src_ip in raid_hosts and msg.protocol == PROTO_BROADCAST_RELIABLE

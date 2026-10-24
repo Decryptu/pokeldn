@@ -101,6 +101,21 @@ player's own only when gender, IDs and name match
 ([the received record](za.md#what-the-trade-writes-into-a-received-record)); Legends Arceus's record
 carries the gender ([the record](pla.md#the-games-reader-and-the-pre-handler-phase)).
 
+### Find your trainer
+
+Find mine fills one row's ID and secret ID, with the name, gender and language, from the newest
+trainer a run read off a console. The Switch games never display the secret ID; the link carries it.
+
+| row | what names the trainer |
+|---|---|
+| FireRed, LeafGreen | the console's LinkPlayer, `trainerId` = `SID << 16 \| TID`, in every trade, Mystery Gift and Union Room session, both roles |
+| Switch | the console's session data in a Let's Go, BDSP, Legends Arceus, Scarlet/Violet or Legends Z-A trade, both roles ([Whose save it is](gift_simulated.md#whose-save-it-is)); in Sword/Shield, and in any title, a Pokemon the console traded that its save caught (handler 0, the game's own version, not an egg) |
+
+A launcher prints `[trainer] {json}` once per trainer (`pokeldn.console_trainer`); the app keeps the
+newest per row in `settings.json` `found_trainers` and logs it under the private-log masks. The Switch
+row serves every Switch title, so it takes the last one traded with. With nothing found, Find mine
+asks for a trade.
+
 ## Windows USB drivers
 
 A classic ESP32's USB-to-serial bridge needs a driver before Windows gives a COM port (Device

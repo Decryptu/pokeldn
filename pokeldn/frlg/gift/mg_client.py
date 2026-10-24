@@ -4,6 +4,7 @@ runs in pokeldn.frlg.link.sim.Sim; every message both ways is kept in ``messages
 
 from collections import deque
 
+from pokeldn import console_trainer
 from pokeldn.frlg.gift import ereader_trainer, mg_link, mg_script, wonder_card, wonder_news
 from pokeldn.frlg.link import linkplayer
 from pokeldn.frlg.rom import buffer_script, mystery_event
@@ -279,6 +280,7 @@ class MysteryGiftClientEngine:
             lp, ok = linkplayer.parse_block(data)
             if ok:
                 self.host_link_player = lp
+                console_trainer.from_link_player("frlg", lp)
                 self.trace.append((self._tick, "host_link_player", lp.name, lp.version))
                 self.info(f"Console identified as {lp.name!r} (version 0x{lp.version:04x}, "
                           f"language {lp.language}); LinkPlayer exchange complete.")

@@ -5,6 +5,7 @@ and every cancel decision, so the follower engine in trade.py cannot be reused w
 from collections import Counter, deque
 from dataclasses import dataclass
 
+from pokeldn import console_trainer
 from pokeldn.frlg.link import battle_link as bl, cable_club, linkplayer, trade, uroom_battle, uroom_chat
 from pokeldn.frlg.save import mon as monmod
 from pokeldn.gba import block, rfu, rfu_leader
@@ -531,6 +532,7 @@ class HostTradeEngine:
                           f"(#{self._rejected_link_players}); still waiting for a valid one.")
                 return
             self.child_link_player = lp
+            console_trainer.from_link_player("frlg", lp)
             self._expected = "warp0"
             self._queue_block(self._link_player_block, "host:link_player")
             self.info(f"Console identified as {lp.name!r}; sending the host LinkPlayer block now.")

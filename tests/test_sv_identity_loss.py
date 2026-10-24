@@ -173,3 +173,48 @@ def test_host_identity_survives_loss(monkeypatch, tmp_path, lost):
     expected = ids if lost == 1 else [] if lost is None else [lost]
     assert sorted(peer.retries) == sorted(expected)
     assert reference.player_name(peer.payloads[1]) == 'ASH'
+
+
+def test_joiner_tells_the_app_the_host_consoles_trainer(monkeypatch, tmp_path, capsys):
+    from pokeldn import console_trainer
+
+    monkeypatch.setattr(console_trainer, '_shown', set())
+    clock = Clock()
+    peer = Peer(clock, 1, None)
+    _record_set(tmp_path, [1])
+    response = pia_connect.build_session_join_response_v11(
+        pia_connect.ldn_constant_id(HOST_MAC), 1, pia_connect.ldn_constant_id(JOIN_MAC), 2,
+        version=11, route=None)
+    record_1 = reference.named_record((Path(reference.RECORDS) / '001.bin').read_bytes(), 'MISTY')
+    body = streams.build_record_message(record_1, 1, streams.HOST_INDEX, initialized=True)
+    for packet in (peer.packet(response, sv_join.PROTO_SESSION),
+                   peer.packet(body, streams.PROTOCOL_STREAM, streams.HOST_INDEX)):
+        peer.queue.append((packet, (HOST_IP, sv.PIA_PORT)))
+
+    class Socket:
+        def sendto(self, packet, _):
+            pass
+
+        def recvfrom(self, _):
+            if peer.queue:
+                return peer.queue.pop(0)
+            raise BlockingIOError
+
+        def close(self):
+            pass
+
+    async def wait_readable(_):
+        peer.wait()
+        await trio.lowlevel.checkpoint()
+
+    monkeypatch.setattr(sv_join, 'time', clock)
+    monkeypatch.setattr(sv_join, 'make_socket', lambda *a: Socket())
+    monkeypatch.setattr(trio.lowlevel, 'wait_readable', wait_readable)
+    args = sv_join.build_parser().parse_args([
+        '--ip-join', '--hold', '1', '--record-set', str(tmp_path), '--record-delay', '0',
+        '--no-clock', '--rtt-period', '0', '--trainer-name', 'ASH'])
+    trio.run(sv_join.run_session, args, peer.keys, HOST_IP, HOST_MAC, JOIN_IP, JOIN_MAC,
+             lambda **row: None)
+    lines = [console_trainer.read(line) for line in capsys.readouterr().out.splitlines()]
+    assert [m for m in lines if m] == [{'game': 'sv', 'source': 'session', 'ot': 'MISTY', 'tid': 8131,
+                                        'sid': 64817, 'gender': 0, 'language': 2, 'version': 50}]

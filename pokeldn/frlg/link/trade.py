@@ -2,6 +2,7 @@
 blocks and reacts to SET_MONS -> START -> CONFIRM_FINISH; it never emits Leader broadcasts
 [trade.c:1637-1666]. By REQ size: 200 LinkPlayerBlock then party, 100 card, 220 mail, 40 ribbons."""
 
+from pokeldn import console_trainer
 from pokeldn.frlg.link import linkplayer
 from pokeldn.frlg.save import mon as monmod
 from pokeldn.gba import barrier as barriermod, block, rfu
@@ -621,6 +622,7 @@ class TradeEngine:
             if ok:
                 if self.host_link_player is None:
                     self.host_link_player = lp
+                    console_trainer.from_link_player("frlg", lp)
                     self.log(f"host LinkPlayer: {lp.name} v0x{lp.version:04x}")
                     self.info("Exchanged player info with the host.")
             elif self._host_party_blocks < 3:

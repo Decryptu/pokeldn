@@ -14,7 +14,7 @@ if os.path.isdir(BUNDLED):
 
 import trio, ldn
 from pokeldn.host_support import open_output
-from pokeldn import pokemon as pokemon_service, trade_back
+from pokeldn import console_trainer, pokemon as pokemon_service, trade_back
 from pokeldn.bdsp import COMM_ID, PASSPHRASE, PIA_PORT, pokemon, room, session_keys
 from pokeldn.bdsp.host import player_info
 from pokeldn.bdsp.session import answer_departure
@@ -54,6 +54,14 @@ def wrap(keys, our_mac, src_var, dst_var, nonce8, payload, protocol, port=0,
     ct, tag = encrypt_payload(keys.session_key, iv, body)
     return PiaHeader5(dst_var=dst_var, src_var=src_var, packet_id=packet_id, footer_size=0,
                       nonce8=nonce8, tag=tag[:8], encrypted=True).pack() + ct
+
+
+def show_their_trainer(body):
+    """The console's save, off its `TradeTranerData`, for the app (pokeldn.console_trainer)."""
+    try:
+        console_trainer.show("bdsp", room.traner_trainer(body), "session")
+    except ValueError:
+        pass
 
 
 async def send_acked(st, send_at, payload, *, tries=12, retry=0.4):
@@ -1158,6 +1166,7 @@ async def main_async(args):
                 label = "our ready-ok (THE CONSOLE SAVES AFTER THIS)"
             elif g["data_id"] == room.TRADE_TRANER:
                 st["their_traner"] = room.parse_trade_traner(payload[room.HEADER_SIZE:])
+                show_their_trainer(payload[room.HEADER_SIZE:])
                 print(f"\n[rx] t={now:6.2f} *** THEIR TRAINER RECORD: {st['their_traner']} ***")
                 record(rec="their_traner", t=now, fields=st["their_traner"])
                 reply = room.build_trade_traner(args.trade_name, args.trade_tid, args.trade_sid)

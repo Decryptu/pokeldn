@@ -9,6 +9,7 @@ from pokeldn.ldn import pia6, pia_connect, reliable5
 from pokeldn.ldn import channel_table
 from pokeldn.pla import data_exchange, game_channel, trade_box
 from pokeldn.ldn import show_done
+from pokeldn import console_trainer
 from pokeldn.app import screen
 
 PROTO_NET = 0x2C
@@ -294,6 +295,10 @@ class JoinerSession:
             who = data_exchange.read_record(self.host_record)
             self.log(f"[pla] <- the host's data exchange record: player {who['name']!r}, "
                      f"id {who['player_id'].hex()}")
+            try:                        # the console's record names its save, for the app
+                console_trainer.show("pla", data_exchange.read_trainer(self.host_record), "session")
+            except Exception:
+                pass
         if self.host_record is not None and not self.content_sent:
             self.content_sent = True
             seq = self._next_seq(PROTO_STREAM, data_exchange.JOINER_PORT)

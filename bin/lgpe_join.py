@@ -27,7 +27,7 @@ import trio
 from pokeldn.ldn import api as ldn
 from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
-from pokeldn import trade_back
+from pokeldn import receiver_gift, trade_back
 from pokeldn.ldn import pia3, pia4, station9, station4
 from pokeldn.ldn import mesh_protocol as mp
 from pokeldn.ldn import clone, sync_clock, ldn_mitm
@@ -358,6 +358,9 @@ def answer(args, state, msg, send):
     """answer_console, with --trade-back's rounds choosing the record the next trade offers. The
     console's last offer is its trade's record, returned byte for byte, never under a fresh PID
     (pokeldn.trade_back)."""
+    if msg["kind"] == pb7.FIRST_MESSAGE:
+        # The console host's save, for the app (pokeldn.console_trainer).
+        receiver_gift.hear(None, pb7.first_trainer, msg["body"], game="lgpe")
     rounds = getattr(args, "rounds", None)
     r = state.get("round", 0)
     if rounds is not None and msg["kind"] == pb7.RESULT_MESSAGE + 2 * r and state.get("committed"):
