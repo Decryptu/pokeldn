@@ -35,10 +35,8 @@ Working on retail hardware:
 
 ## Unresolved
 
-- A substituted greeting name on a console's screen
-  ([The name in the greeting](bdsp_protocol.md#the-name-in-the-greeting)).
-- What a retail console shows when a 0x08 reaches it with no battle recruited. The code stores to
-  address 0x18 with no null check and the game's module has no user exception handler
+- Why a 0x08 with no battle recruited leaves a retail console's screen unchanged, when the code reads
+  as a store to address 0x18 with no null check
   ([The battle ladder](bdsp_protocol.md#the-battle-ladder)).
 - Whether a retail console that is not the Grand Underground session host adopts a 0x61 from
   pokeldn. The common dispatch and the `UgNetworkManager` handler have no sender filter

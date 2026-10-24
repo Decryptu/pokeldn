@@ -254,7 +254,8 @@ A console sends its game text language (save `CONFIG.msg_lang_id`, `get_msgLangI
 0x7A and its checked name, encoding 1. The station protocol's writer places it [0x01550e98].
 `bin/bdsp_connect.py` and `bin/bdsp_host.py` build the PlayerInfo with `pokeldn/bdsp/host.py`
 `player_info` and send `--language`, default 3; the desktop app passes its trainer language. Under 3
-an 11-character name shows whole.
+an 11-character name shows whole. Under 1 a retail French Shining Pearl showed an 11-character name
+as "Perlo." with the greeting "Konnichiwa!".
 
 The substitute depends on byte 2 of the talked-to character's `NetJoinData`: label 247 of
 `dp_characters` for 0x31, label 206 otherwise, plus a full stop:
@@ -335,9 +336,11 @@ SelectPokemon 7, GoBattle 8, Result 9, Resume 10, Closing 11, LeavedOtherMembers
 `UnionStateController+0x38` (the battle recruitment model) to `BATTLE_RULE_SELECT_WAIT` whatever
 conversation is open, with no null test. That model is set only when the player recruits a battle and
 starts null on every Union Room visit (the `UnionRoomManager` is destroyed on leaving the room's
-zones, `NetUseManager.OnZoneChange` [0x026cfef0]). A 0x08 to a console that has not recruited a
-battle in this visit stores to address 0x18 [0x023e2604] and faults. Never send 0x08 unless the
-console's own 0x04 says state 3 with `isRecruiment` 1.
+zones, `NetUseManager.OnZoneChange` [0x026cfef0]). By that reading a 0x08 to a console that has not
+recruited a battle in this visit stores to address 0x18 [0x023e2604]. A retail Shining Pearl that had
+recruited none acknowledged `08 00 01 00` on its trade box and on the trainer-card exchange, and its
+screen did not change; whether the receiver ran is unknown. Never send 0x08 unless the console's own
+0x04 says state 3 with `isRecruiment` 1.
 
 ### The Grand Underground
 
