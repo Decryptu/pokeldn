@@ -946,9 +946,10 @@ def main():
                                 is_new = rm["sequence_id"] > reliable_high.get(src_ip, 0)
                                 high = max(reliable_high.get(src_ip, 0), rm["sequence_id"])
                                 reliable_high[src_ip] = high
-                                if is_new and rm["flags"] & reliable5.FLAG_ZLIB:
+                                if rm["flags"] & reliable5.FLAG_ZLIB:
                                     # The console's record names its save, for a gift made for it
                                     # (pokeldn.receiver_gift) and for the app (pokeldn.console_trainer).
+                                    # Trap: it is sequence 1 on port 1, after sequence 1 on port 0.
                                     receiver_gift.hear(
                                         online_box(src_ip).partner if receiving is not None else None,
                                         lambda payload: data_exchange.read_trainer(data_exchange.decompress(payload)),

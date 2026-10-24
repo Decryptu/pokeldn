@@ -205,6 +205,8 @@ def test_one_lost_message_and_the_trade_still_completes(monkeypatch, capsys, los
     assert run.log.count("trade 1 complete, the phase key closed") == 1
     if lost == "nothing":
         assert "resend" not in run.log and "held behind" not in run.log
+        # The record on 0x81 port 1 is its sequence 1 there, after sequence 1 on port 0.
+        assert '[trainer] {"game": "pla", "source": "session", "ot": "POKELDN"' in run.log
     elif run.lost is None:
         assert "held behind" in run.log              # the showing waited for the resent offer
     else:
