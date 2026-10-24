@@ -64,6 +64,21 @@ def test_exact_pid_nature_iv_floors_and_measured_offset():
     assert hit["trigger_status"] == "predicted_only"
 
 
+def test_iv_ranges_and_cancellation_are_explicit():
+    mon = predict(0, 0, 0, 1)
+    exact = Criteria(False, iv_min=mon["ivs"], iv_max=mon["ivs"])
+    assert exact.matches(mon)
+    too_low = list(mon["ivs"])
+    too_low[0] -= 1
+    assert not Criteria(False, iv_min=(0, 0, 0, 0, 0, 0), iv_max=tuple(too_low)).matches(mon)
+    with pytest.raises(ValueError, match="minimum IV"):
+        Criteria(False, iv_min=(1, 0, 0, 0, 0, 0), iv_max=(0, 31, 31, 31, 31, 31))
+
+    result = search(0, 0, 0, advances=100, criteria=Criteria(False), cancel=lambda: True)
+    assert result["candidates_tested"] == 0
+    assert result["stop_reason"] == "cancelled"
+
+
 def test_offset_already_passed_is_not_wrapped_to_a_future_target():
     result = search(0, 0, 0, advances=1, criteria=Criteria(False), offset=10)
     hit, = result["targets"]

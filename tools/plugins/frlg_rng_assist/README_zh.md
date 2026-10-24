@@ -7,7 +7,7 @@
 
 - FRLG 页面下独立的“离线搜索”和“校准”工具，PokeLDN 公共插件 API 1.8。
 - 复用 PokeLDN 的 LCG/Method 1 数学模型，隔离内部接口依赖并做已知向量检查。
-- Method 1/2/4 的 PID、性格和 IV 预测；闪光、指定 PID、性格、六项 IV 下限。
+- Method 1/2/4 的 PID、性格和 IV 预测；闪光、指定 PID、性格、六项 IV 下限/上限。
 - 按 RNG advance 搜索，支持起始 index、上限、结果数量；不输出伪精确的帧倒计时。
 - 手填 offset 后给出预测 trigger；未提供则保持为空。目标已过不做 32 位回绕补按。
 - 从 HIT + 实际 PID/IV 恢复有限范围内的候选 offset，保留歧义，不自动批准场景。
@@ -22,6 +22,7 @@
 - Seed/PID：十六进制，可省略 `0x`；例如 `12345678` 表示 `0x12345678`。
 - TID/SID、advance、offset：十进制。
 - UI/JSON 的 IV 顺序：**HP / Atk / Def / SpA / SpD / Spe**。
+- `--iv-min` 与 `--iv-max` 都按上述顺序填写；每一项的下限不能大于上限，默认范围是 `0,0,0,0,0,0` 到 `31,31,31,31,31,31`。
 - `--hit-boundary post-vblank` 只用于确认来自原 VBlank handler 返回后采样的数据；默认 `unspecified`。
 - `predicted_generation_seed` 位于第一笔 PID Random 调用之前；它不是从 CreateMon 实际采到的值。
 

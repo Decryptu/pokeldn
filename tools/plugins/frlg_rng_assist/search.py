@@ -22,6 +22,7 @@ def build_parser():
     parser.add_argument("--nature", help="English name or index 0..24")
     parser.add_argument("--pid", type=hex_word, help="Exact PID filter; never written to the console")
     parser.add_argument("--iv-min", type=ivs, default=(0, 0, 0, 0, 0, 0))
+    parser.add_argument("--iv-max", type=ivs, default=(31, 31, 31, 31, 31, 31))
     parser.add_argument("--offset", type=int, help="Measured HIT-to-pre-PID RNG advances; no frame conversion")
     return parser
 
@@ -35,7 +36,7 @@ def main(argv=None):
             _, countdown = backend()
             names = [name.lower() for name in countdown.NATURE_NAMES]
             nature = names.index(args.nature.lower()) if args.nature.lower() in names else int(args.nature)
-        criteria = Criteria(not args.any_shininess, nature, args.pid, args.iv_min)
+        criteria = Criteria(not args.any_shininess, nature, args.pid, args.iv_min, args.iv_max)
         report = search(args.seed, args.tid, args.sid, build=args.build, encounter=args.encounter,
                         method=args.method, advances=args.advances, start=args.start,
                         max_results=args.max_results, criteria=criteria, offset=args.offset,

@@ -32,6 +32,8 @@ def register(api):
                 Field("--pid", "Exact PID filter", help="Optional hex PID to find, never written to the game."),
                 Field("--iv-min", "Minimum IVs", default="0,0,0,0,0,0",
                       help="HP, Attack, Defense, Sp. Atk, Sp. Def, Speed (display order)."),
+                Field("--iv-max", "Maximum IVs", default="31,31,31,31,31,31",
+                      help="Optional upper bounds in HP, Attack, Defense, Sp. Atk, Sp. Def, Speed order."),
                 Field("--offset", "Measured offset (advances)", "number",
                       help="Optional HIT-to-pre-PID offset; omitted means no trigger prediction.")),
     ))

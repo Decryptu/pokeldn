@@ -34,6 +34,7 @@ class Criteria:
     nature: int | None = None
     pid: int | None = None
     iv_min: tuple = (0, 0, 0, 0, 0, 0)
+    iv_max: tuple = (31, 31, 31, 31, 31, 31)
 
     def __post_init__(self):
         if type(self.shiny) is not bool:
@@ -43,16 +44,20 @@ class Criteria:
         if self.pid is not None:
             bounded(self.pid, 0, 0xFFFFFFFF, "PID")
         validate_ivs(self.iv_min)
+        validate_ivs(self.iv_max)
+        if any(minimum > maximum for minimum, maximum in zip(self.iv_min, self.iv_max)):
+            raise ValueError("Each minimum IV must be no greater than its maximum IV")
 
     def matches(self, mon):
         return ((not self.shiny or mon["shiny"])
                 and (self.nature is None or self.nature == mon["nature"])
                 and (self.pid is None or self.pid == mon["personality"])
-                and all(actual >= minimum for actual, minimum in zip(mon["ivs"], self.iv_min)))
+                and all(minimum <= actual <= maximum
+                        for actual, minimum, maximum in zip(mon["ivs"], self.iv_min, self.iv_max)))
 
 
 def search(seed, tid, sid, *, build="BPRE", encounter="scripted", method=1, advances=100000,
-           start=0, max_results=10, criteria=None, offset=None, progress=None):
+           start=0, max_results=10, criteria=None, offset=None, progress=None, cancel=None):
     meta = context(build, encounter)
     bounded(seed, 0, 0xFFFFFFFF, "seed")
     bounded(tid, 0, 65535, "TID")
@@ -66,6 +71,10 @@ def search(seed, tid, sid, *, build="BPRE", encounter="scripted", method=1, adva
         raise ValueError("method must be 1, 2 or 4")
     if offset is not None:
         bounded(offset, 0, 1_000_000, "offset in RNG advances")
+    if progress is not None and not callable(progress):
+        raise ValueError("progress must be callable")
+    if cancel is not None and not callable(cancel):
+        raise ValueError("cancel must be callable")
     criteria = criteria or Criteria()
     lcg, _ = backend()
     state = lcg.advance(seed, start)
@@ -73,6 +82,9 @@ def search(seed, tid, sid, *, build="BPRE", encounter="scripted", method=1, adva
     tested = 0
     reason = "range_exhausted"
     for index in range(start, start + advances):
+        if cancel and cancel():
+            reason = "cancelled"
+            break
         mon = predict(state, tid, sid, method)
         tested += 1
         if criteria.matches(mon):
