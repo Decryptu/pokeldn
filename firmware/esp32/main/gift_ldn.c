@@ -487,8 +487,11 @@ void gift_host_rx_80211(gift_host_t *h, const uint8_t *f, size_t n, uint64_t now
     }
     const size_t length = n - at - 8 - 8;
     uint8_t *plain = h->scratch;
-    if (ccm_open(h, h->image->advert->data_key, nonce, aad, aad_length, ccmp + 8, length, f + n - 8, plain)) return;
     static const uint8_t snap[6] = {0xAA, 0xAA, 0x03, 0, 0, 0};
+    /* The radio hands the group-key frame on already decrypted, header and MIC kept, as the host's
+       accept_decrypted_ccmp takes it [vendor/LDN wlan.py]. */
+    if (length >= 8 && !memcmp(ccmp + 8, snap, 6)) memcpy(plain, ccmp + 8, length);
+    else if (ccm_open(h, h->image->advert->data_key, nonce, aad, aad_length, ccmp + 8, length, f + n - 8, plain)) return;
     if (length < 8 || memcmp(plain, snap, 6)) return;
     static uint8_t frame[1600];
     memcpy(frame, f + 4, 6);

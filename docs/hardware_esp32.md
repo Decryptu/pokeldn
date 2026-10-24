@@ -221,7 +221,8 @@ byte for byte, for protocols 1 and 3.
 | end | 4 | `zlib.crc32` of everything before it |
 
 The image holds the advertise and data keys derived for its one network, never `prod.keys`. An image
-is at most 12288 bytes. A board left on a computer's USB with no app open starts the beacon as on a
+is at most 12288 bytes. From firmware 1.9.1 the stored image is read from NVS before the board answers
+its first command; 1.9.0 answered a BEACON QUERY sent right after a port open with "none stored". A board left on a computer's USB with no app open starts the beacon as on a
 charger.
 
 ### A host image
@@ -269,7 +270,11 @@ timers at the deadline it returns, and it rebuilds the advertisement every `inte
 nonce raised once per change. A station's broadcasts (its ARP for the host first) come with no DS
 bits under the group key, which the access point drops: the engine takes them whole from the
 promiscuous callback and decrypts them itself, AES-CCM with an 8-byte MIC over the LDN library's
-nonce and AAD, QoS or not ([A station's broadcasts](ldn.md#a-stations-broadcasts)). A console compresses most of its datagrams (1056 of 1363 in one
+nonce and AAD, QoS or not ([A station's broadcasts](ldn.md#a-stations-broadcasts)). A retail
+ESP32-S3 hands them on already decrypted under the installed group key, Protected bit, CCMP header
+and MIC kept (a FireRed ARP is 76 bytes); from firmware 1.9.1 a body that starts with the SNAP header
+after the CCMP header is taken as plaintext, as the host's `accept_decrypted_ccmp` does. Firmware
+1.9.0 dropped them, and the console left with a communication error after authenticating. A console compresses most of its datagrams (1056 of 1363 in one
 Wonder Card session); the decoder context is 38,464 bytes with a 1 KB literal buffer. Datagrams the
 host compresses go out as zstd frames of one raw block. The engine's state is about 41 KB, taken
 from the heap with the decoder's at start.
@@ -286,7 +291,8 @@ Reliable stream at its own Session type 6 as a retail FireRed does; its broadcas
 encrypted by the LDN library with no DS bits. A Wonder Card, the card already held, a refused replacement, a
 stamp and Wonder News each end with the messages `MysteryGiftServer` sends for that console, byte
 for byte; a second console is served after the first; a cartridge the image does not serve is
-refused. A board and a retail console running a host image are unmeasured.
+refused. A XIAO ESP32S3 on firmware 1.9.1, powered with no host, delivered a Wonder Card to a retail
+French FireRed and served it again to the console that held it.
 
 ## The serial ceiling
 

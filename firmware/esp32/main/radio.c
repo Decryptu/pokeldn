@@ -1096,12 +1096,12 @@ void app_main(void)
 #if POKELDN_BLE
     ble_start();
 #endif
+    beacon_load();   /* before the wire answers: a host's first BEACON QUERY must see the stored image */
     wire_start(command);
     usbwatch_start();
     led_start(led_state, button_pressed);
     display_start(display_state);
     send_info();
-    beacon_load();
     bool beacon_due = beacon_image() != NULL;
 
     int64_t last_status = 0;

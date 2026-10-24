@@ -490,10 +490,11 @@ def test_what_the_board_cannot_host_is_refused_before_anything_is_stored(tmp_pat
     assert says in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("qos", [False, True])
-def test_a_consoles_group_key_arp_gets_the_boards_answer(engine, tmp_path, qos):
+@pytest.mark.parametrize("qos, decrypted", [(False, False), (True, False), (False, True)])
+def test_a_consoles_group_key_arp_gets_the_boards_answer(engine, tmp_path, qos, decrypted):
     """FireRed opens with an ARP for the host, sent with no DS bits under the group key; an access
-    point drops it and a host that does not answer is left (docs/ldn.md, A station's broadcasts)."""
+    point drops it and a host that does not answer is left (docs/ldn.md, A station's broadcasts).
+    A retail ESP32-S3 hands it on decrypted, CCMP header and MIC kept: 76 bytes for the ARP."""
     import struct
     from pokeldn.ldn import esp32_sim
     keys, _ = _keys_file(tmp_path)
@@ -520,11 +521,16 @@ def test_a_consoles_group_key_arp_gets_the_boards_answer(engine, tmp_path, qos):
     arp = struct.pack("!HHBBH6s4s6s4s", 1, 0x0800, 6, 4, 1, console, host_ip[:3] + b"\x02", bytes(6), host_ip)
     raw = board._on_air(b"\xff" * 6 + console + b"\x08\x06" + arp)
     assert (raw[0] & 0x80) == (0x80 if qos else 0)
+    if decrypted:
+        raw = raw[:24 + 8] + b"\xaa\xaa\x03\x00\x00\x00\x08\x06" + arp + raw[-8:]
+        assert len(raw) == 76
     engine.gift_host_rx_80211(host, raw, len(raw), _now_us())
     assert len(sent) == 1
     reply = sent[0]
     assert reply[:6] == console and reply[6:12] == image[9:15] and reply[12:14] == b"\x08\x06"
     assert reply[14 + 6:14 + 8] == b"\x00\x02" and reply[14 + 14:14 + 18] == host_ip
+    if decrypted:
+        return
     tampered = raw[:-1] + bytes([raw[-1] ^ 1])               # a MIC that does not match
     engine.gift_host_rx_80211(host, tampered, len(tampered), _now_us())
     assert len(sent) == 1
