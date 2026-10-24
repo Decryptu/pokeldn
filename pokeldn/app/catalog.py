@@ -287,7 +287,7 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           tr('catalog.pokeldn_appears_on_the_trade_screen_choose_a_pokemon_an_18ef79', 'POKELDN appears on the trade screen: choose a Pokemon and confirm.'),
           tr('catalog.queued_pokemon_follow_one_per_trade_pick_again_from_the_06fa29', 'Queued Pokemon follow, one per trade: pick again from the box.')),
          (queued("--offer-file", required=False,
-                 help=tr('catalog.pick_a_species_pkhex_builds_a_legal_one_empty_offers_yo_899d7f', 'Pick a species; PKHeX builds a legal one. Empty offers your own first party Pokemon back, renamed POKELDN.')),
+                 help=tr('catalog.pick_a_species_pkhex_builds_a_legal_one_empty_offers_yo_38b1cc', 'Pick a species; PKHeX builds a legal one. Empty offers your own first party Pokemon back.')),
           FRESH_PID, TRADE_BACK,
           join_seconds("900")),
          fixed=("--preset", "trade", "--send-snapshot", "live",

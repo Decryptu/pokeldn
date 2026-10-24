@@ -2057,7 +2057,7 @@ _TRANSPORT = (
 PRESETS = {
     "capture": _TRANSPORT + " --hold 90",
     "trade": (_TRANSPORT + " --snapshot-port 1 --rpc-port-answers --rpc-pair --rpc-bodies "
-              "--selection-final-delta 9 --selection-offer --offer-slot 1 --offer-nickname POKELDN "
+              "--selection-final-delta 9 --selection-offer --offer-slot 1 "
               "--open-content 30,50 --open-content-offer --box-commands 1 --box-on-accept 4 "
               "--box-period 0.35 --confirm-commands 0,1,2,3,0,1,2,3,0,1,2,3 "
               "--confirm-final-delta 9 --abort-on-stall 15 --hold 240 --send-seconds 0 "

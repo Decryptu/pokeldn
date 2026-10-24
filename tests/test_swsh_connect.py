@@ -351,3 +351,26 @@ def test_a_leaving_host_is_acked_then_left_and_a_staying_one_is_not():
     assert body == ack and header["protocol"] == lp.PROTOCOL
     assert swsh_connect.departure_step(HOSTING_SWORD_CLOSING) == ("leave", None)
     assert swsh_connect.departure_step(b"\x01") is None
+
+
+def test_the_app_s_trade_preset_keeps_the_chosen_pokemon_s_nickname(tmp_path, monkeypatch):
+    """The app runs `--preset trade --offer-file`; the record the player picked must reach the
+    console with its own nickname. The preset once renamed every offer POKELDN."""
+    from test_swsh_trade_payload import a_payload
+    from pokeldn import pokemon as pokemon_service
+    from pokeldn.swsh import pokemon
+
+    raw = pokemon.build_from(a_payload(count=1)[:gen8.SIZE_PARTY], nickname="Sparky")
+    offer = tmp_path / "offer.pk8"
+    offer.write_bytes(raw)
+    sent = {}
+
+    def prepare_file(game, path, fresh=False, transform=None):
+        sent["record"] = transform(pokemon.encrypt(gen8.load(offer.read_bytes())))
+        return path
+
+    monkeypatch.setattr(pokemon_service, "prepare_file", prepare_file)
+    monkeypatch.setattr(swsh_connect, "needs_root", lambda: False)
+    monkeypatch.setattr(swsh_connect.trio, "run", lambda *a: 0)
+    swsh_connect.main(["--preset", "trade", "--offer-file", str(offer), "--keys", "unused"])
+    assert pokemon.read(sent["record"])["nickname"] == "Sparky"
