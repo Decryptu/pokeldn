@@ -143,7 +143,9 @@ A battle-start frame on key 0x007b is a 12-byte port address (three u32), a u32 
 whose first 32 bytes are a header copied by `0x1227714`: u32 type 0x00, u64 0x08 and 0x10, u8 0x18
 and 0x19, padding at 0x04 and 0x1a..0x1f. No reader compares the padding (`0xf5a2fc`, `0xe10088`,
 `0xe0fd68`, `0xe106a4`, `0xf5a810`, `0xf5bc10`; the 18-byte header's last two bytes are stored at
-`+0x4e` by `0x18bece4` and read only by the serializers `0x290b150`, `0x14c7904`). `0x14ab234` drops a
+`+0x4e` by `0x18bece4` and read only by the serializers `0x290b150`, `0x14c7904`). A retail
+Scarlet guest started and won a battle with bytes 0x1a..0x1f of messages 15 and 16 and the 18-byte
+header's last two bytes zeroed. `0x14ab234` drops a
 frame unless a receiver port registered its address: message 15 is addressed (0x2713, 1, 2),
 messages 16 to 20 (0x2713, 3, 5); 0x2713 is the setup's u32 `+0x2c`.
 
