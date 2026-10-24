@@ -56,15 +56,12 @@ class PokemonPicker:
         level_shiny = [t.labeled_control(tr('pokemon.level_170930', 'Level'), self.level),
                        t.labeled_control(tr('pokemon.shiny_039a0a', 'Shiny'), ft.Container(
                            self.shiny, width=64, height=t.CONTROL_HEIGHT, alignment=ft.Alignment.CENTER))]
-        top = ([ft.Row([species]), ft.Row(level_shiny, spacing=10)] if t.compact else   # a phone: species takes the line
-               [ft.Row([species, *level_shiny], spacing=10, vertical_alignment=ft.CrossAxisAlignment.START)])
-        form = pokemon_header(self.sprite.control, [
-            *top,
-            ft.Row([self.nickname, self.build_button], spacing=10,
-                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
-        ])
+        # Species takes its own line: beside Level and Shiny a long name is cut in a narrow column.
+        # Nickname and Build run the card's width: beside the sprite on a phone the hint broke in two.
+        form = pokemon_header(self.sprite.control, [ft.Row([species]), ft.Row(level_shiny, spacing=10)], spacing=10)
         self.body = ft.Container(ft.Column([
             form,
+            ft.Row([self.nickname, self.build_button], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             self.options.control,
             self.result,
             ft.Row([t.secondary_button(tr('pokemon.or_use_a_pokemon_file_26272a', 'Or use a Pokemon file'), self._use_file, "file"),
@@ -352,9 +349,9 @@ class OfferQueue:
         for n, slot in enumerate(self.slots, start=1):
             slot["title"].value = tr('pokemon.trade_63a07c', 'Trade {value0}', value0=n)
             slot["header"].visible = several
-            slot["box"].border = ft.Border.all(1, t.DIVIDER) if several else None
-            slot["box"].border_radius = 12 if several else None
-            slot["box"].padding = ft.Padding(12, 6, 6, 12) if several else None
+            # A hairline between trades, as a grouped list; a box inside the card read as a card in a card.
+            slot["box"].border = ft.Border(top=ft.BorderSide(1, t.DIVIDER)) if n > 1 else None
+            slot["box"].padding = ft.Padding(0, 12 if n > 1 else 0, 0, 4) if several else None
         self.rows.controls = [slot["box"] for slot in self.slots]
         full = len(self.slots) >= self.limit
         self.add_box.disabled = full
@@ -559,8 +556,7 @@ class OfferOptions:
         self.total = effort.get("total")
         limit = f"0-{effort['max']}" + (tr('pokemon.in_all_09ffde', ', {value0} in all', value0=effort['total']) if effort.get("total") else "")
         return [
-            ft.Row(first, spacing=10),
-            ft.Row(second, spacing=10),
+            t.flow(first + second, 150),
             self._moves(found["move_names"]),
             self._stats("ivs", tr('pokemon.ivs_39e3d6', 'IVs'), 31, "0-31"),
             self._stats("effort", EFFORT[effort["kind"]], effort["max"], limit, effort.get("total")),

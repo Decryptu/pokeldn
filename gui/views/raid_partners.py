@@ -59,7 +59,7 @@ class RaidPartnersPicker:
         self.chevron = t.pixel_icon("chevron-down" if self.open else "chevron-right", color=t.FAINT)
         summary = self._summary()
         header = ft.Container(ft.Row([
-            self.chevron, t.text(field.label, 13, weight=ft.FontWeight.W_600),
+            self.chevron, t.text(field.label, 14, weight=ft.FontWeight.W_600),
             ft.Container(t.text(summary, 12, t.BLUE if picks or chosen else t.MUTED, max_lines=1,
                                 overflow=ft.TextOverflow.ELLIPSIS), expand=True,
                          alignment=ft.Alignment.CENTER_RIGHT),
@@ -68,8 +68,7 @@ class RaidPartnersPicker:
         self.body = ft.Column([], spacing=10, visible=self.open)
         if self.open:
             self.body.controls = self._body()
-        self.control = t.surface(ft.Container(ft.Column([header, self.body], spacing=10, tight=True),
-                                              padding=16))
+        self.control = t.card_box(ft.Column([header, self.body], spacing=12, tight=True))
 
     def _summary(self) -> str:
         labels = dict(next(f for f in self.view.tool.fields if f.key == "--raid-progress").choices)

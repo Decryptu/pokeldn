@@ -1896,3 +1896,34 @@ def test_enter_on_typed_species_text_picks_the_option_it_names_or_nothing(typed,
     box.text = typed
     box.on_select(SimpleNamespace(control=box))
     assert seen == picked
+
+
+def _parents(root, target, path=()):
+    """Every chain of controls from `root` down to `target`."""
+    if root is target:
+        yield path
+        return
+    children = []
+    for name in ("content", "controls"):
+        value = getattr(root, name, None)
+        children += value if isinstance(value, list) else [value] if isinstance(value, ft.Control) else []
+    for child in children:
+        yield from _parents(child, target, path + (root,))
+
+
+@pytest.mark.parametrize("order", [("full", "split", "single", "narrow", "split", "full"),
+                                   ("single", "split", "narrow", "single", "full")])
+def test_a_window_resized_through_every_layout_places_each_pane_once_with_the_content_in_front(order):
+    """Narrowing a window from side by side shows the tool's options, not the list it was picked from."""
+    games, options, session = (ft.Container(width=t.SIDEBAR_WIDTH), ft.Container(expand=True),
+                               ft.Container(width=t.SESSION_WIDTH))
+    panes = t.Panes(("Games", "gamepad", games), ("Options", "sliders-horizontal", options),
+                    ("Session", "play", session))
+    for layout in order:
+        previous = panes.layout
+        panes._arrange(layout)
+        for pane in (games, options, session):
+            assert len(list(_parents(panes.control, pane))) == 1, (layout, pane)
+        if previous in ("full", "narrow") and layout in ("split", "single"):
+            assert panes.index == 1
+    assert panes._choose(1440 - 96) == "full" and panes._choose(1000) == "split" and panes._choose(600) == "single"

@@ -195,7 +195,7 @@ class RewardPicker:
                               lambda value, n=index: self._set(n, "item_id", value),
                               optional=False, only=None if self.den_of is None else set(self.den or ())).control
             fixed = self._fixed(row.get("item_id", ""))
-            quantity = t.field(value=str(row.get("quantity", "1")), mono=True, width=110,
+            quantity = t.field(value=str(row.get("quantity", "1")), mono=True, width=72,
                                keyboard_type=ft.KeyboardType.NUMBER,
                                tooltip=tr('rewards.quantity_from_1_to_999_1e5f8e', 'Quantity from 1 to 999'),
                                on_change=lambda event, n=index: self._quantity(event, n))

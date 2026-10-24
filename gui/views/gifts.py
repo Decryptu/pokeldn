@@ -154,7 +154,7 @@ class GiftBuilder:
                                      settings=bool(b.options)) for b in preset.members]
                 if on:
                     body.append(self.boost_settings(preset))
-            body.insert(0, t.grid(tiles))
+            body.insert(0, t.flow(tiles, 220, 6))
             intro = getattr(self.module, "GROUP_INTROS", {}).get(group, "")
             if intro:
                 body.insert(0, t.text(translate(intro), 12, t.MUTED))
@@ -245,7 +245,7 @@ class GiftBuilder:
         """Every official card the game's builder ships, filtered by a search and a group."""
         official = self.module.OFFICIAL
         cards = official.load()
-        tiles = ft.Column(spacing=6, tight=True)
+        tiles = t.Flow([], 220, 6)
         search = t.field(hint=tr('gifts.search_pikachu_master_ball_shiny_297ed3', 'Search: Pikachu, Master Ball, shiny...'), value=self.value.get("event_search", ""))
         group = {"value": self.value.get("event_group", "")}
 
@@ -253,10 +253,10 @@ class GiftBuilder:
             words = translate(search.value).casefold().split()
             shown = [c for c in cards if (not group["value"] or c["group"] == group["value"])
                      and all(w in tr('gifts._8320f6', '{value0} {value1} {value2}', value0=translate(c['label']), value1=translate(c['group']), value2=translate(c['summary'])).casefold() for w in words)]
-            tiles.controls = t.grid_rows([self._event_tile(c) for c in shown])
+            tiles.set([self._event_tile(c) for c in shown])
             count.value = tr('gifts.of_cards_d600f0', '{value0} of {value1} cards', value0=len(shown), value1=len(cards))
             if update:
-                tiles.update()
+                tiles.control.update()
                 count.update()
 
         def filtered(key, value):
@@ -271,7 +271,7 @@ class GiftBuilder:
         groups = _chips([("", tr('gifts.all_a52ace', 'All'))] + [(g, translate(g)) for g in official.GROUPS], group["value"],
                         lambda k: filtered("event_group", k))
         intro = t.text(tr('gifts.real_event_cards_from_the_projectpokemon_eventsgallery__1172ec', "Real event cards from the projectpokemon EventsGallery archive, and under Pokemon HOME the community's cards of the gifts Pokemon HOME gave. Each one passed the game's own card check."), 12, t.MUTED)
-        listing = ft.Container(ft.Column([tiles], scroll=ft.ScrollMode.AUTO), height=440)
+        listing = ft.Container(ft.Column([tiles.control], scroll=ft.ScrollMode.AUTO), height=440)
         return ft.Column([intro, search, groups, count, listing, self._event_card_id()], spacing=10)
 
     def _event_card_id(self) -> ft.Control:

@@ -126,10 +126,6 @@ def reward_chips(names: dict[int, str] | None, rewards) -> ft.Control:
 
 ACTION_ICONS = {"shield": "shield", "move": "sword", "boss_reset": "refresh", "player_reset": "refresh",
                 "drain": "diamond-gem"}
-# The scripted actions stand as wide as the sprite and IV tiles above them, so a full-screen card keeps
-# each trigger beside its action; a narrower card narrows them.
-ACTIONS_WIDTH = 520
-
 
 def action_label(action, boss: str, moves: dict[int, str]) -> str:
     return {"shield": tr('raid_seed.shield_activation_2f21f1', 'Shield activation'),
@@ -158,7 +154,7 @@ def action_rows(moves: dict[int, str] | None, boss: str, actions) -> ft.Control:
                   horizontal_alignment=ft.CrossAxisAlignment.END)],
         spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
         padding=ft.Padding(10, 6, 10, 6), border_radius=8, bgcolor=ft.Colors.with_opacity(0.04, "#FFFFFF"))
-        for action in actions], spacing=4, tight=True, width=ACTIONS_WIDTH)
+        for action in actions], spacing=4, tight=True)
 
 
 def boss_card(app, seed, stars, boss, context, *, compact=False, rewards=None, actions=None, on_use=None):
@@ -186,14 +182,16 @@ def boss_card(app, seed, stars, boss, context, *, compact=False, rewards=None, a
              + (tr('raid_seed._940234', ' · {value0}', value0=translate(context['den'])) if context.get("den") else ""))
     ivs = ft.Row([iv_tile(label, iv, stat, compact)
                   for label, iv, stat in zip(STATS, boss["ivs"], boss["stats"])], spacing=6, wrap=True)
-    column = [ft.Row(title, spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER), facts, ivs]
+    # The stars wrap under the name in a narrow card rather than run past its edge.
+    column = [ft.Row(title, spacing=8, run_spacing=4, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+              facts, ivs]
     if compact:
         column.append(ft.Row([t.text(f"{seed:08X}", 11, t.SOFT, font_family=t.MONO, selectable=True),
                               t.text(where, 11, t.FAINT)], spacing=10, wrap=True))
     else:
-        column.append(ft.Row([t.pixel_icon("map-pin", size=12, color=t.FAINT), t.text(where, 12, t.MUTED)],
-                             spacing=6))
-    row = [framed_sprite(app, boss["species"], shiny, MINI if compact else SIZE, context),
+        column.append(ft.Row([t.pixel_icon("map-pin", size=12, color=t.FAINT), t.text(where, 12, t.MUTED, expand=True)],
+                             spacing=6, vertical_alignment=ft.CrossAxisAlignment.START))
+    row = [framed_sprite(app, boss["species"], shiny, MINI if compact or t.compact else SIZE, context),
            ft.Column(column, spacing=8 if compact else 10, expand=True)]
     if on_use:
         row.append(t.secondary_button(tr('raid_seed.use_c36d81', 'Use'), lambda _e: on_use(seed, context), "check"))

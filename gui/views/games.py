@@ -126,7 +126,7 @@ class GamesView:
             ft.Container(t.notch(self.tabs,
                                  t.icon_button("book-open", self._open_doc, tr('games.read_the_docs_for_this_game_ca6165', 'Read the docs for this game'))),
                          top=0, left=0, right=0),
-        ], expand=True)
+        ], expand=True, size_change_interval=50, on_size_change=self._fit)
         self.panes = t.Panes(
             (tr('games.pane_games', 'Games'), "gamepad", t.panel(ft.Column([t.panel_header(tr('games.games_d9dae7', 'Games')), t.fade(self.tree)], spacing=0, expand=True), width=t.SIDEBAR_WIDTH)),
             (tr('games.pane_options', 'Options'), "sliders-horizontal", center),
@@ -373,6 +373,12 @@ class GamesView:
         self.render_body()
         self.cards.update()
 
+    def _fit(self, e) -> None:
+        side = max(0, (e.width - t.READABLE_WIDTH) // 2)
+        if self.body.padding.left != side:
+            self.body.padding = ft.Padding(side, 62, side, 24)
+            self.body.update()
+
     def _open_doc(self, e) -> None:
         self.app.navigate("docs", doc=self.tool.doc or self.game.doc or "plugins.md")
 
@@ -421,12 +427,8 @@ class GamesView:
                                   trailing=self.species_sprite([item])))
             else:
                 fields = groups[item]
-                per_row = 2 if len(fields) > 3 else len(fields)
                 sprite = self.species_sprite(fields)
-                rows = [ft.Row([
-                    t.labeled_control(f.label, self.input(f, grouped=True), expand=True)
-                    for f in fields[i:i + per_row]], spacing=10, vertical_alignment=ft.CrossAxisAlignment.START)
-                    for i in range(0, len(fields), per_row)]
+                rows = [t.flow([t.labeled_control(f.label, self.input(f, grouped=True)) for f in fields], 200)]
                 if item == tr('catalog.console_29a408', 'Console') and self.tool.key == "frlg-gift":
                     rows.append(ft.Column([
                         t.text(tr('games.game_language_233497', 'Game language'), 12, t.MUTED),
@@ -640,11 +642,11 @@ class GamesView:
             control = ft.Container(t.dropdown([(EMPTY, tr("games.default_choice", "default"))] + [(c, translate(c)) for c in flag.choices],
                                               value or EMPTY,
                                               on_select=lambda e: store("" if e.control.value == EMPTY else e.control.value)),
-                                   width=220)
+                                   width=260)
         else:
             default = "" if flag.default in (None, [], "") else str(flag.default)
             control = ft.Container(t.field(value=value or "", hint=default, mono=True,
-                                           on_change=lambda e: store(e.control.value)), width=220)
+                                           on_change=lambda e: store(e.control.value)), width=260)
         detail = ""
         for field in self.tool.fields:
             if field.flag == flag.option and field.choice_help:
@@ -660,14 +662,18 @@ class GamesView:
             help_.max_lines = None if help_.max_lines else 4
             help_.update()
 
+        column = [ft.Row([t.text(bound.label, 13, weight=ft.FontWeight.W_600),
+                          t.text(flag.option, 12, t.BLUE if value != bound.default else t.MUTED,
+                                 font_family=t.MONO)], spacing=8, wrap=True) if bound else
+                  t.text(flag.option, 13, t.BLUE if value else t.TEXT, font_family=t.MONO),
+                  ft.Container(help_, on_click=toggle, tooltip=tr('games.show_all_2150d8', 'Show all') if len(lines) > 4 else None)]
+        # A switch stays at the row's end; a field goes under its description, which beside a 220 px
+        # field had a third of a phone's width.
+        if flag.kind != "switch":
+            column.append(control)
         return ft.Container(ft.Row([
-            ft.Column([ft.Row([t.text(bound.label, 13, weight=ft.FontWeight.W_600),
-                               t.text(flag.option, 12, t.BLUE if value != bound.default else t.MUTED,
-                                      font_family=t.MONO)], spacing=8) if bound else
-                       t.text(flag.option, 13, t.BLUE if value else t.TEXT, font_family=t.MONO),
-                       ft.Container(help_, on_click=toggle, tooltip=tr('games.show_all_2150d8', 'Show all') if len(lines) > 4 else None)],
-                      spacing=3, expand=True),
-            control,
+            ft.Column(column, spacing=6, expand=True),
+            *([control] if flag.kind == "switch" else []),
         ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.START),
             border=ft.Border(top=ft.BorderSide(1, t.DIVIDER)), padding=ft.Padding(0, 12, 0, 12))
 

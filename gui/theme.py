@@ -37,11 +37,14 @@ FONT_ASSETS = {PUNCTUATION_FONT: "fonts/NotoSansPunctuation.otf", CJK_FONT: "fon
 CONTROL_HEIGHT = 34
 CONTROL_PADDING = ft.Padding(12, 8, 12, 8)
 CONTROL_RADIUS = 8
+CARD_PADDING = 18
+CARD_RADIUS = 18
 GAP = 12
 SIDEBAR_WIDTH = 254
 SESSION_WIDTH = 360
 # A window narrower than this (a phone) shows one panel at a time and a bottom tab bar (docs/gui.md, Phones).
 COMPACT_WIDTH = 760
+READABLE_WIDTH = 720   # the options column's widest: a wider form spreads a field's label far from its value
 compact = False
 
 
@@ -101,35 +104,90 @@ TOOLBAR_ITEM = 32   # the icon buttons are this size
 TOOLBAR_INSET = 4
 
 
+CENTER_MIN = 440      # the flexible pane never gets narrower than this beside the others
+NARROWED = 0.88       # a fixed pane's width when the window is a little short of room
+
+
 class Panes:
-    """A page's panels: side by side on a computer; on a phone one at a time, picked by name on a
-    switcher above them. `show` brings one forward, as choosing a tool brings its options."""
+    """A page's panels, laid out by the width they have (docs/gui.md, Window sizes): side by side;
+    then the fixed panes narrowed; then, with three, the first two on one switcher beside the last;
+    then one at a time on a switcher, as on a phone. `show` brings one forward, as choosing a tool
+    brings its options."""
 
     def __init__(self, *panes: tuple[str, str, ft.Control]):
         self.panes = list(panes)
+        self.widths = [pane.width for _, _, pane in panes]
         self.index = 0
-        if not compact:
-            self.control = ft.Row([p[2] for p in panes], spacing=GAP, expand=True,
-                                  vertical_alignment=ft.CrossAxisAlignment.STRETCH)
-            return
+        self.layout = ""
+        self.switched: list[int] = []
         # Every pane stays on the page, hidden or not: a view updates its panes while another shows.
-        self.holders = [ft.Container(pane, expand=True, visible=i == 0) for i, (_, _, pane) in enumerate(panes)]
-        for _, _, pane in panes:
-            pane.width, pane.expand = None, True
+        self.holders = [ft.Container(expand=True) for _ in panes]
         self.switcher = ft.Container()
-        self.control = ft.Column([self.switcher, *self.holders], spacing=8, expand=True)
+        self.control = ft.Container(expand=True, size_change_interval=50, on_size_change=self._resized)
+        self._arrange("single" if compact else "full")
+
+    def _choose(self, width: float) -> str:
+        fixed = [w for w in self.widths if w]
+        gaps = GAP * (len(self.panes) - 1)
+        if compact:
+            return "single"
+        if width >= sum(fixed) + CENTER_MIN + gaps:
+            return "full"
+        if width >= sum(fixed) * NARROWED + CENTER_MIN + gaps:
+            return "narrow"
+        if len(self.panes) == 3 and self.widths[2] and width >= self.widths[2] * NARROWED + CENTER_MIN + GAP:
+            return "split"
+        return "single"
+
+    def _resized(self, e) -> None:
+        layout = self._choose(e.width)
+        if layout != self.layout:
+            self._arrange(layout)
+            self.control.update()
+
+    def _arrange(self, layout: str) -> None:
+        side_by_side = self.layout in ("full", "narrow")
+        self.layout = layout
+        for holder in self.holders:
+            holder.content = None
+        if layout in ("full", "narrow"):
+            self.switched = []
+            for (_, _, pane), width in zip(self.panes, self.widths):
+                pane.width = (width if layout == "full" else round(width * NARROWED)) if width else None
+                pane.expand = None if width else True
+            self.control.content = ft.Row([p[2] for p in self.panes], spacing=GAP, expand=True,
+                                          vertical_alignment=ft.CrossAxisAlignment.STRETCH)
+            return
+        self.switched = [0, 1] if layout == "split" else list(range(len(self.panes)))
+        if side_by_side and None in self.widths:    # a window narrowed keeps the content in front
+            self.index = self.widths.index(None)
+        if self.index not in self.switched:
+            self.index = self.switched[-1]
+        for i in self.switched:
+            pane = self.panes[i][2]
+            pane.width, pane.expand = None, True
+            self.holders[i].content = pane
+            self.holders[i].visible = i == self.index
         self._render()
+        column = ft.Column([self.switcher, *(self.holders[i] for i in self.switched)], spacing=8, expand=True)
+        if layout == "single":
+            self.control.content = column
+            return
+        last = self.panes[2][2]
+        last.width, last.expand = round(self.widths[2] * NARROWED), None
+        self.control.content = ft.Row([column, last], spacing=GAP, expand=True,
+                                      vertical_alignment=ft.CrossAxisAlignment.STRETCH)
 
     def _render(self) -> None:
-        self.switcher.content = notch(segmented([(str(i), title, icon) for i, (title, icon, _) in enumerate(self.panes)],
+        self.switcher.content = notch(segmented([(str(i), self.panes[i][0], self.panes[i][1]) for i in self.switched],
                                                 str(self.index), lambda value: self.show(int(value))))
 
     def show(self, index: int, update: bool = True) -> None:
-        if not compact or index == self.index:
+        if index not in self.switched or index == self.index:
             return
         self.index = index
-        for i, holder in enumerate(self.holders):
-            holder.visible = i == index
+        for i in self.switched:
+            self.holders[i].visible = i == index
         self._render()
         if update and self.control.page:
             self.control.update()
@@ -180,9 +238,45 @@ def grid(tiles: list[ft.Control], columns: int = 2, spacing: float = 6) -> ft.Co
     return ft.Column(grid_rows(tiles, columns, spacing), spacing=spacing, tight=True)
 
 
+class Flow:
+    """Tiles or fields in rows of as many as the measured width gives each `min_width`; a fixed count
+    per row squeezes a dropdown's text or a tile's summary out of a narrow column."""
+
+    def __init__(self, controls: list[ft.Control], min_width: float = 160, spacing: float = 10):
+        self.min_width, self.spacing, self.width = min_width, spacing, 0.0
+        self.box = ft.Column(spacing=spacing, tight=True)
+        self.control = ft.Container(self.box, size_change_interval=50, on_size_change=self._resized)
+        self.columns = 0
+        self.set(controls)
+
+    def _fit(self) -> int:
+        if not self.width:
+            return max(1, len(self.items))
+        return max(1, min(len(self.items), int((self.width + self.spacing) // (self.min_width + self.spacing))))
+
+    def set(self, controls: list[ft.Control], single: bool = False) -> None:
+        """New tiles; `single` lays them one to a row, as a message in place of tiles."""
+        self.items, self.single = list(controls), single
+        self._lay()
+
+    def _lay(self) -> None:
+        self.columns = 1 if self.single else self._fit()
+        self.box.controls = list(self.items) if self.single else grid_rows(list(self.items), self.columns, self.spacing)
+
+    def _resized(self, e) -> None:
+        self.width = e.width
+        if not self.single and self._fit() != self.columns:
+            self._lay()
+            self.control.update()
+
+
+def flow(controls: list[ft.Control], min_width: float = 160, spacing: float = 10) -> ft.Container:
+    return Flow(controls, min_width, spacing).control
+
+
 def card(title: str, body: ft.Control | None = None, description: str = "",
          trailing: ft.Control | None = None, tip: str = "") -> ft.Container:
-    head = [text(title, 13, weight=ft.FontWeight.W_600, expand=True)]
+    head = [text(title, 14, weight=ft.FontWeight.W_600, expand=True)]
     if tip:
         head.append(pixel_icon("circle-info", color=FAINT, tooltip=tip))
     if trailing:
@@ -192,7 +286,12 @@ def card(title: str, body: ft.Control | None = None, description: str = "",
         rows.append(text(description, 12, MUTED))
     if body:
         rows.append(body)
-    return surface(ft.Container(ft.Column(rows, spacing=10, tight=True), padding=16))
+    return card_box(ft.Column(rows, spacing=12, tight=True))
+
+
+def card_box(content: ft.Control) -> ft.Container:
+    """The options column's card: every card there, built by `card` or by hand, has this padding and corner."""
+    return surface(ft.Container(content, padding=CARD_PADDING), radius=CARD_RADIUS)
 
 
 def dialog(**kwargs) -> ft.AlertDialog:

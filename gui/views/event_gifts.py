@@ -82,16 +82,17 @@ class EventGiftPicker:
         self.search = t.field(hint=tr('event_gifts.search_mew_gavin_tera_fire_shiny_korean_2024_97d63d', 'Search: Mew, Gavin, Tera Fire, shiny, Korean, 2024...'), expand=True,
                               on_change=self._searched)
         self.count = t.text("", 12, t.MUTED)
-        self.tiles = ft.Column(spacing=6, tight=True)
+        self.tiles = t.Flow([], 220, 6)
         self.more = t.secondary_button(tr('event_gifts.show_more_f5c9bd', 'Show more'), self._more, "chevron-down", visible=False)
         self.status = ft.Container()
         self.result = ft.Container()
-        self.scroller = ft.Column([self.tiles, ft.Row([self.more], alignment=ft.MainAxisAlignment.CENTER)],
+        self.scroller = ft.Column([self.tiles.control, ft.Row([self.more], alignment=ft.MainAxisAlignment.CENTER)],
                                   spacing=10)
         self.box = ft.Container(self.scroller)
         self.control = ft.Column([self.result, self.status, ft.Row([self.search]), self.count, self.box], spacing=10)
-        self.tiles.controls = [ft.Row([PixelActivity(tr('event_gifts.reading_the_events_1abdf0', 'Reading the events')),
-                                       t.text(tr('event_gifts.reading_pkhex_s_event_database_b686bc', "Reading PKHeX's event database..."), 12, t.MUTED)], spacing=8)]
+        self.tiles.set([ft.Row([PixelActivity(tr('event_gifts.reading_the_events_1abdf0', 'Reading the events')),
+                                t.text(tr('event_gifts.reading_pkhex_s_event_database_b686bc', "Reading PKHeX's event database..."), 12, t.MUTED)], spacing=8)],
+                       single=True)
         self._show_result()
         threading.Thread(target=self._load, daemon=True).start()
 
@@ -105,7 +106,7 @@ class EventGiftPicker:
 
         def show():
             if error:
-                self.tiles.controls = [t.text(tr('event_gifts.the_events_could_not_be_read_523a5c', 'The events could not be read: {value0}', value0=error), 12, t.RED, selectable=True)]
+                self.tiles.set([t.text(tr('event_gifts.the_events_could_not_be_read_523a5c', 'The events could not be read: {value0}', value0=error), 12, t.RED, selectable=True)], single=True)
             else:
                 self.events = events
                 self._render()
@@ -117,9 +118,9 @@ class EventGiftPicker:
             return
         words = self.search.value.casefold().split()
         matches = [e for e in self.events if all(w in haystack(e) for w in words)]
-        self.tiles.controls = t.grid_rows([self._tile(e) for e in matches[:self.shown]])
+        self.tiles.set([self._tile(e) for e in matches[:self.shown]])
         if not matches:
-            self.tiles.controls = [t.text(tr('event_gifts.no_event_pokemon_matches_ab000b', 'No event Pokemon matches.'), 12, t.MUTED)]
+            self.tiles.set([t.text(tr('event_gifts.no_event_pokemon_matches_ab000b', 'No event Pokemon matches.'), 12, t.MUTED)], single=True)
         self.count.value = tr('event_gifts.of_event_pokemon_newest_first_fbcbea', '{value0} of {value1} event Pokemon, newest first', value0=len(matches), value1=len(self.events))
         self.more.visible = len(matches) > self.shown
         few = len(matches) <= FIT

@@ -53,7 +53,7 @@ class RaidEventPicker:
         self.summary = t.text(summary, 12, t.RED if missing else t.BLUE if key else t.MUTED, max_lines=1,
                               overflow=ft.TextOverflow.ELLIPSIS)
         header = ft.Container(ft.Row([
-            self.chevron, t.text(field.label, 13, weight=ft.FontWeight.W_600),
+            self.chevron, t.text(field.label, 14, weight=ft.FontWeight.W_600),
             ft.Container(self.summary, expand=True, alignment=ft.Alignment.CENTER_RIGHT),
         ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER), on_click=self._toggle, tooltip=tip)
         self.busy = ft.Container(PixelActivity(tr('raid_event.working_a92f04', 'Working')), visible=False)
@@ -73,7 +73,7 @@ class RaidEventPicker:
             ft.Row([self.dropdown, self.order], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             self.catch,
         ], spacing=10, visible=view.raid_event_open)
-        self.control = t.surface(ft.Container(ft.Column([header, self.body], spacing=10, tight=True), padding=16))
+        self.control = t.card_box(ft.Column([header, self.body], spacing=12, tight=True))
         self._show_catch()
         if view.raid_event_open:
             self._refresh(update=False)

@@ -54,6 +54,21 @@ desktop Board page (`pokeldn-radio-ble-c6.bin` for an ESP32-C6, `pokeldn-radio-b
 classic ESP32); USB only powers it. While the phone holds the board, the board ignores USB: close the
 iOS app before using it elsewhere. App files are under Files, On My iPhone, pokeldn.
 
+## Window sizes
+
+A page's panels are laid out by the width they have, measured as the window changes
+(`gui/theme.py` `Panes`). The options column never gets narrower than 440 points beside the others.
+
+| width left for the panels | layout |
+|---|---|
+| side panels at full width plus 440 | side by side |
+| side panels at 88% plus 440 | side by side, side panels narrowed |
+| the last panel at 88% plus 440 (a page of three) | the first two on a switcher, the last beside them |
+| less | one panel at a time on a switcher |
+
+Narrowing a window from side by side brings the options column forward. On a wide window the options
+column keeps to 720 points, centred, and fields go as many to a row as fit.
+
 ## Phones
 
 Below 760 points wide, pages sit in a bottom tab bar and panels show one at a time on a switcher

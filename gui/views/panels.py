@@ -60,4 +60,4 @@ def card_control(card: dict, art: ft.Control | None = None) -> ft.Control:
                       *([ft.Row(chips, spacing=6, wrap=True, run_spacing=6)] if chips else []),
                       *([ft.Column(rows, spacing=4)] if rows else [])], spacing=10, expand=True, tight=True)
     content = ft.Row([art, body], spacing=16, vertical_alignment=ft.CrossAxisAlignment.START) if art else body
-    return t.surface(ft.Container(content, padding=16))
+    return t.card_box(content)
