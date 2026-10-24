@@ -1,20 +1,20 @@
-# pokeldn 0.39.0
+# pokeldn 0.39.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Settings, Your trainer: each ID row has a Find mine button. It fills your ID and secret ID, with
-  your name, gender and language, from the last game you traded with. FireRed and LeafGreen give it in
-  any trade, Mystery Gift or Union Room session, and a Switch game in any trade, hosting or joining.
-  The Switch games never show the secret ID; this reads it off the link.
-- FireRed and LeafGreen Game boosts: Shiny legendary, for Mewtwo or Articuno, Zapdos and Moltres.
-  Stand facing the Pokemon and hold B; the game presses A by itself on a shiny frame.
-- Plugin API 1.11: the FireRed/LeafGreen random number generator helpers are public, so an RNG plugin
-  needs no private names.
+- Keep it on the board: a board kept with a FireRed or LeafGreen gift now hands it to a console on
+  its own, with no computer. Before, the console joined and then showed a communication error.
+- Send it back works in Scarlet and Violet hosting, and in Brilliant Diamond and Shining Pearl
+  joining. Both stopped on "Waiting for a response" before the second trade.
+- Find mine reads your trainer when the app hosts a Legends Arceus trade.
+- The Board page reads a kept gift right after the board is plugged in; before, it could say none
+  was kept.
 
-The radio firmware stays at 1.9.0 and the controller firmware at 1.3.0.
+The radio firmware is 1.9.1 (install it from the Board page for the kept FireRed gift); the
+controller firmware stays at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
