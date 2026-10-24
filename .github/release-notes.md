@@ -1,21 +1,18 @@
-# pokeldn 0.37.0
+# pokeldn 0.38.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Pokemon builder: an Alpha choice under More options for Legends Arceus and Legends Z-A (Random,
-  Yes or No). Shiny and Alpha combine where the game allows it, and PKHeX still checks the result. A
-  species with no Alpha encounter says so, and a refused build gives the reason.
-- The app adapts to its window: on a small laptop screen the options column no longer shrinks to a
-  word per line. Games and Options share one column beside Session when room runs short, and fields
-  and gift tiles fit as many to a row as the width allows. Long Pokemon names, raid cards and
-  advanced options no longer overflow, on a computer or a phone.
-- A cleaner look: flat brand blue and red in place of gradients, one card style across every tool,
-  and trades in a queue split by a hairline.
+- Sword/Shield, Trade (Join): the Pokemon you offer keeps its own nickname. It was renamed POKELDN
+  before; no other game did this.
+- FireRed/LeafGreen Mystery Gift: Keep it on the board stores the gift on the radio board. Unplugged
+  from the computer and powered from any USB charger, the board then hands the gift to every
+  FireRed and LeafGreen nearby, as it already did for Sword and Shield. It needs radio firmware
+  1.9.0, which the Board page installs.
 
-The radio firmware stays at 1.8.0 and the controller firmware at 1.3.0.
+The radio firmware is now 1.9.0 and the controller firmware stays at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
