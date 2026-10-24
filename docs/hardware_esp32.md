@@ -221,7 +221,8 @@ byte for byte, for protocols 1 and 3.
 | end | 4 | `zlib.crc32` of everything before it |
 
 The image holds the advertise and data keys derived for its one network, never `prod.keys`. An image
-is at most 12288 bytes. From firmware 1.9.1 the stored image is read from NVS before the board answers
+is at most 12288 bytes. A XIAO ESP32S3 on firmware 1.9.1, alone after a power-up, delivered a Sword
+Mystery Gift Pokemon to a retail Sword. From firmware 1.9.1 the stored image is read from NVS before the board answers
 its first command; 1.9.0 answered a BEACON QUERY sent right after a port open with "none stored". A board left on a computer's USB with no app open starts the beacon as on a
 charger.
 

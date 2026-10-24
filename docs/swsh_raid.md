@@ -371,6 +371,10 @@ an emulated host and against a retail Sword host), read from the moves each batt
 in the host's type 0x10 commands. The rule needs only ChikaBattleSeed. Which encounters a
 path meets is unknown.
 
+`swsh_connect.py --preset lair` as a retail Sword host's guest followed every path and capture
+choice through three encounters and the legendary (Raikou), its rental using its first move in each
+battle; the host's player lost the last battle and the session ended without error.
+
 ## Leaving
 
 Once its player leaves the reward screens, a retail Sword host closes the network with
