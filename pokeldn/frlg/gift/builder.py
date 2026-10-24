@@ -221,6 +221,11 @@ BOOST_LIST = (
           _plain("No grass, water or roaming encounters; fishing and Sweet Scent still work")),
     Boost("hook-shiny", "Shiny countdown", "Counts down to the next shiny in the grass.", "shiny", _shiny,
           (Option("button", "Slow the game down", R, BUTTONS), Option("slower", "By", "3", SLOWER))),
+    Boost("hook-shiny-press", "Shiny Mewtwo", "Presses A for you at Mewtwo's cry, on a shiny frame.",
+          "shiny-press", _plain(
+              "Counts down to the next shiny Mewtwo, top right of the screen",
+              "Talk to Mewtwo, then let go of the buttons: when its cry ends, the game presses A by itself "
+              "on a shiny frame. This can take a few minutes")),
     Boost("hook-ivs", "Lead's IVs on screen", "The lead Pokemon's IVs and nature, top right.", "ivs",
           _plain("The lead Pokemon's six IVs and its nature, top right of the overworld")),
     Boost("hook-follower", "Pokemon follower", "Your lead Pokemon walks behind you.", "follower",
@@ -229,7 +234,7 @@ BOOST_LIST = (
 )
 BOOST = {b.key: b for b in BOOST_LIST}
 # Each draws in the top-right corner [docs/frlg_rom.md, turbo overlay]; one at a time.
-DRAWING = ("hook-shiny", "hook-ivs")
+DRAWING = ("hook-shiny", "hook-shiny-press", "hook-ivs")
 
 
 def _hook_args(name, params, keep):

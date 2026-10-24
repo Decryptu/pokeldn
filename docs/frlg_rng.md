@@ -115,6 +115,9 @@ so a press hits one chosen frame about 9% of the time; a shiny frame comes every
 `pokeldn/frlg/rom/rng_countdown.py` is the countdown; `--aimed-at STATE` measures a miss in frames.
 This is the route when the RAM script slot holds a Wonder Card.
 
+At a script's button wait the hook can press instead, on the exact frame and without writing
+`gRngValue`: [`shiny-press`](frlg_rom.md#shiny-shiny-press-ivs-noencounter), the app's Shiny Mewtwo.
+
 ## The stub that does the search
 
 `--gift rng-shiny-hunt`, `pokeldn/frlg/rom/native_script.py`, `asm/field/`. All four stubs work on

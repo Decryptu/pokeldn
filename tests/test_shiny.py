@@ -12,7 +12,10 @@ VBLANK_INTR = 0x0800071C
 SOUND_MAIN = 0x081DF53C
 INTR_CHECK = 0x030022EC
 GMAIN = 0x030022D0
+CB1_OVERWORLD = 0x08059E49
 CB2_OVERWORLD = 0x08059EC9
+SCRIPT_CONTEXT = 0x03000FB0
+WAIT_BUTTON = 0x0806F159                    # WaitForAorBPress, French
 RNG = 0x03004220
 SB2_PTR = 0x0300422C
 SB2 = 0x02024584
@@ -55,14 +58,16 @@ def first_shiny(seed, tid, sid, method=0, limit=100000):
 class Console:
     """One installed hook and the memory it reads; frame() enters it the way IntrMain does."""
 
-    def __init__(self, seed, tid, sid, **params):
-        self.machine = bs._Machine(bs.build_install_resident("shiny", **params), memory={
+    def __init__(self, seed, tid, sid, name="shiny", waiting=True, **params):
+        self.machine = bs._Machine(bs.build_install_resident(name, **params), memory={
             ns.GINTRTABLE_VBLANK: (VBLANK_INTR | 1).to_bytes(4, "little"),
             VBLANK_INTR: _counting_stub(COUNTERS),
             SOUND_MAIN: _counting_stub(COUNTERS + 4),
             SB2_PTR: SB2.to_bytes(4, "little"),
             SB2 + 0x0A: tid.to_bytes(2, "little") + sid.to_bytes(2, "little"),
-            GMAIN: (0).to_bytes(4, "little") + CB2_OVERWORLD.to_bytes(4, "little"),
+            GMAIN: CB1_OVERWORLD.to_bytes(4, "little") + CB2_OVERWORLD.to_bytes(4, "little"),
+            CB1_OVERWORLD & ~1: _counting_stub(COUNTERS + 8),
+            SCRIPT_CONTEXT: bytes((0, 2 if waiting else 1, 0, 0)) + WAIT_BUTTON.to_bytes(4, "little"),
             RNG: seed.to_bytes(4, "little"),
             VCOUNT: (160).to_bytes(2, "little")})
         assert self.machine.call().param == VBLANK_INTR | 1
@@ -92,6 +97,15 @@ class Console:
 
     def shown(self):
         return self.read(STATE + 24)
+
+    def main_loop(self):
+        """ReadKeys, then callback1, as AgbMain runs them after a V-blank [main.c:81, 97]."""
+        from unicorn import arm_const as a
+        self.write(GMAIN + 0x2E, 0, 2)
+        self.uc.reg_write(a.UC_ARM_REG_SP, 0x03007D00)
+        self.uc.reg_write(a.UC_ARM_REG_LR, STOP)
+        self.uc.emu_start(self.read(GMAIN), STOP, count=100_000)
+        return self.read(GMAIN + 0x2E, 2)
 
 
 def _bcd(nature, count):
@@ -186,6 +200,59 @@ def test_r_is_kept_off_the_help_system():
     assert console.read(0x0203F171, 1) == 1
 
 
+def _press_run(seed, tid, sid, frames, lag_at=None, **params):
+    """-> [(index followed, newKeys after callback1)] a frame, the game advancing two calls a frame."""
+    console = Console(seed, tid, sid, name="shiny-press", search=64, **params)
+    out, rng = [], seed
+    for f in range(frames):
+        console.frame(lag=f == lag_at)
+        out.append((console.read(STATE + 4), console.main_loop()))
+        rng = lcg.step(lcg.step(rng))
+        console.write(RNG, rng)
+    return console, out
+
+
+def _reachable(seed, tid, sid):
+    """A seed whose first shiny CreateMon is an even number of calls past the offset."""
+    while True:
+        target, _ = first_shiny(seed, tid, sid, method=1)
+        if target > 64 and (target - bs.SHINY_PRESS_OFFSET) % 2 == 0:
+            return seed, target
+        seed = lcg.step(seed)
+
+
+def test_the_press_is_one_a_at_the_waiting_script_on_the_frame_the_countdown_reaches_zero():
+    seed, target = _reachable(0x00C0FFEE, 50425, 50923)
+    console, frames = _press_run(seed, 50425, 50923, (target - bs.SHINY_PRESS_OFFSET) // 2 + 4)
+    pressed = [index for index, keys in frames if keys & 1]
+    assert pressed == [target - bs.SHINY_PRESS_OFFSET]
+    assert console.read(GMAIN) == CB1_OVERWORLD          # the game's callback1 is back
+    assert console.read(COUNTERS + 8) == len(frames)     # and CB1_Overworld ran every pass
+
+
+@pytest.mark.parametrize("before, personality", [
+    (0x8DEFC2AD, 0xF63E4E65), (0xFB34FA1C, 0x0CF1F63E), (0xA65852CF, 0x717DBAC6)])
+def test_the_offset_is_where_mewtwos_personality_was_drawn_in_mgba(before, personality):
+    """French FireRed in mGBA at Mewtwo's last line: gRngValue at the frame boundary before the
+    frame A was held, and the personality setwildbattle then gave gEnemyParty[0]. The hook's seed is
+    one call later, VBlankIntr's [main.c:412]."""
+    assert wild(lcg.advance(lcg.step(before), bs.SHINY_PRESS_OFFSET), method=1)[0] == personality
+
+
+def test_no_press_without_a_waiting_script_or_on_a_lag_frame():
+    seed, target = _reachable(0x00C0FFEE, 50425, 50923)
+    count = (target - bs.SHINY_PRESS_OFFSET) // 2 + 4
+    console = Console(seed, 50425, 50923, name="shiny-press", waiting=False, search=64)
+    rng = seed
+    for _ in range(count):
+        console.frame()
+        assert console.read(GMAIN) == CB1_OVERWORLD
+        rng = lcg.step(lcg.step(rng))
+        console.write(RNG, rng)
+    _, frames = _press_run(seed, 50425, 50923, count, lag_at=(target - bs.SHINY_PRESS_OFFSET) // 2)
+    assert not any(keys & 1 for _, keys in frames)
+
+
 def test_the_committed_resident_stubs_are_what_the_sources_assemble_to():
     import os
     import shutil
@@ -221,3 +288,36 @@ def test_the_sound_mixer_is_the_one_each_cartridges_vblankintr_calls(code, cartr
     blob, _, _ = bs.resident_blob("shiny", build=code)
     at = STUBS["shiny"][2]["p_sound_main"]
     assert int.from_bytes(blob[at:at + 4], "little") == target | 1
+
+
+ROMS = {code: f"scratchpad/frlg_languages/{'FireRed' if b.version == 'firered' else 'LeafGreen'}_{code[3].lower()}.gba"
+        for code, b in __import__("pokeldn.frlg.rom.builds", fromlist=["BUILDS"]).BUILDS.items()}
+
+
+@pytest.mark.parametrize("code", sorted(ROMS))
+def test_the_waiting_script_is_read_where_each_cartridge_keeps_it(code):
+    """WaitForAorBPress is the literal ScrCmd_waitbuttonpress, gScriptCmdTable[0x6D]
+    [data/script_cmd_table.inc:113], hands SetupNativeScript; sGlobalScriptContext is the first
+    IWRAM literal of ScriptContext_SetupScript [script.c]."""
+    import pathlib
+    import struct
+    from pokeldn.frlg.rom import builds
+    path = pathlib.Path(ROMS[code])
+    if not path.exists():
+        pytest.skip("no cartridge image on this machine")
+    rom, build = path.read_bytes(), builds.BUILDS[code]
+
+    def words(function, count):
+        """The literal-pool words of the first `count` ldr-pc instructions in a THUMB function."""
+        out, at = [], function & ~1
+        while len(out) < count:
+            op = struct.unpack_from("<H", rom, at - 0x08000000)[0]
+            if op >> 11 == 0b01001:
+                out.append(struct.unpack_from("<I", rom, ((at + 4) & ~3) + (op & 0xFF) * 4 - 0x08000000)[0])
+            at += 2
+        return out
+
+    context, table = words(build.setup_script, 2)
+    command = struct.unpack_from("<I", rom, table + 0x6D * 4 - 0x08000000)[0]
+    assert context == build.script_context
+    assert build.wait_button | 1 in words(command, 4)

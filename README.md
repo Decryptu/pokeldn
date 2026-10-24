@@ -124,6 +124,8 @@ Contributors to this repository (GitHub does not list contributors on a fork):
 - [MarcJa420](https://github.com/MarcJa420): the E32R40T 4-inch screen build, the firmware version on
   the idle screen, hosted raid and Dynamax Adventure lobbies on the board's screen, and Gigantamax
   sprites
+- [axechaso](https://github.com/axechaso): the one-shot A press at an exact RNG frame behind the
+  FireRed/LeafGreen Shiny Mewtwo boost, and the FireRed/LeafGreen RNG in the plugin API
 
 - [unlimitedcoder2](https://github.com/unlimitedcoder2): [ldnrs](https://github.com/unlimitedcoder2/ldnrs),
   the external Windows USB Wi-Fi daemon supported by the optional radio backend

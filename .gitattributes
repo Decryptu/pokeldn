@@ -1,0 +1,3 @@
+# The generators hash these sources; a CRLF checkout on Windows would make every digest stale.
+asm/**/*.s text eol=lf
+asm/**/*.inc text eol=lf

@@ -18,7 +18,7 @@ NATURE_NAMES = ("Hardy Lonely Brave Adamant Naughty Bold Docile Relaxed Impish L
 NUM_NATURES = len(NATURE_NAMES)         # 25 [decomp:include/constants/pokemon.h:163]
 
 
-def _mon_from(state, tid, sid):
+def mon_from(state, tid, sid):
     """-> the mon `setwildbattle` would build from `state`: the next four draws, in order."""
     (d1, d2, d3, d4), _end = lcg.draws(state, 4)
     personality = d1 | (d2 << 16)               # low half first, at this call site
@@ -34,7 +34,7 @@ def scan(state, tid, sid, frames=20000, want=None):
     """-> every frame within `frames` whose press would produce a shiny, narrowed by `want(mon)`."""
     out, current = [], int(state)
     for k in range(int(frames) + 1):
-        mon = _mon_from(current, tid, sid)
+        mon = mon_from(current, tid, sid)
         if mon["shiny"] and (want is None or want(mon)):
             out.append({**mon, "frames": k, "turns": k * TURNS_PER_FRAME,
                         "seconds": k / FPS})
