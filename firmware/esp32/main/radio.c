@@ -2,11 +2,13 @@
    the host derives the CCMP key and the board installs it. Message set: docs/hardware_esp32.md. */
 #include <stdatomic.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_app_desc.h"
 #include "esp_chip_info.h"
 #include "esp_event.h"
+#include "esp_heap_caps.h"
 #include "esp_mac.h"
 #include "esp_private/wifi.h"
 #include "esp_random.h"
@@ -20,6 +22,7 @@
 
 #include "beacon.h"
 #include "display.h"
+#include "gift.h"
 #include "led.h"
 #include "private_wifi.h"
 #include "usbwatch.h"
@@ -142,6 +145,26 @@ static void census_send(const wifi_promiscuous_pkt_t *packet, wifi_promiscuous_p
     wire_send(MSG_RX_CENSUS, head, sizeof(head), packet->payload, sig_len < 16 ? sig_len : 16);
 }
 
+/* The portable gift host's inbox (gift_run): the driver's frames and associations, in order. */
+enum { GIFT_FRAME, GIFT_AIR, GIFT_JOINED, GIFT_LEFT };
+typedef struct {
+    uint8_t kind;
+    uint16_t length;
+    uint8_t data[];
+} gift_item_t;
+static QueueHandle_t s_gift_inbox;
+static atomic_bool s_gift_on;
+
+static void gift_post(uint8_t kind, const void *data, size_t length)
+{
+    gift_item_t *item = malloc(sizeof(*item) + length);
+    if (!item) return;
+    item->kind = kind;
+    item->length = (uint16_t)length;
+    memcpy(item->data, data, length);
+    if (xQueueSend(s_gift_inbox, &item, 0) != pdTRUE) free(item);
+}
+
 static void promiscuous_rx(void *buffer, wifi_promiscuous_pkt_type_t type)
 {
     const wifi_promiscuous_pkt_t *packet = buffer;
@@ -201,7 +224,8 @@ static void promiscuous_rx(void *buffer, wifi_promiscuous_pkt_type_t type)
                    memcmp(frame + 10, s_peer, 6) && length <= 1600) {
             /* A station's broadcast sent straight to the BSS (no DS bits, group key): an AP drops
                it, so it goes to the host whole, still encrypted. docs/hardware_esp32.md */
-            wire_send(MSG_RX_MGMT, head, 2, frame, length);
+            if (atomic_load(&s_gift_on)) gift_post(GIFT_AIR, frame, length);
+            else wire_send(MSG_RX_MGMT, head, 2, frame, length);
         }
         return;
     }
@@ -249,7 +273,8 @@ static void start_sniffer(void)
 static esp_err_t ethernet_rx(void *buffer, uint16_t length, void *eb)
 {
     atomic_fetch_add(&s_rx_eth, 1);
-    wire_send(MSG_RX_ETH, buffer, length, NULL, 0);
+    if (atomic_load(&s_gift_on)) gift_post(GIFT_FRAME, buffer, length);
+    else wire_send(MSG_RX_ETH, buffer, length, NULL, 0);
     esp_wifi_internal_free_rx_buffer(eb);
     return ESP_OK;
 }
@@ -577,6 +602,7 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         head[7] = (uint8_t)s_ap_pairwise;
         head[8] = 1;
         atomic_fetch_add(&s_ap_stations, 1);
+        if (atomic_load(&s_gift_on)) gift_post(GIFT_JOINED, event->mac, 6);
         wire_send(MSG_STA_JOINED, head, sizeof(head), NULL, 0);
     } else if (id == WIFI_EVENT_AP_STADISCONNECTED) {
         const wifi_event_ap_stadisconnected_t *event = data;
@@ -584,6 +610,7 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         memcpy(head, event->mac, 6);
         memcpy(head + 6, &event->reason, 2);
         if (atomic_fetch_sub(&s_ap_stations, 1) <= 0) atomic_store(&s_ap_stations, 0);
+        if (atomic_load(&s_gift_on)) gift_post(GIFT_LEFT, event->mac, 6);
         wire_send(MSG_STA_LEFT, head, sizeof(head), NULL, 0);
     }
 }
@@ -721,6 +748,106 @@ enum { BEACON_WRITE = 0, BEACON_COMMIT = 1, BEACON_ERASE = 2, BEACON_START = 3, 
 static atomic_bool s_beacon_on, s_beacon_busy;
 static TaskHandle_t s_beacon_task;
 
+/* A host image's start screen: every command but the last, which is the delivered one. */
+static void beacon_screen(const advert_image_t *image)
+{
+    const unsigned start = image->kind == ADVERT_KIND_HOST && image->display_count > 2
+                               ? image->display_count - 1u : image->display_count;
+    for (unsigned i = 0; i < start; ++i) display_command(image->display[i], image->display_len[i]);
+}
+
+static void gift_send(void *context, const uint8_t *frame, size_t length)
+{
+    (void)context;
+    static uint8_t copy[1600];
+    if (length > sizeof(copy)) return;
+    memcpy(copy, frame, length);
+    int r = esp_wifi_internal_tx(WIFI_IF_AP, copy, length);
+    for (int tries = 0; r == ESP_ERR_NO_MEM && tries < 100; ++tries) {
+        vTaskDelay(1);
+        r = esp_wifi_internal_tx(WIFI_IF_AP, copy, length);
+    }
+    atomic_fetch_add(r == ESP_OK ? &s_tx_eth : &s_tx_eth_failed, 1);
+}
+
+static void gift_kick(void *context, const uint8_t mac[6])
+{
+    (void)context;
+    uint8_t copy[6];
+    memcpy(copy, mac, 6);
+    esp_wifi_ap_deauth_internal(copy, 3);
+}
+
+static void gift_event(void *context, int event, int value)
+{
+    const advert_image_t *image = context;
+    wire_log("gift event %d value %d", event, value);
+    if (event == GIFT_EVENT_REFUSED) atomic_fetch_add(&s_led_alarm, 1);
+    if (event == GIFT_EVENT_LEFT && value && image->kind == ADVERT_KIND_HOST && image->display_count > 2) {
+        const unsigned last = image->display_count - 1u;
+        display_command(image->display[last], image->display_len[last]);
+        beacon_screen(image);   /* back to the card once the delivered scene ends */
+    }
+}
+
+static uint32_t gift_random(void *context)
+{
+    (void)context;
+    return esp_random();
+}
+
+/* The portable gift host: the image's Mystery Gift, played to every console that joins, until a
+   host takes the radio. docs/hardware_esp32.md, Portable beacon. */
+static void gift_run(const advert_image_t *image)
+{
+    static uint8_t plain[GIFT_ADVERT_MAX], frame[ADVERT_FRAME_MAX];
+    const gift_image_t *gift = beacon_gift();
+    void *memory = gift && gift_zstd_ready() ? malloc(gift_host_size()) : NULL;
+    if (!memory) {
+        wire_log("gift host: no image or no memory");
+        atomic_fetch_add(&s_led_alarm, 1);
+        while (atomic_load(&s_beacon_on) && atomic_load(&s_mode) == MODE_AP) vTaskDelay(pdMS_TO_TICKS(100));
+        return;
+    }
+    wire_log("gift host: %u bytes; heap %u free, %u in one block", (unsigned)gift_host_size(),
+             (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    gift_platform_t platform = {.random = gift_random, .send = gift_send, .kick = gift_kick,
+                                .event = gift_event, .context = (void *)image};
+    beacon_gift_crypto(&platform);
+    gift_host_t *host = gift_host_start(memory, gift, &platform, (uint64_t)esp_timer_get_time());
+    atomic_store(&s_gift_on, true);
+    const uint32_t nonce = esp_random();
+    int64_t deadline = 0, next_advert = 0;
+    while (atomic_load(&s_beacon_on) && atomic_load(&s_mode) == MODE_AP) {
+        int64_t now = esp_timer_get_time();
+        const int64_t until = (deadline < next_advert ? deadline : next_advert) - now;
+        const TickType_t wait = until > 0 ? pdMS_TO_TICKS(until / 1000) : 0;
+        gift_item_t *item;
+        if (xQueueReceive(s_gift_inbox, &item, wait > pdMS_TO_TICKS(50) ? pdMS_TO_TICKS(50) : wait) == pdTRUE) {
+            now = esp_timer_get_time();
+            if (item->kind == GIFT_FRAME) gift_host_rx(host, item->data, item->length, (uint64_t)now);
+            else if (item->kind == GIFT_AIR) gift_host_rx_80211(host, item->data, item->length, (uint64_t)now);
+            else gift_host_station(host, item->data, item->kind == GIFT_JOINED, (uint64_t)now);
+            free(item);
+            deadline = 0;
+        }
+        now = esp_timer_get_time();
+        if (now >= deadline) deadline = (int64_t)gift_host_poll(host, (uint64_t)now);
+        if (now >= next_advert) {
+            uint32_t version = 0;
+            size_t n = gift_host_advert(host, plain, &version);
+            n = advert_frame_plain(image, plain, n, nonce + version, &beacon_crypto, frame);
+            const esp_err_t r = n ? esp_wifi_80211_tx(WIFI_IF_AP, frame, n, true) : ESP_FAIL;
+            atomic_fetch_add(r == ESP_OK ? &s_tx_raw : &s_tx_raw_failed, 1);
+            next_advert = now + (int64_t)image->interval_ms * 1000;
+        }
+    }
+    atomic_store(&s_gift_on, false);
+    gift_item_t *item;
+    while (xQueueReceive(s_gift_inbox, &item, 0) == pdTRUE) free(item);
+    free(memory);
+}
+
 static void beacon_task(void *arg)
 {
     static uint8_t frame[ADVERT_FRAME_MAX];
@@ -728,6 +855,12 @@ static void beacon_task(void *arg)
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         atomic_store(&s_beacon_busy, true);
         const advert_image_t *image = beacon_image();
+        if (image && image->kind == ADVERT_KIND_HOST) {
+            gift_run(image);
+            atomic_store(&s_beacon_on, false);
+            atomic_store(&s_beacon_busy, false);
+            continue;
+        }
         /* A fresh nonce per start, as a host takes a random one per network. */
         uint32_t nonce = esp_random();
         unsigned index = 0;
@@ -759,9 +892,10 @@ static esp_err_t beacon_start(void)
     p[55] = image->max_stations;
     const esp_err_t r = ap_start(p, sizeof(p));
     if (r != ESP_OK) return r;
-    for (unsigned i = 0; i < image->display_count; ++i)
-        display_command(image->display[i], image->display_len[i]);
-    if (!s_beacon_task) xTaskCreatePinnedToCore(beacon_task, "beacon", 6144, NULL, 4, &s_beacon_task, 0);
+    beacon_screen(image);
+    if (!s_gift_inbox) s_gift_inbox = xQueueCreate(32, sizeof(gift_item_t *));
+    /* The gift host's datagram path takes about 5 KB of stack (gift_pia.c). */
+    if (!s_beacon_task) xTaskCreatePinnedToCore(beacon_task, "beacon", 12288, NULL, 4, &s_beacon_task, 0);
     atomic_store(&s_beacon_on, true);
     xTaskNotifyGive(s_beacon_task);
     return ESP_OK;

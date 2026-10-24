@@ -2,6 +2,7 @@
    compares the two. docs/hardware_esp32.md, Portable beacon. */
 #include "advert.h"
 
+#include <stdbool.h>
 #include <string.h>
 
 /* Vendor-specific, Nintendo's OUI, LDN, advertisement 0x101, four zero bytes. */
@@ -28,7 +29,7 @@ int advert_parse(const uint8_t *data, size_t length, advert_image_t *image)
 {
     if (length < 128 + 4 || length > ADVERT_IMAGE_MAX || le16(data + 6) != length) return 1;
     if (memcmp(data, ADVERT_MAGIC, 4) || data[4] != ADVERT_LAYOUT) return 2;
-    if (data[5] != ADVERT_KIND_CYCLE) return 3;
+    if (data[5] != ADVERT_KIND_CYCLE && data[5] != ADVERT_KIND_HOST) return 3;
     if (le32(data + length - 4) != advert_crc32(data, length - 4)) return 4;
     memset(image, 0, sizeof(*image));
     image->channel = data[8];
@@ -42,8 +43,12 @@ int advert_parse(const uint8_t *data, size_t length, advert_image_t *image)
     image->dwell_ms = le16(data + 122);
     image->count = data[124];
     image->display_count = data[125];
+    image->kind = data[5];
     const uint8_t format = image->header[33];
-    if (image->channel < 1 || image->channel > 13 || (image->bssid[0] & 1) || !image->count ||
+    /* A host image builds its advertisements as stations join: no fragments, AES-GCM only. */
+    const bool host = image->kind == ADVERT_KIND_HOST;
+    if (image->channel < 1 || image->channel > 13 || (image->bssid[0] & 1) ||
+        (host ? image->count || format != ADVERT_FORMAT_AES_GCM : !image->count) ||
         image->count > ADVERT_FRAGMENTS_MAX || image->display_count > ADVERT_DISPLAY_MAX ||
         image->interval_ms < 20 || image->interval_ms > 1000 || image->dwell_ms < image->interval_ms ||
         format < ADVERT_FORMAT_PLAIN || format > ADVERT_FORMAT_AES_GCM)
@@ -65,6 +70,11 @@ int advert_parse(const uint8_t *data, size_t length, advert_image_t *image)
         image->display_len[i] = n;
         p += 2 + n;
     }
+    if (host) {
+        image->records = p;
+        image->records_len = (uint16_t)(end - p);
+        return 0;
+    }
     return p == end ? 0 : 5;
 }
 
@@ -72,8 +82,13 @@ size_t advert_frame(const advert_image_t *image, unsigned index, uint32_t nonce,
                     const advert_crypto_t *crypto, uint8_t out[ADVERT_FRAME_MAX])
 {
     if (index >= image->count) return 0;
-    const uint8_t *plain = image->plain[index];
-    const size_t n = image->plain_len[index];
+    return advert_frame_plain(image, image->plain[index], image->plain_len[index], nonce, crypto, out);
+}
+
+size_t advert_frame_plain(const advert_image_t *image, const uint8_t *plain, size_t n, uint32_t nonce,
+                          const advert_crypto_t *crypto, uint8_t out[ADVERT_FRAME_MAX])
+{
+    if (!n || n > ADVERT_PLAIN_MAX) return 0;
     memset(out, 0, 24);
     out[0] = 0xd0;                        /* management, action */
     memset(out + 4, 0xff, 6);

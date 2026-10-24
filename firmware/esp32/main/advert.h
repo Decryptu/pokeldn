@@ -9,6 +9,8 @@
 #define ADVERT_MAGIC "PKSA"
 #define ADVERT_LAYOUT 1
 #define ADVERT_KIND_CYCLE 1
+/* The board answers a join itself: records after the screen commands say what it hosts (gift.h). */
+#define ADVERT_KIND_HOST 2
 #define ADVERT_IMAGE_MAX 12288
 #define ADVERT_FRAGMENTS_MAX 8
 #define ADVERT_DISPLAY_MAX 4
@@ -28,6 +30,9 @@ typedef struct {
     uint16_t plain_len[ADVERT_FRAGMENTS_MAX];
     const uint8_t *display[ADVERT_DISPLAY_MAX];
     uint16_t display_len[ADVERT_DISPLAY_MAX];
+    uint8_t kind;
+    const uint8_t *records;
+    uint16_t records_len;
 } advert_image_t;
 
 /* Each returns 0 on success. */
@@ -46,3 +51,6 @@ int advert_parse(const uint8_t *data, size_t length, advert_image_t *image);
 /* The action frame carrying fragment `index` under `nonce`; its length, or 0. */
 size_t advert_frame(const advert_image_t *image, unsigned index, uint32_t nonce,
                     const advert_crypto_t *crypto, uint8_t out[ADVERT_FRAME_MAX]);
+/* The same for a plaintext the caller built (a host image's, gift_host_advert). */
+size_t advert_frame_plain(const advert_image_t *image, const uint8_t *plain, size_t n, uint32_t nonce,
+                          const advert_crypto_t *crypto, uint8_t out[ADVERT_FRAME_MAX]);

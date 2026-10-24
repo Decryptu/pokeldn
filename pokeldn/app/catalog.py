@@ -210,7 +210,9 @@ FRLG = Game("frlg", tr('catalog.firered_leafgreen_2b757f', 'FireRed & LeafGreen'
           Field("--gift-file", tr('catalog.gift_1a596a', 'Gift'), "builder"),
           Field("--language", tr('catalog.trainer_language_bca3f4', 'Trainer language'), "choice", default="english", choices=LANGUAGES, hidden=True,
                 help=tr('catalog.the_language_pokeldn_s_own_trainer_reports_on_the_link_5ac75b', "The language pokeldn's own trainer reports on the link.")),
-          Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="11", choices=CHANNELS, help=CHANNEL_HELP, hidden=True)),
+          Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="11", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
+          Field("--save-to-board", tr('catalog.keep_it_on_the_board_a36969', 'Keep it on the board'), "switch",
+                help=tr('catalog.start_saves_the_gift_on_the_board_and_stops_unplugged_a_1d7482', 'Start saves the gift on the board and stops. Unplugged and powered from any USB charger, the board then hosts it for every FireRed and LeafGreen that joins, with no computer. It stops when the app opens it again.'))),
          fixed=("--live", "--ot", "{ot}", "--id", "{tid}:{sid}", "--dump-file",
                 "{received}/frlg-dump-{stamp}.bin"), doc="frlg_gift.md"),
 ))

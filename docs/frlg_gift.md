@@ -66,6 +66,13 @@ Radio setup: [The ESP32 radio](hardware_esp32.md). One console per run; the host
 left LDN ([Host implementation](frlg_host.md)). `tests/test_mystery_gift_flow.py` and
 `tests/test_mystery_gift_end_to_end.py` model the console's receive path.
 
+`--save-to-board` stores the gift on the ESP32 board instead and exits; powered from any USB
+charger, the board then plays this session itself for every console that joins, one at a time,
+with each cartridge's own bytes ([A host image](hardware_esp32.md#a-host-image)).
+
+    (you)  POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/frlg_mg_host.py --live \
+               --keys PROD_KEYS --gift celebi --save-to-board
+
 ## What the link can carry
 
 Three of the 22 client instructions [include/mystery_gift_client.h:18] execute something:

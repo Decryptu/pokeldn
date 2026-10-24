@@ -148,7 +148,7 @@ class Identity:
     firmware: str
     protocol: int
     firmware_version: str = ""
-    gift_fragments: int = 0     # a portable beacon stored on the board (docs/hardware_esp32.md)
+    gift_kept: bool = False     # a portable beacon stored on the board (docs/hardware_esp32.md)
 
     @property
     def current(self) -> bool:
@@ -287,13 +287,13 @@ def identify(port: str, blink: bool = True, erase_gift: bool = False) -> Identit
         if blink and info.version == esp32.PROTOCOL_VERSION:
             time.sleep(1.0)   # the boot pulse
             radio.led("blink", 255, 300, 5000)
-        fragments = 0
+        kept = False
         if info.version == esp32.PROTOCOL_VERSION and esp32.firmware_version(info) >= esp32.BEACON_FIRMWARE:
             if erase_gift:
                 radio.erase_beacon()
-            fragments = radio.beacon_state().fragments
+            kept = radio.beacon_state().stored
         return Identity(bytes(info.sta_mac).hex(":"), bytes(info.ap_mac).hex(":"), info.chip_revision,
-                        info.text, info.version, info.firmware_version, fragments)
+                        info.text, info.version, info.firmware_version, kept)
     finally:
         radio.close()
 

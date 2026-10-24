@@ -442,6 +442,7 @@
 "catalog.sets_the_rental_pokemon_and_the_pokemon_met_on_the_way_e4b8d2" = "Sets the rental Pokemon and the Pokemon met on the way. Leave empty for a random one."
 "catalog.spanish_341105" = "Spanish"
 "catalog.standard_ef6691" = "Standard"
+"catalog.start_saves_the_gift_on_the_board_and_stops_unplugged_a_1d7482" = "Start saves the gift on the board and stops. Unplugged and powered from any USB charger, the board then hosts it for every FireRed and LeafGreen that joins, with no computer. It stops when the app opens it again."
 "catalog.start_saves_the_gift_on_the_board_and_stops_unplugged_a_a436f2" = "Start saves the gift on the board and stops. Unplugged and powered from any USB charger, the board then hands the gift to every Sword and Shield nearby, with no computer. It stops when the app opens it again."
 "catalog.start_the_host_9b26a9" = "Start the host."
 "catalog.start_the_host_and_wait_for_hosting_direct_corner_in_th_02ea3b" = "Start the host and wait for 'Hosting Direct Corner' in the log."

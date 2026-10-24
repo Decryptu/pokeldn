@@ -224,6 +224,70 @@ The image holds the advertise and data keys derived for its one network, never `
 is at most 12288 bytes. A board left on a computer's USB with no app open starts the beacon as on a
 charger.
 
+### A host image
+
+From firmware 1.9.0 an image of kind 2 makes the board answer each console's join itself and play
+the session `bin/frlg_mg_host.py` plays, so a FireRed or LeafGreen receives a Mystery Gift from the
+board alone. `bin/frlg_mg_host.py --save-to-board` (the app's Keep it on the board) stores one;
+`pokeldn.frlg.gift.portable` builds it by constructing the host application the launcher would run
+and keeping what that host computes before a console joins. A Wonder Card, Wonder News, a Stamp
+Rally stamp, a visiting trainer and a Mystery Event script fit in 2 to 4 KB; a buffer script and a
+save backup or restore read their answer on the computer and are refused.
+
+Kind 2 has no fragments (byte 124 is 0) and an AES-GCM header only. After the screen commands come
+records to the CRC, each u8 tag, u16 length and bytes (`firmware/esp32/main/gift.h`):
+
+| tag | record | written by |
+|---|---|---|
+| 1 | LDN: the advertisement plaintext up to and with the host's 48-byte station entry, the authentication header's network id (little-endian), the 16-byte key the authentication key is decrypted from, the 32-byte challenge key, u64 challenge, u64 device id, version, platform | `pokeldn.ldn.portable.ldn_record` |
+| 2 | Pia: the session key `AES(game key, SSID)`, u32 network id, the host's IPv4 address, player id and name | `portable.pia_record` |
+| 16, 17 | the application data before and after the console's LinkPlayer block | `pokeldn.frlg.gift.portable` |
+| 18 | the host's 200-byte LinkPlayer block and the RFU parent id | |
+| 19 | `MysteryGiftTiming`'s eight fields, flags (1 native nonces, 2 join response first, 4 trust Pia), u32 protocol tick µs | |
+| 20 | game family (0 FireRed/LeafGreen, 1 Emerald), the expected console (0 any) | |
+| 21 | the server script compiled to bytecode: every `SVR_LOAD_*` becomes a slot | |
+| 22 | a payload: u8 ident, u16 size (0 is the 1024-byte buffer), bytes; one per distinct message | |
+| 23 | a cartridge served: game code (four zeros serve any), card flag id, icon, stamp fields, a payload per slot | |
+
+The authentication key is `AES-ECB-decrypt(K, SHA-256(client random)[:16])`, where `K` is the third
+step of `KeyDerivation._derive_key` for source `f1e7018419a84f711da714c2cf919c9c`, a key derived
+for LDN protocol 3. Every screen command but the last plays at start; the last is the delivered
+scene, played after a session that delivered, then the start ones again.
+
+The engine is pure C and ports one Python module per layer, line for line:
+
+| file | ports |
+|---|---|
+| `gift_ldn.c` | `ldn.APNetwork`'s authentication and challenge reply, the advertisement as a station sits down, `userspace_ip`'s ARP and IPv4/UDP, `host_app.py`'s run loop |
+| `gift_pia.c` | `crypto.PiaCrypto`, `reliable.parse_messages`, `pia_connect`'s Net, Session and RTT codecs, `host_pia.HostPeerProtocol` |
+| `gift_link.c` | `reliable.HostReliableSession`, `ni.py`, `rfu_leader.RFULeader`, `host_session.HostSession` |
+| `gift_mg.c` | `host_mystery_gift.HostMysteryGiftEngine`, `block.BlockSender` and `RecvBlock`, `mg_link`, the server script |
+| `gift_zstd.c` | zstd 1.5.6's decoder (`vendor/zstd`) |
+
+The beacon task runs it: the driver's frames and associations reach it through a queue, it runs its
+timers at the deadline it returns, and it rebuilds the advertisement every `interval_ms` with the
+nonce raised once per change. A station's broadcasts (its ARP for the host first) come with no DS
+bits under the group key, which the access point drops: the engine takes them whole from the
+promiscuous callback and decrypts them itself, AES-CCM with an 8-byte MIC over the LDN library's
+nonce and AAD, QoS or not ([A station's broadcasts](ldn.md#a-stations-broadcasts)). A console compresses most of its datagrams (1056 of 1363 in one
+Wonder Card session); the decoder context is 38,464 bytes with a 1 KB literal buffer. Datagrams the
+host compresses go out as zstd frames of one raw block. The engine's state is about 41 KB, taken
+from the heap with the decoder's at start.
+
+The board seats one console at a time and refuses another's authentication with status 1. A
+console whose game code no cartridge record names, or whose game data the script refuses, is
+disconnected with nothing sent past the game-data request. A seated console silent for 60 s, or
+one still seated 30 s after the RFU close, is disconnected. When the console leaves, after a 2 s
+settle once it confirmed the close, the board serves the next one on the same network and keys.
+
+`tests/test_esp32_gift.py` compiles the engine and zstd and runs it on a simulated board against
+`bin/frlg_mg_client.py` in the console's place, which resolves the host with an ARP and opens its
+Reliable stream at its own Session type 6 as a retail FireRed does; its broadcasts reach the board
+encrypted by the LDN library with no DS bits. A Wonder Card, the card already held, a refused replacement, a
+stamp and Wonder News each end with the messages `MysteryGiftServer` sends for that console, byte
+for byte; a second console is served after the first; a cartridge the image does not serve is
+refused. A board and a retail console running a host image are unmeasured.
+
 ## The serial ceiling
 
 The classic ESP32 UART at 921600 baud carries 92.16 KB/s board to host; Pia payloads are ciphertext

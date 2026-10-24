@@ -8,8 +8,13 @@
 #include "esp_err.h"
 
 #include "advert.h"
+#include "gift.h"
 
 extern const advert_crypto_t beacon_crypto;
+/* The gift host's crypto (gift.h), PSA's; the caller adds the radio's callbacks. */
+void beacon_gift_crypto(gift_platform_t *platform);
+/* A host image's records, parsed; NULL for a cycle image or none. */
+const gift_image_t *beacon_gift(void);
 
 /* Reads the stored image, if any, at boot. */
 void beacon_load(void);

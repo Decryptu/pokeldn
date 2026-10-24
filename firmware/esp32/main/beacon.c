@@ -13,6 +13,8 @@ static uint8_t *s_stored, *s_staged;
 static size_t s_stored_len;
 static advert_image_t s_image;
 static bool s_valid;
+static gift_image_t s_gift;
+static bool s_gift_valid;
 
 static int sha256(const uint8_t *data, size_t length, uint8_t digest[32])
 {
@@ -71,12 +73,118 @@ static int aes_gcm(const uint8_t key[16], const uint8_t iv[12], const uint8_t *a
 
 const advert_crypto_t beacon_crypto = {sha256, aes_ctr, aes_gcm};
 
+static int hmac_sha256(const uint8_t *key, size_t key_length, const uint8_t *data, size_t length,
+                       uint8_t mac[32])
+{
+    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+    psa_set_key_type(&attributes, PSA_KEY_TYPE_HMAC);
+    psa_set_key_bits(&attributes, PSA_BYTES_TO_BITS(key_length));
+    psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_SIGN_MESSAGE);
+    psa_set_key_algorithm(&attributes, PSA_ALG_HMAC(PSA_ALG_SHA_256));
+    psa_key_id_t id = 0;
+    if (psa_import_key(&attributes, key, key_length, &id) != PSA_SUCCESS) return 1;
+    size_t out = 0;
+    const psa_status_t s = psa_mac_compute(id, PSA_ALG_HMAC(PSA_ALG_SHA_256), data, length, mac, 32, &out);
+    psa_destroy_key(id);
+    return s != PSA_SUCCESS || out != 32;
+}
+
+static int aes_block(const uint8_t key[16], const uint8_t in[16], uint8_t out[16], bool encrypt)
+{
+    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+    psa_set_key_type(&attributes, PSA_KEY_TYPE_AES);
+    psa_set_key_bits(&attributes, 128);
+    psa_set_key_usage_flags(&attributes, encrypt ? PSA_KEY_USAGE_ENCRYPT : PSA_KEY_USAGE_DECRYPT);
+    psa_set_key_algorithm(&attributes, PSA_ALG_ECB_NO_PADDING);
+    psa_key_id_t id = 0;
+    if (psa_import_key(&attributes, key, 16, &id) != PSA_SUCCESS) return 1;
+    size_t done = 0;
+    const psa_status_t s = encrypt ? psa_cipher_encrypt(id, PSA_ALG_ECB_NO_PADDING, in, 16, out, 16, &done)
+                                   : psa_cipher_decrypt(id, PSA_ALG_ECB_NO_PADDING, in, 16, out, 16, &done);
+    psa_destroy_key(id);
+    return s != PSA_SUCCESS || done != 16;
+}
+
+static int aes_decrypt_block(const uint8_t key[16], const uint8_t in[16], uint8_t out[16])
+{
+    return aes_block(key, in, out, false);
+}
+
+static int aes_encrypt_block(const uint8_t key[16], const uint8_t in[16], uint8_t out[16])
+{
+    return aes_block(key, in, out, true);
+}
+
+static psa_key_id_t gcm_key(const uint8_t key[16], psa_algorithm_t alg)
+{
+    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+    psa_set_key_type(&attributes, PSA_KEY_TYPE_AES);
+    psa_set_key_bits(&attributes, 128);
+    psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_ENCRYPT | PSA_KEY_USAGE_DECRYPT);
+    psa_set_key_algorithm(&attributes, alg);
+    psa_key_id_t id = 0;
+    return psa_import_key(&attributes, key, 16, &id) == PSA_SUCCESS ? id : 0;
+}
+
+/* PSA puts the tag after the ciphertext; gift.h keeps them apart. One task uses these at a time. */
+static uint8_t s_gcm[1600 + 16];
+
+static int gcm_seal(const uint8_t key[16], const uint8_t iv[12], const uint8_t *aad, size_t aad_length,
+                    const uint8_t *in, uint8_t *out, size_t length, uint8_t *tag, size_t tag_length)
+{
+    if (length + 16 > sizeof(s_gcm) || tag_length < 4 || tag_length > 16) return 1;
+    const psa_algorithm_t alg = PSA_ALG_AEAD_WITH_SHORTENED_TAG(PSA_ALG_GCM, tag_length);
+    const psa_key_id_t id = gcm_key(key, alg);
+    if (!id) return 1;
+    size_t done = 0;
+    const psa_status_t s = psa_aead_encrypt(id, alg, iv, 12, aad, aad_length, in, length, s_gcm,
+                                            sizeof(s_gcm), &done);
+    psa_destroy_key(id);
+    if (s != PSA_SUCCESS || done != length + tag_length) return 1;
+    memcpy(out, s_gcm, length);
+    memcpy(tag, s_gcm + length, tag_length);
+    return 0;
+}
+
+static int gcm_open(const uint8_t key[16], const uint8_t iv[12], const uint8_t *aad, size_t aad_length,
+                    const uint8_t *in, uint8_t *out, size_t length, const uint8_t *tag, size_t tag_length)
+{
+    if (length + 16 > sizeof(s_gcm) || tag_length < 4 || tag_length > 16) return 1;
+    const psa_algorithm_t alg = PSA_ALG_AEAD_WITH_SHORTENED_TAG(PSA_ALG_GCM, tag_length);
+    const psa_key_id_t id = gcm_key(key, alg);
+    if (!id) return 1;
+    memcpy(s_gcm, in, length);
+    memcpy(s_gcm + length, tag, tag_length);
+    size_t done = 0;
+    const psa_status_t s = psa_aead_decrypt(id, alg, iv, 12, aad, aad_length, s_gcm, length + tag_length,
+                                            out, length, &done);
+    psa_destroy_key(id);
+    return s != PSA_SUCCESS || done != length;
+}
+
+void beacon_gift_crypto(gift_platform_t *platform)
+{
+    platform->sha256 = sha256;
+    platform->hmac_sha256 = hmac_sha256;
+    platform->aes_decrypt_block = aes_decrypt_block;
+    platform->aes_encrypt_block = aes_encrypt_block;
+    platform->gcm_seal = gcm_seal;
+    platform->gcm_open = gcm_open;
+}
+
+const gift_image_t *beacon_gift(void)
+{
+    return s_valid && s_gift_valid ? &s_gift : NULL;
+}
+
 static void keep(uint8_t *data, size_t length)
 {
     free(s_stored);
     s_stored = data;
     s_stored_len = data ? length : 0;
     s_valid = data && advert_parse(data, length, &s_image) == 0;
+    s_gift_valid = s_valid && s_image.kind == ADVERT_KIND_HOST && gift_parse(&s_image, &s_gift) == 0;
+    if (s_valid && s_image.kind == ADVERT_KIND_HOST && !s_gift_valid) s_valid = false;
 }
 
 void beacon_load(void)
@@ -113,6 +221,10 @@ esp_err_t beacon_commit(size_t length)
     advert_image_t check;
     const int refused = advert_parse(s_staged, length, &check);
     if (refused) return REFUSED[refused];
+    if (check.kind == ADVERT_KIND_HOST) {
+        static gift_image_t gift;
+        if (gift_parse(&check, &gift)) return ESP_ERR_INVALID_ARG;
+    }
     nvs_handle_t nvs;
     esp_err_t r = nvs_open(NVS_SPACE, NVS_READWRITE, &nvs);
     if (r != ESP_OK) return r;

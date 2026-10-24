@@ -37,6 +37,8 @@ ALIVE_FIRMWARE = (1, 4, 0)
 # length; QUERY answers MSG_BEACON. docs/hardware_esp32.md, Portable beacon.
 CMD_BEACON = 0x10
 BEACON_FIRMWARE = (1, 8, 0)
+# A host image (portable.KIND_HOST): the board answers the join and plays the session itself.
+BEACON_HOST_FIRMWARE = (1, 9, 0)
 BEACON_WRITE, BEACON_COMMIT, BEACON_ERASE, BEACON_START, BEACON_QUERY = range(5)
 BEACON_CHUNK = 1024
 ALIVE_EVERY = 1.0

@@ -160,7 +160,7 @@ class BoardView:
         if isinstance(ident, board.Identity):
             f.kind, f.version, f.mac = "radio_ble" if ident.ble else "radio", ident.firmware_version, ident.sta_mac
             f.stock = ident.stock
-            f.gift = bool(ident.gift_fragments)
+            f.gift = ident.gift_kept
             f.chip = ident.chip or f.chip
             f.state = "ready" if ident.current else "old"
         elif isinstance(ident, board.PadIdentity):
