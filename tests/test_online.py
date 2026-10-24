@@ -231,15 +231,25 @@ def test_a_sword_host_never_accepts_before_the_partner_console_does(monkeypatch)
 
 class ScarletConsole:
     """A Scarlet whose player offers at once, confirms once a Pokemon shows, and commits once the
-    host confirmed, as docs/sv.md's measured exchange orders it."""
+    host confirmed, as docs/sv.md's measured exchange orders it. With `screen_open` False the player
+    has yet to reach the trade screen: a host offer that arrives before `open()` is lost, as a retail
+    Scarlet lost one sent 9 s before it opened key 0x80."""
 
-    def __init__(self, record):
+    def __init__(self, record, screen_open=True):
         from pokeldn.sv import trade as sv
         self.sv, self.record, self.got, self.out = sv, record, None, []
-        self.out.append((0, sv.build(sv.KEY_TRADE, sv.KIND_OFFER, 0, record)))
+        self.screen_open = False
+        if screen_open:
+            self.open()
+
+    def open(self):
+        self.screen_open = True
+        self.out.append((0, self.sv.build(self.sv.KEY_TRADE, self.sv.KIND_OFFER, 0, self.record)))
 
     def on(self, port, payload):
         sv = self.sv
+        if not self.screen_open:
+            return
         if port == 1:
             if payload == sv.table_update(sv.KEY_EXCHANGE, True):
                 self.out.append((1, payload))

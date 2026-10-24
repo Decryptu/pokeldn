@@ -163,8 +163,8 @@ class TradeStage:
 
     def tick(self):
         """Online: -> [(delay, port, payload)] that the partner's progress releases. The partner's
-        record goes up once it arrives and comes down when they withdraw it; our confirm goes once
-        both consoles have confirmed."""
+        record goes up once it and the console's own are in, and comes down when they withdraw it; our
+        confirm goes once both consoles have confirmed."""
         if self.partner is None or self.committed:
             return []
         theirs = self.partner.theirs()
@@ -173,7 +173,8 @@ class TradeStage:
             # A host-sent cancel is unmeasured on a console (docs/online.md, Unresolved).
             out.append((0.0, 0, build(KEY_TRADE, KIND_CANCEL, 1, b"\x00")))
             self.offered, self.sent = False, None
-        if not self.offered and theirs.offer is not None:
+        # Only once the console's own offer is up: one sent before its trade screen opens is lost.
+        if not self.offered and theirs.offer is not None and self.joiner_offer is not None:
             self.offered, self.sent = True, theirs.offer
             out.append((0.0, 0, build(KEY_TRADE, KIND_OFFER, 0, theirs.offer)))
         if (self.offered and not self.confirmed and self.console_confirmed and theirs.accepted

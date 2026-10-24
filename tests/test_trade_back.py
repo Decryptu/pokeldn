@@ -61,12 +61,19 @@ def test_a_round_whose_pokemon_was_not_kept_moves_on_to_the_queue():
     assert rounds.current() == b"B"
 
 
-def test_a_scarlet_host_returns_the_console_record():
+@pytest.mark.parametrize("screen_open", [True, False])
+def test_a_scarlet_host_returns_the_console_record(screen_open):
+    """A console still on its way to the trade screen loses an offer sent then: ours goes once the console's
+    own is up."""
     from test_online import ScarletConsole, scarlet_host
     from pokeldn.sv import trade as sv
     ours, theirs = bytes([0x11]) * 348, bytes([0xA1]) * 348
-    console = ScarletConsole(theirs)
+    console = ScarletConsole(theirs, screen_open=screen_open)
     stage, step = scarlet_host(console, TradeBack("sv", [ours], log=lambda *a: None))
+    for _ in range(5):
+        step()
+    if not screen_open:
+        console.open()
     for _ in range(200):
         step()
         if stage.trades == 1:
