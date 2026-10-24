@@ -27,6 +27,7 @@ become `--resident-param` flags.
 | Speed up the game (`turbo-lite`) | speed x1 to x4; overworld, battles or both; always on or while R, B or Select is held; faster text | `field` and `battle` = speed - 1, `budget=228` from x3, `hold`, `extra=4` |
 | Walk through walls | R, B or Select | `hold` |
 | Shiny countdown | the slow-down button; x2, x4 or x8 slower | `slow`, `slow_frames` 1, 3 or 7 |
+| Shiny Mewtwo (`shiny-press`) | none | |
 | No wild encounters, Lead's IVs on screen, Pokemon follower | none | |
 
 L is not offered: only R's Help System toggle has a flag the hooks hold off. Save boosts for later

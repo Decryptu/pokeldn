@@ -68,6 +68,8 @@ class Build:
     clear_held_movement: int        # ObjectEventClearHeldMovement
     move_object_to: int             # MoveObjectEventToMapCoords
     remove_object: int              # RemoveObjectEvent
+    wait_button: int                # WaitForAorBPress, waitbuttonpress's native [scrcmd.c:1313]
+    script_context: int             # sGlobalScriptContext, IWRAM [script.c:31]
     callable: MappingProxyType = field(repr=False)
 
     ewram: MappingProxyType = field(default_factory=lambda: MappingProxyType({}), repr=False)
@@ -114,6 +116,7 @@ class Build:
                 "set_held_movement": self.set_held_movement | 1,
                 "clear_held_movement": self.clear_held_movement | 1,
                 "move_object_to": self.move_object_to | 1, "remove_object": self.remove_object | 1,
+                "wait_button": self.wait_button | 1, "script_context": self.script_context,
                 **self.ewram}
 
     @property
@@ -156,6 +159,7 @@ BPRF = Build(
     selected_object=0x03004294, vmap=0x03004260, spawn_object=0x08062130,
     set_held_movement=0x080675A4, clear_held_movement=0x08067634, move_object_to=0x08063024,
     remove_object=0x08061DB4,
+    wait_button=0x0806F158, script_context=0x03000FB0,
     callable=MappingProxyType(dict(rom_map.CALLABLE)))
 
 # French LeafGreen: FireRed's RAM; ROM past 0x0807CF68 moves by rom_map.LEAFGREEN_DELTA_SEGMENTS.
@@ -176,6 +180,7 @@ BPGF = Build(
     selected_object=0x03004294, vmap=0x03004260, spawn_object=0x08062130,
     set_held_movement=0x080675A4, clear_held_movement=0x08067634, move_object_to=0x08063024,
     remove_object=0x08061DB4,
+    wait_button=0x0806F158, script_context=0x03000FB0,
     callable=_callable(
         Random=0x080486B0, SeedRng=0x080486D0, CreateMon=0x08041150, VarGet=0x08071DDC,
         VarSet=0x08071DF8, GetVarPointer=0x08071CC8, AddBagItem=0x0809DA44,
@@ -206,6 +211,7 @@ BPRE = Build(
     selected_object=0x03004344, vmap=0x03004310, spawn_object=0x08061FD4,
     set_held_movement=0x08067448, clear_held_movement=0x080674D8, move_object_to=0x08062EC8,
     remove_object=0x08061C58,
+    wait_button=0x0806EFF4, script_context=0x03000FB0,
     callable=_callable(
         Random=0x08048670, SeedRng=0x08048690, CreateMon=0x080411FC, VarGet=0x08071CD4,
         VarSet=0x08071CF0, GetVarPointer=0x08071BC0, AddBagItem=0x0809D7E8,
@@ -235,6 +241,7 @@ BPGE = Build(
     selected_object=0x03004344, vmap=0x03004310, spawn_object=0x08061FD4,
     set_held_movement=0x08067448, clear_held_movement=0x080674D8, move_object_to=0x08062EC8,
     remove_object=0x08061C58,
+    wait_button=0x0806EFF4, script_context=0x03000FB0,
     callable=_callable(
         Random=0x08048670, SeedRng=0x08048690, CreateMon=0x080411FC, VarGet=0x08071CD4,
         VarSet=0x08071CF0, GetVarPointer=0x08071BC0, AddBagItem=0x0809D7BC,
@@ -261,6 +268,7 @@ BPRS = Build(
     get_mon_icon=0x0809AA88, setup_script=0x0806D3E8, selected_object=0x03004294, vmap=0x03004260,
     spawn_object=0x08062144, set_held_movement=0x080675B8, clear_held_movement=0x08067648,
     move_object_to=0x08063038, remove_object=0x08061DC8, enigma_desc=(0x083D7914, 0x083D7924),
+    wait_button=0x0806F16C, script_context=0x03000FB0,
     callable=_callable(
         Random=0x080486C4, SeedRng=0x080486E4, CreateMon=0x08041164, VarGet=0x08071DF0,
         VarSet=0x08071E0C, GetVarPointer=0x08071CDC, AddBagItem=0x0809DA84,
@@ -313,6 +321,7 @@ BPRD = Build(
     clear_held_movement=0x08067574,
     move_object_to=0x08062F64,
     remove_object=0x08061CF4,
+    wait_button=0x0806F098, script_context=0x03000FB0,
     enigma_desc=(0x083DCEDC, 0x083DCEEC),
     callable=_callable(
         Random=0x080485F0,
@@ -385,6 +394,7 @@ BPGD = Build(
     clear_held_movement=0x08067574,
     move_object_to=0x08062F64,
     remove_object=0x08061CF4,
+    wait_button=0x0806F098, script_context=0x03000FB0,
     enigma_desc=(0x083DCD18, 0x083DCD28),
     callable=_callable(
         Random=0x080485F0,
@@ -457,6 +467,7 @@ BPRI = Build(
     clear_held_movement=0x08067560,
     move_object_to=0x08062F50,
     remove_object=0x08061CE0,
+    wait_button=0x0806F084, script_context=0x03000FB0,
     enigma_desc=(0x083D48AC, 0x083D48BC),
     callable=_callable(
         Random=0x080485DC,
@@ -529,6 +540,7 @@ BPGI = Build(
     clear_held_movement=0x08067560,
     move_object_to=0x08062F50,
     remove_object=0x08061CE0,
+    wait_button=0x0806F084, script_context=0x03000FB0,
     enigma_desc=(0x083D46E8, 0x083D46F8),
     callable=_callable(
         Random=0x080485DC,
@@ -601,6 +613,7 @@ BPGS = Build(
     clear_held_movement=0x08067648,
     move_object_to=0x08063038,
     remove_object=0x08061DC8,
+    wait_button=0x0806F16C, script_context=0x03000FB0,
     enigma_desc=(0x083D7750, 0x083D7760),
     callable=_callable(
         Random=0x080486C4,
@@ -673,6 +686,7 @@ BPRJ = Build(
     clear_held_movement=0x08066DF4,
     move_object_to=0x080627E4,
     remove_object=0x08061574,
+    wait_button=0x0806E910, script_context=0x03000FB0,
     enigma_desc=(0x0839E168, 0x0839E178),
     callable=_callable(
         Random=0x08047C90,
@@ -761,6 +775,7 @@ BPGJ = Build(
     clear_held_movement=0x08066DF4,
     move_object_to=0x080627E4,
     remove_object=0x08061574,
+    wait_button=0x0806E910, script_context=0x03000FB0,
     enigma_desc=(0x0839DFD8, 0x0839DFE8),
     callable=_callable(
         Random=0x08047C90,

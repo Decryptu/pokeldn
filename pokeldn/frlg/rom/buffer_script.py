@@ -2107,6 +2107,7 @@ INSTALL_ENTRY_OFFSET = 0x10
 INSTALL_ORIGINAL_OFFSET = 0x14
 INSTALL_BLOB_OFFSET = 0x18
 # Entry symbol and tunable parameters per hook.
+SHINY_PRESS_OFFSET = 1  # measured on Mewtwo in mGBA: its PID is two calls after the press frame's seed
 RESIDENT_HOOKS = {
     "turbo": ("turbo_hook", {"extra": 4, "field": 0, "battle": 0, "overlay": 0, "hold": 0,
                              "help": 0, "budget": 0, "ring": 0,
@@ -2117,25 +2118,19 @@ RESIDENT_HOOKS = {
     "shiny": ("shiny_hook", {"method": 0, "offset": 4, "search": 16, "slow": 0x100,
                              "slow_frames": 3, "help": 0x0203F171, "state": 0x0203FF80,
                              "overlay": 0x0203FF98}),
+    # shiny with no slow motion: A pressed at a waitbuttonpress when the countdown is 0, a scripted
+    # CreateMon by default [asm/resident/shiny.inc, PRESS]
+    "shiny-press": ("shiny_hook", {"method": 1, "offset": SHINY_PRESS_OFFSET, "search": 16,
+                                   "state": 0x0203FF80, "overlay": 0x0203FF98}),
     "ivs": ("ivs_hook", {"mon": 0x02024280, "words": 0x0203FF80, "overlay": 0x0203FF80,
                          "overlay2": 0x0203FF84}),
     "noencounter": ("noencounter_hook", {"flag": 0x020386D8}),
-    # Standalone read-only tracker.  It is intentionally excluded from the older hook chain:
-    # its one-shot input shim owns callback1 while a request is pending.
-    "rng-assist": ("rng_assist_hook", {
-        "auto_a": 0, "trigger_index": 0, "offset": 0, "target_pid": 0, "target_nature": 0,
-        "mode": 0, "state": 0x0203FF80, "overlay": 0x0203FF80, "overlay2": 0x0203FFBC,
-        "overlay_tiles": 0x06017E00, "overlay_pal": 0x020379D6,
-    }),
     "noclip": ("noclip_hook", {"hold": 0x100, "help": 0x0203F171, "state": 0x0203FF80}),
     "follower": ("follower_hook", {"state": 0x0203FFDC, "images": 0x0203FBB4, "deoxys": None}),
 }
 # A hook's IWRAM and ROM words are the build's [Build.hook_literals]. RESIDENT_DATA: the data a hook
 # keeps past its code, in bytes.
 RESIDENT_DATA = {"p_frames": 20, "p_ring": 140, "p_state": 36, "p_words": 12, "p_images": 72}
-# Standalone hooks may reserve a different size for a named data record.  Keep the common map
-# unchanged so the existing resident chain retains its validated layout.
-RESIDENT_DATA_BY_HOOK = {"rng-assist": {"p_state": 64}}
 # Above the highest EWRAM symbol's end, 0x0203FBAC, and below the kept handler at 0x0203FBFC.
 RESIDENT_DATA_FLOOR = 0x0203FBB4
 # The follower's line when A is pressed facing it, by cartridge language: FD 02 is STR_VAR_1, the
@@ -2152,12 +2147,11 @@ HELP_R_DISABLED = 0x0203F171
 # Several hooks resident at once: "turbo+noencounter", settings as "turbo.field=2". Laid out back to
 # back from RESIDENT_BASE, each one's p_original the next one's entry, so the installers see one hook.
 CHAIN = "+"
-CHAIN_ORDER = ("turbo", "turbo-lite", "noclip", "shiny", "ivs", "noencounter")   # turbo's passes last
+CHAIN_ORDER = ("turbo", "turbo-lite", "noclip", "shiny", "shiny-press", "ivs", "noencounter")   # turbo's passes last
 # Data a hook keeps outside its code, by parameter, and its size.
-CHAIN_DATA = {"turbo": {"frames": 20}, "turbo-lite": {"frames": 20}, "shiny": {"state": 36}, "ivs": {"words": 12}, "noclip": {"state": 24}}
+CHAIN_DATA = {"turbo": {"frames": 20}, "turbo-lite": {"frames": 20}, "shiny": {"state": 36}, "shiny-press": {"state": 36}, "ivs": {"words": 12}, "noclip": {"state": 24}}
 # The free word range under the kept handler: RESIDENT_DATA_FLOOR..0x0203FBFC.
 CHAIN_LOW = (RESIDENT_DATA_FLOOR, 0x0203FBFC)
-RNG_ASSIST_MAX_OFFSET = 0xFF  # keep the resident VBlank prediction loop bounded
 
 
 def chain_names(name):
@@ -2185,7 +2179,7 @@ def _chain_blob(names, build, params):
         if hook not in own or not field:
             raise BufferScriptError(f"{key}: a setting of a chain is HOOK.NAME, HOOK one of {names}")
         own[hook][field] = value
-    drawing = [n for n in names if n in ("shiny", "ivs") or (n == "turbo" and own[n].get("overlay"))]
+    drawing = [n for n in names if n in ("shiny", "shiny-press", "ivs") or (n == "turbo" and own[n].get("overlay"))]
     if len(drawing) > 1:
         raise BufferScriptError(f"{' and '.join(drawing)} both draw in the screen's top-right corner")
     sizes = [len(STUBS[n][0]) for n in names]
@@ -2216,7 +2210,7 @@ def _chain_blob(names, build, params):
     return bytes(blob), links[0][0], links[-1][1], data
 
 
-def resident_blob(name, *, build=None, dest=None, **params):
+def resident_blob(name, *, build=None, **params):
     """-> (THUMB bytes, entry offset, p_original offset) for one of RESIDENT_HOOKS, or a chain of
     them (CHAIN), on `build`."""
     from pokeldn.frlg.rom import native_script
@@ -2237,7 +2231,7 @@ def resident_blob(name, *, build=None, dest=None, **params):
     params = {**defaults, **params}
     if name in ("turbo", "turbo-lite") and params["hold"] & R_BUTTON and "help" not in explicit:
         params["help"] = build.ewram.get("help", HELP_R_DISABLED)  # held R would open the Help System
-    if name == "shiny" and "state" in explicit and "overlay" not in explicit:
+    if name in ("shiny", "shiny-press") and "state" in explicit and "overlay" not in explicit:
         params["overlay"] = params["state"] + 24  # the word the hook shows
     if name == "follower" and params["deoxys"] is None:
         # the version's form: Attack on FireRed, Defense on LeafGreen [asm/resident/follower.s]
@@ -2245,18 +2239,7 @@ def resident_blob(name, *, build=None, dest=None, **params):
         params["deoxys"] = 0x00FDFCFD if firered else 0x00FDFDFC
     if name == "ivs" and "words" in explicit:
         params["overlay"], params["overlay2"] = params["words"], params["words"] + 4
-    if name == "rng-assist":
-        try:
-            offset = int(params["offset"])
-        except (KeyError, TypeError, ValueError):
-            raise BufferScriptError("rng-assist offset must be an integer") from None
-        if not 0 <= offset <= RNG_ASSIST_MAX_OFFSET:
-            raise BufferScriptError(
-                f"rng-assist offset must be 0..{RNG_ASSIST_MAX_OFFSET} advances to keep VBlank bounded")
     symbols = STUBS[name][2]
-    if name == "rng-assist":
-        image_base = native_script.RESIDENT_BASE if dest is None else int(dest)
-        params["input_shim"] = image_base + symbols["rng_assist_input_shim"]
     literals = {key: value for key, value in builds.resolve(build).hook_literals().items()
                 if f"p_{key}" in symbols and key not in params}
     words = native_script.resident_words(name, **params, **literals)
@@ -2296,8 +2279,7 @@ def _check_resident_layout(name, blob, dest):
             address = int.from_bytes(part[where:where + 4], "little") if where is not None else 0
             if not address:
                 continue
-            size = (CHAIN_DATA.get(n, {}).get(data[2:], size) if len(names) > 1
-                    else RESIDENT_DATA_BY_HOOK.get(n, {}).get(data, size))
+            size = CHAIN_DATA.get(n, {}).get(data[2:], size) if len(names) > 1 else size
             if (dest - 4 < address + size and address < dest + len(blob)
                     or address + size > 0x02040000 or address < RESIDENT_DATA_FLOOR
                     or any(a < address + size and address < a + s for a, s in taken)):
@@ -2314,7 +2296,7 @@ def build_install_resident(name, *, dest=None, table=None, build=None, **params)
     build = builds.resolve(build)
     dest = native_script.RESIDENT_BASE if dest is None else dest
     table = build.intr_vblank if table is None else table
-    blob, entry, original = resident_blob(name, build=build, dest=dest, **params)
+    blob, entry, original = resident_blob(name, build=build, **params)
     code = bytearray(payload(INSTALL_RESIDENT))
     if len(code) + len(blob) > MAX_BUFFER_SCRIPT_SIZE:
         raise BufferScriptError(

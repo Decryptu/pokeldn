@@ -221,6 +221,7 @@ def _boosts(on, keep=None, **settings):
      {"extra": 0, "field": 0, "battle": 3, "hold": 0, "budget": 228}),
     (_boosts(["hook-shiny"], True, **{"hook-shiny": {"button": "0x4", "slower": "7"}}), "shiny",
      {"slow": SELECT, "slow_frames": 7}),
+    (_boosts(["hook-shiny-press"], True), "shiny-press", {}),
     (_boosts(["hook-noclip", "hook-turbo"], True, **{"hook-noclip": {"button": "0x2"}}), "turbo-lite+noclip",
      {"turbo-lite.extra": 4, "turbo-lite.field": 1, "turbo-lite.battle": 1, "turbo-lite.hold": 0x100,
       "noclip.hold": B}),
@@ -273,7 +274,7 @@ def test_every_set_of_boosts_is_sent_or_refused_with_a_reason():
                 sent.add(on)
     assert ("hook-turbo", "hook-noclip", "hook-noencounter") in sent
     assert all(len(on) == 1 for on in sent if "hook-follower" in on)
-    assert not any({"hook-shiny", "hook-ivs"} <= set(on) for on in sent)
+    assert not any(len(set(frlg.DRAWING) & set(on)) > 1 for on in sent)
 
 
 @pytest.mark.parametrize("boost", [b for b in frlg.BOOST_LIST if b.options], ids=lambda b: b.key)

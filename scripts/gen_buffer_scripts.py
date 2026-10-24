@@ -20,11 +20,6 @@ ASM_DIR = ROOT / "asm"
 OUT = ROOT / "pokeldn" / "frlg" / "rom" / "buffer_payloads.py"
 
 
-def source_bytes(path):
-    """Read source bytes with a stable digest on Windows and Unix checkouts."""
-    return pathlib.Path(path).read_bytes().replace(b"\r\n", b"\n")
-
-
 def assemble(source_path):
     """Assemble one ARM source to raw bytes. Raises CodeError without a toolchain."""
     return custom_code.assemble(source_path.read_text())
@@ -39,7 +34,7 @@ def render():
     ]
     for source in sorted(ASM_DIR.glob("*.s")):
         code = assemble(source)
-        digest = hashlib.sha256(source_bytes(source)).hexdigest()
+        digest = hashlib.sha256(source.read_bytes()).hexdigest()
         lines.append(f"    {source.stem!r}: (")
         lines.append(f"        bytes.fromhex({code.hex()!r}),")
         lines.append(f"        {digest!r},")
