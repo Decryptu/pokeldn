@@ -23,8 +23,8 @@ command line `tools/switch/pad.py`.
 
 The board enumerates as a HORI Pokken controller, `0f0d:0092`, one HID interface with an
 interrupt IN and an interrupt OUT endpoint. A Switch accepts this ID as a plain HID gamepad with
-no Pro Controller handshake. A retail Switch Lite on firmware 23.0.1 enumerated it from the HOME
-menu and moved its cursor on the board's reports, with no setting changed.
+no Pro Controller handshake; a retail Switch Lite on firmware 23.0.1 takes it from the HOME menu with
+no setting changed.
 
 The input report is 8 bytes, sent every millisecond the host is ready for one:
 
@@ -54,9 +54,8 @@ A USB-C to USB-C cable from the board to the console. The console is the power s
 host; the board draws its power from it. The XIAO ESP32S3's LED (GPIO21) lights while the host has
 configured the device.
 
-A Switch Lite connected to a Mac over a C-to-C cable is the power source and enumerates nothing.
-Through a USB-A port at the Mac, with "Copy to a Computer via USB Connection" open, it enumerates as
-`057e:201d`, one MTP interface, a read-only "Album" storage and ten read-only operations
+A Switch Lite on a Mac's USB-A port, with "Copy to a Computer via USB Connection" open, enumerates as
+`057e:201d`: one MTP interface, a read-only "Album" storage, ten read-only operations
 (`0x1001`-`0x100a`).
 
 ## The Bluetooth side
@@ -83,23 +82,12 @@ first five bytes only.
 | `0xB0` download | | restarts the chip into the ROM loader |
 
 The program holds 8192 entries. Entries before the loop start play once; the rest repeat. The player
-waits with `vTaskDelayUntil` on the 1 kHz tick, so holds add up without drift: on the Mac's USB side
-a 10-loop macro played every loop in exactly its 500 ms.
+waits with `vTaskDelayUntil` on the 1 kHz tick, so holds add up without drift.
 
-Through bleak on macOS a write without response is lost when CoreBluetooth's queue is full, and
-bleak never reads `canSendWriteWithoutResponse`: 300 neutral reports sent back to back reached the
-board's write counter 67 times; at 20 ms or wider spacing, 40 of 40. `pokeldn.pad.link` waits for
-that flag before each report write, and writes with a response where the flag does not exist or
-stays false for a second.
-
-| report write | per report, back to back | reached the board |
-|---|---|---|
-| without response, unpaced | 0.1 ms | 67 of 300 |
-| with response | 60 ms, flat over the first 25 s of a connection | 300 of 300 |
-| without response, paced by the flag | 2.4 ms | 200 of 200 |
-
-Firmware 1.2.0 asks for a 15 to 30 ms connection interval on connect; with responses the write
-still took 63 ms, and whether macOS granted the request is unknown.
+Trap: through bleak on macOS a write without response is lost when CoreBluetooth's queue is full, and
+bleak never reads `canSendWriteWithoutResponse` (67 of 300 back-to-back reports arrive).
+`pokeldn.pad.link` waits for that flag before each report write (2.4 ms a report, none lost) and
+writes with a response, 60 ms each, where the flag does not exist or stays false for a second.
 
 A disconnect returns the report to neutral, so a host that vanishes leaves no button held; a playing
 macro keeps going.
@@ -136,16 +124,12 @@ descriptor, service "Wireless Gamepad", provider "Nintendo", subclass 0x08, clas
 reads, 0x03 report mode, 0x04 trigger times, 0x21 MCU configuration, a plain ACK for the rest; 0x30
 (player lights) marks the controller as taken. A reply goes out ahead of any 0x30.
 
-The 0x30 report goes out at once when the buttons or sticks change, and otherwise every 100 ms, from
-the moment the link opens; a Switch Lite connected and never started the handshake while the board
-sent none. After the link opens the board waits 1 s, after a change to sniff mode 250 ms, and after
-a send refused as congested (reason 8) 45 ms. These are friendmaker's Switch Lite values
-(`classic_bt_controller_transport.cpp`, `SWITCH_LITE`).
-
-| 0x30 pacing | retail Switch Lite |
-|---|---|
-| every 15 ms after the 0x03 mode switch | handshake through player lights, then Bluedroid toggles sniff mode, sends fail as congested, and the Switch disconnects (HCI 0x13) 2 to 20 s after the lights; no press reached the screen |
-| on change, else every 100 ms, with the waits above | link held, 0 of 501 sends failed; presses move the cursor on Change Grip/Order and on the Controllers menu |
+The 0x30 report goes out at once when the buttons or sticks change and otherwise every 100 ms, from
+the moment the link opens; the Switch starts no handshake while the board sends none. The board waits
+1 s after the link opens, 250 ms after a change to sniff mode and 45 ms after a send refused as
+congested (reason 8): friendmaker's Switch Lite values (`classic_bt_controller_transport.cpp`,
+`SWITCH_LITE`). Trap: a 0x30 every 15 ms congests the link and the Switch disconnects (HCI 0x13)
+within 20 s of the player lights.
 
 The Switch's handshake, in order: 0x02, 0x08, 0x10 at 0x6000 and 0x6050, 0x03 (0x30), 0x04, 0x10 at
 0x6080, 0x6098, 0x8010, 0x603D, 0x6020, 0x40, 0x30 (0), 0x48, 0x21, 0x30 (player 1).
@@ -221,21 +205,15 @@ The pad owns the USB port, so esptool cannot reset it into the loader. The downl
 Board page's installs and `pad.py --download` do it over Bluetooth; holding BOOT while
 plugging the board in does it without firmware.
 
-- `RTC_CNTL_USB_CONF` survives a reset. Left on USB-OTG, the loader came up as the OTG CDC device
-  `303a:0009` and esptool reached it about half the time. The firmware stops NimBLE and TinyUSB,
-  gives the PHY back to USB Serial/JTAG and sets `RTC_CNTL_FORCE_DOWNLOAD_BOOT` before the reset;
-  the loader is then `303a:1001` every time.
-- `esp_restart()` with Bluetooth and USB up once hung: enumerated, LED lit, no reports.
-- On macOS the first open of the fresh loader port reads nothing, and esptool keeps the port locked
-  for its process; `gui/board.py` waits 8 s before connecting without a reset when it flashes the
-  controller firmware, and falls back to a reset for a board still running the radio.
-- After a flash from a forced loader, a reset over USB stays in the loader; the watchdog reset boots
-  the image (`--after watchdog-reset`).
+| trap | the firmware or host |
+|---|---|
+| `RTC_CNTL_USB_CONF` survives a reset; left on USB-OTG the loader is `303a:0009`, which esptool reaches half the time | stops NimBLE and TinyUSB, gives the PHY back to USB Serial/JTAG and sets `RTC_CNTL_FORCE_DOWNLOAD_BOOT`; the loader is then `303a:1001` |
+| `esp_restart()` with Bluetooth and USB up can hang | not called that way |
+| on macOS the first open of a fresh loader port reads nothing, and esptool keeps the port locked | `gui/board.py` waits 8 s, then connects without a reset |
+| after a flash from a forced loader, a USB reset stays in the loader | `--after watchdog-reset` |
 
-Both directions, radio to controller and controller to radio, flashed through
-`python -m gui.board --kind pad|radio`. `--from-loader` flashes a board the download command already
-put in the loader: it waits, connects without a reset and boots the image with the watchdog, as for
-the controller firmware.
+`python -m gui.board --kind pad|radio` flashes either firmware over the other; `--from-loader` flashes
+a board the download command already put in the loader.
 
 Trap: the USB loop's delay is zero ticks at FreeRTOS's default 100 Hz and starves NimBLE; the
 firmware builds at 1000 Hz.
@@ -250,6 +228,5 @@ TinyUSB comes from the component manager (`espressif/esp_tinyusb` 2.4.0). The re
 
 ## Unresolved
 
-- Whether a Switch 2 pairs with the classic ESP32 firmware; only a Switch Lite was measured.
-
-- Whether a Switch 2 takes the HORI ID the same way; only a Switch Lite was measured.
+- Whether a Switch 2 pairs with the classic ESP32 firmware or takes the HORI ID is unmeasured; only a
+  Switch Lite was measured.

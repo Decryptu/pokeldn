@@ -4,6 +4,7 @@ Request layout read off Let's Go Pikachu `main` 0x5b8800 (docs/lgpe_session.md, 
 protocol, for a mesh join")."""
 import struct
 
+from pokeldn.ldn.station_protocol import parse_reply  # noqa: F401
 from pokeldn.ldn.station_protocol import (ACK, CONNECTION_REQUEST, CONNECTION_RESPONSE,
                                           RELAY_CONNECTION_REQUEST, RESULT_NAMES,
                                           STATION_LOCATION_MAX, STATION_LOCATION_MIN,
@@ -115,10 +116,3 @@ def ack_id_of(data):
     return struct.unpack_from(">I", data, len(data) - 4)[0] if len(data) >= 4 else 0
 
 
-def parse_reply(data):
-    """-> (message type, connection result or None)."""
-    if not data:
-        return None, None
-    kind = data[0]
-    result = data[1] if kind == CONNECTION_RESPONSE and len(data) > 1 else None
-    return kind, result

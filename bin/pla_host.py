@@ -21,15 +21,15 @@ from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
 from pokeldn import config
 from pokeldn import gen8, pla
-from pokeldn.ldn import left_after_trade, pia6, pia_connect, reliable5, rtt_protocol, show_done
+from pokeldn.ldn import left_after_trade, pia6, pia_connect, reliable5, show_done
 from pokeldn.ldn import channel_table
-from pokeldn import receiver_gift
+from pokeldn import receiver_gift, trade_back
 from pokeldn.app import screen
 from pokeldn.online import session as online
 from pokeldn.pla import data_exchange, game_channel, trade_box
 from pokeldn.pla import pokemon as pla_pokemon
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
-from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
+from pokeldn.ldn.transport import HostTransport, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
 
 PROTOCOL_NAMES = {
@@ -148,9 +148,10 @@ def build_parser():
     ap.add_argument("--seconds", type=float, default=240.0, help="how long to hold the network up")
     online.add_arguments(ap)
     receiver_gift.add_arguments(ap, "--trade-box-record")
+    trade_back.add_arguments(ap)
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--channel", type=int, default=None)
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--capture", default=None, help="write every datagram here as JSON lines")
     ap.add_argument("--app-version", type=int, default=0,
                     help="the LDN application version; the console's own is unread")
@@ -280,6 +281,7 @@ def build_parser():
 def main():
     ap = build_parser()
     args = ap.parse_args()
+    trade_back.check(ap, args, "--trade-box-record", "--online", "--for-receiver")
     offer_check = {}            # a gift made for the receiving player takes it too (pokeldn.receiver_gift)
     if args.trade_box_record:
         edits = {k: v for k, v in (("level", args.trade_box_level),
@@ -394,13 +396,15 @@ def main():
         receiving = receiver_gift.setup("pla", args, [state["record"] for state in box_states],
                                         lambda raw: box_offer(pla_pokemon.encrypt(pla_pokemon.load(raw))),
                                         **offer_check)
-    helped = partner is not None or receiving is not None
+    helped = partner is not None or receiving is not None or args.trade_back
 
     def online_box(ip):
         """The console's trade box with the online partner, or with a gift made for its own save."""
         if ip not in online_boxes:
             helper = partner
-            if receiving is not None:
+            if args.trade_back:
+                helper = trade_back.TradeBack("pla", [state["record"] for state in box_states])
+            elif receiving is not None:
                 helper = receiver_gift.ReceiverGift("pla", *receiving,
                                                     notify=receiver_gift.pop_up(f"gift-{ip}"),
                                                     shown=lambda body: screen.offer("pla", body))

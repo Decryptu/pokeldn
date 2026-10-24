@@ -25,26 +25,32 @@ RED = "#FD474D"
 GREEN = "#3DD68C"
 AMBER = "#FF9F0A"
 SILVER = "#BCC3CE"
-BRAND_BLUE = ("#4FD9F5", "#4E61FC")   # the logo's two gradients (assets/logo.svg)
-BRAND_RED = ("#FAA555", "#FD474D")
 SELECTED = ft.Colors.with_opacity(0.14, BLUE)
 MONO = "monospace"
 CJK_FONT = "Noto Sans CJK SC"
-FONT_ASSETS = {CJK_FONT: "fonts/NotoSansCJKsc-Regular.otf"}
+# The CJK font draws ‘ ’ “ ” · … full-width; this one holds its Latin-width forms (scripts/gen_punctuation_font.py).
+PUNCTUATION_FONT = "Noto Sans Punctuation"
+FALLBACK_FONTS = [PUNCTUATION_FONT, CJK_FONT]
+FONT_ASSETS = {PUNCTUATION_FONT: "fonts/NotoSansPunctuation.otf", CJK_FONT: "fonts/NotoSansCJKsc-Regular.otf"}
 CONTROL_HEIGHT = 34
 CONTROL_PADDING = ft.Padding(12, 8, 12, 8)
 CONTROL_RADIUS = 8
+CARD_PADDING = 18
+CARD_RADIUS = 18
 GAP = 12
 SIDEBAR_WIDTH = 254
 SESSION_WIDTH = 360
 # A window narrower than this (a phone) shows one panel at a time and a bottom tab bar (docs/gui.md, Phones).
 COMPACT_WIDTH = 760
+READABLE_WIDTH = 720   # the options column's widest: a wider form spreads a field's label far from its value
 compact = False
 
 
 def app_theme() -> ft.Theme:
+    from pokeldn.app.i18n import font_family
     return ft.Theme(
-        text_theme=ft.TextTheme(**{f.name: ft.TextStyle(font_family_fallback=[CJK_FONT])
+        font_family=font_family(),
+        text_theme=ft.TextTheme(**{f.name: ft.TextStyle(font_family_fallback=FALLBACK_FONTS)
                                    for f in fields(ft.TextTheme)}),
         color_scheme_seed=BLUE,
         color_scheme=ft.ColorScheme(primary=BLUE, secondary=BLUE, surface=PANEL, on_surface=TEXT,
@@ -54,12 +60,13 @@ def app_theme() -> ft.Theme:
         scrollbar_theme=ft.ScrollbarTheme(thickness=6, radius=3,
                                           thumb_color=ft.Colors.with_opacity(0.2, "#FFFFFF")),
         tooltip_theme=ft.TooltipTheme(decoration=ft.BoxDecoration(bgcolor=HOVER, border_radius=8),
-                                      text_style=ft.TextStyle(color=TEXT, size=12)),
+                                      text_style=ft.TextStyle(color=TEXT, size=12, font_family=font_family(),
+                                                              font_family_fallback=FALLBACK_FONTS)),
     )
 
 
 def text(value: str, size: float = 13, color: str = TEXT, weight=None, **kwargs) -> ft.Text:
-    kwargs.setdefault("style", ft.TextStyle(height=1.4, font_family_fallback=[CJK_FONT]))
+    kwargs.setdefault("style", ft.TextStyle(height=1.4, font_family_fallback=FALLBACK_FONTS))
     return ft.Text(value, size=size, color=color, weight=weight, **kwargs)
 
 
@@ -75,9 +82,7 @@ def glass(content: ft.Control, radius: float = 20, **kwargs) -> ft.Container:
     # One colour on all four sides: Flutter leaves the corners of a mixed-colour border square.
     return ft.Container(
         content, blur=ft.Blur(30, 30), border_radius=radius, clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
-        gradient=ft.LinearGradient(begin=ft.Alignment.TOP_CENTER, end=ft.Alignment.BOTTOM_CENTER,
-                                   colors=[ft.Colors.with_opacity(0.72, "#26262A"),
-                                           ft.Colors.with_opacity(0.64, "#18181B")]),
+        bgcolor=ft.Colors.with_opacity(0.68, "#1F1F22"),
         border=ft.Border.all(1, ft.Colors.with_opacity(0.1, "#FFFFFF")),
         **kwargs)
 
@@ -95,35 +100,90 @@ TOOLBAR_ITEM = 32   # the icon buttons are this size
 TOOLBAR_INSET = 4
 
 
+CENTER_MIN = 440      # the flexible pane never gets narrower than this beside the others
+NARROWED = 0.88       # a fixed pane's width when the window is a little short of room
+
+
 class Panes:
-    """A page's panels: side by side on a computer; on a phone one at a time, picked by name on a
-    switcher above them. `show` brings one forward, as choosing a tool brings its options."""
+    """A page's panels, laid out by the width they have (docs/gui.md, Window sizes): side by side;
+    then the fixed panes narrowed; then, with three, the first two on one switcher beside the last;
+    then one at a time on a switcher, as on a phone. `show` brings one forward, as choosing a tool
+    brings its options."""
 
     def __init__(self, *panes: tuple[str, str, ft.Control]):
         self.panes = list(panes)
+        self.widths = [pane.width for _, _, pane in panes]
         self.index = 0
-        if not compact:
-            self.control = ft.Row([p[2] for p in panes], spacing=GAP, expand=True,
-                                  vertical_alignment=ft.CrossAxisAlignment.STRETCH)
-            return
+        self.layout = ""
+        self.switched: list[int] = []
         # Every pane stays on the page, hidden or not: a view updates its panes while another shows.
-        self.holders = [ft.Container(pane, expand=True, visible=i == 0) for i, (_, _, pane) in enumerate(panes)]
-        for _, _, pane in panes:
-            pane.width, pane.expand = None, True
+        self.holders = [ft.Container(expand=True) for _ in panes]
         self.switcher = ft.Container()
-        self.control = ft.Column([self.switcher, *self.holders], spacing=8, expand=True)
+        self.control = ft.Container(expand=True, size_change_interval=50, on_size_change=self._resized)
+        self._arrange("single" if compact else "full")
+
+    def _choose(self, width: float) -> str:
+        fixed = [w for w in self.widths if w]
+        gaps = GAP * (len(self.panes) - 1)
+        if compact:
+            return "single"
+        if width >= sum(fixed) + CENTER_MIN + gaps:
+            return "full"
+        if width >= sum(fixed) * NARROWED + CENTER_MIN + gaps:
+            return "narrow"
+        if len(self.panes) == 3 and self.widths[2] and width >= self.widths[2] * NARROWED + CENTER_MIN + GAP:
+            return "split"
+        return "single"
+
+    def _resized(self, e) -> None:
+        layout = self._choose(e.width)
+        if layout != self.layout:
+            self._arrange(layout)
+            self.control.update()
+
+    def _arrange(self, layout: str) -> None:
+        side_by_side = self.layout in ("full", "narrow")
+        self.layout = layout
+        for holder in self.holders:
+            holder.content = None
+        if layout in ("full", "narrow"):
+            self.switched = []
+            for (_, _, pane), width in zip(self.panes, self.widths):
+                pane.width = (width if layout == "full" else round(width * NARROWED)) if width else None
+                pane.expand = None if width else True
+            self.control.content = ft.Row([p[2] for p in self.panes], spacing=GAP, expand=True,
+                                          vertical_alignment=ft.CrossAxisAlignment.STRETCH)
+            return
+        self.switched = [0, 1] if layout == "split" else list(range(len(self.panes)))
+        if side_by_side and None in self.widths:    # a window narrowed keeps the content in front
+            self.index = self.widths.index(None)
+        if self.index not in self.switched:
+            self.index = self.switched[-1]
+        for i in self.switched:
+            pane = self.panes[i][2]
+            pane.width, pane.expand = None, True
+            self.holders[i].content = pane
+            self.holders[i].visible = i == self.index
         self._render()
+        column = ft.Column([self.switcher, *(self.holders[i] for i in self.switched)], spacing=8, expand=True)
+        if layout == "single":
+            self.control.content = column
+            return
+        last = self.panes[2][2]
+        last.width, last.expand = round(self.widths[2] * NARROWED), None
+        self.control.content = ft.Row([column, last], spacing=GAP, expand=True,
+                                      vertical_alignment=ft.CrossAxisAlignment.STRETCH)
 
     def _render(self) -> None:
-        self.switcher.content = notch(segmented([(str(i), title, icon) for i, (title, icon, _) in enumerate(self.panes)],
+        self.switcher.content = notch(segmented([(str(i), self.panes[i][0], self.panes[i][1]) for i in self.switched],
                                                 str(self.index), lambda value: self.show(int(value))))
 
     def show(self, index: int, update: bool = True) -> None:
-        if not compact or index == self.index:
+        if index not in self.switched or index == self.index:
             return
         self.index = index
-        for i, holder in enumerate(self.holders):
-            holder.visible = i == index
+        for i in self.switched:
+            self.holders[i].visible = i == index
         self._render()
         if update and self.control.page:
             self.control.update()
@@ -157,14 +217,17 @@ def section(title: str, body: ft.Control | None = None, trailing: ft.Control | N
     return ft.Column([ft.Row(head, spacing=8), *([body] if body else [])], spacing=8, tight=True)
 
 
-def grid_rows(tiles: list[ft.Control], columns: int = 2, spacing: float = 6) -> list[ft.Control]:
-    """Tiles in rows of `columns`; the tiles of a row share its tallest tile's height."""
+def grid_rows(tiles: list[ft.Control], columns: int = 2, spacing: float = 6,
+              stretch_last: bool = False) -> list[ft.Control]:
+    """Tiles in rows of `columns`; the tiles of a row share its tallest tile's height. `stretch_last`
+    lets a short last row's tiles share its width, as a lone raid seed does."""
     rows = []
     for i in range(0, len(tiles), columns):
         cells = tiles[i:i + columns]
         for cell in cells:
             cell.expand = 1
-        cells += [ft.Container(expand=1) for _ in range(columns - len(cells))]
+        if not stretch_last:
+            cells += [ft.Container(expand=1) for _ in range(columns - len(cells))]
         rows.append(ft.Row(cells, spacing=spacing, intrinsic_height=True,
                            vertical_alignment=ft.CrossAxisAlignment.STRETCH))
     return rows
@@ -174,9 +237,48 @@ def grid(tiles: list[ft.Control], columns: int = 2, spacing: float = 6) -> ft.Co
     return ft.Column(grid_rows(tiles, columns, spacing), spacing=spacing, tight=True)
 
 
+class Flow:
+    """Tiles or fields in rows of as many as the measured width gives each `min_width`; a fixed count
+    per row squeezes a dropdown's text or a tile's summary out of a narrow column."""
+
+    def __init__(self, controls: list[ft.Control], min_width: float = 160, spacing: float = 10,
+                 stretch_last: bool = False):
+        self.min_width, self.spacing, self.width, self.stretch_last = min_width, spacing, 0.0, stretch_last
+        self.box = ft.Column(spacing=spacing, tight=True)
+        self.control = ft.Container(self.box, size_change_interval=50, on_size_change=self._resized)
+        self.columns = 0
+        self.set(controls)
+
+    def _fit(self) -> int:
+        if not self.width:
+            return max(1, len(self.items))
+        return max(1, min(len(self.items), int((self.width + self.spacing) // (self.min_width + self.spacing))))
+
+    def set(self, controls: list[ft.Control], single: bool = False) -> None:
+        """New tiles; `single` lays them one to a row, as a message in place of tiles."""
+        self.items, self.single = list(controls), single
+        self._lay()
+
+    def _lay(self) -> None:
+        self.columns = 1 if self.single else self._fit()
+        self.box.controls = (list(self.items) if self.single else
+                             grid_rows(list(self.items), self.columns, self.spacing, self.stretch_last))
+
+    def _resized(self, e) -> None:
+        self.width = e.width
+        if not self.single and self._fit() != self.columns:
+            self._lay()
+            self.control.update()
+
+
+def field_grid(controls: list[ft.Control], min_width: float = 160) -> ft.Container:
+    """Labelled fields in a Flow; a short last row's fields share its width."""
+    return Flow(controls, min_width, 10, stretch_last=True).control
+
+
 def card(title: str, body: ft.Control | None = None, description: str = "",
          trailing: ft.Control | None = None, tip: str = "") -> ft.Container:
-    head = [text(title, 13, weight=ft.FontWeight.W_600, expand=True)]
+    head = [text(title, 14, weight=ft.FontWeight.W_600, expand=True)]
     if tip:
         head.append(pixel_icon("circle-info", color=FAINT, tooltip=tip))
     if trailing:
@@ -186,7 +288,12 @@ def card(title: str, body: ft.Control | None = None, description: str = "",
         rows.append(text(description, 12, MUTED))
     if body:
         rows.append(body)
-    return surface(ft.Container(ft.Column(rows, spacing=10, tight=True), padding=16))
+    return card_box(ft.Column(rows, spacing=12, tight=True))
+
+
+def card_box(content: ft.Control) -> ft.Container:
+    """The options column's card: every card there, built by `card` or by hand, has this padding and corner."""
+    return surface(ft.Container(content, padding=CARD_PADDING), radius=CARD_RADIUS)
 
 
 def dialog(**kwargs) -> ft.AlertDialog:
@@ -232,7 +339,7 @@ def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, 
     if digits:
         kwargs.setdefault("keyboard_type", ft.KeyboardType.NUMBER)
     style = ft.TextStyle(size=13, color=TEXT, font_family=MONO if mono else None,
-                         font_family_fallback=[CJK_FONT])
+                         font_family_fallback=FALLBACK_FONTS)
     uniform = not kwargs.get("multiline") and not label and "height" not in kwargs
     if uniform:
         kwargs.setdefault("height", CONTROL_HEIGHT)
@@ -248,9 +355,21 @@ def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, 
 
 
 def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, **kwargs) -> ft.Dropdown:
+    if on_select and kwargs.get("editable"):
+        chosen = on_select
+
+        def on_select(e):
+            # Enter on typed text selects nothing: value None. Take the option it names, or ignore it.
+            if e.control.value is None:
+                typed = (e.control.text or "").strip().casefold()
+                e.control.value = next((o.key for o in e.control.options if typed and (o.text or "").casefold() == typed), None)
+                if e.control.value is None:
+                    return
+                e.control.update()
+            chosen(e)
     return ft.Dropdown(value=value, options=[ft.DropdownOption(key=k, text=t) for k, t in options],
                        on_select=on_select, dense=True, filled=True, bgcolor=FIELD, border=_border(),
-                       text_size=13, text_style=ft.TextStyle(font_family_fallback=[CJK_FONT]),
+                       text_size=13, text_style=ft.TextStyle(font_family_fallback=FALLBACK_FONTS),
                        expand=True, height=CONTROL_HEIGHT, content_padding=CONTROL_PADDING,
                        trailing_icon=pixel_icon("chevron-down", color=MUTED),
                        selected_trailing_icon=pixel_icon("chevron-up", color=BLUE),
@@ -283,7 +402,7 @@ def button(label: str, on_click=None, icon=None, color: str = BLUE, filled: bool
         shape=ft.StadiumBorder(), padding=ft.Padding(16, 8, 16, 8),
         side={ft.ControlState.FOCUSED: ft.BorderSide(2, ft.Colors.with_opacity(0.6, BLUE)),
               ft.ControlState.DEFAULT: ft.BorderSide(0, ft.Colors.TRANSPARENT)},
-        text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_500, font_family_fallback=[CJK_FONT]),
+        text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_500, font_family_fallback=FALLBACK_FONTS),
         overlay_color={ft.ControlState.DEFAULT: ft.Colors.TRANSPARENT,
                        ft.ControlState.HOVERED: ft.Colors.with_opacity(0.08, "#FFFFFF"),
                        ft.ControlState.PRESSED: ft.Colors.with_opacity(0.14, "#000000")},
@@ -328,13 +447,6 @@ def switch(value: bool, on_change) -> ft.Switch:
 def badge(label: str, color: str = MUTED, icon: str = "circle-info") -> ft.Row:
     return ft.Row([pixel_icon(icon, size=12, color=color), text(label, 12, SOFT)],
                   spacing=6, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER)
-
-
-def tinted(control: ft.Control, colors: tuple[str, ...]) -> ft.ShaderMask:
-    """The control's opaque pixels painted with a diagonal gradient, such as a brand gradient over pixel icons."""
-    return ft.ShaderMask(content=control, blend_mode=ft.BlendMode.SRC_IN,
-                         shader=ft.LinearGradient(begin=ft.Alignment.TOP_LEFT, end=ft.Alignment.BOTTOM_RIGHT,
-                                                  colors=list(colors)))
 
 
 def chip(label: str, icon: str | None = None, color: str = MUTED) -> ft.Container:
@@ -419,7 +531,7 @@ def step_list(steps: list[str]) -> ft.Column:
     rows = []
     for index, step in enumerate(steps):
         first, last = index == 0, index == len(steps) - 1
-        lead = 22 if first else 0
+        lead = 0
         gap = 0 if last else 14
 
         def resize(e, initial=first, final=last, top=lead, bottom=gap):
@@ -427,12 +539,6 @@ def step_list(steps: list[str]) -> ft.Column:
             stroke = ft.Paint(color=MUTED, stroke_width=1, style=ft.PaintingStyle.STROKE)
             shapes = [cv.Circle(9, center, 4,
                                 paint=ft.Paint(color=MUTED, stroke_width=1.5, style=ft.PaintingStyle.STROKE))]
-            if initial:
-                end = center - 7
-                shapes.append(cv.Line(9, 0, 9, end, paint=ft.Paint(
-                    stroke_width=1, style=ft.PaintingStyle.STROKE,
-                    gradient=ft.PaintLinearGradient(begin=ft.Offset(9, 0), end=ft.Offset(9, end),
-                                                   colors=[ft.Colors.with_opacity(0, MUTED), MUTED]))))
             ranges = ([] if initial else [(0, center - 7)])
             if not final:
                 ranges.append((center + 7, e.height))

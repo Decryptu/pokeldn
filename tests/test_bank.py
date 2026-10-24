@@ -139,7 +139,7 @@ def test_a_completed_trade_takes_the_pokemon_out_of_the_bank_and_its_queue(vault
     panel = games.SessionPanel.__new__(games.SessionPanel)
     panel.__dict__.update(
         app=SimpleNamespace(settings=settings, ui=lambda fn: fn()), tool=tool, traded=0, stopping=False,
-        restart=False, games=SimpleNamespace(values=values, visible=False),
+        restart=False, games=SimpleNamespace(values=values, visible=False, show_run_cards=lambda: None),
         log=SimpleNamespace(add=lambda line: None), offering=SimpleNamespace(update=lambda: None),
         partner_state=None)
     panel.render_offering = panel.refresh = panel.set_status = lambda *a, **k: None
@@ -189,18 +189,31 @@ def test_a_save_is_imported_slot_by_slot_once_even_after_a_trade_takes_one_out(s
     assert len(bank.entries()) == 1 and save.read_bytes() == before
 
 
-def test_an_empty_tracker_is_the_only_problem_the_empty_setting_accepts(service, vault):
-    """With no tracker PKHeX also refuses the party Patrat's Hidden Ability in Legends Z-A, its only game:
-    that second problem keeps it out."""
+def test_the_empty_setting_accepts_what_a_tracker_would_make_legal(service, vault):
+    """PKHeX takes the party Patrat's Hidden Ability in Legends Z-A only with a tracker
+    [AbilityVerifier.VerifyBirthAbility]; the Box 2 Patrat's move is illegal with one too."""
     save = vault / "main"
     save.write_bytes(gzip.decompress(base64.b64decode(FIXTURE["black2_save_gz"])))
     assert [(p.state, p.detail) for p in bank.import_file(str(save), TRAINERS).pokemon] == [
-        ("refused", "Hidden Ability not available."),
+        ("banked", "Left its Oran Berry behind · PKHeX flags the missing HOME tracker"),
         ("banked", "PKHeX flags the missing HOME tracker"),
         ("refused", "One of its moves is not legal.")]
-    [entry] = bank.entries()
-    info = service.check_bytes(entry.game, bank.data(entry))
-    assert info["legal"] and info["tracker"] == "0" and entry.home_tracker == "empty"
+    for entry in bank.entries():
+        info = service.check_bytes(entry.game, bank.data(entry))
+        assert info["legal"] and info["tracker"] == "0" and entry.home_tracker == "empty"
+
+
+@pytest.mark.parametrize("species, edit", [
+    (25, {"level": 50, "options": {"moves": [344]}}),   # Pikachu hatched as Pichu: Volt Tackle comes only from an egg
+    (134, {"level": 1, "options": {"gender": 1}}),      # Vaporeon hatched as Eevee: the other level 1 one is Penny's male
+])
+def test_a_pokemon_that_evolved_in_scarlet_moves_to_every_home_game_holding_it(service, species, edit):
+    """Without a tracker PKHeX lets no evolution happen in another HOME game [EvolutionGroupHOME.CheckAllAdjacent]."""
+    built = service.make("sv", species, TRAINER, **edit)
+    assert built["encounter"] == "Egg"
+    routes = service.destinations("sv", base64.b64decode(built["data"]), "0", TRAINER)
+    assert {game for game, route in routes.items() if route["ok"]} == {"sv", "swsh", "bdsp", "pla", "za"}
+    assert {route["home_tracker"] for game, route in routes.items() if route["ok"] and game != "sv"} == {"empty"}
 
 
 @pytest.mark.parametrize("name, species, gone", [

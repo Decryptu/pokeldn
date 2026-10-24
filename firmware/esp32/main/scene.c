@@ -15,6 +15,9 @@
 #define DIM_MS 60000        /* an idle radio's screen dims after a minute with nothing happening */
 #define OFF_MS 600000       /* and goes dark after ten */
 #define ORBIT_MS 60000      /* the idle scene moves one step of ORBIT a minute: no pixel lit for hours */
+#ifndef POKELDN_FIRMWARE_VERSION
+#define POKELDN_FIRMWARE_VERSION "unknown"
+#endif
 
 typedef struct {
     uint8_t w, h;
@@ -34,6 +37,10 @@ static struct {
     uint32_t started;
     uint32_t reveal;        /* a traded show: ms after its start when theirs starts coming in */
     sprite_t sprite[SLOTS];
+    struct {
+        uint8_t stars, joined, seats;
+        char code[TEXT_MAX];
+    } lobby;                /* a lobby show's: its title and name are the show's title and line */
 } s;
 
 /* Packets on a cable: progress 0..1000 from the console's end (dir 1) or from ours (dir -1). */
@@ -261,7 +268,10 @@ static void radio_scene(uint8_t *fb, const scene_radio_t *r, uint32_t now)
         centered(fb, o, 50, text);
     } else {
         centered(fb, o, 36, "radio ready");
-        centered(fb, o, 50, "start a trade or gift");
+        centered(fb, o, 46, "start a trade or gift");
+        char version[24];
+        snprintf(version, sizeof(version), "v%s", POKELDN_FIRMWARE_VERSION);
+        centered(fb, o, 56, version);
     }
 }
 
@@ -282,6 +292,32 @@ static void trade_scene(uint8_t *fb, uint32_t now)
     text_wrapped(fb, 0, 24, 10, s.now.line);
     console_icon(fb, 0, 47);
     cable(fb, 24, 62, 53);
+}
+
+/* The lobby's text, one line each: the name, its stars, the seats taken, the Link Code. */
+static int lobby_lines(char lines[4][TEXT_MAX])
+{
+    int n = 0;
+    if (s.now.line[0]) snprintf(lines[n++], TEXT_MAX, "%s", s.now.line);
+    if (s.lobby.stars) {
+        snprintf(lines[n], TEXT_MAX, "%.*s", s.lobby.stars, "*******");
+        ++n;
+    }
+    snprintf(lines[n++], TEXT_MAX, "%u/%u joined", (unsigned)s.lobby.joined, (unsigned)s.lobby.seats);
+    if (s.lobby.code[0]) snprintf(lines[n++], TEXT_MAX, "%s", s.lobby.code);
+    return n;
+}
+
+static void lobby_scene(uint8_t *fb, uint32_t now)
+{
+    char lines[4][TEXT_MAX], cut[11];
+    half_header(fb, s.now.title);
+    if (!sprite_draw(fb, SLOT_OURS, 96, 64 - (int)(now / 500 % 2))) poke_ball(fb, 96, 34, 12);
+    const int n = lobby_lines(lines);
+    for (int i = 0; i < n; ++i) {
+        snprintf(cut, sizeof(cut), "%.10s", lines[i]);   /* the left half: 10 characters */
+        fb_text(fb, 0, 14 + 12 * i, cut, 1);
+    }
 }
 
 static void traded_scene(uint8_t *fb, uint32_t now)
@@ -423,7 +459,7 @@ static void small_radio(uint8_t *fb, const scene_radio_t *r, uint32_t now)
         small_text(fb, o[0], 31 + o[1], text);
     } else {
         small_text(fb, o[0], 21 + o[1], "radio ready");
-        small_text(fb, o[0], 31 + o[1], "trade, gift");
+        small_text(fb, o[0], 31 + o[1], "v" POKELDN_FIRMWARE_VERSION);
     }
 }
 
@@ -431,6 +467,13 @@ static void small_trade(uint8_t *fb, uint32_t now)
 {
     small_text(fb, 0, 0, s.now.line[0] ? s.now.line : "offering");
     if (!sprite_half(fb, SLOT_OURS, 36, 40 - (int)(now / 500 % 2))) poke_ball(fb, 36, 25, 9);
+}
+
+static void small_lobby(uint8_t *fb)
+{
+    char lines[4][TEXT_MAX];
+    const int n = lobby_lines(lines);
+    for (int i = 0; i < n; ++i) small_text(fb, 0, 10 * i, lines[i]);
 }
 
 static void small_traded(uint8_t *fb, uint32_t now)
@@ -556,6 +599,25 @@ bool scene_command(const uint8_t *p, size_t n, uint32_t now)
         memcpy(sprite->bits, p + 4, size);
         return true;
     }
+    if (p[0] == DISPLAY_OP_LOBBY) {
+        if (n < 7 || p[1] > 7 || p[3] < 1 || p[3] > 3 || p[2] > p[3]) return false;
+        show_t show = {.show = SHOW_LOBBY};
+        const char *text = (const char *)p + 4, *end = (const char *)p + n;
+        copy_text(show.title, &text, end);
+        copy_text(show.line, &text, end);
+        copy_text(s.lobby.code, &text, end);
+        s.lobby.stars = p[1];
+        s.lobby.joined = p[2];
+        s.lobby.seats = p[3];
+        s.has_next = false;
+        start(&show, now);
+        return true;
+    }
+    if (p[0] == DISPLAY_OP_JOINED) {
+        if (n != 2 || s.now.show != SHOW_LOBBY || p[1] > s.lobby.seats) return false;
+        s.lobby.joined = p[1];
+        return true;
+    }
     if (p[0] != DISPLAY_OP_SHOW || n < 4 || p[1] >= SHOWS) return false;
     if (p[1] == SHOW_ARRIVED) {   /* the console's animation is over: theirs comes in now */
         if (s.now.show == SHOW_TRADED && elapsed(now) < s.reveal)
@@ -609,8 +671,8 @@ uint8_t scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now)
     }
     /* A lasting show belongs to a session: a radio going back to idle has ended it. A show sent
        before the radio started stays. */
-    if ((s.now.show == SHOW_TRADE || s.now.show == SHOW_GIFT) && radio->mode == SCENE_IDLE &&
-        s.radio_mode != SCENE_IDLE)
+    if ((s.now.show == SHOW_TRADE || s.now.show == SHOW_GIFT || s.now.show == SHOW_LOBBY) &&
+        radio->mode == SCENE_IDLE && s.radio_mode != SCENE_IDLE)
         s.now.show = SHOW_AUTO;
     s.radio_mode = radio->mode;
     dots_step(radio->rx, radio->tx, now);
@@ -621,6 +683,7 @@ uint8_t scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now)
         case SHOW_TRADED: small_traded(fb, now); break;
         case SHOW_GIFT: small_gift(fb, now); break;
         case SHOW_GIFTED: small_gifted(fb, now); break;
+        case SHOW_LOBBY: small_lobby(fb); break;
         default: small_radio(fb, radio, now); break;
         }
         to_window(fb);
@@ -630,6 +693,7 @@ uint8_t scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now)
         case SHOW_TRADED: traded_scene(fb, now); break;
         case SHOW_GIFT: gift_scene(fb, now); break;
         case SHOW_GIFTED: gifted_scene(fb, now); break;
+        case SHOW_LOBBY: lobby_scene(fb, now); break;
         default: radio_scene(fb, radio, now); break;
         }
     }

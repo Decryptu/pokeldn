@@ -33,6 +33,23 @@ def lit(fb, x, y):
 
 
 @needs_cc
+@pytest.mark.parametrize("panel, y_range", [("full", range(56, 63)), ("small", range(54, 61))])
+def test_idle_screen_version_moves_with_the_splash(scene, built, panel, y_range):
+    if panel == "small":
+        built.scene_panel(1)
+    first = scene.frame()
+    scene.advance(60_000)  # ORBIT moves the splash two pixels horizontally; the version follows it.
+    moved = scene.frame()
+    x0 = 30 if panel == "small" else 0
+    width = 72 if panel == "small" else 128
+    assert any(lit(first, x, y) for y in y_range for x in range(x0, x0 + width))
+    assert all(lit(moved, x + 2, y) == lit(first, x, y)
+               for y in y_range for x in range(x0, x0 + width - 2))
+    if panel == "small":
+        built.scene_panel(0)
+
+
+@needs_cc
 def test_a_sprite_lands_bit_for_bit_where_the_trade_scene_draws_it(scene):
     # Odd width and a pattern in each row: a wrong bit order, stride or row order moves pixels.
     rows = [[(x * 3 + y * 5) % 7 < 3 for x in range(13)] for y in range(9)]
@@ -85,6 +102,13 @@ def test_malformed_commands_are_refused(scene):
     assert not scene.command(bytes([1, 1, 65, 1]) + bytes(9))         # wider than 64
     assert not scene.command(bytes([1, 3, 8, 1, 0]))                  # no such slot
     assert not scene.command(bytes([0, 6, 0, 0]))                     # no such show
+    assert not scene.command(bytes([3, 0]))                           # JOINED with no lobby
+    assert not scene.command(bytes([2, 8, 0, 3, 0, 0, 0]))            # eight stars
+    assert not scene.command(bytes([2, 0, 2, 1, 0, 0, 0]))            # more joined than seats
+    assert not scene.command(bytes([2, 0, 0, 4, 0, 0, 0]))            # four seats
+    assert not scene.command(bytes([2, 0, 0, 3, 0, 0]))               # a text short
+    assert scene.command(esp32.display_lobby_payload("Max Raid", "Snorlax", 0, 2))
+    assert not scene.command(esp32.display_joined_payload(3))         # more than its seats
     assert not scene.command(b"")
     with pytest.raises(ValueError):
         esp32.display_sprite_payload("ours", [[True] * 65])
@@ -255,7 +279,7 @@ def test_text_is_reduced_to_the_screens_ascii():
 def test_an_offer_reaches_the_screen_through_the_launchers_radio(monkeypatch, scene):
     from pokeldn.ldn import esp32_sim, esp32_wlan
     rows = [[x == y for x in range(10)] for y in range(10)]
-    monkeypatch.setattr(screen, "sprite_bits", lambda species, size=64: rows if species == 25 else None)
+    monkeypatch.setattr(screen, "sprite_bits", lambda species, size=64, **form: rows if species == 25 else None)
     monkeypatch.setenv("POKELDN_RADIO", "esp32:sim")
     board = esp32_sim.SimulatedBoard(esp32_sim.Air())
     monkeypatch.setattr(esp32_wlan, "_radio", esp32.Radio(board.host_stream()))
@@ -271,3 +295,49 @@ def test_an_offer_reaches_the_screen_through_the_launchers_radio(monkeypatch, sc
         assert scene.command(payload)
     fb = scene.frame()
     assert all(lit(fb, 91 + i, 54 + i) for i in range(10)) and not lit(fb, 92, 54)
+
+
+@needs_cc
+@pytest.mark.parametrize("panel", [0, 1], ids=["128x64", "72x40"])
+def test_a_hosted_lobby_reaches_the_screen_and_ends_with_the_session(monkeypatch, scene, built, panel):
+    """screen.lobby and screen.joined through the launchers' radio into scene.c: the boss where a trade
+    draws its Pokemon, the count redrawn only when it changes, the panel's window kept, and the radio
+    going idle ending the show."""
+    from pokeldn.ldn import esp32_sim, esp32_wlan
+    rows = [[x == y for x in range(10)] for y in range(10)]
+    asked = []
+    monkeypatch.setattr(screen, "sprite_bits", lambda species, size=64, **form: asked.append(form) or rows)
+    monkeypatch.setenv("POKELDN_RADIO", "esp32:sim")
+    board = esp32_sim.SimulatedBoard(esp32_sim.Air())
+    monkeypatch.setattr(esp32_wlan, "_radio", esp32.Radio(board.host_stream()))
+    try:
+        assert screen.lobby("Max Raid", 849, "Toxtricity", 3, stars=5, code="12345678", form=1,
+                            gigantamax=True)
+        assert screen.joined(0) is False                 # the lobby opened at 0
+        assert screen.joined(2) and screen.joined(2) is False
+        assert screen.drain(5)
+        esp32_wlan._radio.drain()
+    finally:
+        esp32_wlan._radio.close()
+    assert asked == [{"form": 1, "gigantamax": True}]
+    assert board.displays == [esp32.display_sprite_payload("ours", rows),
+                              esp32.display_lobby_payload("Max Raid", "Toxtricity", 0, 3, 5, "1234 5678"),
+                              esp32.display_joined_payload(2)]
+    built.scene_panel(panel)
+    try:
+        scene.radio.mode = 3                                 # hosting
+        assert all(scene.command(p) for p in board.displays[:2])
+        before = scene.frame()
+        assert scene.command(board.displays[2])
+        during = scene.frame()
+        x0, y0, w, h = (0, 0, 128, 64) if panel == 0 else (30, 24, 72, 40)
+        assert any(lit(during, x, y) != lit(before, x, y) for x in range(128) for y in range(64))
+        assert not any(lit(during, x, y) for x in range(128) for y in range(64)
+                       if not (x0 <= x < x0 + w and y0 <= y < y0 + h))
+        if panel == 0:
+            assert all(lit(during, 91 + i, 54 + i) for i in range(10)) and not lit(during, 92, 54)
+        scene.radio.mode = 0                                 # the launcher stopped the radio
+        scene.advance(1000)
+        assert scene.frame() == frame_of(built, [], scene.now)
+    finally:
+        built.scene_panel(0)

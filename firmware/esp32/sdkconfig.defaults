@@ -1,4 +1,6 @@
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+# 1.5 MB app; nvs and phy_init keep their offsets. The C6 BLE image left 13 KB of the 1 MB one.
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
 # The host link carries binary frames; console output must stay off on every target.
 CONFIG_LOG_DEFAULT_LEVEL_NONE=y
 CONFIG_BOOTLOADER_LOG_LEVEL_NONE=y

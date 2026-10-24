@@ -252,6 +252,21 @@ def test_a_copy_that_cannot_replace_itself_falls_back_to_the_download(tmp_path):
             tmp_path.chmod(0o755)
 
 
+def test_a_drive_root_that_refuses_files_updates_without_the_administrator(tmp_path, monkeypatch):
+    """The root of a fresh NTFS volume lets users create folders, not files; the swap needs only folders."""
+    root = packed_app(tmp_path, "win32", "0.1.0")
+    write = Path.write_bytes
+
+    def refuse_in_root(path, data):
+        if path.parent == tmp_path:
+            raise PermissionError(13, "Access is denied", str(path))
+        return write(path, data)
+    monkeypatch.setattr(Path, "write_bytes", refuse_in_root)
+    assert not update.needs_admin(root, "win32")
+    assert update.blocker(root, "win32") == ""
+    assert not list(tmp_path.glob(".pokeldn-write-*"))
+
+
 def test_a_release_without_sha256sums_is_not_installed_in_place():
     reply = release("v9.0.0")
     assert not update.newer(reply, "0.2.2", "pokeldn-linux-x64.tar.gz").installable
@@ -291,6 +306,18 @@ def test_the_helper_never_runs_inside_the_folder_it_renames(tmp_path, monkeypatc
     assert update.wait_for(lambda: seen.exists() and seen.read_text().strip(), 10.0)
     helper_cwd = Path(seen.read_text().strip())
     assert target.resolve() not in (helper_cwd, *helper_cwd.parents)
+
+
+def test_the_administrators_helper_gets_the_folder_behind_a_drive_letter(tmp_path, monkeypatch):
+    # A subst or mapped letter exists only in the user's logon session, not the elevated one; a
+    # symlink stands in for the letter here.
+    real = packed_app(tmp_path / "real", "win32", "0.1.0")
+    (tmp_path / "S").symlink_to(tmp_path / "real")
+    new = packed_app(tmp_path / "data/update/new", "win32", "9.0.0")
+    started = []
+    monkeypatch.setattr(update, "_run_as_admin", lambda exe, args, cwd, folder: started.append(args))
+    update.start_swap(new, tmp_path / "S" / real.name, "9.0.0", "win32", admin=True)
+    assert started[0][2] == str(real.resolve())
 
 
 @pytest.mark.parametrize("system", SYSTEMS)

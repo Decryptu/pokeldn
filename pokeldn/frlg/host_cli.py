@@ -136,13 +136,16 @@ def add_host_arguments(parser, *, option_defaults=None, ldn_defaults=None,
               % option_defaults.protocol_tick_hz))
 
 
-def parse_hex_bytes(parser, option, value):
+def parse_hex_bytes(parser, option, value, *, size=None):
     if not value:
         return None
     try:
-        return bytes.fromhex(value)
+        result = bytes.fromhex(value)
     except ValueError:
         parser.error(f"{option} must contain hexadecimal bytes")
+    if size is not None and len(result) != size:
+        parser.error(f"{option} must contain exactly {size} bytes")
+    return result
 
 
 def parse_hex_int(parser, option, value):
@@ -261,3 +264,19 @@ def _format_config_value(name, value):
     if isinstance(value, bool):
         return f"{name} = {'true' if value else 'false'}"
     return f"{name} = {value}"
+
+
+def transport_factory(parser, args):
+    """The host transport: the radio, or ldn_mitm over the LAN for --over-ip."""
+    import functools
+    from pokeldn.host_support import needs_root
+    from pokeldn.ldn import ldn_mitm_host, transport
+    if args.over_ip:
+        our_ip = None if args.over_ip == "auto" else args.over_ip
+        factory = functools.partial(ldn_mitm_host.IpHostTransport, our_ip=our_ip)
+        # functools.partial hides the class attribute the phy resolution reads.
+        factory.NEEDS_RADIO = False
+        return factory
+    if needs_root():
+        parser.error("live LDN hosting requires root; run with sudo -E")
+    return transport.HostTransport

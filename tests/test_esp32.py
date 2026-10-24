@@ -1535,6 +1535,11 @@ def test_a_full_credit_window_on_a_silent_stream_is_not_blindly_resynced(monkeyp
         assert radio._flow
         board.close()
         board.thread.join(1)
+        # The reader may still be parsing the board's last bytes; one landing after the window
+        # fills is the board answering, which is a resync (seen on the Windows runner).
+        deadline = time.monotonic() + 1
+        while time.monotonic() - radio._seen_at < 0.05 and time.monotonic() < deadline:
+            time.sleep(0.005)
         for _ in range(100):
             radio.send_ethernet(bytes(300))
         radio._writer.join(1)

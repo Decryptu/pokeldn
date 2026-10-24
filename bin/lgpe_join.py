@@ -27,6 +27,7 @@ import trio
 from pokeldn.ldn import api as ldn
 from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
+from pokeldn import trade_back
 from pokeldn.ldn import pia3, pia4, station9, station4
 from pokeldn.ldn import mesh_protocol as mp
 from pokeldn.ldn import clone, sync_clock, ldn_mitm
@@ -34,7 +35,7 @@ from pokeldn.ldn import rtt_protocol as rtt
 from pokeldn.ldn import reliable3
 from pokeldn.ldn import local_protocol as lp
 from pokeldn.ldn.station_protocol import ldn_constant_id, ldn_service_variable_id, station_location
-from pokeldn.ldn.transport import board_radio, find_ap_phy
+from pokeldn.ldn.transport import find_ap_phy, cleanup_stale_vifs as cleanup_stale
 from pokeldn.host_support import resolve_keys, needs_root, write_file
 from pokeldn.lgpe import (COMM_ID_PIKACHU, PASSPHRASE, PIA_PORT, PIA_VERSION, packet_iv,
                           session_keys)
@@ -76,19 +77,8 @@ def _survive_netlink_overflow():
 
 _survive_netlink_overflow()
 
-STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
-
 KNOWN = {0x0100000011D90000: "BDSP", 0x0100ABF008968000: "Sword",
          COMM_ID_PIKACHU: "Let's Go Pikachu"}
-
-
-def cleanup_stale():
-    if board_radio():
-        return
-    import subprocess
-    for name in STALE_VIFS:
-        subprocess.run(["iw", "dev", name, "del"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def describe(net):
@@ -188,20 +178,7 @@ def _blob(text):
 
 def make_socket(ifname, bind_ip=None):
     from pokeldn.ldn import userspace_ip  # no kernel interface on the ESP32
-    if bind_ip is None and (user := userspace_ip.udp_socket(ifname, PIA_PORT)) is not None:
-        user.setblocking(False)
-        return user
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    if bind_ip is None:
-        try:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, ifname.encode())
-        except (PermissionError, OSError):
-            pass
-    s.bind((bind_ip or "", PIA_PORT))
-    s.setblocking(False)
-    return s
+    return userspace_ip.pia_socket(ifname, PIA_PORT, bind_ip)
 
 
 def try_decrypt(keys, data, macs):
@@ -225,7 +202,7 @@ def build_parser():
                     help="print every packet in and out; the --capture file keeps them either way")
     ap.add_argument("--comm-id", default=None,
                     help="local_communication_id to join, hex. Omit to join the only unknown one")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--ifname", default="ldnclient")
     ap.add_argument("--channels", default="1,6,11,36,40,44,48")
@@ -356,6 +333,7 @@ def build_parser():
                          "(dest 0x0003), which is the default here")
     ap.add_argument("--clone-requests", type=int, default=10,
                     help="answered clock requests of our own before the participate (measured 10)")
+    trade_back.add_arguments(ap)
     return ap
 
 
@@ -369,15 +347,47 @@ def pick(nets, want):
     return None
 
 
+def setup_trade_back(args):
+    """--trade-back: `args.offers`, prepared, become the queue `answer` schedules rounds from."""
+    if getattr(args, "trade_back", False):
+        args.queued = list(args.offers)
+        args.rounds = trade_back.Rounds([Path(p).read_bytes() for p in args.queued])
+
+
+def answer(args, state, msg, send):
+    """answer_console, with --trade-back's rounds choosing the record the next trade offers. The
+    console's last offer is its trade's record, returned byte for byte, never under a fresh PID
+    (pokeldn.trade_back)."""
+    rounds = getattr(args, "rounds", None)
+    r = state.get("round", 0)
+    if rounds is not None and msg["kind"] == pb7.RESULT_MESSAGE + 2 * r and state.get("committed"):
+        rounds.done(state.get("peer_offer"))
+        if rounds.finished:
+            args.offers = args.offers[:r + 1]
+            return answer_console(args, state, msg, send)
+        if rounds.returning:
+            path = Path(args.queued[0]).with_name(f"lgpe-back-{os.getpid()}-{rounds.round}.pb7")
+            path.write_bytes(rounds.current())
+            path = str(path)
+        else:
+            path = args.queued[min(rounds.round // 2, len(args.queued) - 1)]
+        args.offers = args.offers[:r + 1] + [path]
+    answer_console(args, state, msg, send)
+
+
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    trade_back.check(ap, args, "--offer", "--scan-only")
+    if args.trade_back and "echo" in args.offer:
+        ap.error("--trade-back needs Pokemon files for --offer")
     args.offers = [path if path == "echo" else
                    pokemon_service.prepare_file("lgpe", path, fresh=args.fresh_pid)
                    for path in args.offer or ()]
     args.offer = args.offers[0] if args.offers else None
     show_offer(args.offer)
     args.fresh_pid = False
+    setup_trade_back(args)
     if args.over_ip:
         if not args.our_mac:
             ap.error("--over-ip needs --our-mac")
@@ -839,7 +849,7 @@ def _run(args, net, keys, facts, opener):
                                             write_file(f"{args.capture}.payload{n}.bin", r["payload"])
                                         msg = pb7.parse_message(r["payload"])
                                         if msg:
-                                            answer_console(args, state, msg, to_host_bitmap)
+                                            answer(args, state, msg, to_host_bitmap)
                                     else:
                                         if args.print_packets:
                                             print(f"[lg] reliable: acked, expects "

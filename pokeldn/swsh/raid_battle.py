@@ -15,7 +15,11 @@ FRAMEWORK = 40000
 PING, PING_REPLY, PING_SYNCED = 1, 2, 3
 
 # The command types read from a won emulated raid: 2 asks for the guest's action, 0x21 ends.
-ACTION_REQUEST, BATTLE_END = 0x02, 0x21
+ACTION_REQUEST, FAINTED, BATTLE_END = 0x02, 0x04, 0x21
+# A Max Lair guest's action: entry 1 `01` then 0xff, entry 2 the move, the rest 0xff. Its answer to a
+# type 4 carrying `01 00 ff ff ff ff`, after its Pokemon fainted, is that action with entry 2 zero.
+LAIR_ACTION = bytes.fromhex("01ffffffffffffff") + bytes(8) + b"\xff" * 72
+FAINTED_ASK = bytes.fromhex("0100ffffffff")
 
 # The emulated guest's action, both turns the same: 11 eight-byte entries (docs/swsh_raid.md).
 ACTION = bytes.fromhex(
@@ -27,12 +31,13 @@ ACTION = bytes.fromhex(
 SINGLE_TARGET = 8
 
 
-def action(move, target=SINGLE_TARGET):
-    """-> the 88-byte action using `move` (a move id) against `target`."""
+def action(move, target=SINGLE_TARGET, template=ACTION):
+    """-> the 88-byte action using `move` (a move id) against `target`; `template` LAIR_ACTION in a
+    Dynamax Adventure."""
     if not 0 < move < 1 << 11:
         raise ValueError(f"move id {move} out of range")
     entry = struct.pack("<I", move << 13 | target << 8 | 0xC1).ljust(8, b"\0")
-    return ACTION[:8] + entry + ACTION[16:]
+    return template[:8] + entry + template[16:]
 
 
 def sync(which):
@@ -139,6 +144,10 @@ class Guest:
                 out.append((0, battle_message(2, self.slot, counter,
                                               struct.pack("<HHHH", serial, kind, len(self.action), x)
                                               + self.action)))
+            elif kind == FAINTED and data[8:14] == FAINTED_ASK:
+                out.append((0, battle_message(2, self.slot, counter,
+                                              struct.pack("<HHHH", serial, kind, len(LAIR_ACTION), x)
+                                              + LAIR_ACTION)))
             elif kind == BATTLE_END:
                 out.append((0, battle_message(1, self.slot, 0,
                                               struct.pack("<HHHH", 0, 0x1e, 0, 0x2f))))
@@ -158,47 +167,58 @@ def server_record(station, client_id, version=SERVER_VERSION):
 
 
 class Master:
-    """The station that publishes the framework objects, here a battle client: object 0 is the
-    console's record, so the console serves and we answer as client `slot`. The steps follow the
-    recorded host's framework; the battle itself is answered by a `Guest`."""
+    """The station that publishes the framework objects, here a battle client: object k is console
+    k's record, so `consoles[0]` serves and we answer as the last client. The steps follow the
+    recorded host's framework; the battle itself is answered by a `Guest`. `receive` returns
+    (port, payload, destination), destination None for every console."""
 
-    def __init__(self, station, console, slot=1, console_slot=0, clock=None, log=print,
-                 action=ACTION):
-        self.station, self.console, self.slot, self.console_slot = station, console, slot, console_slot
+    def __init__(self, station, consoles, clock=None, log=print, action=ACTION):
+        self.station, self.consoles = station, list(consoles)
+        self.server, self.slot = self.consoles[0], len(self.consoles)
         self.log = log
         self.t_clock = clock or (lambda: 0x680)
-        self.guest = Guest(station, slot, clock=self.t_clock, action=action)
+        self.guest = Guest(station, self.slot, clock=self.t_clock, action=action)
         self.guest.started = self.guest.seat_sent = self.guest.ping_sent = True
+        self.replied = set()              # consoles that answered our ping
         self.synced = False
         self.step = 0                     # the anonymous base-20000 counter we published
         self.ours = None                  # our station's last base-20000 body
+        self.mirrors = {}                 # console -> its last base-20000 body
         self.mirrored = {bytes(4), bytes.fromhex("000018fc")}
         self.empty_sent = False
 
     def start(self):
-        return [(0, sync(PING))]
+        return [(0, sync(PING), None)]
 
     def _ours(self, body):
         self.ours = body
-        return (1, framework(BATTLE, self.station, self.t_clock(), body))
+        return (1, framework(BATTLE, self.station, self.t_clock(), body), None)
 
     def _anon(self, step):
         self.step = step
-        return (1, framework(BATTLE, None, self.t_clock(), struct.pack("<H", step)))
+        return (1, framework(BATTLE, None, self.t_clock(), struct.pack("<H", step)), None)
 
-    def receive(self, port, payload):
+    def _setup(self):
+        c = self.t_clock()
+        out = [self._anon(0), (1, framework(SEAT, self.station, c, bytes(4)), None),
+               self._ours(bytes.fromhex("000018fc"))]
+        for k, console in enumerate(self.consoles):
+            out.append((1, framework(k, None, c, server_record(console, k)), None))
+        out += [self._ours(bytes.fromhex("00000100")),
+                (1, framework(self.slot, None, c, server_record(self.station, self.slot)), None),
+                (0, seat(self.station, self.slot, SERVER_VERSION), None)]
+        self.log(f"[raid] -> framework objects 0..{self.slot - 1} (the consoles) and {self.slot} (us)")
+        return out
+
+    def receive(self, port, payload, src=None):
+        src = self.server if src is None else src
         out = []
-        if payload == sync(PING_REPLY) and not self.synced:
-            self.synced = True
-            c = self.t_clock()
-            out += [(0, sync(PING_SYNCED)), self._anon(0),
-                    (1, framework(SEAT, self.station, c, bytes(4))),
-                    self._ours(bytes.fromhex("000018fc")),
-                    (1, framework(0, None, c, server_record(self.console, self.console_slot))),
-                    self._ours(bytes.fromhex("00000100")),
-                    (1, framework(1, None, c, server_record(self.station, self.slot))),
-                    (0, seat(self.station, self.slot, SERVER_VERSION))]
-            self.log("[raid] -> pingSynced, framework objects 0 (the console) and 1 (us)")
+        if payload == sync(PING_REPLY) and src not in self.replied:
+            self.replied.add(src)
+            out.append((0, sync(PING_SYNCED), src))
+            if not self.synced and self.replied >= set(self.consoles):
+                self.synced = True
+                out += self._setup()
             return out
         fw = parse_framework(payload)
         if fw is not None:
@@ -207,18 +227,20 @@ class Master:
             # The server publishes object 8 (24 bytes, a seed); a client answers EmptyCommand.
             if fw["base"] == 8 and fw["station"] is None and not self.empty_sent:
                 self.empty_sent = True
-                out.append((0, message(SEAT, field(1, b""))))
-            # The recorded host's barrier: once the peer mirrors our body, the next step.
-            if (fw["station"] == self.console and fw["base"] == BATTLE and fw["body"] != self.ours
-                    and fw["body"] not in self.mirrored and len(fw["body"]) == 4):
-                self.mirrored.add(fw["body"])
-                out.append((1, framework(BATTLE, self.station, self.t_clock(), fw["body"])))
-            if fw["station"] == self.console and fw["base"] == BATTLE and fw["body"] == self.ours:
-                nxt = {"00000100": lambda: [self._anon(1), self._ours(bytes.fromhex("01000100"))],
-                       "01000100": lambda: [self._ours(bytes.fromhex("01000200"))],
-                       "01000200": lambda: [self._anon(2), self._ours(bytes.fromhex("02000200"))]}
-                out += nxt.get(self.ours.hex(), list)()
+                out.append((0, message(SEAT, field(1, b"")), src))
+            if fw["station"] in self.consoles and fw["base"] == BATTLE and len(fw["body"]) == 4:
+                body = fw["body"]
+                self.mirrors[fw["station"]] = body
+                if body != self.ours and body not in self.mirrored:
+                    self.mirrored.add(body)
+                    out.append((1, framework(BATTLE, self.station, self.t_clock(), body), None))
+                # The recorded host's barrier: once every console mirrors our body, the next step.
+                if all(self.mirrors.get(c) == self.ours for c in self.consoles):
+                    nxt = {"00000100": lambda: [self._anon(1), self._ours(bytes.fromhex("01000100"))],
+                           "01000100": lambda: [self._ours(bytes.fromhex("01000200"))],
+                           "01000200": lambda: [self._anon(2), self._ours(bytes.fromhex("02000200"))]}
+                    out += nxt.get(self.ours.hex(), list)()
             return out
         if parse_battle(payload) is None and payload not in (sync(PING), sync(PING_SYNCED)):
             self.log(f"[raid] <- {port} {payload.hex()[:80]}")
-        return out + self.guest.receive(port, payload)
+        return out + [(p, x, src) for p, x in self.guest.receive(port, payload)]

@@ -13,7 +13,6 @@ The build is a ROM, made by scratchpad/legacy_linux/build_decomp.sh; both sha1s 
 import argparse
 import collections
 import os
-import re
 import subprocess
 import sys
 

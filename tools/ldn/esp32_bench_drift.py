@@ -5,7 +5,7 @@ fold period (in ppm off 100 TU on the station's clock) at which the slow frames 
 DONE_FILE is esp32_pair_bench.py --done-out (the station), DONE_FILE.ap the access point's TX-dones.
 A cycle on the station's own clock peaks at 0 ppm; one on the access point's peaks at the access
 point's rate minus the station's."""
-import argparse, collections, math
+import argparse, collections
 ap = argparse.ArgumentParser(); ap.add_argument("done"); ap.add_argument("--slow", type=int, default=3000)
 ap.add_argument("--period", type=int, default=102_400); a = ap.parse_args()
 

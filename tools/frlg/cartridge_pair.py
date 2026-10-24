@@ -10,7 +10,6 @@ the delta at the target; pool pointers add more points. Sites pair by code offse
 index drifts at the first word one side lacks. docs/frlg_leafgreen.md.
 """
 import argparse
-import collections
 import os
 import sys
 

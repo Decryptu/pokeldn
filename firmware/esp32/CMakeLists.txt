@@ -1,4 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
+# vendor/zstd: the decoder the portable gift host reads a console's compressed datagrams with.
+set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../../vendor/zstd")
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 idf_build_set_property(MINIMAL_BUILD ON)
+file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/version.txt" POKELDN_FIRMWARE_VERSION LIMIT_COUNT 1)
 project(pokeldn_radio)

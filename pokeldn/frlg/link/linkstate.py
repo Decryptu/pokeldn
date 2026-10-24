@@ -159,6 +159,3 @@ class LinkState:
     def key_of(words):
         return words[1] & 0xFF
 
-    @staticmethod
-    def nonce_of(words):
-        return (words[1] >> 8) & 0xFF

@@ -26,51 +26,28 @@ import trio
 from pokeldn.ldn import api as ldn, radios
 
 from pokeldn.host_support import open_output
-from pokeldn import pokemon as pokemon_service
+from pokeldn import pokemon as pokemon_service, trade_back
 from pokeldn import za
 from pokeldn.za import host as za_host, streams
 from pokeldn.za.host import (MSG_CANCEL, OFFER_PICK, OFFER_PREVIEW,  # noqa: F401
                              build_command, command_round)
 from pokeldn.ldn import crypto, host_pia, ldn_mitm, pia_connect, reliable
-from pokeldn.ldn.transport import board_radio, find_ap_phy
+from pokeldn.ldn.transport import board_radio, find_ap_phy, cleanup_stale_vifs as cleanup_stale
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import show_done
 from pokeldn.app import screen
 
 # Ours until the host names one in the footer of its first mesh-addressed packet.
 OUR_VAR = 0xC493
-STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
 PROTOCOL_NAMES = {
     pia_connect.PROTO_NET: "net", pia_connect.PROTO_RTT: "rtt",
     pia_connect.PROTO_RELIABLE: "reliable", pia_connect.PROTO_SESSION: "session",
 }
 
 
-def cleanup_stale():
-    if board_radio():
-        return
-    import subprocess
-    for name in STALE_VIFS:
-        subprocess.run(["iw", "dev", name, "del"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
 def make_socket(ifname, our_ip=None):
     from pokeldn.ldn import userspace_ip  # no kernel interface on the ESP32
-    if our_ip is None and (user := userspace_ip.udp_socket(ifname, za.PIA_PORT)) is not None:
-        user.setblocking(False)
-        return user
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    if our_ip is None:
-        try:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, ifname.encode())
-        except (PermissionError, OSError):
-            pass
-    s.bind((our_ip or "", za.PIA_PORT))
-    s.setblocking(False)
-    return s
+    return userspace_ip.pia_socket(ifname, za.PIA_PORT, our_ip)
 
 
 def describe(net):
@@ -147,6 +124,8 @@ class GameStreams:
         self.offers = [Path(p).read_bytes() for p in ([paths] if isinstance(paths, str) else paths)]
         self.offer = self.preview = None
         self.received = None          # the console's pick, the record a trade delivers
+        # --trade-back offers the console's pick back as it came (pokeldn/trade_back.py)
+        self.rounds = trade_back.Rounds(self.offers) if getattr(args, "trade_back", False) else None
         if self.offers:
             self._load_offer(self.offers[0], renew=getattr(args, "fresh_pid", False))
             screen.offer("za", self.offer)
@@ -164,7 +143,8 @@ class GameStreams:
 
     @property
     def queue_done(self):
-        return self.traded_at is not None and self.trades >= len(self.offers)
+        queued = len(self.offers) * (2 if self.rounds else 1)
+        return self.traded_at is not None and (self.rounds.round if self.rounds else self.trades) >= queued
 
     def _emit(self, proto, seq, flags_a, inner):
         link = self.links[proto]
@@ -245,6 +225,9 @@ class GameStreams:
                 show_done()
                 screen.received("za", self.received)
                 self.arriving = True
+                if self.rounds:
+                    self.rounds.done(self.received)
+                    self.received = None
                 print(f"[za] trade_complete at {elapsed:.2f}s (trade {self.trades})")
                 self._next_trade(elapsed)
 
@@ -258,7 +241,14 @@ class GameStreams:
         previewed, as a station does when its cursor moves (docs/za.md)."""
         self.round = 0
         self.picked = False
-        if self.trades < len(self.offers):
+        if self.rounds:
+            # a returned record is the console's bytes: never under a new PID
+            renew = (not self.rounds.returning and self.rounds.round // 2 >= len(self.offers)
+                     and getattr(self.args, "renew_offer", False))
+            self._load_offer(self.rounds.current(), renew=renew)
+            screen.offer("za", self.offer)
+            self.scheduled.append((elapsed + za_host.PREVIEW_DELAY, self.preview))
+        elif self.trades < len(self.offers):
             self._load_offer(self.offers[self.trades])
             screen.offer("za", self.offer)
             self.scheduled.append((elapsed + za_host.PREVIEW_DELAY, self.preview))
@@ -329,7 +319,7 @@ def build_parser():
                     help="print every packet in and out; the --capture file keeps them either way")
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--ifname", default="ldnclient")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--channels", default="1,6,11")
     ap.add_argument("--dwell", type=float, default=1.0, help="seconds per channel in a scan")
     ap.add_argument("--seconds", type=float, default=600.0, help="the whole run")
@@ -396,6 +386,7 @@ def build_parser():
     ap.add_argument("--trade-offer", action="append", default=[],
                     help="a 354-byte offer message to send once the streams are open. Repeatable, "
                          "one per trade in the seat; the last serves every later trade")
+    trade_back.add_arguments(ap)
     ap.add_argument("--selection-delay", type=float, default=0.5,
                     help="seconds after the identity before the selection record starts; a "
                          "reference joiner waits about 0.46 s")
@@ -693,38 +684,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     return game is not None and game.traded_at is not None
 
 
-def ip_scan_once(our_ip, host_ip, timeout):
-    """-> the emulated host's NetworkInfo, or None. The bridge drops a scan from the host's own
-    address, so it leaves from ours."""
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as us:
-        us.settimeout(timeout)
-        us.bind((our_ip, 0))
-        try:
-            us.sendto(ldn_mitm.build(ldn_mitm.SCAN), (host_ip, ldn_mitm.PORT))
-            while True:
-                data, _ = us.recvfrom(4096)
-                kind, info = ldn_mitm.parse(data)
-                if kind == ldn_mitm.SCAN_RESP:
-                    return info
-        except (socket.timeout, OSError, ValueError):
-            return None
-
-
-def ip_associate(our_ip, host_ip, our_mac, name, timeout, version=0):
-    """-> (NetworkInfo, held TCP socket)."""
-    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    tcp.settimeout(timeout)
-    tcp.bind((our_ip, 0))
-    tcp.connect((host_ip, ldn_mitm.PORT))
-    tcp.sendall(ldn_mitm.build(ldn_mitm.CONNECT,
-                               ldn_mitm.build_node_info(our_ip, our_mac, name.encode(),
-                                                        version=version)))
-    kind, synced = ldn_mitm.parse(tcp.recv(8192))
-    if kind != ldn_mitm.SYNC_NETWORK:
-        tcp.close()
-        raise RuntimeError(f"the host answered our connect with type {kind}, not SyncNetwork")
-    tcp.settimeout(None)
-    return synced, tcp
+ip_scan_once, ip_associate = ldn_mitm.scan_once, ldn_mitm.associate
 
 
 def mark_seat(path, state, **fields):
@@ -822,6 +782,7 @@ def main_ip(args):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    trade_back.check(ap, args, "--trade-offer", "--scan-only", "--net-probe", "--no-answer")
     # Every queued record gets its own PID here; a later trade on the last record renews it again.
     args.trade_offer = [pokemon_service.prepare_file("za", path, fresh=args.fresh_pid)
                         for path in args.trade_offer]

@@ -8,6 +8,9 @@ on:
       release_run:
         description: "The id of a Release workflow run whose archives to test"
         required: true
+      from_run:
+        description: "A Release run whose older archives are installed first; without it the from cases skip"
+        required: false
 
 permissions:
   contents: read
@@ -26,7 +29,66 @@ jobs:
           - name: Program Files, administrator path
             folder: C:\Program Files
             flags: --busy --admin
+          # P: is a second NTFS volume the job attaches; the data folder stays on C:.
+          - name: another drive's root
+            folder: P:\.   # a trailing backslash would escape the closing quote
+            flags: --busy
+            drive: P
+          - name: a folder on another drive
+            folder: P:\Games
+            flags: --busy
+            drive: P
+          # A USB stick's file systems: no ACLs, and FAT keeps no hard links or owners.
+          - name: an exFAT drive's root
+            folder: P:\.
+            flags: --busy
+            drive: P
+            fs: exfat
+          - name: a FAT32 drive's root
+            folder: P:\.
+            flags: --busy
+            drive: P
+            fs: fat32
+          # subst maps a letter to a folder per logon session, as a mapped network drive does.
+          - name: a subst drive
+            folder: S:\Games
+            flags: --busy
+            subst: S
+          # A standard user (no administrator token) runs the install and the update.
+          - name: another drive's root, standard user
+            folder: P:\.
+            flags: --busy
+            drive: P
+            user: true
+          - name: a folder on another drive, standard user
+            folder: P:\Games
+            flags: --busy
+            drive: P
+            user: true
+          # A network share mapped to a letter, the share on this machine.
+          - name: a mapped network drive
+            folder: M:\Games
+            flags: --busy
+            share: M
+          # The older release's own update code installs the new one, as a player's update does.
+          - name: from the older release, another drive's root
+            folder: P:\.
+            flags: --busy --from old\pokeldn-windows-x64.zip
+            drive: P
+            from: true
+          - name: from the older release, a folder on another drive
+            folder: P:\Games
+            flags: --busy --from old\pokeldn-windows-x64.zip
+            drive: P
+            from: true
+          - name: from the older release, another drive's root, standard user
+            folder: P:\.
+            flags: --busy --from old\pokeldn-windows-x64.zip
+            drive: P
+            user: true
+            from: true
     name: windows (${{ matrix.name }})
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -40,7 +102,65 @@ jobs:
           name: pokeldn-windows-x64.zip
           run-id: ${{ inputs.release_run }}
           github-token: ${{ github.token }}
-      - run: python scripts/check_update.py pokeldn-windows-x64.zip "${{ matrix.folder }}" ${{ matrix.flags }}
+      - if: matrix.from
+        uses: actions/download-artifact@v8
+        with:
+          name: pokeldn-windows-x64.zip
+          path: old
+          run-id: ${{ inputs.from_run }}
+          github-token: ${{ github.token }}
+      - if: matrix.share
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force C:\pokeldn-share | Out-Null
+          New-SmbShare -Name pokeldn -Path C:\pokeldn-share -FullAccess Everyone | Out-Null
+          net use ${{ matrix.share }}: \\localhost\pokeldn
+          New-Item -ItemType Directory -Force "${{ matrix.folder }}"
+      - if: matrix.drive
+        shell: pwsh
+        run: |
+          "create vdisk file=C:\pokeldn-drive.vhdx maximum=2048 type=expandable`nattach vdisk`ncreate partition primary`nformat fs=${{ matrix.fs || 'ntfs' }} quick`nassign letter=${{ matrix.drive }}" | Set-Content drive.txt
+          diskpart /s drive.txt
+          New-Item -ItemType Directory -Force "${{ matrix.folder }}"
+      - if: matrix.subst
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force C:\pokeldn-subst
+          subst ${{ matrix.subst }}: C:\pokeldn-subst
+          New-Item -ItemType Directory -Force "${{ matrix.folder }}"
+      - if: "!matrix.user && (!matrix.from || inputs.from_run)"
+        run: python scripts/check_update.py pokeldn-windows-x64.zip "${{ matrix.folder }}" ${{ matrix.flags }}
+      - if: matrix.user && (!matrix.from || inputs.from_run)
+        name: check_update.py as a standard user
+        shell: pwsh
+        run: |
+          # net user asks for a yes before taking a password longer than 14 characters.
+          $password = "Aa1!" + [guid]::NewGuid().ToString("N").Substring(0, 10)
+          net user pokeldn-check $password /add
+          if ($LASTEXITCODE) { exit 1 }
+          $credential = [pscredential]::new("pokeldn-check", (ConvertTo-SecureString $password -AsPlainText -Force))
+          $python = (Get-Command python).Source
+          # Start-Process passes this job's environment on: point it at the user's own profile.
+          $first = Start-Process cmd -ArgumentList "/c", "exit" -Credential $credential -LoadUserProfile -PassThru
+          $first | Wait-Process -Timeout 60
+          "profile created, exit $($first.ExitCode)"
+          $profile = (Get-CimInstance Win32_UserProfile | Where-Object { $_.LocalPath -like "*\pokeldn-check*" }).LocalPath
+          $env:USERPROFILE = $profile
+          $env:HOMEDRIVE, $env:HOMEPATH = $profile.Substring(0, 2), $profile.Substring(2)
+          $env:APPDATA = "$profile\AppData\Roaming"
+          $env:LOCALAPPDATA = "$profile\AppData\Local"
+          $env:TEMP = $env:TMP = "$profile\AppData\Local\Temp"
+          New-Item -ItemType Directory -Force $env:APPDATA, $env:TEMP | Out-Null
+          Remove-Item Env:HOME -ErrorAction Ignore
+          "profile $profile"
+          $run = Start-Process $python -Credential $credential -LoadUserProfile -PassThru `
+            -WorkingDirectory $env:GITHUB_WORKSPACE -RedirectStandardOutput out.txt -RedirectStandardError err.txt `
+            -ArgumentList "scripts\check_update.py", "pokeldn-windows-x64.zip", "`"${{ matrix.folder }}`"", "${{ matrix.flags }}"
+          # Not Start-Process -Wait: it also waits for the relaunched app, which never quits.
+          $run | Wait-Process -Timeout 900 -ErrorAction SilentlyContinue
+          Get-Content out.txt, err.txt -ErrorAction SilentlyContinue
+          if (-not $run.HasExited) { "check_update.py still running after 900 s"; exit 1 }
+          exit $run.ExitCode
 
   linux:
     runs-on: ubuntu-22.04

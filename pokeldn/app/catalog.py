@@ -6,8 +6,10 @@ from pokeldn.app import preview
 from pokeldn.app.i18n import t as tr
 from dataclasses import dataclass, replace
 
+from pokeldn.sv.circle import BP_MAX
 from pokeldn.sv.raid import REWARD_ROWS
 from pokeldn.swsh.raid import REWARD_SLOTS as SWSH_REWARD_ROWS
+from pokeldn.swsh import lair as swsh_lair
 
 
 @dataclass(frozen=True)
@@ -16,8 +18,8 @@ class Field:
                                   # raidpartners's tuple is its picks' flag then its progress's
     label: str
     kind: str = "text"            # text number choice switch pokemon file builder multi linkcode code
-                                  # (eight digits) raidseed rewards raidevent raidden raidpartners
-                                  # raideventboss (one value per flag, colon-separated), or a
+                                  # (eight digits) raidseed lairseed rewards raidevent raidden raidpartners
+                                  # raideventboss (one value per flag, colon-separated) encounter, or a
                                   # PKHeX name list: species move item ball
     help: str = ""
     default: str | bool = ""
@@ -41,6 +43,10 @@ class Field:
     events: bool = False          # a pokemon field picked among the game's Mystery Gift Pokemon, not built
     your_ot: bool = False         # a switch for a gift that names its receiver: off and disabled while
                                   # the one chosen has its own trainer (command.locked)
+    length: int = 8               # a code field's digits
+    remembered: bool = True       # False: the value starts empty at every launch, as a Union
+                                  # Circle's Link Code, new each time
+    bounds: tuple[int, int] = ()  # a number field's lowest and highest value
 
     identity: str = ""         # stable key for a translated positional field
 
@@ -59,7 +65,8 @@ class Tool:
     name: str
     script: str
     summary: str
-    steps: tuple[str, ...]
+    steps: tuple[str | tuple[str, tuple[str, str]], ...]   # a (step, (flag, value)) shows only while
+                                                            # that field has that value
     fields: tuple[Field, ...] = ()
     fixed: tuple[str, ...] = ()
     doc: str = ""
@@ -80,11 +87,23 @@ VERSIONS = (("firered", tr('catalog.firered_7d9d1b', 'FireRed')), ("leafgreen", 
 LANGUAGES = (("english", tr('catalog.english_ba118b', 'English')), ("french", tr('catalog.french_745819', 'French')), ("german", tr('catalog.german_a659b6', 'German')),
              ("italian", tr('catalog.italian_fe1d9c', 'Italian')), ("spanish", tr('catalog.spanish_341105', 'Spanish')), ("japanese", tr('catalog.japanese_be4ee9', 'Japanese')))
 CHANNELS = (("1", "1"), ("6", "6"), ("11", "11"))
+
+
+def _swsh_lair_legendaries():
+    import json
+    from pathlib import Path
+    names = json.loads((Path(swsh_lair.__file__).with_name("data") / "species.json").read_text())["species_names"]
+    return tuple((str(n), names.get(str(n), f"#{n}")) for n in swsh_lair.legendaries())
+
+
+SWSH_LAIR_LEGENDARIES = _swsh_lair_legendaries()
 FRESH_PID = Field("--fresh-pid", tr('catalog.new_pid_each_run_a6f96e', 'New PID each run'), "switch", default=True, hidden=True,
                   help=tr('catalog.offer_the_pokemon_under_a_new_pid_and_encryption_consta_4e58db', 'Offer the Pokemon under a new PID and encryption constant, so a save that already received it takes it again. Turn it off for a file whose PID must stay, such as an event Pokemon.'))
 FOR_RECEIVER = Field("--for-receiver", tr('catalog.made_for_the_receiving_player_1dfdde', 'Made for the receiving player'), "switch", default=True, hidden=True,
                      your_ot=True,
                      help=tr('catalog.a_gift_that_gave_its_receiver_s_own_trainer_is_made_aga_3ec345', "A gift that gave its receiver's own trainer is made again during the trade for the console's save, read from the Pokemon the console offers or from its session data. Off, or when neither names the save, it goes with your trainer from Settings."))
+TRADE_BACK = Field("--trade-back", tr('catalog.send_it_back_f9966f', 'Send it back'), "switch",
+                   help=tr('catalog.for_a_pokemon_that_evolves_by_trade_after_each_trade_tra_6895dc', "For a Pokemon that evolves by trade: after each trade, trade again and get back the Pokemon the console just sent, so it evolves there. Offer the first trade's Pokemon back in return. Needs a Pokemon to offer."))
 GIFT_OFFER_BACK = (tr('catalog.offer_a_pokemon_you_caught_in_this_save_and_confirm_the_abaf36', 'Offer a Pokemon you caught in this save and confirm. The event Pokemon comes over; yours goes to Received. Trade again for each queued gift, then back out after the last trade.'))
 CHANNEL_HELP = tr('catalog.the_wireless_channel_of_the_network_pokeldn_hosts_101d44', 'The wireless channel of the network pokeldn hosts.')
 CODE_HELP = tr('catalog.the_same_code_the_player_enters_on_the_console_c91cb8', 'The same code the player enters on the console.')
@@ -136,7 +155,7 @@ def without(fixed: tuple[str, ...], flag: str) -> tuple[str, ...]:
 def online(host: Tool, steps: tuple[str, ...], code: Field) -> Tool:
     """The host tool trading a partner far away instead of a built offer (docs/online.md). `code`
     is the room both players enter, the console's own link code where the game has one."""
-    kept = tuple(f for f in host.fields if f.kind != "pokemon" and f is not FRESH_PID
+    kept = tuple(f for f in host.fields if f.kind != "pokemon" and f not in (FRESH_PID, TRADE_BACK)
                  and f.flag not in ("--seconds", code.flag))
     return Tool(host.key.replace("-host", "-online"), tr('catalog.trade_online_857839', 'Trade (Online)'), host.script,
                 tr('catalog.trade_with_a_player_far_away_each_of_you_hosts_your_own_a2baeb', 'Trade with a player far away: each of you hosts your own console, and the two trade through the internet.'),
@@ -159,7 +178,7 @@ FRLG = Game("frlg", tr('catalog.firered_leafgreen_2b757f', 'FireRed & LeafGreen'
           tr('catalog.choose_the_pokemon_to_trade_and_confirm_f140d0', 'Choose the Pokemon to trade and confirm.'),
           tr('catalog.with_several_queued_trade_again_after_each_save_the_hos_f49450', 'With several queued, trade again after each save; the host offers the next one.'),
           tr('catalog.back_on_the_trade_menu_after_the_last_save_wait_for_the_5e2aa1', "Back on the trade menu after the last save, wait for the host's prompt, then Cancel and Yes.")),
-         (queued(count="--trades"),
+         (queued(count="--trades"), TRADE_BACK,
           Field("--version", tr('catalog.version_dd1679', 'Version'), "choice", default="firered", choices=VERSIONS, group=tr('catalog.console_29a408', 'Console'),
                 help=tr('catalog.the_game_pokeldn_s_own_trainer_reports_on_the_link_and__ced820', "The game pokeldn's own trainer reports on the link, and the one the Pokemon is built for.")),
           Field("--language", tr('catalog.trainer_language_bca3f4', 'Trainer language'), "choice", default="english", choices=LANGUAGES, hidden=True,
@@ -174,7 +193,7 @@ FRLG = Game("frlg", tr('catalog.firered_leafgreen_2b757f', 'FireRed & LeafGreen'
           tr('catalog.become_leader_6fc7ff', '{value0}, Become Leader.', value0=FRLG_PATH),
           tr('catalog.accept_pokeldn_when_it_appears_then_choose_and_confirm_785998', 'Accept POKELDN when it appears, then choose and confirm.'),
           tr('catalog.with_several_queued_trade_again_after_each_save_the_joi_54215e', 'With several queued, trade again after each save; the joiner offers the next one.')),
-         (queued(count="--trades"),),
+         (queued(count="--trades"), TRADE_BACK),
          fixed=("--live", "--phy", "auto", "--slot", "0", "--ot", "{ot}", "--id", "{tid}:{sid}",
                 "--out", "{received}/frlg-{stamp}.pk3"),
          doc="frlg_link.md"),
@@ -191,7 +210,9 @@ FRLG = Game("frlg", tr('catalog.firered_leafgreen_2b757f', 'FireRed & LeafGreen'
           Field("--gift-file", tr('catalog.gift_1a596a', 'Gift'), "builder"),
           Field("--language", tr('catalog.trainer_language_bca3f4', 'Trainer language'), "choice", default="english", choices=LANGUAGES, hidden=True,
                 help=tr('catalog.the_language_pokeldn_s_own_trainer_reports_on_the_link_5ac75b', "The language pokeldn's own trainer reports on the link.")),
-          Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="11", choices=CHANNELS, help=CHANNEL_HELP, hidden=True)),
+          Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="11", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
+          Field("--save-to-board", tr('catalog.keep_it_on_the_board_a36969', 'Keep it on the board'), "switch",
+                help=tr('catalog.start_saves_the_gift_on_the_board_and_stops_unplugged_a_1d7482', 'Start saves the gift on the board and stops. Unplugged and powered from any USB charger, the board then hosts it for every FireRed and LeafGreen that joins, with no computer. It stops when the app opens it again.'))),
          fixed=("--live", "--ot", "{ot}", "--id", "{tid}:{sid}", "--dump-file",
                 "{received}/frlg-dump-{stamp}.bin"), doc="frlg_gift.md"),
 ))
@@ -231,7 +252,7 @@ LGPE = Game("lgpe", tr('catalog.let_s_go_pikachu_eevee_188f2e', "Let's Go Pikach
          (queued("--offer", more="--next-offer"),
           Field("--code", tr('catalog.link_code_0b8f86', 'Link code'), "linkcode", required=True,
                 help=tr('catalog.the_three_pokemon_the_player_picks_on_the_console_in_th_174ead', 'The three Pokemon the player picks on the console, in the same order.')),
-          FRESH_PID,
+          FRESH_PID, TRADE_BACK,
           host_seconds("1200", tr('catalog.a_trade_under_way_when_it_runs_out_is_finished_first_5f61a0', 'A trade under way when it runs out is finished first.'))),
          fixed=("--first", "echo", "--trainer-name", "{ot}", "--our-trainer", "{tid}:{sid}",
                 "--received", "{received}/lgpe-{stamp}.pb7"), doc="lgpe.md"),
@@ -239,7 +260,7 @@ LGPE = Game("lgpe", tr('catalog.let_s_go_pikachu_eevee_188f2e', "Let's Go Pikach
          tr('catalog.join_the_console_s_trade_search_2e2f10', "Join the console's trade search."),
          (tr('catalog.start_the_joiner_it_scans_for_up_to_five_minutes_9d2ad3', 'Start the joiner: it scans for up to five minutes.'), LGPE_STEPS,
           tr('catalog.offer_and_confirm_once_pokeldn_shows_queued_pokemon_fol_dec462', 'Offer and confirm once POKELDN shows. Queued Pokemon follow, one per trade.')),
-         (queued("--offer"), FRESH_PID),
+         (queued("--offer"), FRESH_PID, TRADE_BACK),
          fixed=("--channels", "1,6,11", "--dwell", "2.5", "--connect", "--connect-seconds", "1800",
                 "--ack-peer-clock", "--ack-re-announce", "--facts", "lgpe_net_facts.json",
                 "--trainer-name", "{ot}", "--our-trainer", "{tid}:{sid}",
@@ -253,7 +274,7 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           tr('catalog.y_comm_link_trade_local_communication_press_a_on_both_m_19fa15', 'Y-Comm, Link Trade, local communication; press A on both messages, then wait in the overworld.'),
           tr('catalog.choose_a_pokemon_and_confirm_when_pokeldn_appears_c5c28c', 'Choose a Pokemon and confirm when POKELDN appears.'),
           tr('catalog.queued_pokemon_follow_one_per_trade_pick_again_from_the_06fa29', 'Queued Pokemon follow, one per trade: pick again from the box.')),
-         (queued("--offer-file"), FRESH_PID,
+         (queued("--offer-file"), FRESH_PID, TRADE_BACK,
           Field("--code", tr('catalog.link_code_cc04a1', 'Link Code'), "code", help=tr('catalog.eight_digits_empty_for_a_plain_trade_adde63', 'Eight digits. Empty for a plain trade.')),
           Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="6", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
           host_seconds("900")),
@@ -266,8 +287,8 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           tr('catalog.pokeldn_appears_on_the_trade_screen_choose_a_pokemon_an_18ef79', 'POKELDN appears on the trade screen: choose a Pokemon and confirm.'),
           tr('catalog.queued_pokemon_follow_one_per_trade_pick_again_from_the_06fa29', 'Queued Pokemon follow, one per trade: pick again from the box.')),
          (queued("--offer-file", required=False,
-                 help=tr('catalog.pick_a_species_pkhex_builds_a_legal_one_empty_offers_yo_899d7f', 'Pick a species; PKHeX builds a legal one. Empty offers your own first party Pokemon back, renamed POKELDN.')),
-          FRESH_PID,
+                 help=tr('catalog.pick_a_species_pkhex_builds_a_legal_one_empty_offers_yo_38b1cc', 'Pick a species; PKHeX builds a legal one. Empty offers your own first party Pokemon back.')),
+          FRESH_PID, TRADE_BACK,
           join_seconds("900")),
          fixed=("--preset", "trade", "--send-snapshot", "live",
                 "--snapshot-name", "{ot}", "--snapshot-tid", "{tid}", "--snapshot-sid", "{sid}",
@@ -280,7 +301,9 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           tr('catalog.accept_the_card_then_stop_the_host_e08246', 'Accept the card, then stop the host.')),
          (Field("--gift-file", tr('catalog.gift_1a596a', 'Gift'), "builder"),
           Field("--seconds", tr('catalog.time_limit_seconds_cf9965', 'Time limit (seconds)'), "number", default="300", hidden=True,
-                help=tr('catalog.how_long_the_card_is_advertised_after_start_0dba41', 'How long the card is advertised after Start.'))),
+                help=tr('catalog.how_long_the_card_is_advertised_after_start_0dba41', 'How long the card is advertised after Start.')),
+          Field("--save-to-board", tr('catalog.keep_it_on_the_board_a36969', 'Keep it on the board'), "switch",
+                help=tr('catalog.start_saves_the_gift_on_the_board_and_stops_unplugged_a_a436f2', 'Start saves the gift on the board and stops. Unplugged and powered from any USB charger, the board then hands the gift to every Sword and Shield nearby, with no computer. It stops when the app opens it again.'))),
          doc="swsh_gift.md"),
     Tool("swsh-raid-host", tr('catalog.max_raid_host_5d0e1a', 'Max Raid (Host)'), "bin/swsh_host.py",
          tr('catalog.host_a_max_raid_the_console_joins_you_choose_the_boss_i_7c2f41', 'Host a Max Raid the console joins: you choose the boss, its rewards and the Pokemon we bring.'),
@@ -301,11 +324,51 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           Field("--offer-file", tr('catalog.our_pokemon_14a66b', 'Our Pokemon'), "pokemon", required=True,
                 help=tr('catalog.the_pokemon_our_player_brings_pkhex_checks_it_is_legal_abc1cf', 'The Pokemon our player brings. PKHeX checks it is legal.')),
           Field("--raid-reward", tr('catalog.rewards_59afe4', 'Rewards'), "rewards",
-                help=tr('catalog.leave_empty_for_a_den_s_own_rewards_or_list_up_to_value_4c9d02', "Leave empty for a den's own rewards, or list up to {value0} items.", value0=SWSH_REWARD_ROWS)),
+                help=tr('catalog.leave_empty_for_the_den_s_own_rewards_or_choose_up_to_va_91e2d4', "Leave empty for the den's own rewards, or choose up to {value0} of the rewards the boss's den gives.", value0=SWSH_REWARD_ROWS)),
           Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="6", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
           host_seconds("900")),
          fixed=("--raid-console-serves", "--player-name", "{ot}", "--trainer-name", "{ot}",
                 "--trainer-tid", "{tid}", "--trainer-sid", "{sid}"), doc="swsh_raid.md"),
+    Tool("swsh-lair-raid-host", tr('catalog.dynamax_adventure_host_4c81e2', 'Dynamax Adventure (Host)'), "bin/swsh_host.py",
+         tr('catalog.host_a_dynamax_adventure_the_console_joins_you_choose_t_9a3f17', 'Host a Dynamax Adventure the console joins: you choose the legendary at the end of the Max Lair.'),
+         (tr('catalog.choose_the_legendary_then_start_the_host_5be0c4', 'Choose the legendary, then start the host.'),
+          tr('catalog.at_the_max_lair_talk_to_the_receptionist_press_to_set_t_8d4b19', 'At the Max Lair, talk to the receptionist, press + to set the same Link Code if you chose one, then choose Invite Others.'),
+          tr('catalog.press_ready_once_pokeldn_is_in_the_lobby_80d6b3', 'Press Ready once POKELDN is in the lobby.'),
+          tr('catalog.pokeldn_leaves_once_the_adventure_starts_a_computer_par_2c7f05', 'POKELDN leaves once the adventure starts: a computer partner takes its seat and the adventure goes on.')),
+         (Field("--lair-legendary", tr('catalog.legendary_6e94a1', 'Legendary'), "choice", default="150",
+                choices=SWSH_LAIR_LEGENDARIES,
+                help=tr('catalog.the_legendary_pokemon_waiting_at_the_end_of_the_max_lai_b0d3e8', 'The legendary Pokemon waiting at the end of the Max Lair.')),
+          Field("--code", tr('catalog.link_code_cc04a1', 'Link Code'), "code",
+                help=tr('catalog.eight_digits_the_console_sets_with_at_the_receptionist__5a8e30', 'Eight digits, set on the console with + at the receptionist. Empty for none.')),
+          Field("--lair-seed", tr('catalog.adventure_seed_1f7c55', 'Adventure seed'), "lairseed", template="0x{}",
+                help=tr('catalog.sets_the_rental_pokemon_and_the_pokemon_met_on_the_way_e4b8d2', 'Sets the rental Pokemon and the Pokemon met on the way. Leave empty for a random one.')),
+          Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="6", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
+          host_seconds("600")),
+         fixed=("--player-name", "{ot}", "--trainer-name", "{ot}",
+                "--trainer-tid", "{tid}", "--trainer-sid", "{sid}"), doc="swsh_raid.md"),
+    Tool("swsh-raid-join", tr('catalog.max_raid_join_9f9f97', 'Max Raid (Join)'), "bin/swsh_connect.py",
+         tr('catalog.join_a_max_raid_the_console_hosts_from_a_den_and_fight_e2f3ac', 'Join a Max Raid the console hosts from a den and fight at its side.'),
+         (tr('catalog.y_comm_in_local_wireless_mode_at_a_den_with_a_beam_pres_875c3f', 'Y-Comm in local wireless mode: at a den with a beam, press A and choose Invite Others.'),
+          tr('catalog.choose_the_pokemon_our_player_brings_and_its_move_then_6a70f4', 'Choose the Pokemon our player brings and its move, then start the joiner.'),
+          tr('catalog.pokeldn_joins_the_lobby_and_readies_choose_ready_for_ba_eb2a1f', 'POKELDN joins the lobby and readies: choose Ready for battle! on the console.'),
+          tr('catalog.our_pokemon_uses_the_chosen_move_every_turn_of_the_batt_9e5434', 'Our Pokemon uses the chosen move every turn of the battle.')),
+         (Field("--offer-file", tr('catalog.our_pokemon_14a66b', 'Our Pokemon'), "pokemon",
+                help=tr('catalog.the_pokemon_our_player_brings_pkhex_checks_it_is_legal_87455a', "The Pokemon our player brings. PKHeX checks it is legal. Empty brings the console's own first party Pokemon.")),
+          Field("--raid-move", tr('catalog.move_6ecc3d', 'Move'), "choice", default="1",
+                choices=(("1", tr('catalog.first_move_dcc57f', 'First move')), ("2", tr('catalog.second_move_4ecb66', 'Second move')), ("3", tr('catalog.third_move_c2d088', 'Third move')), ("4", tr('catalog.fourth_move_f7966e', 'Fourth move'))),
+                help=tr('catalog.the_move_our_pokemon_uses_every_turn_33ca6d', 'The move our Pokemon uses every turn.')),
+          join_seconds("400")),
+         fixed=("--preset", "raid", "--raid-name", "{ot}", "--snapshot-name", "{ot}",
+                "--snapshot-tid", "{tid}", "--snapshot-sid", "{sid}"), doc="swsh_raid.md"),
+    Tool("swsh-lair-raid-join", tr('catalog.dynamax_adventure_join_edc971', 'Dynamax Adventure (Join)'), "bin/swsh_connect.py",
+         tr('catalog.join_a_dynamax_adventure_the_console_hosts_and_play_it_571027', 'Join a Dynamax Adventure the console hosts and play it as its partner with a rental Pokemon.'),
+         (tr('catalog.at_the_max_lair_talk_to_the_receptionist_with_no_link_c_5e29d1', 'At the Max Lair, talk to the receptionist, with no Link Code, and choose Invite Others.'),
+          tr('catalog.start_the_joiner_pokeldn_joins_the_lobby_press_ready_on_077ca5', 'Start the joiner: POKELDN joins the lobby. Press Ready on the console.'),
+          tr('catalog.choose_your_rental_first_pokeldn_takes_one_of_the_two_l_997f8c', 'Choose your rental first: POKELDN takes one of the two left.'),
+          tr('catalog.pokeldn_fights_each_battle_at_your_side_with_its_rental_6b0c8e', 'POKELDN fights each battle at your side with its rental.')),
+         (join_seconds("1800"),),
+         fixed=("--preset", "lair", "--raid-name", "{ot}", "--snapshot-name", "{ot}",
+                "--snapshot-tid", "{tid}", "--snapshot-sid", "{sid}"), doc="swsh_raid.md"),
 ))
 
 BDSP_ROOM = tr('catalog.pokemon_center_2f_left_attendant_plain_yes_no_password__35cfcc', 'Pokemon Center 2F, left attendant, plain Yes (no password, not the group option).')
@@ -317,7 +380,7 @@ BDSP = Game("bdsp", tr('catalog.brilliant_diamond_shining_pearl_f30922', 'Brilli
           tr('catalog.our_character_appears_4daa86', '{value0} Our character appears.', value0=BDSP_ROOM),
           tr('catalog.y_communicate_trade_pokemon_accept_the_greeting_then_ch_068c66', 'Y, Communicate, Trade Pokemon; accept the greeting, then choose and confirm.')),
          (queued("--offer"),
-          FRESH_PID,
+          FRESH_PID, TRADE_BACK,
           Field("--password", tr('catalog.room_password_158a0a', 'Room password'), "code", help=tr('catalog.eight_digits_empty_for_the_plain_room_235b0d', 'Eight digits. Empty for the plain room.')),
           host_seconds("1500")),
          fixed=("--ldn-protocol", "1", "--complete-trade", "--save-theirs", "{received}/bdsp-{stamp}",
@@ -332,7 +395,7 @@ BDSP = Game("bdsp", tr('catalog.brilliant_diamond_shining_pearl_f30922', 'Brilli
          (queued("--trade-template"),
           Field("--trade-nickname", tr('catalog.nickname_d720f6', 'Nickname'), hidden=True,
                 help=tr('catalog.a_nickname_given_to_every_offered_pokemon_empty_keeps_t_c4aaf8', 'A nickname given to every offered Pokemon; empty keeps the one it was built with.')),
-          FRESH_PID,
+          FRESH_PID, TRADE_BACK,
           join_seconds("600")),
          fixed=("--channels", "1,6,11", "--count", "9", "--connect", "5", "--join", "6",
                 "--reliable-ack", "--reliable-sweep", "3", "--room-walk", "15", "--room-pattern", "fixed",
@@ -356,7 +419,7 @@ PLA = Game("pla", tr('catalog.legends_arceus_260415', 'Legends Arceus'), tr('cat
           tr('catalog.leave_the_host_running_until_the_trade_ends_an_interrup_adc091', 'Leave the host running until the trade ends: an interrupted trade locks trading for a while.')),
          (queued("--trade-box-record", required=False, help=PLA_OFFER_HELP),
           Field("--code", tr('catalog.link_code_0b8f86', 'Link code'), "code", default="00000000", help=CODE_HELP),
-          FRESH_PID,
+          FRESH_PID, TRADE_BACK,
           host_seconds("900")),
          fixed=("--channel", "6", "--session-update", "--sustain", "--clock", "--data-exchange",
                 "--game-channel", "--trade-box", "--player-name", "{ot}", "--gender", "{gender}",
@@ -367,7 +430,7 @@ PLA = Game("pla", tr('catalog.legends_arceus_260415', 'Legends Arceus'), tr('cat
          (*PLA_STEPS, tr('catalog.start_the_joiner_84b994', 'Start the joiner.'), tr('catalog.offer_and_confirm_once_the_partner_shows_b0b40e', 'Offer and confirm once the partner shows.')),
          (queued("--offer", required=False, help=PLA_OFFER_HELP),
           Field("--code", tr('catalog.link_code_0b8f86', 'Link code'), "code", default="00000000", help=CODE_HELP),
-          FRESH_PID),
+          FRESH_PID, TRADE_BACK),
          fixed=("--player-name", "{ot}", "--gender", "{gender}",
                 "--offer-out", "{received}/pla-{stamp}.pa8"),
          doc="pla.md"),
@@ -383,7 +446,7 @@ SV = Game("sv", tr('catalog.scarlet_violet_504657', 'Scarlet & Violet'), tr('cat
           Field("--code", tr('catalog.link_code_cc04a1', 'Link Code'), "code", help=tr('catalog.empty_hosts_a_search_with_no_code_6d9fdd', 'Empty hosts a search with no code.'),
                 unset=("--game-data",
                        "000000000000000000000000000000000000000000000000000000000000000000648cf400000000")),
-          FRESH_PID),
+          FRESH_PID, TRADE_BACK),
          fixed=("--channel", "6", "--seconds", "900", "--host-player-id", "00000000000000010000000000000000",
                 "--player-name", 'POKELDN', "--rtt-probe", "--net-property", "--clock", "--net-stations", "4",
                 "--scarlet-response", "--join-seq", "0", "--update-first-seq", "0", "--update-seq", "1",
@@ -402,7 +465,7 @@ SV = Game("sv", tr('catalog.scarlet_violet_504657', 'Scarlet & Violet'), tr('cat
           tr('catalog.if_the_console_keeps_refusing_leave_and_re_enter_the_se_28b562', 'If the console keeps refusing, leave and re-enter the search screen.')),
          (queued("--trade-offer"),
           Field("--code", tr('catalog.link_code_cc04a1', 'Link Code'), "code", help=tr('catalog.empty_joins_a_search_with_no_code_caae9d', 'Empty joins a search with no code.')),
-          FRESH_PID),
+          FRESH_PID, TRADE_BACK),
          fixed=("--phy", "auto", "--seconds", "1500", "--hold", "900", "--channels", "1,6,11",
                 "--dwell", "0.4", "--connect-timeout", "6", "--open-delay", "0.3", "--record-delay", "0.3",
                 "--session-join", "--answer-migration", "--net-ack", "--ack-flags", "0x00",
@@ -466,6 +529,48 @@ SV = Game("sv", tr('catalog.scarlet_violet_504657', 'Scarlet & Violet'), tr('cat
           join_seconds("240")),
          fixed=("--seconds", "900", "--name", 'POKELDN', "--trainer-name", "{ot}"),
          doc="sv_raid.md"),
+    Tool("sv-circle-join", tr('catalog.union_circle_quests_6ec3ee', 'Union Circle - Quests'), "bin/sv_join.py",
+         tr('catalog.join_the_union_circle_the_console_hosts_and_clear_blueb_a7f910', 'Join the Union Circle the console hosts and clear Blueberry Quests for it: every Snacksworth legendary, or the BP you choose.'),
+         (tr('catalog.on_the_console_x_poke_portal_union_circle_then_start_a__28de4e', 'On the console: X, Poke Portal, Union Circle, then start a group playing locally under a Link Code.'),
+          tr('catalog.enter_the_same_link_code_here_choose_the_task_and_start_0dffcf', 'Enter the same Link Code here, choose the task and start.'),
+          (tr('catalog.once_pokeldn_is_in_the_group_start_the_circle_on_the_co_0d4e89', 'Once POKELDN is in the group, start the circle on the console. As its start demo ends, the quests go in one a second, then our player leaves.'),
+           ("--circle-task", "snacksworth")),
+          (tr('catalog.once_pokeldn_is_in_the_group_start_the_circle_on_the_co_7a9a17', 'Once POKELDN is in the group, start the circle on the console. As its start demo ends, the BP clear goes in, then our player leaves.'),
+           ("--circle-task", "bp")),
+          tr('catalog.close_the_bp_side_bar_on_the_console_to_see_the_bp_come_bd0b25', 'Close the BP side bar on the console to see the BP come in.'),
+          (tr('catalog.for_snacksworth_talk_to_him_once_for_each_legendary_eac_87f6c8', 'For Snacksworth, talk to him once for each legendary; each talk releases one.'),
+           ("--circle-task", "snacksworth"))),
+         (Field("--code", tr('catalog.link_code_cc04a1', 'Link Code'), "code", required=True, length=4,
+                remembered=False,
+                help=tr('catalog.the_union_circle_s_four_digit_link_code_2e76dc', "The Union Circle's four-digit Link Code.")),
+          Field("--circle-task", tr('catalog.task_4bc74b', 'Task'), "choice", default="snacksworth",
+                choices=(("snacksworth", tr('catalog.unlock_all_remaining_snacksworth_legendaries_cd6e98', 'Unlock all remaining Snacksworth legendaries')),
+                         ("bp", tr('catalog.give_bp_b0e117', 'Give BP'))),
+                choice_help=(("snacksworth", tr('catalog.reads_how_many_solo_and_team_quests_the_host_still_lack_55eb31', "Reads how many solo and Team quests the host still lacks of the 130 and 12 that release all 25 legendaries, then gives them, one a second: Team quests drawn as the game draws them, then the host's own solo quests as they come up.")),
+                             ("bp", tr('catalog.clears_one_quest_for_the_host_that_pays_this_bp_2c54b4', 'Clears one quest for the host that pays this BP.')))),
+          Field("--bbq-clear", tr('catalog.bp_36b717', 'BP'), "number", default="1000", required=True,
+                when=("--circle-task", "bp"), bounds=(1, BP_MAX),
+                help=tr('catalog.from_1_to_9_999_999_the_most_bp_a_player_holds_99d199', 'From 1 to 9,999,999, the most BP a player holds.')),
+          join_seconds("900")),
+         fixed=("--union-circle", "--seconds", "900", "--name", 'POKELDN', "--trainer-name", "{ot}"),
+         doc="sv_union_circle.md"),
+    Tool("sv-circle-encounters-join", tr('catalog.union_circle_encounters_31663b', 'Union Circle - Encounters'), "bin/sv_join.py",
+         tr('catalog.join_the_union_circle_the_console_hosts_and_spawn_the_w_88db74', 'Join the Union Circle the console hosts and spawn the wild Pokemon you craft around its player, to battle and catch.'),
+         (tr('catalog.on_the_console_x_poke_portal_union_circle_then_start_a__28de4e', 'On the console: X, Poke Portal, Union Circle, then start a group playing locally under a Link Code.'),
+          tr('catalog.enter_the_same_link_code_here_craft_the_pokemon_and_sta_23247e', 'Enter the same Link Code here, craft the Pokemon and start.'),
+          tr('catalog.once_pokeldn_is_in_the_group_start_the_circle_on_the_co_c34ac9', 'Once POKELDN is in the group, start the circle on the console. As its start demo ends, our player follows yours.'),
+          tr('catalog.three_of_the_pokemon_come_15_to_25_m_around_you_one_you_47e6f7', 'Three of the Pokemon come 15 to 25 m around you. One you battle, or walk more than 50 m from, comes back near you.'),
+          tr('catalog.with_legal_encounters_only_they_wait_until_the_wild_pok_aca8b5', 'With Legal encounters only they wait until the wild Pokemon your game shares show you stand where PKHeX accepts them caught, and go when you walk 50 m from where that was found.'),
+          tr('catalog.close_the_circle_on_the_console_to_stop_fa751d', 'Close the circle on the console to stop.')),
+         (Field("--code", tr('catalog.link_code_cc04a1', 'Link Code'), "code", required=True, length=4,
+                remembered=False,
+                help=tr('catalog.the_union_circle_s_four_digit_link_code_2e76dc', "The Union Circle's four-digit Link Code.")),
+          Field("--spawn", tr('catalog.pokemon_to_spawn_c7ecd1', 'Pokemon to spawn'), "encounter", required=True,
+                help=tr('catalog.the_wild_pokemon_that_appears_around_you_in_the_game_to_c2e57e', 'The wild Pokemon that appears around you in the game, to battle and catch.')),
+          join_seconds("3600")),
+         fixed=("--union-circle", "--seconds", "3600", "--follow-host", "--name", 'POKELDN',
+                "--trainer-name", "{ot}"),
+         doc="sv_union_circle.md"),
 ))
 
 ZA = Game("za", tr('catalog.legends_z_a_594c26', 'Legends Z-A'), tr('catalog.plza_bc9316', 'PLZA'), "za.md", (
@@ -477,7 +582,7 @@ ZA = Game("za", tr('catalog.legends_z_a_594c26', 'Legends Z-A'), tr('catalog.plz
           tr('catalog.back_out_with_b_after_the_last_trade_97a1dc', 'Back out with B after the last trade.')),
          (queued("--trade-offer"),
           Field("--code", tr('catalog.link_code_0b8f86', 'Link code'), "code", default="00000000", help=CODE_HELP),
-          FRESH_PID,
+          FRESH_PID, TRADE_BACK,
           host_seconds("900")),
          fixed=("--trainer-name", "{ot}", "--offer-out", "{received}/za-{stamp}.pa9"), doc="za.md"),
     Tool("za-join", tr('catalog.trade_join_8cec7d', 'Trade (Join)'), "bin/za_join.py",
@@ -487,7 +592,7 @@ ZA = Game("za", tr('catalog.legends_z_a_594c26', 'Legends Z-A'), tr('catalog.plz
           tr('catalog.pick_on_the_trade_box_and_confirm_once_pokeldn_appears__693ece', 'Pick on the trade box and confirm once POKELDN appears. Queued Pokemon follow, one per trade.')),
          (queued("--trade-offer"),
           Field("--code", tr('catalog.link_code_0b8f86', 'Link code'), "code", default="00000000", help=CODE_HELP),
-          FRESH_PID),
+          FRESH_PID, TRADE_BACK),
          fixed=("--channels", "1,6,11", "--dwell", "0.35", "--seconds", "1200", "--hold", "900",
                 "--quiet-seat", "25", "--connect-timeout", "6", "--mac", "02:11:32:54:76:98", "--game",
                 "--offer-delay", "4", "--trainer-name", "{ot}", "--offer-out", "{received}/za-{stamp}.pa9"),
@@ -499,6 +604,8 @@ def simulated_gift(game: Game, host: Tool, steps: tuple[str, ...]) -> Tool:
     event table, in place of built ones and made for the receiving player where each card names them
     (docs/gift_simulated.md)."""
     def gift(f: Field) -> tuple[Field, ...]:
+        if f is TRADE_BACK:
+            return ()
         if f.kind != "pokemon":
             return f,
         return (replace(f, identity="#Mystery Gift Pokemon" if not f.flag else f.identity, label=tr('catalog.mystery_gift_pokemon_e3340b', 'Mystery Gift Pokemon'), required=True, events=True, queue=QUEUE,

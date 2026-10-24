@@ -82,8 +82,12 @@ public final class Bridge {
         UsbDevice device = board();
         if (device == null) return "";
         String product = device.getProductName();
-        return product == null ? "ESP32 (native USB)" : product;
+        if (product != null) return product;
+        return Setup.isCp210x(device.getVendorId(), device.getProductId()) ? "ESP32 (CP210x)" : "ESP32 (native USB)";
     }
+
+    public static int deviceVendorId() { UsbDevice device = board(); return device == null ? 0 : device.getVendorId(); }
+    public static int deviceProductId() { UsbDevice device = board(); return device == null ? 0 : device.getProductId(); }
 
     public static void askPermission() {
         UsbDevice device = board();

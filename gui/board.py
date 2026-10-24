@@ -148,6 +148,7 @@ class Identity:
     firmware: str
     protocol: int
     firmware_version: str = ""
+    gift_kept: bool = False     # a portable beacon stored on the board (docs/hardware_esp32.md)
 
     @property
     def current(self) -> bool:
@@ -163,6 +164,11 @@ class Identity:
     def ble(self) -> bool:
         """The Bluetooth build says `link=ble` in its HELLO text (firmware radio.c send_info)."""
         return "link=ble" in self.firmware.split()
+
+    @property
+    def stock(self) -> bool:
+        """A build for one board's own screen says `display=NAME`: the app's images are not for it."""
+        return not any(word.startswith("display=") for word in self.firmware.split())
 
 
 def ports() -> list[Port]:
@@ -270,9 +276,10 @@ def identify_pad(port: str, seconds: float = 3.0) -> PadIdentity:
         pad.serial.close()
 
 
-def identify(port: str, blink: bool = True) -> Identity:
+def identify(port: str, blink: bool = True, erase_gift: bool = False) -> Identity:
     """HELLO, then blink GPIO2 on classic boards to identify them (docs/hardware_esp32.md).
-    Raises esp32.RadioError when no pokeldn firmware answers. Opening the port can reset it."""
+    `erase_gift` first removes a stored portable beacon. Raises esp32.RadioError when no pokeldn
+    firmware answers. Opening the port can reset it."""
     # Another protocol version is reported, not refused.
     radio = esp32.Radio.open_serial(port, fast_baud=0, check_protocol=False)
     info = radio.info
@@ -280,8 +287,13 @@ def identify(port: str, blink: bool = True) -> Identity:
         if blink and info.version == esp32.PROTOCOL_VERSION:
             time.sleep(1.0)   # the boot pulse
             radio.led("blink", 255, 300, 5000)
+        kept = False
+        if info.version == esp32.PROTOCOL_VERSION and esp32.firmware_version(info) >= esp32.BEACON_FIRMWARE:
+            if erase_gift:
+                radio.erase_beacon()
+            kept = radio.beacon_state().stored
         return Identity(bytes(info.sta_mac).hex(":"), bytes(info.ap_mac).hex(":"), info.chip_revision,
-                        info.text, info.version, info.firmware_version)
+                        info.text, info.version, info.firmware_version, kept)
     finally:
         radio.close()
 

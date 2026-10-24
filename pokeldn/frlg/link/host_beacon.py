@@ -7,7 +7,6 @@ import threading
 import time
 
 from pokeldn.frlg.link import beacon
-from pokeldn.ldn import transport
 
 
 # Captured from a native FireRed Direct Corner leader; unknown record fields stay verbatim.

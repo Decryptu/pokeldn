@@ -32,32 +32,16 @@ import trio
 
 from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
-from pokeldn import gen8, pla
+from pokeldn import gen8, pla, trade_back
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import ldn_mitm, pia6
-from pokeldn.ldn.transport import board_radio, find_ap_phy
+from pokeldn.ldn.transport import board_radio, find_ap_phy, cleanup_stale_vifs
 from pokeldn.pla import data_exchange, joiner, trade_box
 from pokeldn.pla import pokemon as pla_pokemon
 from pokeldn.app import screen
 
-STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
 
-
-def scan_once(our_ip, host_ip, timeout):
-    """-> the host's NetworkInfo, or None. ldn_mitm drops a scan from the host's own address, so
-    it leaves from ours."""
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as us:
-        us.settimeout(timeout)
-        us.bind((our_ip, 0))
-        try:
-            us.sendto(ldn_mitm.build(ldn_mitm.SCAN), (host_ip, ldn_mitm.PORT))
-            while True:
-                data, _ = us.recvfrom(4096)
-                kind, info = ldn_mitm.parse(data)
-                if kind == ldn_mitm.SCAN_RESP:
-                    return info
-        except (socket.timeout, OSError, ValueError):
-            return None
+scan_once, associate = ldn_mitm.scan_once, ldn_mitm.associate
 
 
 def fast_scan(sock, host_ip, interval, deadline, last_ssid):
@@ -86,37 +70,9 @@ def fast_scan(sock, host_ip, interval, deadline, last_ssid):
     return None, time.time()
 
 
-def associate(our_ip, host_ip, our_mac, name, timeout):
-    """-> (NetworkInfo, held TCP socket)."""
-    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    tcp.settimeout(timeout)
-    tcp.bind((our_ip, 0))
-    tcp.connect((host_ip, ldn_mitm.PORT))
-    tcp.sendall(ldn_mitm.build(ldn_mitm.CONNECT,
-                               ldn_mitm.build_node_info(our_ip, our_mac, name.encode())))
-    kind, synced = ldn_mitm.parse(tcp.recv(8192))
-    if kind != ldn_mitm.SYNC_NETWORK:
-        tcp.close()
-        raise RuntimeError(f"the host answered our connect with type {kind}, not SyncNetwork")
-    tcp.settimeout(None)
-    return synced, tcp
-
-
 def make_socket(ifname, our_ip=None):
     from pokeldn.ldn import userspace_ip  # no kernel interface on the ESP32
-    if our_ip is None and (user := userspace_ip.udp_socket(ifname, pla.PIA_PORT)) is not None:
-        user.setblocking(False)
-        return user
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    if our_ip is None and hasattr(socket, "SO_BINDTODEVICE"):
-        try:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, ifname.encode())
-        except (PermissionError, OSError):
-            pass
-    s.bind((our_ip or "", pla.PIA_PORT))
-    s.setblocking(False)
-    return s
+    return userspace_ip.pia_socket(ifname, pla.PIA_PORT, our_ip, broadcast=False)
 
 
 def build_offer(args, exchange):
@@ -130,13 +86,34 @@ def build_offer(args, exchange):
     return offer
 
 
+class TradeBackSession(joiner.JoinerSession):
+    """--trade-back: each round's offer from `trade_back.Rounds`, the console's record returned as received."""
+
+    def __init__(self, *a, next_offers=(), **kw):
+        super().__init__(*a, **kw)
+        self.rounds = trade_back.Rounds([self.offer, *next_offers], log=self.log)
+
+    def _next_round(self):
+        received = self.received
+        if received is not None and len(received) != pla_pokemon.SIZE_PARTY:
+            received = None             # a stored record: the trade box sends only party ones
+        self.rounds.done(received)
+        self.next_offers = [self.rounds.current()]
+        super()._next_round()
+
+
+def make_session(args, keys, our_ip, our_mac, offer, exchange, **kw):
+    kind = TradeBackSession if getattr(args, "trade_back", False) else joiner.JoinerSession
+    return kind(keys, our_ip, our_mac, offer, exchange,
+                player_id=bytes.fromhex(args.join_player_id),
+                drive=args.drive, net_answer=not args.no_net_answer,
+                join_delay=args.join_delay, log=print,
+                next_offers=getattr(args, "next_offers", ()), **kw)
+
+
 async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchange, record):
     """Wait in trio, never in select() (docs/hardware_esp32.md, The userspace stack)."""
-    session = joiner.JoinerSession(keys, our_ip, our_mac, offer, exchange,
-                                   player_id=bytes.fromhex(args.join_player_id),
-                                   drive=args.drive, net_answer=not args.no_net_answer,
-                                   join_delay=args.join_delay, log=print,
-                                   next_offers=getattr(args, "next_offers", ()))
+    session = make_session(args, keys, our_ip, our_mac, offer, exchange)
     end = time.monotonic() + args.hold
     traded_at = None
     seen = authed = written = 0
@@ -285,11 +262,7 @@ def main_radio(args, offer, exchange, record):
     if not os.path.exists(keys_path):
         print(f"[pla] prod.keys not found at {keys_path!r}")
         return 2
-    if not board_radio():
-        import subprocess
-        for name in STALE_VIFS:
-            subprocess.run(["iw", "dev", name, "del"], stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL)
+    cleanup_stale_vifs()
     if args.mac and board_radio():
         from pokeldn.ldn import esp32_wlan
         esp32_wlan.set_station_mac(args.mac)
@@ -402,7 +375,7 @@ def build_parser():
     ap.add_argument("--scan-interval", type=float, default=0.02)
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--ifname", default="ldnclient")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--channels", default="1,6,11")
     ap.add_argument("--dwell", type=float, default=0.4, help="seconds per channel in a scan")
     ap.add_argument("--connect-timeout", type=float, default=6.0)
@@ -426,6 +399,7 @@ def build_parser():
                     help="the record to trade away, stored or party, encrypted or not; the "
                          "default is the reference Azelf under our player name. Repeatable: one per "
                          "trade in order, on this seat or in the host role once taken")
+    trade_back.add_arguments(ap)
     ap.add_argument("--offer-out", default=None,
                     help="write the record the console traded to this file")
     ap.add_argument("--collect", default=None,
@@ -454,7 +428,7 @@ def host_argv(args, channel, seconds):
     """-> bin/pla_host.py's command line for the host role a console handed over."""
     from pokeldn.app.runner import command
     where = ["--ip-host", "--our-ip", args.our_ip] if args.ip_join else ["--channel", str(channel)]
-    argv = command("--run", "bin/pla_host.py", "--keys", args.keys, "--code", args.code,
+    argv = command("--run", "bin/pla_host.py", "--keys", resolve_keys(args.keys), "--code", args.code,
             *where, "--seconds", str(int(max(seconds, 60))),
             "--player-name", args.player_name, "--session-update", "--sustain", "--clock",
             "--data-exchange", "--game-channel", "--trade-box")
@@ -462,6 +436,8 @@ def host_argv(args, channel, seconds):
         argv += ["--trade-box-record", path]
     if args.fresh_pid:
         argv += ["--fresh-pid"]
+    if args.trade_back:
+        argv += ["--trade-back"]
     if args.offer_out:
         argv += ["--offer-out", args.offer_out]
     if args.collect:
@@ -475,6 +451,7 @@ def host_argv(args, channel, seconds):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    trade_back.check(ap, args, "--offer")
     args.offer = [pokemon_service.prepare_file("pla", path, fresh=args.fresh_pid) for path in args.offer]
     args.fresh_pid = False
     try:

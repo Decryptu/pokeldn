@@ -145,16 +145,33 @@ def linkcmd_block(cmd, cursor=0):
         + b"\x00" * 16
 
 
+MAX_TRADES = 12    # six party slots, each offered and then returned (pokeldn.trade_back)
+
+
+def distinct_but_returned(slots):
+    """TradeMons swaps the received mon into the offered slot [trade_scene.c:1054-1083], so a slot
+    offered again gives away a just-received mon. Only the very next trade may: trade back
+    (pokeldn.trade_back) returns it. Otherwise the slots are distinct."""
+    firsts, i = [], 0
+    while i < len(slots):
+        firsts.append(slots[i])
+        i += 2 if i + 1 < len(slots) and slots[i + 1] == slots[i] else 1
+    return len(set(firsts)) == len(firsts)
+
+
+def trade_back_slots(slots):
+    """Each offered slot, then the same slot again for the trade that returns what it received."""
+    return [s for s in slots for _ in (0, 1)]
+
+
 def resolve_offered_slots(offered_slots, trade_slot, trades, party_size=None):
-    """Slots must be distinct: TradeMons swaps the received mon into the offered slot
-    [trade_scene.c:1054-1083], so re-offering one would give away a just-received mon."""
     if offered_slots is not None:
         slots = list(offered_slots)
         if len(slots) != trades:
             raise ValueError(f"offered_slots must have {trades} entries, got {len(slots)}")
         if any(s < 0 for s in slots):
             raise ValueError(f"offered_slots must be non-negative, got {slots}")
-        if len(set(slots)) != len(slots):
+        if not distinct_but_returned(slots):
             raise ValueError(f"offered_slots must be distinct (no slot re-offered), got {slots}")
         return slots
     seeded = [trade_slot + i for i in range(trades)]
@@ -248,8 +265,8 @@ class TradeEngine:
         self.log = log
         self.info = getattr(log, "info", log)
 
-        if not 1 <= trades <= 6:
-            raise ValueError(f"trades must be 1..6, got {trades}")
+        if not 1 <= trades <= MAX_TRADES:
+            raise ValueError(f"trades must be 1..{MAX_TRADES}, got {trades}")
         self.trades = trades
         self.offered_slots = resolve_offered_slots(offered_slots, trade_slot, trades,
                                                    party_size=len(self.party))

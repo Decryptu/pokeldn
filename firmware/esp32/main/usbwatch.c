@@ -1,7 +1,7 @@
 /* C6/S3 USB watch: USB Serial/JTAG can go deaf with the firmware running on.
-   Samples the SOF frame number every 5 ms; once frames have counted or the host has sent a byte,
-   a 2 s stall keeps the registers from before and after in RTC memory, restarts, and reports them
-   as LOG lines on the next HELLO. docs/hardware_esp32.md, Supported boards. */
+   Samples the SOF frame number every 5 ms; once frames have counted or a host byte came over the
+   cable, a 2 s stall with no Bluetooth link keeps the registers from before and after in RTC memory,
+   restarts, and reports them as LOG lines on the next HELLO. docs/hardware_esp32.md, Supported boards. */
 #include "usbwatch.h"
 
 #include "sdkconfig.h"
@@ -24,6 +24,7 @@
 #include "soc/system_reg.h"
 #endif
 
+#include "ble.h"
 #include "wire.h"
 
 #define WATCH_MAGIC 0x55534257u
@@ -99,7 +100,9 @@ static void watch_task(void *arg)
             last_change = now;
             snap(healthy);
             healthy_us = now;
-        } else if ((armed || wire_consumed()) && now - last_change > STALL_US) {
+        } else if (ble_linked()) {
+            last_change = now;   /* Bluetooth carries the link: a USB stall costs nothing */
+        } else if ((armed || wire_cable_consumed()) && now - last_change > STALL_US) {
             s_report.stalls = s_report.magic == WATCH_MAGIC ? s_report.stalls + 1 : 1;
             s_report.healthy_us = healthy_us;
             s_report.stalled_us = now;

@@ -397,10 +397,6 @@ def build_talk_reserve_result(can_talk=1, is_recruitment=1, emoticon_state=STATE
                         emoticon_state & 0xFF)
 
 
-def build_emotion(emotion_id):
-    return build_fields(EMOTION, emotion_id & 0xFF)
-
-
 def answer(message, state=STATE_NONE, is_recruitment=0, match_wait=False):
     """-> the reply a NetRequestData asks for, when the requested id has a layout, else None."""
     if message.get("data_id") != REQUEST or not message.get("fields"):

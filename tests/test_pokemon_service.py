@@ -17,6 +17,53 @@ TRAINER = {"ot": "POKELDN", "tid": 12345, "sid": 54321, "language": 2, "gender":
 FORMATS = {"frlg": "PK3", "lgpe": "PB7", "swsh": "PK8", "bdsp": "PB8", "pla": "PA8", "sv": "PK9", "za": "PA9"}
 
 
+@pytest.fixture
+def display(service, monkeypatch):
+    """gui.localization's display service in a chosen pack locale, over the shared PKHeX process."""
+    from gui.localization import DisplayService
+    from pokeldn.app import i18n
+
+    def make(language):
+        monkeypatch.setattr(i18n, "locale", lambda: language)
+        return DisplayService()
+    return make
+
+
+@pytest.mark.parametrize("language,game,kind,names", [
+    ("zh-Hans", "frlg", "species", {25: "皮卡丘", 252: "木守宫"}),
+    ("zh-Hans", "frlg", "species3", {25: "皮卡丘", 277: "木守宫"}),          # Treecko: national 252, cartridge 277
+    ("zh-Hans", "frlg", "items", {42: "黑色玻璃哨", 68: "神奇糖果", 374: "蓝宝石"}),   # Gen 3 item ids
+    ("fr-FR", "sv", "species", {7: "Carapuce"}),
+    ("de", "sv", "species", {4: "Glumanda"}),
+    ("unknown-XX", "sv", "species", {4: "Charmander"}),
+])
+def test_a_display_language_names_the_same_ids(service, display, language, game, kind, names):
+    shown = {n["id"]: n["name"] for n in display(language).names(game, kind)}
+    english = service.names(game, kind)
+    assert {n: shown[n] for n in names} == names
+    assert set(shown) == {n["id"] for n in english}
+
+
+@pytest.mark.parametrize("mode", ["empty", "made"])
+def test_a_display_language_builds_the_same_record_with_english_names_kept(service, display, mode):
+    service.home_tracker = mode
+    try:
+        shown = display("zh-Hans")
+        found = shown.paste("sv", "Pikachu @ Light Ball\nAbility: Static\nTimid Nature\n- Thunderbolt", TRAINER)[0]
+        assert not found["errors"] and found["species"] == "皮卡丘" and found["moves"] == ["十万伏特"]
+        assert (found["options"]["held_item"], found["options"]["ability"]) == (236, 9)
+        built = shown.make("swsh", 809, TRAINER)
+        assert built["species"] == "美录梅塔" and built["legal"] and built["home_tracker"] == mode
+        assert (built["tracker"] != "0") == (mode == "made")
+        info = shown.make("sv", 25, TRAINER)
+        assert info["canonical"]["species"] == "Pikachu" and info["is_nicknamed"] is False
+        assert pokemon.summary(info).startswith("Pikachu · level ") and "'" not in pokemon.summary(info)
+        assert Path(info["file"]).name.startswith("Pikachu-")
+        assert service.check_bytes("sv", base64.b64decode(info["data"]))["legal"]
+    finally:
+        service.home_tracker = "empty"
+
+
 @pytest.mark.parametrize("failure, error, requests", [
     ("interrupted", None, 2),
     ("persistent", "could not complete its legality analysis after restarting", 2),
@@ -130,6 +177,17 @@ def test_an_event_that_reached_the_game_through_home_gets_the_tracker_the_settin
     assert refused["legal"] == (mode == "made") and refused["home_tracker"] == ("empty" if mode == "empty" else "")
 
 
+@pytest.mark.parametrize("game, species, edit, encounter", [
+    ("swsh", 823, {}, "Wild"),          # Corviknight: PKHeX lists an egg and dozens of raid dens before Route 10
+    ("frlg", 16, {}, "Wild"),
+    ("sv", 963, {"level": 1}, "Egg"),   # Finizen: only an egg is level 1, and PKHeX lists it after 300 others
+])
+def test_a_species_is_built_as_a_catch_and_hatched_only_when_nothing_else_carries_the_request(service, game, species,
+                                                                                               edit, encounter):
+    built = service.make(game, species, TRAINER, **edit)
+    assert built["legal"] and built["encounter"].startswith(encounter)
+
+
 @pytest.mark.parametrize("game, species, edit", [
     ("frlg", 132, {"shiny": True}),                      # a Gen 3 PID is chosen with the encounter, not patched in
     ("frlg", 132, {"shiny": True, "version": "LG"}),
@@ -186,10 +244,31 @@ def test_a_tr_move_in_the_suggested_moveset_does_not_make_a_request_fail_at_rand
     ("sv", 150, {"level": 50}, "cannot be lower than level"),  # a fixed-level encounter names its level
     ("sv", 377, {}, "no legal"),                               # an encounter PKHeX does not have
     ("swsh", 802, {"shiny": True}, "cannot be shiny"),         # every encounter is shiny-locked
+    ("pla", 483, {"options": {"alpha": True}}, "cannot be an Alpha"),   # Dialga's encounters are not Alphas
+    ("za", 150, {"options": {"alpha": True}}, "cannot be an Alpha"),
+    ("swsh", 25, {"options": {"alpha": True}}, "Only Legends Arceus and Legends Z-A"),
 ])
 def test_an_impossible_request_is_refused_with_its_reason(service, game, species, edit, message):
     with pytest.raises(pokemon.BuilderError, match=message):
         service.make(game, species, TRAINER, **edit)
+
+
+@pytest.mark.parametrize("game, species, alpha", [
+    ("pla", 399, True), ("pla", 25, True), ("pla", 215, False),
+    ("za", 4, True), ("za", 6, True), ("za", 4, False),     # the shiny Alpha Charmander a player made in PKHeX
+])
+def test_an_alpha_request_is_built_legal_and_shiny_with_its_alpha_move(service, game, species, alpha):
+    assert service.options(game, species, TRAINER)["alpha"]
+    built = service.make(game, species, TRAINER, shiny=True, options={"alpha": alpha})
+    assert built["legal"] and built["shiny"] and built["alpha"] == alpha
+    if game == "pla":
+        f = pa8.read(pa8.load(base64.b64decode(built["data"])))
+        assert f["is_alpha"] == alpha and (f["alpha_move"] != 0) == alpha
+
+
+def test_only_a_species_with_an_alpha_encounter_offers_the_choice(service):
+    assert service.options("pla", 483, TRAINER)["alpha"] is False
+    assert service.options("swsh", 25, TRAINER)["alpha"] is None
 
 
 def named(names, name):
@@ -595,6 +674,17 @@ def test_a_set_asks_for_friendship_only_by_naming_it(service, game, text, friend
     assert service.make(game, found["species_id"], TRAINER, found["level"], options=found["options"])["legal"]
 
 
+@pytest.mark.parametrize("game, text, ivs", [
+    ("swsh", "Wooloo\nLevel: 12", None),   # Showdown's six 31s would allow only a raid or an egg
+    ("swsh", CHARIZARD_FR + "IVs : 0 Atq", {"hp": 31, "atk": 0, "def": 31, "spe": 31, "spa": 31, "spd": 31}),
+])
+def test_a_set_asks_for_ivs_only_by_naming_them(service, game, text, ivs):
+    found, = service.paste(game, text, TRAINER)
+    assert found["errors"] == [] and found["options"].get("ivs") == ivs
+    built = service.make(game, found["species_id"], TRAINER, found["level"], options=found["options"])
+    assert built["legal"] and (ivs is not None or built["encounter"].startswith("Wild"))
+
+
 def test_a_team_paste_returns_every_set_in_order(service):
     """Showdown's team export opens with a header line, and a paste may mix languages."""
     sets = service.paste("sv", "=== [gen9] Team ===\n\n" + GARCHOMP + "\n\n" + ROTOM + "\n" + GARCHOMP_JA, TRAINER)
@@ -658,3 +748,98 @@ for line in sys.stdin:
 ])
 def test_only_the_helper_built_as_a_library_runs_in_process(command, library):
     assert pokemon._library(command) is library
+
+
+@pytest.mark.parametrize("service", ["pokemon.SERVICE", "raid_scan._service()"])
+def test_a_long_lived_helper_is_closed_when_the_interpreter_exits(service):
+    """raid_scan's own helper process outlived the interpreter: its pipes and process were finalized
+    at shutdown, a ResourceWarning on every worker that had run a seed scan."""
+    helper = "import sys\nfor line in sys.stdin: print('{\"ok\": true}', flush=True)\n"
+    script = (f"import sys\nfrom pokeldn import pokemon\nfrom pokeldn.sv import raid_scan\n"
+              f"pokemon._command = lambda: [sys.executable, '-c', {helper!r}]\n"
+              f"assert {service}._ask({{'cmd': 'species'}}) == {{'ok': True}}\n")
+    done = subprocess.run([sys.executable, "-W", "always::ResourceWarning", "-c", script],
+                          cwd=Path(__file__).parent.parent, capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0 and "ResourceWarning" not in done.stderr, done.stderr
+
+
+def test_a_firered_gift_summary_names_its_species_in_the_display_language(service, display):
+    from pokeldn.frlg.gift import builder
+    shown = {n["id"]: n["name"] for n in display("zh-Hans").names("frlg", "species3")}
+    state = builder.blank()
+    state["steps"] = [{"type": "egg", "species": 277}, {"type": "pokemon", "species": 25, "level": 9}]
+    lines = builder.describe(state, lambda kind, n: shown[n] if kind == "species" else f"{kind} #{n}")[1]
+    assert lines[:2] == ["Gives a 木守宫 egg", "Gives 皮卡丘, level 9"]
+    assert builder.describe(state)[1][:2] == ["Gives a Treecko egg", "Gives Pikachu, level 9"]
+
+
+def test_a_game_name_from_module_data_reads_in_the_display_language(service, display, monkeypatch):
+    import string
+    from types import SimpleNamespace
+    from gui import localization
+    from pokeldn.app import i18n
+    monkeypatch.setattr(localization, "SERVICE", display("zh-Hans"))
+    monkeypatch.setattr(localization, "_game_names", {})
+    monkeypatch.setattr(i18n, "_pack", SimpleNamespace(resources={"terms": {"Calm": "冷静"}, "messages": {}}))
+    monkeypatch.setattr(i18n, "_terms_pattern", None)
+    monkeypatch.setattr(i18n, "_message_rules", [(tuple(string.Formatter().parse("{term0}, level {level}")),
+                                                  "{term0}，{level} 级")])
+    # A raid partner's species, Tera type and move; a pack's own term wins; a sentence is never cut up.
+    assert [localization.translate(v) for v in ("Pawniard", "Steel", "Water Pulse", "Calm")] == \
+        ["驹刀小兵", "钢", "水之波动", "冷静"]
+    assert localization.translate("Moltres, level 70") == "火焰鸟，70 级"
+    assert localization.translate("Return to the menu") == "Return to the menu"
+
+
+OFFER_EDIT_PLUGIN = '''
+SEEN = []
+
+def rename(record):
+    """Gen 3 nickname at +0x08, outside the checksummed substructures: "LDN", then the terminator."""
+    out = bytearray(record)
+    out[8:18] = bytes((0xC6, 0xBE, 0xC8)) + b"\\xff" * 7
+    return bytes(out)
+
+def break_checksum(record):
+    out = bytearray(record)
+    out[0x1C] ^= 1
+    return bytes(out)
+
+def register(api):
+    import os
+    for game in ("frlg", "lgpe", "swsh", "bdsp", "pla", "sv", "za"):
+        api.add_offer_edit(game, lambda record, game=game: SEEN.append((game, len(record))) or record)
+    api.add_offer_edit("frlg", break_checksum if os.environ.get("BREAK") else rename, "Renamer")
+'''
+
+
+@pytest.fixture
+def offer_plugin(tmp_path, monkeypatch):
+    from pokeldn import plugins
+    folder = tmp_path / "offer-edit"
+    folder.mkdir()
+    (folder / "plugin.toml").write_text('id = "offer-edit"\nname = "Offer edit"\napi = "1.10"\n')
+    (folder / "plugin.py").write_text(OFFER_EDIT_PLUGIN)
+    monkeypatch.setenv("POKELDN_PLUGINS", str(folder))
+    plugins._reset()
+    yield lambda: sys.modules["pokeldn_plugin_offer-edit"]
+    plugins._reset()
+
+
+@pytest.mark.parametrize("game", FORMATS)
+def test_a_plugin_edits_every_games_offer_before_pkhex_checks_it(service, offer_plugin, game, capsys):
+    """Through `prepare_file`, the step every launcher's offer takes: each game's edit sees the record,
+    and FireRed's rename reaches the bytes the launcher sends."""
+    built = service.make(game, 25, TRAINER)
+    offer = Path(pokemon.prepare_file(game, built["file"])).read_bytes()
+    assert offer_plugin().SEEN == [(game, len(pokemon.entity_bytes(game, Path(built["file"]).read_bytes())))]
+    if game == "frlg":
+        assert service.check_bytes("frlg", offer)["nickname"] == "LDN"
+        assert "the plugin Renamer edited the offer" in capsys.readouterr().out
+
+
+def test_a_plugin_edit_that_makes_the_pokemon_illegal_is_refused(service, offer_plugin, monkeypatch):
+    monkeypatch.setenv("BREAK", "1")
+    built = service.make("frlg", 25, TRAINER)
+    with pytest.raises(pokemon.BuilderError, match="(?i)checksum"):
+        pokemon.prepare_file("frlg", built["file"])

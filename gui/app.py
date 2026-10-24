@@ -180,7 +180,7 @@ class App:
         return BoardStatus("denied" if state in ("permission", "denied") else "missing", titles.get(state, ""),
                            android.usb_guidance(state))
 
-    def check_board(self, device: str, blink: bool = False, log=None) -> None:
+    def check_board(self, device: str, blink: bool = False, log=None, erase_gift: bool = False) -> None:
         """Ask the board's firmware for its identity in the background; opening the port can restart it."""
         if self.busy or not device:
             return
@@ -189,7 +189,7 @@ class App:
 
         def work():
             try:
-                ident = board.identify(device, blink=blink)
+                ident = board.identify(device, blink=blink, erase_gift=erase_gift)
                 self.identities[device] = ident
                 say(f'[app] {ident.firmware}, protocol {ident.protocol}, chip revision {ident.chip_revision}, MAC {ident.sta_mac}')
                 if not ident.current:

@@ -8,6 +8,7 @@ import flet as ft
 
 from gui import theme as t
 from gui.views.sprites import MINI, Sprite
+from gui.localization import translate
 from pokeldn.app import command
 from pokeldn.sv import raid_partners
 
@@ -17,7 +18,7 @@ COLUMNS = 3
 CARD_WIDTH = 150
 GAP = 8
 REASON_HEIGHT = 48                          # two 11 px lines at the theme's 1.4 line height, padded
-RANKS = {1: (t.AMBER, tr('raid_partners.favoured_by_raiders_ebd6ac', 'Favoured by raiders')), 2: (t.SILVER, tr('raid_partners.next_tier_for_raiders_4c1d2f', 'Next tier for raiders'))}
+RANKS = {1: (t.BLUE, tr('raid_partners.favoured_by_raiders_ebd6ac', 'Favoured by raiders')), 2: (t.SILVER, tr('raid_partners.next_tier_for_raiders_4c1d2f', 'Next tier for raiders'))}
 
 
 def columns(width: float) -> int:
@@ -58,7 +59,7 @@ class RaidPartnersPicker:
         self.chevron = t.pixel_icon("chevron-down" if self.open else "chevron-right", color=t.FAINT)
         summary = self._summary()
         header = ft.Container(ft.Row([
-            self.chevron, t.text(field.label, 13, weight=ft.FontWeight.W_600),
+            self.chevron, t.text(field.label, 14, weight=ft.FontWeight.W_600),
             ft.Container(t.text(summary, 12, t.BLUE if picks or chosen else t.MUTED, max_lines=1,
                                 overflow=ft.TextOverflow.ELLIPSIS), expand=True,
                          alignment=ft.Alignment.CENTER_RIGHT),
@@ -67,8 +68,7 @@ class RaidPartnersPicker:
         self.body = ft.Column([], spacing=10, visible=self.open)
         if self.open:
             self.body.controls = self._body()
-        self.control = t.surface(ft.Container(ft.Column([header, self.body], spacing=10, tight=True),
-                                              padding=16))
+        self.control = t.card_box(ft.Column([header, self.body], spacing=12, tight=True))
 
     def _summary(self) -> str:
         labels = dict(next(f for f in self.view.tool.fields if f.key == "--raid-progress").choices)
@@ -77,7 +77,7 @@ class RaidPartnersPicker:
             return tr('raid_partners.none_consoles_fill_the_slots_5b1d52', 'None, {value0} consoles fill the slots', value0=self.consoles)
         if not self.picks:
             return tr('raid_partners.drawn_as_the_game_draws_them_83bcc1', 'Drawn as the game draws them{value0}', value0=stage)
-        names = ", ".join(self.picks)
+        names = ", ".join(translate(name) for name in self.picks)
         return (names if len(self.picks) == self.free else tr('raid_partners.one_drawn_5e7b66', '{value0}, one drawn', value0=names)) + stage
 
     def _body(self) -> list[ft.Control]:
@@ -122,33 +122,33 @@ class RaidPartnersPicker:
                              alignment=ft.Alignment.CENTER) if picked else ft.Container()
         title = ft.Row([
             Sprite(self.app, partner.species, size=MINI).control,
-            ft.Column([t.text(partner.trainer, 13, weight=ft.FontWeight.W_600, max_lines=1,
+            ft.Column([t.text(translate(partner.trainer), 13, weight=ft.FontWeight.W_600, max_lines=1,
                               overflow=ft.TextOverflow.ELLIPSIS),
-                       t.text(partner.name, 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)],
+                       t.text(translate(partner.name), 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)],
                       spacing=0, expand=True),
             order,
         ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER)
         facts = ft.Row([t.chip(tr('raid_partners.lv_1b4f67', 'Lv. {value0}', value0=self.level) if self.level else tr('raid_partners.lv_3e543b', 'Lv. —')),
-                        t.chip(partner.tera, "diamond-gem", t.FAINT)], spacing=6, tight=True)
+                        t.chip(translate(partner.tera), "diamond-gem", t.FAINT)], spacing=6, tight=True)
         # Every partner has three moves, one to a line, so every card of a pool stands as tall.
-        moves = ft.Column([t.text(partner.ability, 12, t.SOFT, weight=ft.FontWeight.W_500, max_lines=1,
+        moves = ft.Column([t.text(translate(partner.ability), 12, t.SOFT, weight=ft.FontWeight.W_500, max_lines=1,
                                   overflow=ft.TextOverflow.ELLIPSIS)]
-                          + [t.text(move, 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
+                          + [t.text(translate(move), 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
                              for move in partner.moves], spacing=1)
         column = [title, facts, moves]
         if footer:
-            # Wanted by raiders: a strip tinted gold for the favoured, silver for the next tier; its
+            # Wanted by raiders: a strip tinted blue for the favoured, silver for the next tier; its
             # tooltip says why at more length. A card without one keeps the strip's room.
             strip = ft.Container(height=REASON_HEIGHT)
             if partner.why:
                 ink, tier = RANKS[partner.rank]
                 strip = ft.Container(ft.Row([
                     t.pixel_icon("star", 12, color=ink),
-                    ft.Container(t.text(partner.why, 11, ink, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                    ft.Container(t.text(translate(partner.why), 11, ink, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
                                  expand=True),
                 ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.START),
                     height=REASON_HEIGHT, padding=ft.Padding(8, 6, 8, 6), border_radius=8,
-                    bgcolor=ft.Colors.with_opacity(0.10, ink), tooltip=tr('raid_partners._bbee01', '{value0}: {value1}.', value0=tier, value1=partner.detail))
+                    bgcolor=ft.Colors.with_opacity(0.10, ink), tooltip=tr('raid_partners._bbee01', '{value0}: {value1}.', value0=tier, value1=translate(partner.detail)))
             column.append(strip)
         return ft.Container(
             ft.Column(column, spacing=8, horizontal_alignment=ft.CrossAxisAlignment.STRETCH), expand=True,

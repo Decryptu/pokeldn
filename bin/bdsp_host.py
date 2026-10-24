@@ -24,14 +24,14 @@ from pokeldn.host_support import open_output, write_file
 from pokeldn import pokemon as pokemon_service
 from pokeldn.ldn import left_after_trade
 from pokeldn.online import session as online
-from pokeldn import receiver_gift
+from pokeldn import receiver_gift, trade_back
 from pokeldn.bdsp import pokemon, room
 from pokeldn.bdsp.host import (APP_VERSION, MAX_PARTICIPANTS, SCENE_UNION_ROOM,
                                SCENE_UNION_ROOM_PASSWORD, Advertisement,
                                HostSession, TradePartner)
 from pokeldn.bdsp.session import COMM_ID, PASSPHRASE
 from pokeldn.host_support import resolve_keys, needs_root
-from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
+from pokeldn.ldn.transport import HostTransport, find_ap_phy
 
 SHOWN = {"seat", "left", "session_ack", "connection_request", "request_not_ours",
          "connection_acked", "join_request", "join_acked", "mesh_rx", "rx_bad", "their_emote",
@@ -45,7 +45,7 @@ def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seconds", type=float, default=600.0, help="how long to host")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--capture", default=None, help="every datagram and event, one JSON line each")
     ap.add_argument("--channel", type=int, default=6)
     ap.add_argument("--ldn-protocol", type=int, default=1, choices=(1, 3),
@@ -88,11 +88,14 @@ def build_parser():
     ap.add_argument("--mon-ifname", default="ldn-mon")
     online.add_arguments(ap)
     receiver_gift.add_arguments(ap, "--offer")
+    trade_back.add_arguments(ap)
     return ap
 
 
 def main(argv=None):
-    args = build_parser().parse_args(argv)
+    ap = build_parser()
+    args = ap.parse_args(argv)
+    trade_back.check(ap, args, "--offer", "--online", "--for-receiver")
     if args.online and args.offer:
         print("[bh] --online offers the partner's Pokemon; --offer is ignored")
         args.offer = []
@@ -149,7 +152,9 @@ def main(argv=None):
     # A gift made for the receiving player stands in for an online partner (pokeldn.receiver_gift).
     receiving = None if remote is not None else receiver_gift.setup("bdsp", args, offers, pokemon.build_from,
                                                                     fresh=args.fresh_pid)
-    if receiving is not None:
+    if args.trade_back:
+        remote = trade_back.TradeBack("bdsp", offers)
+    elif receiving is not None:
         remote = receiver_gift.ReceiverGift("bdsp", *receiving, notify=receiver_gift.pop_up())
     partner = TradePartner(offers or bytes(0), tname, int(tid), int(sid), complete=args.complete_trade,
                            approach_delay=args.approach_delay, state=args.state,

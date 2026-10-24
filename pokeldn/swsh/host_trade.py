@@ -304,8 +304,9 @@ class HostTrade:
         body = None
         if got["kind"] == broadcast4.KIND_DATA and compressed:
             body = zlib.decompress(got["body"])
+        # Each station's stream is on the port of its station index; the ack goes back on it.
         for reply in self.snap_in.feed(message, body):
-            self._send_broadcast(1, reply, False)
+            self._send_broadcast(port, reply, False)
         if self.peer_snapshot is None and self.snap_in.complete():
             self.peer_snapshot = self.snap_in.payload()
             self.log(f"[trade] <- the joiner's snapshot, {len(self.peer_snapshot)} bytes")

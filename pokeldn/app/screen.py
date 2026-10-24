@@ -9,6 +9,7 @@ import queue
 import threading
 import unicodedata
 
+from pokeldn.app.sprite_forms import sprite_key
 from pokeldn.app.sprites import BASE, SpriteCache, pixels
 from pokeldn.app.paths import DATA
 
@@ -31,6 +32,7 @@ LATER = SpriteCache(DATA / "sprites" / "screen")
 
 _jobs: queue.Queue = queue.Queue()
 _worker: threading.Thread | None = None
+_joined: int | None = None
 
 
 def ascii_text(text: str) -> str:
@@ -89,17 +91,19 @@ def to_bits(png: bytes, size: int = 64) -> list[list[bool]] | None:
     return lines
 
 
-def sprite_bits(species: int, size: int = 64) -> list[list[bool]] | None:
-    if not isinstance(species, int) or species < 1:
+def sprite_bits(species: int, size: int = 64, *, form: int = 0,
+                gigantamax: bool = False) -> list[list[bool]] | None:
+    key = sprite_key(species, form, gigantamax)
+    if key is None:
         return None
     from pokeldn.app import settings
     try:
         online = bool(settings.load().sprites)
     except Exception:
         online = True
-    cache = GBA if species <= GBA_LAST else LATER
+    cache = GBA if isinstance(key, int) and key <= GBA_LAST else LATER
     cache.online = online
-    data = cache.get(species) or (LATER.get(species) if cache is GBA else None)
+    data = cache.get(key) or (LATER.get(key) if cache is GBA else None)
     return to_bits(data, size) if data else None
 
 
@@ -170,19 +174,52 @@ def arrived() -> bool:
     return _submit(lambda: _send(esp32.display_show_payload("arrived")))
 
 
+def gift_payloads(title: str, line: str, *, species: int | None = None) -> list[bytes]:
+    """The DISPLAY commands of a Mystery Gift on offer; a portable beacon stores them."""
+    from pokeldn.ldn import esp32
+    bits = sprite_bits(species, 40) if species else None
+    return [esp32.display_sprite_payload("gift", bits or []),     # an empty slot draws a gift box
+            esp32.display_show_payload("gift", 0, ascii_text(title), ascii_text(line))]
+
+
 def gift(title: str, line: str, *, species: int | None = None) -> bool:
     """A Mystery Gift on offer: its card, with the Pokemon it carries when it carries one."""
     def job():
-        from pokeldn.ldn import esp32
-        bits = sprite_bits(species, 40) if species else None
-        _send(esp32.display_sprite_payload("gift", bits or []))     # an empty slot draws a gift box
-        _send(esp32.display_show_payload("gift", 0, ascii_text(title), ascii_text(line)))
+        for payload in gift_payloads(title, line, species=species):
+            _send(payload)
     return _submit(job)
 
 
 def delivered(line: str = "") -> bool:
     from pokeldn.ldn import esp32
     return _submit(lambda: _send(esp32.display_show_payload("gifted", GIFTED_HOLD_S, "", ascii_text(line))))
+
+
+def lobby(title: str, species: int, name: str, seats: int, *, stars: int = 0, code: str = "",
+          form: int = 0, gigantamax: bool = False) -> bool:
+    """A hosted raid or Dynamax Adventure: its Pokemon, stars, the consoles joined of `seats` and the
+    Link Code, until the session ends. `joined` updates the count."""
+    global _joined
+    _joined = 0
+    code = code.replace(" ", "")
+    shown_code = f"{code[:4]} {code[4:]}" if len(code) == 8 else code    # as the games print it
+
+    def job():
+        from pokeldn.ldn import esp32
+        bits = sprite_bits(species, form=form, gigantamax=gigantamax)
+        _send(esp32.display_sprite_payload("ours", bits or []))   # an empty slot draws a Poke Ball
+        _send(esp32.display_lobby_payload(ascii_text(title), ascii_text(name), 0, seats, stars, shown_code))
+    return _submit(job)
+
+
+def joined(count: int) -> bool:
+    """The consoles in the lobby `lobby` put up; sent only when the count changes."""
+    global _joined
+    if count == _joined:
+        return False
+    _joined = count
+    from pokeldn.ldn import esp32
+    return _submit(lambda: _send(esp32.display_joined_payload(count)))
 
 
 def drain(timeout: float = 10.0) -> bool:

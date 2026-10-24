@@ -103,27 +103,44 @@ def fenced_blocks(source: str):
 
 
 HEADING = re.compile(r"(?m)^ {0,3}#{1,6}[ \t]+(.+?)[ \t#]*$")
+EXPLICIT_ANCHOR = re.compile(r'''<a\s+(?:id|name)=["']([^"']+)["']\s*>\s*</a>\s*$''', re.I)
 
 
 def anchor(heading: str) -> str:
-    """The id kramdown gives a heading on the docs site: letters first, ASCII words joined by hyphens."""
+    """Keep kramdown's English IDs and support non-ASCII headings without an English reference."""
     text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", heading)
+    if not re.search(r"[a-zA-Z]", text) and any(char.isalpha() for char in text):
+        return re.sub(r"[^\w -]", "", text.lower()).strip().replace(" ", "-")
     text = re.sub(r"^[^a-zA-Z]+", "", text)
     return re.sub(r"[^a-z0-9 -]", "", text.lower()).replace(" ", "-")
 
 
-def heading_sections(source: str):
+def heading_sections(source: str, *, reference: str | None = None):
     """(anchor, heading, markdown) per heading, outside fenced examples, with the text before the first
-    heading under ('', ''). Repeated anchors take kramdown's -1, -2 suffixes."""
+    heading under ('', ''). Repeated anchors take kramdown's -1, -2 suffixes. A translated document
+    with the same heading structure can keep the original document's fragment IDs. An explicit
+    HTML anchor before a heading also preserves IDs when a translation adds or removes sections."""
+    reference_keys = [key for key, title, _ in heading_sections(reference) if title] if reference else []
+    count = sum(len(list(HEADING.finditer(block))) for block, code in fenced_blocks(source) if code is None)
+    if len(reference_keys) != count:
+        reference_keys = []
     seen: dict[str, int] = {}
+    number = 0
     current, heading, parts = "", "", []
     for block, code in fenced_blocks(source):
         cursor = 0
         for match in HEADING.finditer(block) if code is None else ():
-            parts.append(block[cursor:match.start()])
+            prefix = block[cursor:match.start()]
+            explicit = EXPLICIT_ANCHOR.search(prefix)
+            parts.append(prefix[:explicit.start()] if explicit else prefix)
             yield current, heading, "".join(parts)
             heading, base = match[1], anchor(match[1])
             current = f"{base}-{seen[base]}" if base in seen else base
+            if reference_keys:
+                current = reference_keys[number]
+            elif explicit:
+                current = explicit[1]
+            number += 1
             seen[base] = seen.get(base, 0) + 1
             parts, cursor = [], match.start()
         parts.append(block[cursor:])
@@ -135,10 +152,10 @@ class MarkdownDocument:
         self.app, self.on_link = app, on_link
         self.control = ft.Column(spacing=14, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
 
-    def set_value(self, value: str) -> None:
+    def set_value(self, value: str, *, reference: str | None = None) -> None:
         """Each heading starts its own control keyed by its anchor, so a link or a search result scrolls to it."""
         controls = []
-        for key, _, section in heading_sections(value):
+        for key, _, section in heading_sections(value, reference=reference):
             first = True
             for source, code in fenced_blocks(section):
                 if not source.strip():
@@ -218,7 +235,8 @@ class Log:
         color = t.RED if ("traceback" in lower or "error" in lower or "failed" in lower) else \
             t.GREEN if ("complete" in lower or "success" in lower) else \
             t.BLUE if line.startswith("[app]") else t.SOFT
-        return ft.Text(line, size=11, color=color, font_family=t.MONO, selectable=True)
+        from gui.localization import app_log
+        return ft.Text(app_log(line), size=11, color=color, font_family=t.MONO, selectable=True)
 
     def add(self, line: str) -> None:
         if self.redactor is not None:
@@ -292,9 +310,11 @@ class PathField:
         start = os.path.expanduser(self.start_dir())
         start = start if os.path.isdir(start) else None
         if self.mode == "dir":
-            path = await self.picker.get_directory_path(initial_directory=start)
+            path = await self.picker.get_directory_path(
+                dialog_title=tr("widgets.choose_folder", "Choose folder"), initial_directory=start)
         else:
             files = await self.picker.pick_files(
+                dialog_title=tr("widgets.choose_file", "Choose file"),
                 initial_directory=start, allowed_extensions=list(self.exts) or None,
                 file_type=ft.FilePickerFileType.CUSTOM if self.exts else ft.FilePickerFileType.ANY)
             path = files[0].path if files else None

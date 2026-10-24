@@ -443,12 +443,6 @@ def test_leader_cumulatively_acks_connect_before_opening_with_a():
     assert gbaframe.parse_in(outputs[1].payload)["type"] == "A"
 
 
-def main():
-    test_leader_cumulatively_acks_connect_before_opening_with_a()
-    test_two_trades_survive_loss_duplicate_reordering_and_close_cleanly()
-    print("host full-stack end-to-end test: OK")
-
-
 def test_an_emerald_console_with_five_save_rounds_trades_twice_with_save_rounds_5():
     """GBA Emerald runs five post-trade standbys where Switch FireRed runs six [pokeemerald
     trade.c:4686-4797]; --save-rounds 5 completes both trades, the FireRed count waits forever."""

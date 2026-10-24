@@ -61,6 +61,7 @@ static wire_handler_t s_handler;
 static atomic_bool s_host_away;
 static atomic_uint s_dropped, s_rx_bad, s_rx_fifo_ovf, s_rx_buffer_full, s_rx_frame_err, s_events_full;
 static atomic_uint s_consumed_total;   /* every host byte taken since boot */
+static atomic_uint s_cable_total;   /* those that came over the cable, not Bluetooth */
 static uint32_t s_consumed, s_credited;   /* the reader task's own; the handler runs on it */
 /* Maxima for STATUS: a LOG line is refused at the heap floor, which is when the reader stalls.
    docs/hardware_esp32.md, The serial ceiling. */
@@ -134,6 +135,7 @@ uint32_t wire_dropped(void) { return atomic_load(&s_dropped); }
 
 void wire_set_host_away(bool away) { atomic_store(&s_host_away, away); }
 uint32_t wire_consumed(void) { return atomic_load(&s_consumed_total); }
+uint32_t wire_cable_consumed(void) { return atomic_load(&s_cable_total); }
 uint32_t wire_rx_bad(void) { return atomic_load(&s_rx_bad); }
 uint32_t wire_rx_fifo_ovf(void) { return atomic_load(&s_rx_fifo_ovf); }
 uint32_t wire_rx_buffer_full(void) { return atomic_load(&s_rx_buffer_full); }
@@ -378,8 +380,10 @@ static void reader(void *arg)
     for (;;) {
         const int64_t turn = esp_timer_get_time();
         int n;
+        bool cable = true;
 #if POKELDN_BLE
-        if (ble_linked()) n = ble_read(chunk, sizeof(chunk), pdMS_TO_TICKS(20)); else
+        cable = !ble_linked();
+        if (!cable) n = ble_read(chunk, sizeof(chunk), pdMS_TO_TICKS(20)); else
 #endif
         {
 #if WIRE_USB
@@ -403,6 +407,7 @@ static void reader(void *arg)
             s_credit_at = turn;
             send_credit();
         }
+        if (cable && n > 0) atomic_fetch_add(&s_cable_total, (unsigned)n);
         for (int i = 0; i < n; ++i) {
             ++s_consumed;
             atomic_fetch_add(&s_consumed_total, 1);   /* before the handler, so a HELLO's reset excludes its own delimiter */

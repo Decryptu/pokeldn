@@ -1,5 +1,5 @@
 """flash-write: composing a sector on the console and writing it with swi 0x48 (docs/frlg_rom.md,
-the Sloop syscall boundary)."""
+the dispatcher and its jump table)."""
 
 import pytest
 

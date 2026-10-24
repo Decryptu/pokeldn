@@ -6,10 +6,10 @@ per advertisement.
 
     sudo ./bin/swsh_gift_host.py --species 25 --level 25 --nickname POKELDN --ot POKELDN
     sudo ./bin/swsh_gift_host.py --record scratchpad/card.bin --dwell 0.5
+    POKELDN_RADIO=esp32:auto ./bin/swsh_gift_host.py --record card.pokegift --save-to-board
 
     (them) Mystery Gift -> Recevoir un Cadeau Mystere -> Via communication sans fil locale
 """
-from pathlib import Path
 import argparse
 import os
 import sys
@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn import config, gifts, pokemon
 from pokeldn.app import screen
 from pokeldn.host_support import write_file
-from pokeldn.ldn import transport
+from pokeldn.ldn import esp32, transport
 from pokeldn.ldn.transport import HostTransport
 from pokeldn.swsh import COMM_ID, PASSPHRASE, beacon, wc8
 
@@ -59,15 +59,48 @@ def _base_record(args):
         region_mask=args.region_mask, ribbons=args.ribbon or (), **fields)
 
 
-def show_card(args, record):
-    """The card on the board's screen: the gift file's name, or the Pokemon this run built, drawn
-    when the record carries one (kind 1)."""
+def card_face(args, record):
+    """-> (line, species) the board's screen draws: the gift file's name, or the Pokemon this run
+    built, drawn when the record carries one (kind 1)."""
     off, fmt = wc8.POKEMON["species"]
     species = (struct.unpack_from("<" + fmt, record, off)[0]
                if record[wc8.GIFT_KIND_AT] == wc8.GIFT_KIND_POKEMON else None)
     line = (gifts.load(args.record, game="swsh").name if args.record else
             args.nickname or (f"Pokemon #{species}" if species else ""))
+    return line, species
+
+
+def show_card(args, record):
+    line, species = card_face(args, record)
     screen.gift("Mystery Gift", line, species=species)
+
+
+def save_to_board(args, record, fragments, keys_path):
+    """Stores the gift on the board as a portable beacon: it advertises the card on its own at every
+    power-up with no host (docs/hardware_esp32.md, Portable beacon)."""
+    from pokeldn.ldn import api, esp32_wlan, portable
+    radio = esp32_wlan.use_from_environment(log=print)
+    if radio is None:
+        print("--save-to-board needs the ESP32 board: POKELDN_RADIO=esp32:auto", file=sys.stderr)
+        return 1
+    if esp32.firmware_version(radio.hello()) < esp32.BEACON_FIRMWARE:
+        print("the board's firmware keeps no gift; install radio firmware "
+              f"{'.'.join(map(str, esp32.BEACON_FIRMWARE))} or later from the Board page",
+              file=sys.stderr)
+        return 1
+    net, derivation, data_key = portable.network(
+        api.load_keys(keys_path), local_communication_id=COMM_ID, scene_id=args.scene_id,
+        app_version=args.app_version, protocol=args.protocol, password=PASSPHRASE,
+        name=args.nickname_host.encode(), channel=args.channel or 6)
+    line, species = card_face(args, record)
+    image = portable.build(net, derivation, data_key, fragments,
+                           dwell_ms=round(args.dwell * 1000),
+                           display=screen.gift_payloads("Mystery Gift", line, species=species))
+    state = radio.store_beacon(image)
+    print(f"saved on the board: {state.fragments} fragments, {state.length} bytes. "
+          "Unplug it and power it from any USB charger; it advertises the card 3 s after power-up, "
+          "until a computer opens it.")
+    return 0
 
 
 def build_parser():
@@ -107,6 +140,9 @@ def build_parser():
     p.add_argument("--protocol", type=int, default=LDN_PROTOCOL, choices=(1, 3),
                    help="LDN advertisement protocol version")
     p.add_argument("--dump", help="write the record and its fragments here and exit")
+    p.add_argument("--save-to-board", action="store_true",
+                   help="store the gift on the ESP32 board, which then advertises it with no "
+                        "computer at every power-up, and exit")
     return p
 
 
@@ -149,6 +185,13 @@ def main(argv=None):
 
     # docs/hardware_adapters.md: the Wi-Fi profile and keys path come from config/host*.toml.
     machine = config.load_project_host_file_config()
+    if args.save_to_board:
+        try:
+            return save_to_board(args, record, fragments,
+                                 os.path.expanduser(args.keys or machine.keys_path))
+        except (OSError, ValueError, RuntimeError, esp32.RadioError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
     phy = transport.find_ap_phy(log=print) if args.phy == "auto" else args.phy
     if phy is None:
         print("no AP-capable phy found", file=sys.stderr)

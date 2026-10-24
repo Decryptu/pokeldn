@@ -12,6 +12,7 @@ import flet as ft
 from gui import drop
 from gui import theme as t
 from gui.views.widgets import open_folder
+from gui.localization import translate
 from pokeldn import plugins
 from pokeldn.ldn import radios
 from pokeldn.app import plugin_sources as sources
@@ -29,7 +30,7 @@ RISKS = (
 
 
 def plugin_icon(source: str | bytes = "", size: int = 48) -> ft.Control:
-    """The plugin's own image, or the blocks mark on the brand gradient."""
+    """The plugin's own image, or the blocks mark in brand blue."""
     if isinstance(source, str) and source:
         try:
             source = Path(source).read_bytes()
@@ -40,7 +41,7 @@ def plugin_icon(source: str | bytes = "", size: int = 48) -> ft.Control:
                          filter_quality=ft.FilterQuality.NONE)
         return ft.Container(image, width=size, height=size, border_radius=size * 0.22,
                             clip_behavior=ft.ClipBehavior.ANTI_ALIAS)
-    return ft.Container(t.tinted(t.pixel_icon("blocks", size=24 if size < 48 else 48), t.BRAND_BLUE),
+    return ft.Container(t.pixel_icon("blocks", size=24 if size < 48 else 48, color=t.BLUE),
                         width=size, height=size, border_radius=size * 0.22, alignment=ft.Alignment.CENTER,
                         bgcolor=ft.Colors.with_opacity(0.08, "#FFFFFF"))
 
@@ -132,7 +133,7 @@ class PluginsView:
 
     def _zone(self, compact: bool) -> ft.Container:
         title = (tr('plugins.drop_a_pokeplugin_file_here_dabba6', 'Drop a .pokeplugin file here') if drop.AVAILABLE else tr('plugins.add_a_pokeplugin_file_42b275', 'Add a .pokeplugin file'))
-        lead = t.tinted(t.pixel_icon("archive", size=24 if compact else 48), t.BRAND_BLUE)
+        lead = t.pixel_icon("archive", size=24 if compact else 48, color=t.BLUE)
         body = [t.text(title, 15 if not compact else 13, weight=ft.FontWeight.W_600),
                 t.text(tr('plugins.plugins_add_tools_and_radios_made_by_other_people_you_s_580f52', 'Plugins add tools and radios made by other people. You see what a plugin is and accept its risks before anything is installed.'), 12, t.MUTED,
                        text_align=None if compact else ft.TextAlign.CENTER)]
@@ -153,8 +154,8 @@ class PluginsView:
         local = plugin.folder is not None and plugin.folder.parent == plugins.folder()
         forced = plugins.named(plugin)
         on = state is not None
-        meta = " · ".join(x for x in (f"Version {plugin.version}" if plugin.version else "",
-                                      f"by {plugin.author}" if plugin.author else "",
+        meta = " · ".join(x for x in (tr('plugins.version_label', 'Version {value0}', value0=plugin.version) if plugin.version else "",
+                                      tr('plugins.author_label', 'by {value0}', value0=plugin.author) if plugin.author else "",
                                       f"plugin API {plugins.api_text(plugin.api)}") if x)
         lines: list[ft.Control] = [
             ft.Row([t.text(plugin.name, 14, weight=ft.FontWeight.W_600), self._status(plugin, state)],
@@ -173,10 +174,10 @@ class PluginsView:
             if chips:
                 lines.append(ft.Row(chips, spacing=6, run_spacing=6, wrap=True))
         elif plugin.error:
-            lines.append(t.badge(plugin.error, t.RED, "warning-diamond"))
+            lines.append(t.badge(translate(plugin.error), t.RED, "warning-diamond"))
         level, message = plugins.compatibility(plugin.api)
         if level == "deprecated":
-            lines.append(t.badge(message, t.AMBER, "warning-diamond"))
+            lines.append(t.badge(translate(message), t.AMBER, "warning-diamond"))
         available = self.app.plugin_updates.get(plugin.id)
         if available is not None and local:
             busy = self.downloading == plugin.id
@@ -238,7 +239,7 @@ class PluginsView:
 
     def _adds(self, state: plugins.Plugin) -> list[ft.Control]:
         names = {g.key: g.name for g in plugins.games()}
-        chips = [t.chip(tr('plugins.tool_d0d814', '{value0} · {value1} tool{value2}', value0=g.name, value1=len(g.tools), value2='s' * (len(g.tools) != 1)), "gamepad", t.BLUE)
+        chips = [t.chip(tr('plugins.tool_d0d814', '{value0} · {value1} tool{value2}', value0=g.name, value1=len(g.tools), value2=tr('plugins.plural_suffix', 's') * (len(g.tools) != 1)), "gamepad", t.BLUE)
                  for g in state.games]
         chips += [t.chip(tr('plugins.in_8e5a60', '{value0} in {value1}', value0=tool.name, value1=names.get(game, game)), "arrows-horizontal", t.BLUE)
                   for game, tool in state.tools]
@@ -247,7 +248,7 @@ class PluginsView:
 
     def _radio_card(self) -> list[ft.Control]:
         s = self.app.settings
-        choices = [("", tr('plugins.the_board_default_e0fd57', 'The board (default)'))] + [(r.scheme, r.label) for r in radios.choices()]
+        choices = [("", tr('plugins.the_board_default_e0fd57', 'The board (default)'))] + [(r.scheme, tr('plugins.ldnrs_radio', 'USB Wi-Fi (Windows, ldnrs)') if r.scheme == 'ldnrs' else r.label) for r in radios.choices()]
         if s.radio and s.radio not in {c[0] for c in choices}:
             choices.append((s.radio, tr('plugins.its_plugin_is_off_dc8701', '{value0} (its plugin is off)', value0=s.radio)))
         if len(choices) == 1:
@@ -290,7 +291,7 @@ class PluginsView:
         for source in listings:
             rows: list[ft.Control] = [self._entry_row(source, e, found.get(e.id)) for e in source.entries]
             if source.error:
-                rows.insert(0, t.badge(source.error, t.AMBER, "warning-diamond"))
+                rows.insert(0, t.badge(translate(source.error), t.AMBER, "warning-diamond"))
             if not source.entries and not source.error:
                 rows.append(t.text(tr('plugins.source_unread', 'Not read yet. Press refresh to read it.')
                                    if not source.fetched else tr('plugins.source_empty', 'This source lists no plugins.'),
@@ -301,7 +302,7 @@ class PluginsView:
 
     def _entry_row(self, source, entry, current: plugins.Plugin | None) -> ft.Control:
         state = sources.state(entry, current)
-        meta = " · ".join(x for x in (f"Version {entry.version}", f"by {entry.author}" if entry.author else "",
+        meta = " · ".join(x for x in (tr('plugins.version_label', 'Version {value0}', value0=entry.version), tr('plugins.author_label', 'by {value0}', value0=entry.author) if entry.author else "",
                                       store.size_text(entry.size) if entry.size else "") if x)
         lines: list[ft.Control] = [t.text(entry.name, 14, weight=ft.FontWeight.W_600), t.text(meta, 12, t.FAINT)]
         if entry.description:
@@ -314,7 +315,7 @@ class PluginsView:
                              entry.sha256, source.url)
         actions: list[ft.Control] = []
         if state == "incompatible":
-            lines.append(t.badge(plugins.compatibility(entry.api)[1], t.RED, "warning-diamond"))
+            lines.append(t.badge(translate(plugins.compatibility(entry.api)[1]), t.RED, "warning-diamond"))
         elif state == "install":
             actions.append(t.button(tr('plugins.downloading_37b345', 'Downloading') if busy else tr('plugins.install_569ca4', 'Install'),
                                     lambda e: self._download(available(), entry.name), "download",
@@ -352,7 +353,7 @@ class PluginsView:
         rows = []
         for source in listings:
             facts = [tr('plugins.source_count', '{value0} plugin{value1}', value0=len(source.entries),
-                        value1='s' * (len(source.entries) != 1))]
+                        value1=tr('plugins.plural_suffix', 's') * (len(source.entries) != 1))]
             if source.fetched:
                 facts.append(tr('plugins.source_read', 'read {value0}', value0=time.strftime(
                     "%Y-%m-%d %H:%M", time.localtime(source.fetched))))
@@ -363,7 +364,7 @@ class PluginsView:
                 t.text(source.url, 11, t.FAINT, selectable=True, font_family=t.MONO),
                 t.text(" · ".join(facts), 12, t.MUTED)]
             if source.error:
-                lines.append(t.badge(source.error, t.AMBER, "warning-diamond"))
+                lines.append(t.badge(translate(source.error), t.AMBER, "warning-diamond"))
             actions = []
             if source.homepage:
                 actions.append(t.icon_button("external-link", lambda e, u=source.homepage: self.app.page.run_task(
@@ -372,7 +373,7 @@ class PluginsView:
                 actions.append(t.icon_button("trash", lambda e, s=source: self._remove_source(s),
                                              tr('plugins.remove_source', 'Stop following'), color=t.RED))
             rows.append(t.surface(ft.Container(ft.Row([
-                t.tinted(t.pixel_icon("globe", size=24), t.BRAND_BLUE),
+                t.pixel_icon("globe", size=24, color=t.BLUE),
                 ft.Column(lines, spacing=4, expand=True), ft.Row(actions, spacing=0),
             ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START), padding=ft.Padding(16, 14, 8, 14))))
         return [add, t.section(tr('plugins.followed_sources', 'Followed'), ft.Column(rows, spacing=8), trailing=t.icon_button(
@@ -402,7 +403,7 @@ class PluginsView:
             self.app.plugin_sources = [*[s for s in self.app.plugin_sources if s.url != source.url], source]
             self.say(tr('plugins.source_added', '{value0} added: {value1} plugin{value2} under Browse.',
                         value0=sources.label(source), value1=len(source.entries),
-                        value2='s' * (len(source.entries) != 1)), t.BLUE, "globe")
+                        value2=tr('plugins.plural_suffix', 's') * (len(source.entries) != 1)), t.BLUE, "globe")
             self.app.check_plugin_updates()
             self.render(update=True)
 
@@ -491,7 +492,8 @@ class PluginsView:
         self.app.settings.radio = scheme
         self.app.settings.save()
         radio = radios.radio(scheme)
-        self.say(f"Sessions now use {radio.label}." if radio else 'Sessions now use the board.', t.BLUE, "cpu")
+        label = tr('plugins.ldnrs_radio', 'USB Wi-Fi (Windows, ldnrs)') if scheme == 'ldnrs' else radio.label if radio else ''
+        self.say(tr('plugins.sessions_use_radio', 'Sessions now use {name}.', name=label) if radio else tr('plugins.sessions_use_board', 'Sessions now use the board.'), t.BLUE, "cpu")
         self.render(update=True)
 
     def _toggle(self, plugin: plugins.Plugin, value: bool) -> None:
@@ -508,11 +510,11 @@ class PluginsView:
         self._set_enabled(plugin.id, value)
         state = {p.id: p for p in plugins.load()}.get(plugin.id)
         if value and state is not None and state.error:
-            self.say(f"{plugin.name} failed to load. Its error is on its card.", t.RED, "warning-diamond")
+            self.say(tr('plugins.load_failed', '{name} failed to load. Its error is on its card.', name=plugin.name), t.RED, "warning-diamond")
         elif value:
-            self.say(f"{plugin.name} is on.", action=self._tools_action(plugin.id))
+            self.say(tr('plugins.turned_on', '{name} is on.', name=plugin.name), action=self._tools_action(plugin.id))
         else:
-            self.say(f"{plugin.name} is off. Its tools are hidden until you turn it on again.", t.MUTED, "check")
+            self.say(tr('plugins.turned_off', '{name} is off. Its tools are hidden until you turn it on again.', name=plugin.name), t.MUTED, "check")
         self.render(update=True)
 
     def _set_enabled(self, plugin_id: str, value: bool) -> None:
@@ -569,7 +571,7 @@ class PluginsView:
         self.app.page.show_dialog(t.dialog(
             title=ft.Row([t.pixel_icon("warning-diamond", size=24, color=t.RED), t.text(title, 18, expand=True)],
                          spacing=10),
-            content=t.text(message, 13, t.MUTED, width=420, selectable=True),
+            content=t.text(translate(message), 13, t.MUTED, width=420, selectable=True),
             actions=[t.button(tr('plugins.ok_565339', 'OK'), lambda e: self.app.page.pop_dialog())]))
 
     def consent(self, package: store.Package, action: str, current: plugins.Plugin | None, origin: str = "") -> None:
@@ -605,8 +607,8 @@ class PluginsView:
             self._accepted(package, action, current, state["enable"], origin)
 
         go.on_click = confirm
-        meta = " · ".join(x for x in (f"Version {package.version}" if package.version else "",
-                                      f"by {package.author}" if package.author else tr('plugins.by_an_unnamed_author_da6876', 'by an unnamed author')) if x)
+        meta = " · ".join(x for x in (tr('plugins.version_label', 'Version {value0}', value0=package.version) if package.version else "",
+                                      tr('plugins.author_label', 'by {value0}', value0=package.author) if package.author else tr('plugins.by_an_unnamed_author_da6876', 'by an unnamed author')) if x)
         lines: list[ft.Control] = [
             ft.Row([
                 plugin_icon(package.icon or (current.icon if current else ""), 56),
@@ -631,7 +633,7 @@ class PluginsView:
             lines.append(t.badge(*version_note))
         level, message = plugins.compatibility(package.api)
         if level == "deprecated":
-            lines.append(t.badge(message, t.AMBER, "warning-diamond"))
+            lines.append(t.badge(translate(message), t.AMBER, "warning-diamond"))
         if origin:
             lines.append(t.badge(tr('plugins.listed_by', 'Listed by {value0}; the file matches its listing.',
                                     value0=sources.label(self._listing(origin))), t.FAINT, "globe"))
@@ -690,7 +692,7 @@ class PluginsView:
         """What a reading of its code found; it informs, it cannot clear a plugin."""
         if findings:
             body = [t.text(tr('plugins.what_its_code_does_4e3d2b', 'What its code does'), 14, weight=ft.FontWeight.W_600),
-                    *[ft.Row([t.text("·", 13, t.AMBER), t.text(f, 12, t.SOFT, expand=True)], spacing=8,
+                    *[ft.Row([t.text("·", 13, t.AMBER), t.text(translate(f), 12, t.SOFT, expand=True)], spacing=8,
                              vertical_alignment=ft.CrossAxisAlignment.START) for f in findings]]
             color, icon = t.AMBER, "search"
         else:
@@ -721,15 +723,15 @@ class PluginsView:
         else:
             plugins.reload()
         state = {p.id: p for p in plugins.load()}.get(package.id)
-        done = {"install": "installed", "update": tr('plugins.updated_to_8ce2a6', 'updated to {value0}', value0=package.version),
-                "reinstall": "reinstalled", "downgrade": tr('plugins.now_at_715c26', 'now at {value0}', value0=package.version)}[action]
+        done = {"install": tr('plugins.installed', 'installed'), "update": tr('plugins.updated_to_8ce2a6', 'updated to {value0}', value0=package.version),
+                "reinstall": tr('plugins.reinstalled', 'reinstalled'), "downgrade": tr('plugins.now_at_715c26', 'now at {value0}', value0=package.version)}[action]
         if state is not None and state.error:
-            self.say(f"{package.name} is {done} but failed to load. Its error is on its card.", t.RED,
+            self.say(tr('plugins.installed_load_failed', '{name} is {state} but failed to load. Its error is on its card.', name=package.name, state=done), t.RED,
                      "warning-diamond")
         elif enable:
-            self.say(f"{package.name} is {done} and on.", action=self._tools_action(package.id))
+            self.say(tr('plugins.installed_on', '{name} is {state} and on.', name=package.name, state=done), action=self._tools_action(package.id))
         else:
-            self.say(f"{package.name} is {done}. Turn it on when you want its tools.", t.MUTED)
+            self.say(tr('plugins.installed_off', '{name} is {state}. Turn it on when you want its tools.', name=package.name, state=done), t.MUTED)
         self.render(update=True)
 
     # Removing
@@ -746,7 +748,7 @@ class PluginsView:
                 self.error_dialog(tr('plugins.was_not_removed_90feb9', '{value0} was not removed', value0=plugin.name), str(error))
                 return
             self._set_enabled(plugin.id, False)
-            self.say(f"{plugin.name} is removed.", t.MUTED, "trash")
+            self.say(tr('plugins.removed', '{name} is removed.', name=plugin.name), t.MUTED, "trash")
             self.render(update=True)
 
         self.app.page.show_dialog(t.dialog(

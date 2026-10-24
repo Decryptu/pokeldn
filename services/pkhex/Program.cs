@@ -11,9 +11,22 @@ static partial class Program
 {
     static void Main() => Serve();
 
+    // A language pack's BCP 47 tag -> PKHeX's text language; a TW, HK or MO region is Traditional Chinese.
+    static string DisplayLanguage(string? tag)
+    {
+        var parts = (tag ?? "en").ToLowerInvariant().Split('-');
+        return parts[0] switch
+        {
+            "zh" => parts.Skip(1).Any(p => p is "hant" or "tw" or "hk" or "mo") ? "zh-Hant" : "zh-Hans",
+            "ja" or "fr" or "it" or "de" or "es" or "ko" => parts[0],
+            _ => "en",
+        };
+    }
+
     internal static void Serve()
     {
         var strings = GameInfo.GetStrings("en");
+        var displayLanguage = "en";
         // Cut, Fly, Surf, Strength, Waterfall, Flash, Rock Smash, Dive
         var hiddenMoves = new HashSet<ushort> { 15, 19, 57, 70, 127, 148, 249, 291 };
         // Diamond to SoulSilver: Cut, Fly, Surf, Strength, Waterfall, Rock Smash, Whirlpool, Rock Climb, Defog
@@ -43,6 +56,9 @@ static partial class Program
             try
             {
                 var request = JsonNode.Parse(line)!.AsObject();
+                // A reply's names; the record's own language and the Showdown parser stay as requested.
+                displayLanguage = DisplayLanguage((string?)request["display_language"]);
+                strings = GameInfo.GetStrings(displayLanguage);
                 emptyTracker = (string?)request["home_tracker"] != "made";
                 madeTrackers.Clear();
                 var game = games[(string)request["game"]!];
@@ -68,6 +84,9 @@ static partial class Program
                     "move" => Move(game, request),
                     "destinations" => Destinations(game, request),
                     "raid_scan" => RaidScan.Run(request),
+                    "wild_areas" => Wild.AreasReply(strings),
+                    "wild_legal" => Wild.LegalReply(request, strings, Plain),
+                    "wild_species" => Wild.SpeciesReply(request, strings),
                     var other => throw new ArgumentException($"unknown command {other}"),
                 };
                 reply["ok"] = true;
@@ -97,6 +116,31 @@ static partial class Program
             return null;
         }
 
+        // The encounters a build tries: per version wild slots, static encounters, trades, eggs; Mystery Gifts last, as an
+        // event's fixed PID makes a new-PID offer illegal. PKHeX lists eggs first; each kind is cut at 80 on its own
+        // (docs/architecture.md, Encounter order).
+        List<IEncounterable> Encounters(PKM blank, ITrainerInfo trainer, ReadOnlyMemory<ushort> moves, GameVersion[] versions,
+                                        Func<IEncounterable, bool>? keep = null)
+        {
+            List<IEncounterable> found = [], gifts = [];
+            try
+            {
+                foreach (var version in versions)
+                    foreach (var group in (EncounterTypeGroup[])[EncounterTypeGroup.Slot, EncounterTypeGroup.Static,
+                                 EncounterTypeGroup.Trade, EncounterTypeGroup.Egg, EncounterTypeGroup.Mystery])
+                    {
+                        EncounterMovesetGenerator.PriorityList = [group];
+                        (group == EncounterTypeGroup.Mystery ? gifts : found)
+                            .AddRange(EncounterMovesetGenerator.GenerateEncounters(blank, trainer, moves, version).Where(keep ?? (_ => true)).Take(80));
+                    }
+            }
+            finally
+            {
+                EncounterMovesetGenerator.ResetFilters();
+            }
+            return [.. found, .. gifts];
+        }
+
         JsonObject GenderRatio(Game game, JsonObject request)
         {
             var species = checked((ushort)(int)request["species"]!);
@@ -110,6 +154,13 @@ static partial class Program
         {
             if (list == "species")
                 return new JsonObject { ["names"] = Species(game)["species"]!.DeepClone() };
+            if (list == "species3")
+            {
+                var species = new JsonArray();
+                for (ushort id = 1; id <= 386; id++)
+                    species.Add(new JsonObject { ["id"] = SpeciesConverter.GetInternal3(id), ["name"] = strings.specieslist[id] });
+                return new JsonObject { ["names"] = species };
+            }
             var blank = game.Blank();
             var names = new JsonArray();
             void Add(int id, string name)
@@ -153,6 +204,22 @@ static partial class Program
                     for (var b = 1; b <= blank.MaxBallID; b++)
                         Add(b, strings.balllist[b]);
                     break;
+                case "national":
+                    for (var s = 1; s < strings.specieslist.Length; s++)
+                        Add(s, strings.specieslist[s]);
+                    break;
+                case "abilities":
+                    for (var a = 1; a <= blank.MaxAbilityID; a++)
+                        Add(a, strings.abilitylist[a]);
+                    break;
+                case "natures":
+                    for (var n = 0; n < strings.natures.Length; n++)
+                        Add(n, strings.natures[n]);
+                    break;
+                case "types":
+                    for (var y = 0; y < strings.types.Length; y++)
+                        Add(y, strings.types[y]);
+                    break;
                 default:
                     throw new ArgumentException($"unknown list {list}");
             }
@@ -175,7 +242,7 @@ static partial class Program
             blank.Form = form;
             var permitted = new HashSet<Ball>();
             Span<Ball> found = stackalloc Ball[BallApplicator.MaxBallSpanAlloc];
-            foreach (var encounter in EncounterMovesetGenerator.GenerateEncounters(blank, trainer, ReadOnlyMemory<ushort>.Empty, versions).Take(80))
+            foreach (var encounter in Encounters(blank, trainer, ReadOnlyMemory<ushort>.Empty, versions))
             {
                 if (encounter is not IEncounterConvertible convertible)
                     continue;
@@ -183,6 +250,9 @@ static partial class Program
                 foreach (var ball in found[..BallApplicator.GetLegalBalls(found, pk, encounter)])
                     permitted.Add(ball);
             }
+            // Only Legends Arceus and Z-A have Alphas; the cut at 80 can hide one, so a species without one in the list is asked again.
+            bool? alpha = game.Context is EntityContext.Gen8a or EntityContext.Gen9a
+                ? Encounters(blank, trainer, ReadOnlyMemory<ushort>.Empty, versions, IsAlpha).Count > 0 : null;
             var balls = new JsonArray();
             foreach (var ball in permitted.Order())
                 balls.Add(new JsonObject { ["id"] = (int)ball, ["name"] = strings.balllist[(int)ball] });
@@ -227,8 +297,11 @@ static partial class Program
                 ["effort"] = effort,
                 ["held"] = Names(game, "held")["names"]!.DeepClone(),
                 ["balls"] = balls,
+                ["alpha"] = alpha,
             };
         }
+
+        static bool IsAlpha(IEncounterable encounter) => encounter is IAlphaReadOnly { IsAlpha: true };
 
         (GameVersion[], SimpleTrainerInfo) Trainer(Game game, JsonObject request)
         {
@@ -258,7 +331,33 @@ static partial class Program
             var shiny = (bool?)request["shiny"] ?? false;
             var nickname = (string?)request["nickname"] ?? "";
             var wish = Wish.From(request["options"] as JsonObject);
-            var form = wish.Form ?? first;
+            if (wish.Alpha is true && game.Context is not (EntityContext.Gen8a or EntityContext.Gen9a))
+                throw new ArgumentException("Only Legends Arceus and Legends Z-A have Alpha Pokemon.");
+            // A request that names no form takes the first that builds: Sword/Shield holds Zygarde only in its Power
+            // Construct forms, Scarlet/Violet Ursaluna only as Bloodmoon.
+            if (wish.Form is null)
+            {
+                InvalidOperationException? refused = null;
+                for (var f = first; f < game.Table[species].FormCount; f++)
+                {
+                    if (!game.Table.IsPresentInGame(species, f))
+                        continue;
+                    var probe = request.DeepClone().AsObject();
+                    if (probe["options"] is not JsonObject options)
+                        probe["options"] = options = [];
+                    options["form"] = (int)f;
+                    try
+                    {
+                        return Make(game, probe);
+                    }
+                    catch (InvalidOperationException e)
+                    {
+                        refused ??= e;
+                    }
+                }
+                throw refused!;
+            }
+            var form = wish.Form.Value;
             if (!game.Table.IsPresentInGame(species, form))
                 throw new ArgumentException("This form is absent from the selected game.");
             // SetNickname cuts a longer name without saying so; the record would not carry what was asked.
@@ -277,15 +376,18 @@ static partial class Program
             string? firstProblem = null, firstUnmet = null;
             var lowest = int.MaxValue;
             var shinyLocked = false;
+            // An Alpha is one from its encounter: the flag, size, moves and IVs come with it [EncounterSlot8a, EncounterSlot9a].
+            var encounters = Encounters(blank, trainer, wish.Moves, versions,
+                wish.Alpha is { } alpha ? e => IsAlpha(e) == alpha : null);
             // The first encounter that stays legal with the requested level, shininess and nickname wins.
             // The first pass takes encounters as they come; the second lets an evolved Pokemon climb to its evolution level.
-            // Mystery Gifts come last: an event's fixed PID makes the launchers' new-PID offer illegal.
             foreach (var climb in new[] { false, true })
             {
-                foreach (var encounter in EncounterMovesetGenerator.GenerateEncounters(blank, trainer, wish.Moves, versions)
-                             .Take(80).OrderBy(e => e is MysteryGift))
+                foreach (var encounter in encounters)
                 {
                     if (encounter is not IEncounterConvertible convertible)
+                        continue;
+                    if (climb && (level > 0 || encounter.Species == species))
                         continue;
                     if (level > 0 && encounter.LevelMin > level)
                     {
@@ -303,12 +405,16 @@ static partial class Program
                     if (shiny)
                         criteria = criteria with { Shiny = Shiny.Always };
                     // The PID, IVs and, for a wild slot, the level are rolled at random; a roll can be refused or land
-                    // above the level asked for, so an encounter gets several.
+                    // above the level asked for, so an encounter gets several. A roll above the level costs no legality
+                    // check and is not one of the eight: a slot straddling the level misses it often.
                     PKM? built = null, mendable = null;
-                    for (var roll = 0; roll < 8 && built is null; roll++)
+                    for (int roll = 0, tries = 0; roll < 8 && tries < 64 && built is null; tries++)
                     {
                         var rolled = convertible.ConvertToPKM(trainer, criteria);
-                        if (rolled.GetType() != blank.GetType() || (level != 0 && rolled.CurrentLevel > level))
+                        if (level != 0 && rolled.CurrentLevel > level && rolled.GetType() == blank.GetType())
+                            continue;
+                        roll++;
+                        if (rolled.GetType() != blank.GetType())
                             continue;
                         if (new LegalityAnalysis(rolled).Valid)
                             built = rolled;
@@ -332,9 +438,30 @@ static partial class Program
                     }
                     if (level > 0 && level < built.CurrentLevel)
                         continue;
-                    // An evolved Pokemon left at the level it was caught at can be below its evolution level: walk up.
-                    var last = climb && evolved && level == 0 ? 100 : Math.Max(level, built.CurrentLevel);
-                    for (var lv = Math.Max(level, built.CurrentLevel); lv <= last; lv++)
+                    var start = Math.Max(level, built.CurrentLevel);
+                    if (!climb)
+                    {
+                        if (Try(start) is { } made)
+                            return made;
+                        continue;
+                    }
+                    // An evolved Pokemon left at the level it was caught at can be below its evolution level: climb to the
+                    // lowest legal level. In 231 of 233 such climbs every level above it was legal too, so level 100 decides
+                    // (docs/architecture.md, Encounter order).
+                    if (Try(100) is not { } top)
+                        continue;
+                    var (low, high) = (start, 100);
+                    while (low < high)
+                    {
+                        var mid = (low + high) / 2;
+                        if (Try(mid) is { } made)
+                            (top, high) = (made, mid);
+                        else
+                            low = mid + 1;
+                    }
+                    return top;
+
+                    JsonObject? Try(int lv)
                     {
                         var pk = built.Clone();
                         if (lv > pk.CurrentLevel)
@@ -349,12 +476,13 @@ static partial class Program
                         wish.Apply(pk);
                         var la = Mend(pk, evolved, encounter, trainer, wish);
                         var unmet = wish.Unmet(pk, strings);
-                        if (Accepted(la) && unmet is null)
+                        if (Accepted(pk, la) && unmet is null)
                             return Describe(game, pk, la);
                         if (unmet is null)
-                            firstProblem ??= la.Report();
+                            firstProblem ??= la.Report(displayLanguage);
                         else
                             firstUnmet ??= unmet;
+                        return null;
                     }
                 }
             }
@@ -367,6 +495,8 @@ static partial class Program
                     ? $"{name} cannot be lower than level {lowest} in this game."
                     : shinyLocked
                         ? $"{name} cannot be shiny in this game."
+                    : encounters.Count == 0 && wish.Alpha is { } asked
+                        ? asked ? $"{name} cannot be an Alpha in this game." : $"{name} is always an Alpha in this game."
                         : wish.Moves.Length > 1
                             ? $"No legal {name} in this game can know these moves together."
                             : $"PKHeX has no legal {name} for this game.");
@@ -376,7 +506,7 @@ static partial class Program
         LegalityAnalysis Mend(PKM pk, bool evolved, IEncounterTemplate encounter, ITrainerInfo trainer, Wish wish)
         {
             var la = Refresh(pk, wish);
-            if (Accepted(la))
+            if (Accepted(pk, la))
                 return la;
             var repairs = new List<Action>();
             // Event Pokemon that Sword/Shield received only through HOME (Zeraora, Melmetal) carry a HOME tracker.
@@ -424,7 +554,7 @@ static partial class Program
                     continue;
                 }
                 la = Refresh(pk, wish);
-                if (Accepted(la))
+                if (Accepted(pk, la))
                     break;
             }
             return la;
@@ -442,7 +572,21 @@ static partial class Program
         }
 
         // Valid, or invalid only for the HOME tracker the "empty" setting leaves unset [HomeTrackerUtil.IsRequired].
-        bool Accepted(LegalityAnalysis la) => la.Valid || emptyTracker && OnlyTrackerMissing(la);
+        bool Accepted(PKM pk, LegalityAnalysis la) => la.Valid || emptyTracker && (OnlyTrackerMissing(la) || ValidWithTracker(pk, la));
+
+        // A record judged with the tracker it lacks: PKHeX lets a Pokemon evolve in another HOME game, or keep the
+        // ability HOME realigned in Legends Z-A, only with one [EvolutionGroupHOME.CheckAllAdjacent, AbilityVerifier].
+        static bool ValidWithTracker(PKM pk, LegalityAnalysis la)
+        {
+            if (pk is not IHomeTrack { HasTracker: false }
+                || !la.Results.Any(r => r.Result == LegalityCheckResultCode.TransferTrackerMissing))
+                return false;
+            var tracked = pk.Clone();
+            ((IHomeTrack)tracked).Tracker = 1;
+            HomeSeen(tracked);
+            tracked.RefreshChecksum();
+            return new LegalityAnalysis(tracked).Valid;
+        }
 
         static bool OnlyTrackerMissing(LegalityAnalysis la)
             => la.Parsed && la.Results.Any(r => !r.Valid)
@@ -509,16 +653,19 @@ static partial class Program
         }
 
         // PKHeX's report as a player reads it: the per-move lines folded into one, each problem once.
-        static string Plain(LegalityAnalysis la)
+        string Plain(LegalityAnalysis la)
         {
             var lines = new List<string>();
             var moves = la.Info.Moves.Count(m => !m.Valid);
             if (moves > 0)
                 lines.Add(moves == 1 ? "One of its moves is not legal." : $"{moves} of its moves are not legal.");
-            foreach (var raw in la.Report().Split('\n'))
+            var original = la.Report().Split('\n');
+            var translated = la.Report(displayLanguage).Split('\n');
+            for (var i = 0; i < original.Length; i++)
             {
-                var line = raw.Trim();
-                if (line.Length == 0 || Regex.IsMatch(line, @"^Invalid (Relearn )?Move \d+:"))
+                var raw = original[i];
+                var line = (i < translated.Length ? translated[i] : raw).Trim();
+                if (line.Length == 0 || Regex.IsMatch(raw.Trim(), @"^Invalid (Relearn )?Move \d+:"))
                     continue;
                 if (line.StartsWith("Invalid: "))
                     line = line["Invalid: ".Length..];
@@ -605,13 +752,13 @@ static partial class Program
             if ((bool?)request["fresh"] == true)
             {
                 var (pid, ec) = (pk.PID, pk.EncryptionConstant);
-                var legal = Accepted(new LegalityAnalysis(pk));
+                var legal = Accepted(pk, new LegalityAnalysis(pk));
                 var xor = (pk.PID >> 16) ^ (pk.PID & 0xFFFF);
                 var high = (uint)Random.Shared.Next(0x10000);
                 pk.PID = (high << 16) | (high ^ xor);
                 pk.EncryptionConstant = (uint)Random.Shared.NextInt64(1, 1L << 32);
                 // An event Pokemon's PID is part of the event: a new one makes it illegal.
-                if (legal && !Accepted(new LegalityAnalysis(pk)))
+                if (legal && !Accepted(pk, new LegalityAnalysis(pk)))
                 {
                     (pk.PID, pk.EncryptionConstant) = (pid, ec);
                     note = "kept its own PID: this event Pokemon is legal only with it";
@@ -673,7 +820,7 @@ static partial class Program
             }
             var la = new LegalityAnalysis(pk);
             // Sword/Shield's check wants a Pokemon from another game handled even by its own trainer.
-            if (!Accepted(la) && transfer && pk.CurrentHandler == 0)
+            if (!Accepted(pk, la) && transfer && pk.CurrentHandler == 0)
             {
                 pk.CurrentHandler = 1;
                 pk.HandlingTrainerName = owner.OT;
@@ -682,19 +829,19 @@ static partial class Program
                     language.HandlingTrainerLanguage = (byte)owner.Language;
                 pk.RefreshChecksum();
                 var handled = new LegalityAnalysis(pk);
-                if (Accepted(handled))
+                if (Accepted(pk, handled))
                     la = handled;
                 else
                     pk.CurrentHandler = 0;
             }
             // A move the new game lacks: HOME's games replace the moves, so the bank takes PKHeX's suggestion.
-            if (!Accepted(la) && transfer && la.Info.Moves.Any(m => !m.Valid))
+            if (!Accepted(pk, la) && transfer && la.Info.Moves.Any(m => !m.Valid))
             {
                 Refit(pk, Wish.From(null));
                 pk.RefreshChecksum();
                 la = new LegalityAnalysis(pk);
             }
-            return Accepted(la) ? (pk, la, "") : (pk, la, Plain(la));
+            return Accepted(pk, la) ? (pk, la, "") : (pk, la, Plain(la));
         }
 
         // A Pokemon file or a game save, each Pokemon in it as the bank would keep it (docs/gui.md, Importing). A
@@ -775,7 +922,7 @@ static partial class Program
                 if (source.GetType() == game.Blank().GetType())
                 {
                     var la = new LegalityAnalysis(source);
-                    return Accepted(la) ? (key, source, la, []) : throw new InvalidDataException(Plain(la));
+                    return Accepted(source, la) ? (key, source, la, []) : throw new InvalidDataException(Plain(la));
                 }
             // What HOME's way in takes off: the held item goes back to the bag, and Pal Park and Poke Transfer
             // refuse a Pokemon knowing an HM. The file is left as it is, so the item and moves stay in that game.
@@ -868,7 +1015,10 @@ static partial class Program
             var sets = new JsonArray();
             var blank = game.Blank();
             var dummied = MoveInfo.GetDummiedMovesHashSet(game.Context);
-            var errorText = BattleTemplateParseErrorLocalization.Get();
+            var errorText = BattleTemplateParseErrorLocalization.Get(displayLanguage);
+            // Whether a line holds the token in any language the parser reads (French writes "IVs : 0 Atq").
+            static bool Names(string line, BattleTemplateToken token) => BattleTemplateLocalization.GetAll().Values
+                .Any(l => l.Config.TryParse(line.Trim(), out _) == token);
             // A set is a run of lines between blank ones, as PKHeX's parser splits them.
             var blocks = new List<List<string>> { new() };
             foreach (var line in lines)
@@ -946,7 +1096,9 @@ static partial class Program
                     options["moves"] = moves;
                 // The parser keeps stats in PKHeX's order, Speed fourth (H/A/B/S/C/D).
                 string[] stats = ["hp", "atk", "def", "spe", "spa", "spd"];
-                options["ivs"] = new JsonObject(stats.Select((s, i) => KeyValuePair.Create(s, (JsonNode?)set.IVs[i])));
+                // The parser fills an absent IVs line with 31s, which most wild catches cannot carry; a set names IVs to ask for them.
+                if (block.Any(line => Names(line, BattleTemplateToken.IVs)))
+                    options["ivs"] = new JsonObject(stats.Select((s, i) => KeyValuePair.Create(s, (JsonNode?)set.IVs[i])));
                 if (set.EVs.Any(v => v != 0))
                 {
                     if (blank is IAwakened or IGanbaru)
@@ -964,8 +1116,7 @@ static partial class Program
                     notes.Add("Hidden Power follows the IVs; its type is not set.");
                 // Showdown leaves out a friendship of 255, its default; a set asks for one only by naming it, so an
                 // event Pokemon whose friendship is fixed still builds from a set that does not.
-                if (block.Any(line => BattleTemplateLocalization.GetAll().Values
-                        .Any(l => l.Config.TryParse(line.Trim(), out _) == BattleTemplateToken.Friendship)))
+                if (block.Any(line => Names(line, BattleTemplateToken.Friendship)))
                     options["friendship"] = set.Friendship;
                 sets.Add(new JsonObject
                 {
@@ -1036,7 +1187,7 @@ static partial class Program
                     break;
             }
             if (!la.Valid)
-                throw new InvalidDataException($"PKHeX made an illegal {name}: {la.Report()}");
+                throw new InvalidDataException($"PKHeX made an illegal {name}: {la.Report(displayLanguage)}");
             return new JsonObject
             {
                 ["data"] = Convert.ToBase64String(game.Write(pk)),
@@ -1125,7 +1276,7 @@ static partial class Program
                     ["ball"] = strings.balllist[pk.Ball],
                     ["held_item"] = pk.HeldItem == 0 ? "" : items[pk.HeldItem],
                     ["moves"] = moves,
-                    ["legal"] = Accepted(la) && refused.Length == 0,
+                    ["legal"] = Accepted(pk, la) && refused.Length == 0,
                     ["refused"] = refused,
                     ["home_tracker"] = TrackerState(pk, la),
                 }));
@@ -1155,13 +1306,13 @@ static partial class Program
             {
                 if (versions.Length < game.Versions.Length && !ReachedVersion(gift, versions[0]))
                     refused = NeverTo(gift, game.Versions.Where(version => ReachedVersion(gift, version)), versions[0]);
-                else if (Accepted(la))
+                else if (Accepted(pk, la))
                     (pk, la, refused) = InTrainerLanguage(gift, pk, la, trainer);
-                else if (game.Versions.Except(versions).Where(version => Accepted(MakeGift(gift, [version], trainer).Legality))
+                else if (game.Versions.Except(versions).Where(version => MakeGift(gift, [version], trainer) is var made && Accepted(made.Pokemon, made.Legality))
                              .ToArray() is { Length: > 0 } elsewhere)
                     refused = NeverTo(gift, elsewhere, versions[0]);
             }
-            if (!Accepted(la) && refused.Length == 0)
+            if (!Accepted(pk, la) && refused.Length == 0)
                 throw new InvalidDataException($"PKHeX made an illegal {strings.specieslist[gift.Species]} from card "
                                                + $"{gift.CardID}: {Plain(la).Replace("\n", " ")}");
             var reply = Describe(game, pk, la);
@@ -1204,14 +1355,14 @@ static partial class Program
         (PKM Pokemon, LegalityAnalysis Legality, string Refused) InTrainerLanguage(MysteryGift gift, PKM pk,
             LegalityAnalysis la, ITrainerInfo trainer)
         {
-            if (!Accepted(la) || !YourOT(pk, trainer) || pk.Language == trainer.Language)
+            if (!Accepted(pk, la) || !YourOT(pk, trainer) || pk.Language == trainer.Language)
                 return (pk, la, "");
             var copy = pk.Clone();
             copy.Language = trainer.Language;
             if (!copy.IsNicknamed)
                 copy.ClearNickname();
             var checkedCopy = Refresh(copy);
-            return Accepted(checkedCopy)
+            return Accepted(copy, checkedCopy)
                 ? (copy, checkedCopy, "")
                 : (pk, la, $"card {gift.CardID} gave it in {LanguageName(pk.Language)} alone, never to a save in "
                            + LanguageName(trainer.Language));
@@ -1249,7 +1400,7 @@ static partial class Program
                     pk = gift.ConvertToPKM(receiver, EncounterCriteria.Unrestricted);
                     SetHomeIVs(gift, pk);
                     la = MendGift(pk, receiver);
-                    if (Accepted(la))
+                    if (Accepted(pk, la))
                         return (pk, la);
                 }
             }
@@ -1275,7 +1426,7 @@ static partial class Program
         LegalityAnalysis MendGift(PKM pk, ITrainerInfo trainer)
         {
             var la = Refresh(pk);
-            if (!Accepted(la) && !OnlyTrackerMissing(la) && pk.HandlingTrainerName.Length == 0)
+            if (!Accepted(pk, la) && !OnlyTrackerMissing(la) && pk.HandlingTrainerName.Length == 0)
             {
                 pk.CurrentHandler = 1;
                 pk.HandlingTrainerName = "POKELDN";
@@ -1284,7 +1435,7 @@ static partial class Program
                     language.HandlingTrainerLanguage = (byte)trainer.Language;
                 la = Refresh(pk);
             }
-            if (!Accepted(la) && OnlyTrackerMissing(la) && pk is IHomeTrack { HasTracker: false } home)
+            if (!Accepted(pk, la) && OnlyTrackerMissing(la) && pk is IHomeTrack { HasTracker: false } home)
             {
                 home.Tracker = MadeTracker((ulong)Random.Shared.NextInt64(1, long.MaxValue));
                 HomeSeen(pk);
@@ -1484,11 +1635,12 @@ static partial class Program
 
         JsonObject Describe(Game game, PKM pk, LegalityAnalysis la)
         {
+            var accepted = Accepted(pk, la);
             var moves = new JsonArray();
             foreach (var move in pk.Moves)
                 if (move != 0)
                     moves.Add(strings.movelist[move]);
-            return new JsonObject
+            var result = new JsonObject
             {
                 ["data"] = Convert.ToBase64String(game.Write(pk)),
                 ["format"] = pk.GetType().Name,
@@ -1498,7 +1650,9 @@ static partial class Program
                 ["form_id"] = pk.Form,
                 ["level"] = pk.CurrentLevel,
                 ["shiny"] = pk.IsShiny,
+                ["alpha"] = pk is IAlphaReadOnly { IsAlpha: true },
                 ["nickname"] = pk.Nickname,
+                ["is_nicknamed"] = pk.IsNicknamed,
                 ["ot"] = pk.OriginalTrainerName,
                 ["ot_gender"] = pk.OriginalTrainerGender,
                 ["trainer_id"] = pk.DisplayTID,
@@ -1516,10 +1670,27 @@ static partial class Program
                 ["encounter"] = la.EncounterOriginal.LongName,
                 ["parsed"] = la.Parsed,
                 ["home_tracker"] = TrackerState(pk, la),
-                ["legal"] = Accepted(la),
-                ["report"] = la.Report(),
-                ["problems"] = Accepted(la) ? "" : Plain(la),
+                ["legal"] = accepted,
+                ["report"] = la.Report(displayLanguage),
+                ["problems"] = accepted ? "" : Plain(la),
             };
+            if (displayLanguage != "en")
+            {
+                // Persisted summaries and peer metadata retain the same English names as before.
+                var english = GameInfo.GetStrings("en");
+                result["canonical"] = new JsonObject
+                {
+                    ["species"] = english.specieslist[pk.Species],
+                    ["form"] = pk.Form == 0 ? "" : ShowdownParsing.GetStringFromForm(pk.Form, english, pk.Species, pk.Context),
+                    ["nature"] = english.natures[(int)pk.StatAlignment],
+                    ["ball"] = english.balllist[pk.Ball],
+                    ["ability"] = game.Context == EntityContext.Gen9a ? "" : english.abilitylist[pk.Ability],
+                    ["held_item"] = pk.HeldItem == 0 ? "" : english.GetItemStrings(game.Context, game.Versions[0])[pk.HeldItem],
+                    ["moves"] = new JsonArray(pk.Moves.Where(m => m != 0).Select(m => (JsonNode?)english.movelist[m]).ToArray()),
+                    ["encounter"] = la.EncounterOriginal.LongName,
+                };
+            }
+            return result;
         }
 
         // "made" for a tracker this request filled, "empty" for one PKHeX wants and the record lacks.
@@ -1554,7 +1725,7 @@ static partial class Program
 
 // The offer options a request asks for; a stat array is HP, Atk, Def, SpA, SpD, Spe and -1 leaves a stat alone.
 record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effort, int? Item, byte? Ball,
-            byte? Form, byte? Friendship, ushort[] Moves)
+            byte? Form, byte? Friendship, ushort[] Moves, bool? Alpha)
 {
     static readonly string[] Stats = ["hp", "atk", "def", "spa", "spd", "spe"];
     static readonly string[] StatNames = ["HP", "Attack", "Defense", "Sp. Atk", "Sp. Def", "Speed"];
@@ -1582,7 +1753,7 @@ record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effor
         return new Wish(Number("nature") is { } n ? (Nature)n : null, Number("ability"),
             Number("gender") is { } g ? (Gender)g : null, ivs, effort,
             Number("held_item"), Number("ball") is { } b ? checked((byte)b) : null,
-            Number("form") is { } f ? checked((byte)f) : null, (byte?)Number("friendship"), moves);
+            Number("form") is { } f ? checked((byte)f) : null, (byte?)Number("friendship"), moves, (bool?)o?["alpha"]);
     }
 
     public ushort[] Moveset() => [.. Moves, .. new ushort[4 - Moves.Length]];
@@ -1686,6 +1857,8 @@ record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effor
             return "this form";
         if (Friendship is { } friendship && pk.OriginalTrainerFriendship != friendship)
             return $"friendship {friendship}";
+        if (Alpha is { } alpha && pk is IAlphaReadOnly a && a.IsAlpha != alpha)
+            return alpha ? "an Alpha" : "a Pokemon that is not an Alpha";
         foreach (var move in Moves)
             if (!pk.HasMove(move))
                 return $"the move {strings.movelist[move]}";

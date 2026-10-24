@@ -38,8 +38,8 @@ The Clone Protocol's take-over exchange passes the game's `0x11b080` gate, and t
 carries identity, offer, commit and kind 4 (the next trade's selection); `pokeldn.lgpe.pb7` reads and
 writes the 232-byte box structure the offer and kind 4 carry.
 
-Three queued trades complete on one seat in both roles. Each completed entry is saved as a
-checksummed 260-byte file, and the host exits with code 0 after the console leaves. A record built by
+Each completed entry is saved as a checksummed 260-byte file; the host exits with code 0 after the
+console leaves. A record built by
 `pokeldn.pokemon` (level, gender, nature, ball, IVs and AVs chosen) and offered by `bin/lgpe_host.py
 --fresh-pid` shows those fields on the receiving summary screen.
 
@@ -52,22 +52,11 @@ ten minutes of counted play time), then the fatal error screen.
 
 ## Unresolved
 
-- What left a retail console silent on both of the host's `0xa1` after a host answered its withdrawn
-  vote with A 2. The host's publishes: A 2 with trailing word 1, then A 2 with trailing word 2 one
-  second later; the console republished `0 2 3` under trailing word 2 and announced its commit clone
-  5.0 s after the first A 2. The host answered the announcement with `82, 91, 91, 84, 81, a1, a1`,
-  seven datagrams within 1 ms, all acknowledged by the console's radio. The console re-announced the
-  clone on clone type 1 under a new clock, which only the `0x81` on clone type 2 does (`0x51ca48`
-  -> `0x520c30`, after the `0x91` on clone type 2 unlinked the announcement at `0x520d30`; the `0x82`
-  on clone type 1 reaches only `0x5223c0` and sends nothing). It answered neither `0xa1`. The clone
-  type 1 `0xa1` handler (`0x51c714`, `0x522350`) sends on every outcome and `0x51e3d0` spends a
-  message count before it can fail; the console spent none. Every gate before the handlers (the
-  receive loop's station mask and frame-counter filter `0x51ae20..0x51ae84`, the destination check
-  `0x51ce80`, the count filter `0x51c1e0`, the `+0x3c` mask `0x51c6b0`) passed for the `0x81` with
-  the same sender, frame counter and mask. `0x522a60` returning 2 would silence the clone type 4
-  `0xa1` alone. An emulated Let's Go 1.0.2 given the same inputs answered both `0xa1` with `0xa2`
-  within 30 ms and completed the trade: it withdrew its vote (`2 2 3`) 0.81 s after its own `1 2 2`,
-  the host published A 2 with trailing word 1 0.16 s later and trailing word 2 1.0 s after that, the
-  console republished `0 2 3` under trailing word 2, announced its commit clone 5.4 s after the first
-  A 2 and drew the same seven-message burst. The retail console runs 1.0.2 as well; what differs on
-  retail is unknown.
+- Why a retail console answered neither of the host's `0xa1` after the host answered its withdrawn
+  vote with A 2. The console announced its commit clone, drew the host's burst `82, 91, 91, 84, 81,
+  a1, a1`, and re-announced the clone on clone type 1 under a new clock, which only the `0x81` on
+  clone type 2 causes (`0x51ca48` -> `0x520c30`). The clone type 1 `0xa1` handler (`0x51c714`,
+  `0x522350`) sends on every outcome, and every receive gate (`0x51ae20..0x51ae84`, `0x51ce80`,
+  `0x51c1e0`, `0x51c6b0`) passed for the `0x81` with the same sender, frame counter and mask.
+  `0x522a60` returning 2 would silence the clone type 4 `0xa1` alone. An emulated Let's Go 1.0.2
+  given the same inputs answered both `0xa1` with `0xa2` within 30 ms and completed the trade.

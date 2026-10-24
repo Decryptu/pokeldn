@@ -4,7 +4,6 @@ import json
 import os
 from pathlib import Path
 import statistics
-import struct
 import sys
 import time
 import traceback

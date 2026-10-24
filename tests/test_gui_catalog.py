@@ -248,7 +248,9 @@ def test_the_other_switch_games_simulate_their_mystery_gifts_through_their_trade
     field, receiver = gift.fields[:2]
     assert (field.key, field.events, field.required, field.queue) == (offer, True, True, 6)
     assert (receiver.key, receiver.kind, receiver.default) == ("--for-receiver", "switch", True)
-    assert [f.key for f in gift.fields[2:]] == [f.key for f in host.fields if f.kind != "pokemon"]
+    # Trade back would return the console's own Pokemon in place of the next gift (pokeldn.trade_back).
+    assert [f.key for f in gift.fields[2:]] == [f.key for f in host.fields
+                                                if f.kind != "pokemon" and f.key != "--trade-back"]
     args = build(gift, {offer: {"file": "/tmp/gift.bin", "event": "9028-808-0"}}, {}, Settings(), stamp="fixed")
     assert args.count(offer) == 1 and args[args.index(offer) + 1] == "/tmp/gift.bin"
     # The host makes a card that names its receiver again for the console's save (pokeldn.receiver_gift).
@@ -262,12 +264,14 @@ def test_the_other_switch_games_simulate_their_mystery_gifts_through_their_trade
 
 
 def test_every_game_lists_its_tools_in_one_order():
-    """Trade (Host), Trade (Join), Trade (Online), Mystery Gift, then raids, host before join."""
+    """Trade (Host), Trade (Join), Trade (Online), Mystery Gift, then raids, host before join, then the
+    Union Circle."""
     def rank(key):
         kind = key.split("-", 1)[1]
-        for part in ("raid-host", "raid-join", "online", "join", "gift", "host"):
+        for part in ("circle", "raid-host", "raid-join", "online", "join", "gift", "host"):
             if part in kind:
-                return {"host": 0, "join": 1, "online": 2, "gift": 3, "raid-host": 4, "raid-join": 5}[part]
+                return {"host": 0, "join": 1, "online": 2, "gift": 3, "raid-host": 4, "raid-join": 5,
+                        "circle": 6}[part]
         raise AssertionError(key)
     for game in GAMES:
         ranks = [rank(t.key) for t in game.tools if t.key.startswith(game.key + "-")]

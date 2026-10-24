@@ -8,7 +8,6 @@ passphrase is 64 bytes (main.bin 0x006c3ec8), so --pw-mode raw is the default. d
 import argparse
 import json
 import os
-import subprocess
 import sys
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -20,21 +19,11 @@ if os.path.isdir(BUNDLED_LDN):
 import trio
 from pokeldn.ldn import api as ldn
 from pokeldn.host_support import open_output
-from pokeldn.ldn.transport import board_radio, find_ap_phy
+from pokeldn.ldn.transport import find_ap_phy, cleanup_stale_vifs as cleanup_stale
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.swsh import PASSPHRASE
 
-STALE_VIFS = ["ldn", "ldn-mon", "ldn-tap", "ldnclient"]
-
 KNOWN = {0x0100000011D90000: "BDSP"}
-
-
-def cleanup_stale():
-    if board_radio():
-        return
-    for name in STALE_VIFS:
-        subprocess.run(["iw", "dev", name, "del"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def describe(net):
@@ -69,7 +58,7 @@ def build_parser():
     ap.add_argument("--comm-id", default=None,
                     help="local_communication_id to join, hex. Omit to report every network seen "
                          "and join the only unknown one, which is what a first run wants")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--ifname", default="ldnclient")
     ap.add_argument("--channels", default="1,6,11,36,40,44,48")

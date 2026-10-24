@@ -149,8 +149,8 @@ class HostTradeEngine:
         self._set_mons_sent = self._console_yes = False
         if not 1 <= len(self.party) <= 6:
             raise ValueError("party must contain 1..6 Pokémon")
-        if not 1 <= trades <= 6:
-            raise ValueError("trades must be 1..6")
+        if not 1 <= trades <= trade.MAX_TRADES:
+            raise ValueError(f"trades must be 1..{trade.MAX_TRADES}")
         self.trades = trades
         self.offered_slots = trade.resolve_offered_slots(
             offered_slots, trade_slot, trades, party_size=len(self.party))

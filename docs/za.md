@@ -88,19 +88,20 @@ decrypted). Unanswered, it sends on protocol 1 (Net) from its variable id to des
 
 The connection status is the layout `pokeldn.ldn.pia_connect.parse_net_conn_request` reads: four
 slots, two filled, both on port 12345, host `169.254.x.1`, joiner `169.254.x.2`. It stops after
-about 14 s (14.4 s measured) but leaves the station seated.
+about 14 s and leaves the station seated.
 
-In an emulated pair (768 packets captured) the opening is:
+The opening of an emulated pair:
 
-- the host transmits first, 109 bytes, 48 ms after association; the joiner answers 47 ms later
-  with 45 bytes, then 125;
-- the header nonce is a per-station counter from a random 64-bit base, +1 per packet sent;
-- the joiner's first packet has source 0, destination 0, packet id 0, no footer, uncompressed; its
-  second carries its own source id, zstd-compressed;
-- the host's next packet is addressed to that id and carries the two-byte recipient footer.
+| | |
+|---|---|
+| first packet | the host's, 109 bytes, 48 ms after association; the joiner answers with 45 bytes, then 125 |
+| header nonce | a per-station counter from a random 64-bit base, +1 per packet sent |
+| joiner's first packet | source 0, destination 0, packet id 0, no footer, uncompressed |
+| joiner's second packet | its own source id, zstd-compressed |
+| host's next packet | addressed to that id, with the two-byte recipient footer |
 
-A joiner whose LDN connect succeeded on a network with no Pia host behind it disconnects cleanly
-after 7.94 s. The timer is the Net connect deadline, 8000 ms:
+A joiner whose LDN connect succeeded on a network with no Pia host disconnects after 7.94 s, the
+Net connect deadline of 8000 ms less the LDN connect time:
 
     0x251b1bc   LdnProtocol vtable 0x3c8aef8 slot 0x1d8: mov w0, #0x1f40
     0x2513520   NetBackgroundProcessJob StartConnectNetwork: job+0xa0 = now + ticks_per_ms * 8000
@@ -108,7 +109,6 @@ after 7.94 s. The timer is the Net connect deadline, 8000 ms:
     0x25143a0   expiry: result 0x647a, state byte +0x100 = 5, a 5000 ms deadline (slot 0x1e8),
                 then StartDisconnectNetwork
 
-The deadline starts before the LDN connect completes, so the wait is 0.06 s short of 8 s.
 LdnProtocol's timing slots 0x1b0 to 0x1f8 return 6000, 1000, 500, 10500, 4500, 8000, 20000, 5000,
 5000 and 10000 ms; only 0x1d8 and 0x1e8 are identified.
 
@@ -127,29 +127,22 @@ A station sending a reference joiner's Session join is admitted at once. The con
 
 The join owes, over the Net acknowledgement: ten protocols
 (`1:0 3:5 5:1 6:0 9:1 10:3 11:4 12:4 13:7 15:0`), application communication version 6, an
-identification token `0x06` then zeroes, and a PlayerInfo name of one space. A join listing
-the GBA application's six protocols and version 0x58 goes unanswered and the console starts host
-migration 8.7 s after the seat. A join with the ten protocols above whose game messages go
-unanswered ends in host migration and "no partner found" 27 s after the seat. A joiner answering
+identification token `0x06` then zeroes, and a PlayerInfo name of one space. A joiner answering
 every Net, Session, RTT and Reliable message and no game message (`bin/za_join.py` without `--game`)
-keeps a retail search's seat for 150 s, until it leaves: the console sends about 32 packets a second,
-answers the leave, then shows "no partner found".
+keeps a retail search's seat until it leaves (150 s measured).
 
-A join whose protocol count differs from the host's is dropped by the type-0 handler `0x254a030`
-(`0x254a090`, against `0x256c9f0`) with no answer and no station; a wrong protocol version or
-application version is answered with a 37-byte type 2, result 3 (`0x254a2e4`) or 4 (`0x254a290`).
-The host's WaitMember draws 3000 ± 999 ms (the random u64 is read signed). On its expiry, with the
-joiner on the Net layer and not in the session, LeaveMeshWithHostMigration polls 8000 ms for a next
-host (`0x255a520`), then sends Net 0x11 sequence 3 and Net 0x40. A joiner listing nine of the
-ten protocols draws no Session message from a retail search; the first Net 0x40 comes 8.74 to
-11.01 s after the seat (predicted 8.05 to 12.1 s) and the console opens a new network under a new
-SSID, still searching. The 8.7 s above is this path.
+| join | console's answer |
+|---|---|
+| protocol count differs from the host's | dropped by the type-0 handler `0x254a030` (`0x254a090`, against `0x256c9f0`), no answer, no station |
+| wrong protocol or application version | 37-byte type 2, result 3 (`0x254a2e4`) or 4 (`0x254a290`) |
+| GBA application's six protocols, or nine of the ten | no Session message; Net 0x40 8 to 12 s after the seat, then a new network under a new SSID, still searching |
+| ten protocols, no RTT answer or other traffic from its variable id | kicked ([The kick](#the-kick)), "no partner found" about 27 s after the seat |
 
-The same joiner sending no RTT answer, and so nothing at all after its type 6 at 1.16 s, is kicked
-(The kick): Session type 13 from 14.24 s, nine of them about 0.5 s apart, then Net 0x11 sequence 3
-every 0.5 s from 19.31 s, Net 0x40 every 0.3 s from 23.31 s, the last packet at 25.13 s, then "no
-partner found" on the console. The 27 s ending is this sequence: a joiner that sends nothing from
-its own variable id for 10 s.
+The 8 to 12 s path is the host's WaitMember, 3000 ± 999 ms (the random u64 is read signed); on its
+expiry, with the joiner on the Net layer and not in the session, LeaveMeshWithHostMigration polls
+8000 ms for a next host (`0x255a520`), then sends Net 0x11 sequence 3 and Net 0x40. The kick
+sequence is Session type 13 from 14 s, nine of them 0.5 s apart, Net 0x11 sequence 3 every 0.5 s
+from 19 s, Net 0x40 every 0.3 s from 23 s.
 
 ## The game's own exchange
 
@@ -238,13 +231,10 @@ round +0x150 + 1, sets +0x130 = 2, advances +0x150 and +0x152, and drops the par
 stale ConfirmTrade or FinalAgreement is ignored after a cancel and a higher round is accepted.
 SelectPokemon reads no round.
 
-The session object (0xab8 bytes; `0xca2658`, built by `0xca2704`, vtable `0x3e3a6e8`) holds a
-configuration at +0x40 (u16 0x201, low byte the channel), callables at +0x48 and +0x88, and a zeroed
-+0x150..+0xab7, so both rounds start at 0 and a session's first `0102` and `0104` are `b90100`.
-`0x964568` (own state 6; caller `0x9601dc` in the live trade path `0x95f8f4`) clears the own offer
-+0x120 and partner PokemonParam +0x128, sets both states to 2, clears +0x118, +0x11a, +0xd0 and zeroes
-+0x150/+0x152: the next trade on the seat starts at round 0, and an answer still at round 1 is
-accepted. `pokeldn.za.host` resets its round with each trade.
+The session object (0xab8 bytes, built by `0xca2704`, vtable `0x3e3a6e8`) zeroes +0x150..+0xab7,
+so both rounds start at 0 and a session's first `0102` and `0104` are `b90100`. After a completed
+trade `0x964568` (own state 6) clears both offers, sets both states to 2 and zeroes both rounds, so
+the next trade on the seat starts at round 0. `pokeldn.za.host` resets its round with each trade.
 
 | own state | written by | when |
 |---|---|---|
@@ -252,12 +242,9 @@ accepted. `pokeldn.za.host` resets its round with each trade.
 | 6 | delegate invoke `0xdfda8c`, filled at `0x964e78` | the exchange worker's state-6 delegate |
 | 7 | `0x2dc4b94`, installed by `0x964f0c` | the worker's state-7 delegate; unreachable in 2.0.2 |
 
-`0x9610a4` (caller `0x95fdbc`) runs at own state 5 or more when the worker at +0xd0 is absent or its
-+9 is 0 or 0x10: it calls the callable at session+0x48 with (+0x118, +0x120, +0x128), builds the
-exchange worker (`0x966af0`, 0xb0 bytes) into +0xd0 and gives it the state-6 and state-7 delegates
-(`0x9649e0`, `0x964a20`), stored by `0x9655a4` at worker+0x20 and +0x60. The trade object is built by
-`0xc8ad1c` (`adr` at `0xca2578`; constructor `0xc8ae70`, vtable `0x3d8a0d0`: +0x68 `0xdd07cc`, +0x78
-`0x2a67168`, +0x80 `0xcbc68c`); the store making it the callable at session+0x48 is untraced.
+At own state 5 `0x9610a4` calls the trade object (session+0x48, built by `0xc8ad1c`, vtable
+`0x3d8a0d0`) and builds the exchange worker (`0x966af0`, 0xb0 bytes) into +0xd0 with the state-6 and
+state-7 delegates (`0x9649e0`, `0x964a20`).
 
 The worker's start `0x965660` stores the host test `0x9157d0` at +0x14, clears +0x15, stores
 `0x34f2b0(rng, 0x12c) + 2` (2..302) at +0x18, zeroes +0xc and +0x10, sets +9 to 1. Its update
@@ -286,27 +273,18 @@ nothing in 2.0.2 writes a non-zero value there: its only stores zero it, in the 
 `0x966ba4` (`0x966bcc`) and the start `0x965660` (`0x9656a0`). The worker's abort phase +0xc is read
 by the session tick `0x95f6e4` (`0x95f738`): 1 asks the trade object to cancel (`0x9636f8` sets trade
 object +0x44 = 1) and parks the worker at step 0xf; 2 waits for trade object +0x44 == 3, then sets
-step 14 and phase 3 (`0x95f7e0`). No code stores 1, so the abort phase never starts and no path
-through the worker reaches own state 7. A register walk of the worker pointer from every read of
-session+0xd0 (the tick `0x95f608`, `0x95fc80`, the builder `0x9610c8` and its new worker
-`0x961130`, `0x961a74`, the reset `0x9645cc`), the constructor and every handler of
-`0x960c20`, through every callee it is passed to, finds stores at +0x09, +0x0c, +0x14, +0x15, +0x18,
-+0xa0 and +0xa8, the two delegates' storage (+0x20 to +0x5f and +0x60 to +0x9f, written by their
-managers `0x965f54` and `0x4177c8`), the zeroing ones above, and no store through a computed
-address. The pointer leaves the walk only into its holder (session+0xd0, `0x961138`; `0x966b68`), and
-the indirect calls carry the delegates' storage, whose bodies `0xdfda8c` and `0x2dc4b94` store only
-through the session pointer they hold. On an emulated console hosting a trade that completed
-with `bin/za_join.py`, handler 14 ran once, on the worker in `x19`, with +0x10 = 0 and the step word
-+0x08 = `0x0e02`. A station whose +0x15 is clear waits the random 2..302
-updates before its 0x0b. What `0xdd07cc` returns and how the stored halfword maps onto the `b901XX`
-bytes are untraced.
+step 14 and phase 3 (`0x95f7e0`). No code stores 1, so no path through the worker reaches own
+state 7. Every store through the worker pointer (reads of session+0xd0 at `0x95f608`, `0x95fc80`,
+`0x9610c8`, `0x961130`, `0x961a74`, `0x9645cc`, the constructor, the handlers and their callees)
+lands at +0x09, +0x0c, +0x14, +0x15, +0x18, +0xa0, +0xa8 or the delegates' storage (managers
+`0x965f54`, `0x4177c8`); none goes through a computed address. A station whose +0x15 is clear waits
+the random 2..302 updates before its 0x0b. What `0xdd07cc` returns and how the stored halfword maps
+onto the `b901XX` bytes are unknown.
 
-A Z-A choosing Cancel on the trade prompt sends `0103b9020100` (round 1, reason 0) and, once its
-player picks again, redraws the prompt with the host's earlier offer without a resend. Its next
-confirmation is `0102b90101` and `0104b90101`. A host answering under round 0 is ignored (the
-handlers reject a round below +0x152) and the console waits on "Communicating"; round 1 completes the
-trade. `pokeldn.za.host`
-takes the round from the console's own `0102`, `0103` and `0104`.
+A Z-A choosing Cancel on the trade prompt sends `0103b9020100` (round 1, reason 0); once its player
+picks again it redraws the prompt with the host's earlier offer and confirms with `0102b90101` and
+`0104b90101`. An answer under round 0 is ignored and leaves the console on "Communicating".
+`pokeldn.za.host` takes the round from the console's own `0102`, `0103` and `0104`.
 
 ### What a joiner owes on those streams
 
@@ -358,29 +336,17 @@ the seat.
     0x2567280   refreshes last-heard for each station whose bit (byte +0x30) is set in the mask
                 0x2566740 builds from the received-data map, keyed by the header's source id
 
-session+0x18 is the `SessionProtocol` (0xd8e8 bytes, vtable `0x3c8db18`, protocol type 0xd), made
-by `0x253f284` at `0x253cacc` in the Session initialisation `0x253c880`, which also stores
-framework+0xb8 at session+0x30.
+session+0x18 is the `SessionProtocol` (0xd8e8 bytes, vtable `0x3c8db18`, protocol type 0xd).
 
 ### The keepalive
 
-The setting's +0x290 is a send-silence limit in ms (`0x257d12c` -> `0x256a238`; negative fails with
-0x10407, 0 becomes 1000). `SessionPacketWriter` (vtable `0x3c8da30`) vfunc 7 `0x2544004` calls
-`0x256a2d0` with each send's station mask (`0x2568924`): every other station in state 2 with id at
-most 0x17 and byte +0xa0 clear (`0x25770d8`) is stamped at +0xb0 when sent to, and flagged when +0xb0
-is older than the limit (never sent to included). Flagged stations (`0x2568928`) get an extra packet
-(`0x256a89c(p, 0, 0)`): one Pia message with protocol 0, bit-0x10 byte 0xfd, port 0, flags 0, empty
-payload. So a seated station is sent a packet whenever nothing has gone to it for a second; no
-capture has been checked against this. The message's header is the presence byte `04` and protocol
-`00`: the writer `0x256dccc` emits only the fields that differ from a fresh header (protocol 0xFF,
-middle byte 0xFD, port 0). The receiving reader files a message under its key (protocol, middle
-byte, port) in a bucket table with no protocol check (`0x2566844`, `0x25670f0`); no Protocol class
-has id 0, so no protocol reads it. A protocol only walks its own key's chain (Reliable `0x256fed0`
-removes nothing). PacketReader vfunc 6 `0x2565ce0` first calls `0x2566030` (`0x2565d34`, its only
-caller), which unlinks every node of every bucket, returns it to the pool's free list and zeroes the
-bucket, so an unread message is reclaimed at the start of the next receive pass and protocol-0
-messages cannot accumulate. A full node pool (`0x10c10`) drops the rest of the packet. Byte +0xa0 marks a station being kicked, set only by
-`0x2577094` from `0x255b4a0` and a non-host's drain `0x2548b60`.
+The setting's +0x290 is a send-silence limit in ms (`0x257d12c` -> `0x256a238`; 0 becomes 1000).
+`SessionPacketWriter` vfunc 7 `0x2544004` stamps each seated station at +0xb0 when sent to and,
+through `0x256a2d0`, sends an extra packet to any station not sent to within the limit: one Pia
+message with protocol 0, middle byte 0xfd, port 0, empty payload (header bytes `04 00`). No protocol
+has id 0; the reader reclaims the unread message at the start of the next receive pass
+(`0x2566030`), so such messages never accumulate. Byte +0xa0 marks a station being kicked
+(`0x2577094`).
 
 ### Packet ids
 
@@ -401,9 +367,7 @@ A rejected packet goes to `0x25655d8` and is dropped: a repeated id, or one 0x80
 joiner with a separate counter for destination 0 has every Net 0x51 dropped until it passes the
 host-id counter; the host repeats its Net 0x50 until one passes (about 10 s, measured) and its
 update sequence 1 is delayed.
-The Net 0x51 handler `0x2504100` reads no header field: it deserializes (`0x250f930`), checks length
-and type 0x51 (`0x2504150`), matches the source against its stations (`0x250c60c`, `0x24fba00`) and
-passes station and the acknowledged sequence at message +4 to `0x250daa8`.
+The Net 0x51 handler `0x2504100` reads no header field.
 
 ### The rest of the join
 
@@ -478,13 +442,11 @@ Every field accessor takes the record's accessor object in `x0`:
     0x3303ab0            block order: 32 rows of four bytes indexed by (EC >> 13) & 31, byte k for
                          block k; rows 0..23 are PKHeX's BlockPosition, rows 24..31 repeat 0..7
 
-An accessor (the 141 table references lie in `0xe48000..0xe5d000`) locks, decrypts when +0x18 is
-set, recomputes the checksum and ORs 4 into the halfword at core+4 on a mismatch; unless fast mode is
-on it then rewrites the checksum and re-encrypts. Bit 2 of core+4 is the Bad Egg bit, outside the
-encrypted range (`0xe485f0` tests it). A getter finding it set, the species getter `0xe49940` among
-23 in block A, reads from a default record at `0x3f7eda0` in .bss, initialized by `0xe5cdb4` to zeroes
-with 1 at `0x3f7ed98`+2, language (0xd5) `[0x3f0784()+0x378]` and ball (0x124) 4. The serializers
-`0xe47a20` (0x158 bytes) and `0xe47c60` (0x148) write the encrypted, shuffled form.
+An accessor (`0xe48000..0xe5d000`) locks, decrypts when +0x18 is set, recomputes the checksum and
+sets the Bad Egg bit (bit 2 of core+4, outside the encrypted range) on a mismatch; unless fast mode
+is on it then rewrites the checksum and re-encrypts. A getter on a Bad Egg reads from a default record
+at `0x3f7eda0`. The serializers `0xe47a20` (0x158 bytes) and `0xe47c60` (0x148) write the encrypted,
+shuffled form.
 
 ### The fields main 2.0.2 reads and writes
 
@@ -595,17 +557,10 @@ The PokemonParam wrapper with vtable `0x3e28e58` (321 slots, each a thunk to the
 | 150 | `0x699308` | true when the unlock level is non-zero and the level (`0xe49760`, or `0xe5ce70` from the experience on a stored record) reaches it; otherwise the flag |
 
 A flag unlocks a move the level rule does not; a record with all flags zero still has every
-learnset move at or below its level unlocked. `0xe669e0`'s callers are `0x631848` (set), `0x67345c`
-(clear), `0x6993c8` (slot 150), `0xe4307c` (read). The bit writer `0xe5c550` is entered only by `b`
-from `0x631864` (set) and `0x673478` (clear); slot 145 (`0x63182c`, +0x488 of both wrapper vtables)
-has four call sites, so a console sets flags two ways:
-
-- `0x52fff0`, `0x824eb0` and `0x28eec70` call slot 135 and flag every move it lists for the level.
-- `0x6568c4`, in the construction routine `0x656060` (five callers), runs only when wrapper slot
-  +0x8b8 (`0xdf5488`, `0x106ba0`, the byte-0x23 getter) is true: it looks a move up by species (slot
-  +0x1b0) and form (slot +0x1b8) in `0x657ae0` (a map from GOT `0x3eca658` = `0x6137848`, through
-  `0x511f90`; source file not found), checks it with `0x41ea50`, writes it into move slot 0 through
-  slot +0x110 (`0x6568a4`) and flags it.
+learnset move at or below its level unlocked. The bit writer `0xe5c550` is entered only from
+`0x631864` (set) and `0x673478` (clear). A console sets flags for every move slot 135 lists at a
+level (`0x52fff0`, `0x824eb0`, `0x28eec70`), and the construction routine `0x656060` writes and flags
+a per-species move into slot 0 when byte 0x23 is set (`0x6568c4`).
 
 A received or loaded record brings its flags whole; nothing on the receive path reads the array.
 
@@ -613,19 +568,8 @@ The summary screen `0x8d0610` marks each move "/plus_on" or "/plus_off" by slot 
 swapped while the game flag `flag_megaevo_disable` is set (`0x393b8`, the named-flag read, at
 `0x8d1438`; key record `0x3db5548`, FNV-1a-64 hash `0x5d0f3c74b46a0ff5`).
 
-Console-made records against {unlock level <= level}:
-
-| record | level | flags | extra flags | unflagged |
-|---|---|---|---|---|
-| Noibat 714 | 44 | equal | | held 542 (unlock level 47) |
-| Swablu 333 | 44 | equal | | held 297 (unlock level 47) |
-| Xerneas 716 | 100 | equal | | held 583 (index 214, not in its learnset) |
-| Onix 95 | 72 | 350 missing (level 254) | | |
-| Roserade 407 | 63 | 866 missing (level 254) | 605 (index 227), the byte-0x23 move in slot 0 | |
-| Glaceon 471 | 63 | equal | 247 (index 112), the byte-0x23 move in slot 0 | |
-
-Glaceon also carries Eevee's 36, 38, 129, 204 and 273 (254 entries in its own learnset); Roserade
-carries 40, a 253 entry of Roselia (315).
+Console-made records carry the flags of every learnset move up to their level, plus any move a
+species gained at learn level 253 or 254 through evolution and the byte-0x23 move.
 
 #### The ability
 
@@ -636,16 +580,9 @@ readers of 0x14 are only the type getters `0x99c84` and `0xa4354` (species 493 w
 `0xe3eb34` and `0xbb8f04` write it from `0xe5d368`. Console-made records store 5, 30, 38, 81, 151,
 187.
 
-No screen shows the stored ability. `0xe43bec` is entered only by `b` from `0x288d894`, slot 42
-(`0x3d1a918`) of an engine component (vtable address point `0x3d1a7c8`, type id `0xfb63b93a`,
-constructor `0x2890cb8`); every other path to the raw getter `0xe4a3c0` is a type getter. The seven
-321-slot PokemonParam wrapper vtables (`0x3e28e58`, `0x3e29950`, `0x3e2a438`, `0x3e2af50`,
-`0x3e2ba38`, `0x3e2c520`, `0x3e2d360`) make slot 42 `mov w0,wzr; ret` (`0x2d6fd88` and three
-copies). The battle ability window `0x2d52468` ("BTL_STRID_STD_TokWin", "tokusei" `0x31e3d5f`) reads
-slot 42 (`0x2d524f4`). On an emulated 2.0.2 the summary pages hit none of `0x288d894`, `0x2d52468`,
-`0x2d6fd88`; a Wild Zone battle hits only `0x2d6fd88`, from `0xdc68c`. The component registry
-`0xd8a04` caches slot 42 at handler+0x4c (`0x2ae8f4`, handler vtable `0x3d1b0a0`); its reader is
-untraced.
+No screen shows the stored ability. `0xe43bec` is entered only from `0x288d894`, slot 42 of an engine
+component (vtable `0x3d1a7c8`); the seven PokemonParam wrapper vtables make slot 42 return 0
+(`0x2d6fd88`), and the battle ability window `0x2d52468` reads that slot.
 
 ### What loading a received record checks
 
@@ -721,21 +658,10 @@ language byte and indexes the message directory table `0x3e278b8` (stride 0x18, 
 10 "Trad_Chinese", 11 "Latam", 12 "item". The loader `0x410a30` uses L when its language argument is
 0 (`0x410a68`).
 
-At boot `0xaa1340` stores at +0x10 the index `0x17d6368` makes of `nn::oe::GetDesiredLanguage()`
-(ja, en-US, fr, de, it, es, zh-Hans, ko, nl, pt, ru, zh-Hant, en-GB, fr-CA, es-419 as 0..14, else 15),
-and `0x741760` maps it to L through `0x330f728`, `1 2 3 5 4 7 9 8 2 2 2 10 2 3 11` (2 above 14), so
-the boot value is 1..5 or 7..11. The setter `0x17d62ec` is the one writer of +0x14; its other callers
-are the language-select view (`0x2c204ac`), `0xbb9d30` with the trainer record's +0x47, and a
-script binding `0x1673170` (Lua name `f21813187` in module `cE461829E`, `0x16734c0`) that stores any
-integer. None of the four shipped Lua packs (`/arc` `scriptluabinrelease` dll_util, event_ik, main,
-main_dynamic) names the binding or its module.
-
-The language-select view stores only the ten values it lists. Its vfunc `0x2c20b80` fills a vector
-of two-byte entries (L, label index) at +0x50 of its model `[view+0x118]` (`0x2c200d4`): the current
-L first when it is one of the ten, then 2, 7, 11, 3, 5, 4, 1, 8, 9, 10 without it (the bytes at
-`0x33a19b5`, also built inline), padded with `01 00` to ten. `0x2c20c98` gives `Button_00` to
-`Button_09` a handler holding (view, i); the handler `0x2c21234` calls `0x2c2047c([view+0x118], i)`,
-which passes the first byte of entry i of that same vector to the setter (`0x2c204ac`).
+At boot L comes from `nn::oe::GetDesiredLanguage()` through `0x17d6368` and the table `0x330f728`
+(1..5 or 7..11). The setter `0x17d62ec` is its one writer; its other callers are the
+language-select view (which stores only the ten values it lists), `0xbb9d30` with the trainer
+record's +0x47, and a script binding `0x1673170` no shipped Lua pack names.
 
 The pattern `0x339f650[L - 1]` is a set of `nn::ngc` word lists, so the receiving console's
 language picks them, whatever the record's language:
@@ -806,23 +732,18 @@ Egg tests only skip work: the PP clamp `0xe42584` and the stat recomputation `0x
 
 A retail Z-A on its Link Trade search trades with `bin/za_join.py` and keeps a composed record.
 After a trade the console returns to its trade box on the same seat and can trade again: `0x964568`
-resets both states to 2 and both rounds to 0 ([The trade commands](#the-trade-commands)).
+resets both states to 2 and both rounds to 0 ([The trade commands](#the-trade-commands)). A repeated
+`--trade-offer` trades a queue in order in both roles: 2.7 s after the fourth step the next record
+is previewed, and picked on the console's next pick under round 0 (`tests/test_za_host.py`).
 
-The joiner takes a repeated `--trade-offer`: 2.7 s after its fourth step it previews the next record
-and picks it on the console's next pick, under round 0. `bin/za_join.py` and `bin/za_host.py` trade a
-queue of records in order over ldn_mitm (`tests/test_za_host.py` scripts the joiner's side), and the
-joiner traded two queued records with a retail Z-A host on one seat.
+The trade animation runs after the fourth step and carries no message. From that step: animation at
+1.1 s, the received Pokemon on screen at about 26 s, the console's next preview (`0101`, 354 bytes)
+at 30.2 s, player control at about 31.7 s.
 
-The console's trade animation runs after its fourth step and carries no trade command. With a retail
-Z-A joining `bin/za_host.py`, from the fourth step: the animation starts at 1.1 s, the received
-Pokemon appears at about 26 s (hand-pressed, up to 2 s late), the console's next preview (`01 01`,
-354 bytes) arrives at 30.2 s and the player has control at about 31.7 s. The console sends no
-protocol-10 message in between.
-A seat formed late in the console's host phase is handed over: the first datagram comes late, no
-update sequence 1 follows, and the console repeats Session type 9 once a second (start host migration
-in the wiki's numbering, which puts the kick at 12 where Z-A uses 13) until it restarts its Net
-(measured: first datagram 1.4 s after association against under 0.1 s on a normal seat, Net restarted
-at 6.5 s). A retail Scarlet's search behaved the same on hardware; no code on either side is traced.
+A seat formed late in the console's host phase is handed over: the first datagram comes about 1.4 s
+after association, no update sequence 1 follows, and the console repeats Session type 9 once a
+second until it restarts its Net (6.5 s measured). The wiki numbers this type start host migration
+and the kick 12, where Z-A uses 13. The code behind it is untraced.
 
 ## Hosting
 
@@ -849,25 +770,17 @@ Unlike the GBA application's host:
   (CloseParticipation, below);
 - a broadcast acknowledgement reports the joiner's stream in entry 1, 0xfff0 in the other three.
 
-A retail Z-A joins `bin/za_host.py` and trades (offer marker: [The trade on protocol
-10](#the-trade-on-protocol-10)). Any link code works in both roles (`--code`, tested with 12345678).
+A retail Z-A joins `bin/za_host.py` and trades under any link code (`--code`). The host keeps the
+session after the fourth trade step and closes when the console leaves with B. `--hold-after-trade`
+opts into a timed close, counted from the console's first preview after the trade; the overall
+`--seconds` limit still applies. On the timed close, the `--seconds` limit and Ctrl-C the host hands
+a seated console the session first ([A host leaving](#a-host-leaving)); a console on its box then
+shows "Your trading partner chose to quit trading. The Link Trade will now end." and returns to Link
+Play.
 
-The host keeps the session after the fourth trade step and closes when the console leaves. A console
-returns to its box after trading and leaves with B without an error; the host closes after its
-departure. `--hold-after-trade` opts into a timed close; the overall `--seconds` limit still
-applies. A host that closes the network on a timer after the trade's save, with no handover, draws
-"Error Number: 6" on the console. On the timed close, the `--seconds` limit and Ctrl-C,
-`bin/za_host.py` hands a seated console the session first ([A host leaving](#a-host-leaving)).
-An emulated Z-A 2.0.2 back on its box answered that handover with the type 10 and the 0x12, showed
-"Your trading partner chose to quit trading. The Link Trade will now end." and returned to Link
-Play with no error (two runs of two); a retail Z-A on its box after a hosted trade showed the
-same message and no error with `--hold-after-trade 5`. The same handover sent 20 s after the fourth step, while the
-console was still in the trade animation, drew "Error Number: 6"; the trade had been saved. The
-console's first preview after a trade came 30 s after its fourth step, so the timed close counts
-from that preview.
+Trap: a network closed with no handover after the trade's save, or a handover sent during the trade
+animation, draws "Error Number: 6" on the console (the trade is saved).
 
-A hosted seat trades a queue of records in turn from a repeated `--trade-offer`: the next record is
-previewed after the fourth step of the previous trade. The console leaves when its player backs out.
 Back on its box after a trade, the console previews the Pokemon under its cursor, so `--offer-out`
 keeps only picks.
 
@@ -920,119 +833,33 @@ The 2 path, top down:
                 vfunc 37 0x2513ccc: LDN protocol index 23 when +0x9b is 1, else 24 (0x2513d1c)
     0x2515434   copies job+0xc0 into the accept state (0x2500a9c), builds the Net 0x50 (0x2502960)
 
-`nn::ldn::SetStationAcceptPolicy` (PLT `0x3163b60`) has three callers in `LdnProtocol`: index 23
-`0x251f18c` sets 0 (accept all), index 24 `0x251f110` sets 1 (reject), index 21 `0x251f208` sets 3
-(whitelist, after `AddAcceptFilterEntry`). Within Pia, `0x255c484` is the only virtual call to facade
-index 19 and `0x2513d1c` the only call through 0xc0 on the LDN protocol, so the game closes
-participation, and policy 1 follows, only while it is session host. CloseParticipation's chain
-`0x255c118`, `0x2546fe8` (open flag always 0), `0x253e7bc`, `0x253e744` has one caller, the
-CloseSession task's update (`0x1a25454`). Host migration calls
-`0x250758c` and `0x2507828` directly (`0x250b098`, `0x250b0f8`).
+`nn::ldn::SetStationAcceptPolicy` (PLT `0x3163b60`) is called by LdnProtocol index 23 (0, accept
+all), 24 (1, reject) and 21 (3, whitelist). The game closes participation, and policy 1 follows, only
+while it is session host, from the CloseSession task's update `0x1a25454`.
 
-The task builder `0x1a228f0` is called with "CloseSession" (hash `0x0dd344f64c81e84d`) from four
-places on two session drivers. The network manager (vtable `0x3c16978`) keeps its driver at +0x38;
-its vfunc 26 `0x199e850` replaces it by mode (jump table `0x3313828`): 0 none, 1 the local driver
-(`0x199eaa0`, address point `0x3c16dc8`, built on `nn::pia::local::LocalSessionProperty`), 2 a third
-driver (`0x199ecc0`, address point `0x3c151b0`) with its own CloseSession builder `0x19961e0`, 3 the
-LAN driver (`0x199ef70`, address point `0x3c17f10`, built on `nn::pia::lan::LanSessionProperty`).
-The step names each slot builds are the same on both drivers: 14 "CreateSession", 15 and 17
-"BrowseSession", 16 "JoinSession", 18 "LeaveSession", 19 "CloseSession", 20 "UpdateSessionSetting";
-slot 13 is the random matching ("RandomMatchingSeq" on the local driver, "JoinRandomSession",
-"WaitMember" and "CloseSession" on the LAN driver).
+The task builder `0x1a228f0` is called with "CloseSession" (hash `0x0dd344f64c81e84d`) on two
+session drivers. The network manager (vtable `0x3c16978`) keeps its driver at +0x38; its setter
+`0x199e850` installs by mode: 0 none, 1 the local driver (`0x199eaa0`), 2 an internet driver
+(`0x199ecc0`, used by Ranked Battles), 3 the LAN driver (`0x199ef70`). The mode comes from the
+"InitializePia" task, built with 1 by the to-local sequence (Link Trade, Private Battles) and 2 by
+the to-internet sequence; no call builds it with 3, so the LAN driver is never installed in 2.0.2.
 
 | builder | driver, slot | game feature |
 |---|---|---|
-| `0x19d7a70` | local, 13 (the CloseSession step of its sequence, registered at `0x19a2180`) | Link Trade search |
-| `0x1a35710` | LAN, 13 (registered at `0x1a25e88`) | the same callers, under mode 3 |
+| `0x19d7a70` | local, 13 (CloseSession step of RandomMatchingSeq) | Link Trade search |
 | `0x19a7590` | local, 19 | Private Battles |
-| `0x1a2ab10` | LAN, 19 | Private Battles, under mode 3 |
 
-Slot 13 has one call in the manager, `0xc8a224`, made by the closure `0xc8a170` that `0xc9fd60`
-builds; its one caller `0xc9fa58` is called by Link Trade (`0xc9f8ec`, session name "BoxTrade" and
-the Link Code) and by Ranked Battles (`0x2a48bf8`, "BattleRandom", from `0x2cc1d18`). The local
-driver's slot 13 (`0x19a1310`) runs the sequence `0x19a1470`; its CloseSession step passes bit 0 of
-slot 13's fourth argument to `0x19d7a70`, which builds the task when set and names "NoNeedToClose"
-when clear.
+Slot 13 is called once, at `0xc8a224`, from Link Trade (`0xc9f8ec`, session "BoxTrade") and Ranked
+Battles. A Link Trade search runs the local driver's slot 13 (`0x19a1310`) with the fourth argument
+the constant 1 (`mov w3, #1` at `0xc8a194`), so its CloseSession step builds the task. Slot 19's
+callers are Private Battle pages only.
 
-Slot 19 has one call in the manager, `0x199dec4`, from the request built by `0x2a48ea0`
-(constructor `0x2a49bc4`); `0x2a49218` builds it when the network service at `0x6133e40` exists
-(guard `0x6133ec0`). Its three callers are Private Battle pages: `0x2cb5238` runs when the room's
-player answers Yes to "Do you want to start a battle with this group?" (`0x2cb59f4`, handler
-`0x2cb6e44`, with more than one member, before the battle start `0x29fe8a0`) and from the lobby
-update (`0x911f48`); `0x915630` from the lobby update through `0x913e00`
-(PrivateBattleLobbyPage, vtable `0x3e0b3e8` slot 15 `0x911cc4`); `0xae0eb8` from
-PrivateBattleTopPage's slot 15 `0xae0aa0` (vtable `0x3e0e038`). Link Trade code reaches none of the
-three.
-
-An emulated console hosting a Link Trade search under code 00000000 ran slot 13
-(at the search's start, below), called from `0xc8a198` with the fourth argument the constant 1 (`mov w3, #1` at
-`0xc8a194`). About 10 s later the task builder `0x1a228f0` was entered from the CloseSession step
-`0x19d7a70` (return address `0x19d7acc`), and facade index 19 from CloseParticipation (return
-address `0x255c490`), while the joiner stayed seated and the trade box opened. Backing out of the
-box reached neither again.
-
-An emulated Z-A 2.0.2 with breakpoints on slots 13, 14 and 16 of all three drivers ran only the
-local driver: Private Battles' Create a Room entered its slot 14 CreateSession (`0x19a3790`, return
-address `0x2a50170`), and a Link Trade search entered its slot 13 (`0x19a1310`) from `0xc8a198` with
-the fourth argument 1, both on the same driver object. No LAN or third-driver step ran. The manager
-object is a static singleton, the local driver a heap object.
-
-The setter `0x199e850` is reached through the thunk `0x199f208` from two places in one module: the
-reset `0x1912200`, which passes the constant 0 (`mov w1, wzr` at `0x1912234`), and `0x1911540`,
-which passes its first argument (`mov w1, w19` at `0x1912130`). Mode 0 clears the manager's driver at
-+0x38 and +0x40 (`0x199e9b0`); the local driver is built only by the setter's mode-1 branch
-(`bl 0x199eaa0` at `0x199e8f8`). `0x1911540` runs from the update of a task named "InitializePia"
-(vtable `0x3c14068`, constructor `0xc5a5f4`), with the mode the task keeps at +0x50. The task is
-built by `0xc5a3e4` with a constant mode from two sequences:
-
-| sequence | builder, mode | steps | callers |
-|---|---|---|---|
-| to local | `0xc57544`, `mov w2, #1` at `0xc575fc` | InitializeSocket, InitializePia, Commit, FinalizeToLocal | Link Trade (`0xc9fe00`), Private Battles (`0x2a49dcc`, and `0xc570a8` under "BattlePrivate") |
-| to internet | `0x2a0bab8`, `mov w2, #2` at `0x2a0bcbc` | NetworkUse, InitializeSocket, InitializeCurl, EnsureNsaTokenId, CheckNSO, InitializeNplnManager, InitializePia, LoginInternet, SaveNplnUserId, ActivatePenaltyClient, Commit, FinalizeToInternetWithGS | the connect request `0x2a388a4` through `0x2a3928c` (callers `0xcac894`, `0x2c66b84`, `0x2c77674`, `0x2cbce04`) |
-
-Every sequence starts with the cleanup `0xc57c8c` (LogoutInternet, DeactivatePenaltyClient,
-TerminateNPLNManager, TerminatePia, TerminateCurl), whose TerminatePia task calls the reset with
-mode 0. The network state word `0x6133018` records which sequence last committed:
-
-| value | written by |
-|---|---|
-| 0 | the start of the to-local and to-internet sequences (`0xc57588`, `0x2a0bb3c`); FinalizeCleanupNetwork (`0xdd0488`), the last step of the stand-alone cleanup `0xc920f0` |
-| 1 | the to-local sequence's Commit (`0xc84f48`) |
-| 2 | Commit (`0x2a18604`) of a second internet sequence `0x2a0ade0` (NetworkUse, InitializeSocket, InitializeCurl, EnsureNsaTokenId, InitializeNplnManager, SaveNplnUserId, Commit, RecoverNetwork, FinalizeToInternet), which runs the cleanup and no InitializePia |
-| 3 | the to-internet sequence's Commit (`0x2a2b14c`, task built by `0x2a0c398` through `0x2a29da8`), after its InitializePia with mode 2 |
-
-`0x961c80` is true when the byte `0x3f9bf6a` is 1 and `nn::nifm::IsNetworkAvailable` returns true.
-
-Ranked Battles' matching runs on the third driver. Its page update `0x2cc1d18` keeps a state at
-+0x40 (jump table `0x33a2268`, 70 states); state 0x31 calls the "BattleRandom" request `0x2a48bf8`
-(`0x2cc287c`), which reaches slot 13 through `0xc8a224` (`ldr x0, [x0, #0x38]`, then `br` to slot
-`+0x68`, the manager's current driver). Before any state in 0x2f to 0x34 or 0x43 to 0x45 runs, the
-update reads `0x6133018` (`0x2cc1e14`): 1, or `0x961c80` false, sends the page to state 4; a value
-other than 3 does the same (`0x2cc4760`). States 10 to 0x2f and 0x3b to 0x3e need the same value 3
-or go to `0x2cc5b5c` and state 6 (`0x2cc1d58`). Value 3 means the last sequence to commit installed
-the mode-2 driver. The third driver's slot 13 (`0x191fd30`) builds StartupSession,
-JoinRandomSession, WaitMember, JoinRandomRecover and RandomMatchingCancel steps on
-`gflnet::npln` results. An emulated console with no online service returns from Ranked Battles to
-the menu before matching.
-
-No call builds the task with mode 3, so the LAN driver is never installed in 2.0.2. On an emulated
-console with breakpoints armed before the game's first instruction, nothing reached the setter
-through boot, the field, the Link Play page, the Link Trade page or the Link Code prompt. Confirming
-the code 00000000 entered the setter with mode 0 (return address `0x1912240`), then 0.6 s later
-with mode 1 from `0x191213c` and built the local driver (`0x199eaa0`), and 1.0 s after that the
-local driver's slot 13 ran (`x2` 2, `x3` 1) with no station present; the joiner started four
-minutes later. A breakpoint re-armed 0.3 s after its hit misses the second call.
-
-
-On a retail console's Link Trade search the advertisement holds policy 0 with 2 of 2 nodes at the
-seat, the Pia player count (advertise data +0x16, `e1 01 01 00` to `e1 01 02 00`, the only changing
-byte) moves to 2, then policy 1 is advertised just before the console's one Net 0x50 (150 bytes,
-sequence 1, accept state `02`), and the policy stays 1 for the seated session. No host migration
-precedes it, so the retail `02` is CloseParticipation's, started by the slot-13 step `0x19d7a70`,
-the only builder Link Trade code reaches on the local driver.
-Measured over four seated sessions decrypted by a joiner board: player count 2 at 0.07 to 0.59 s,
-policy 1 first advertised 2 to 48 ms before the Net 0x50 at 0.09 to 0.64 s. With 2 of 2 participants
-the policy refuses nothing the capacity did not.
+On a retail Link Trade search the advertisement holds policy 0 at the seat; the Pia player count
+(advertise data +0x16, `e1 01 01 00` to `e1 01 02 00`) moves to 2 within 0.6 s, then policy 1 is
+advertised just before the console's one Net 0x50 (150 bytes, sequence 1, accept state `02`) and
+stays 1 for the session. No host migration precedes it, so the `02` is CloseParticipation's, from
+the slot-13 step `0x19d7a70`. With 2 of 2 participants the policy refuses nothing the capacity did
+not.
 
 ## Leaving
 
@@ -1057,9 +884,8 @@ The type 4 is taken by `0x25474f8` only at 15 bytes and only when bytes 5 to 14 
 own ids (+0x1b8, +0x1c0); it sets the job's byte +0x99. The host's type-3 handler `0x254c5ac` (22 or
 34 bytes, host only) writes the type 4 at `0x254c740` and removes the station (`0x2548500`).
 
-A retail Z-A joined to a host that sends no type 4 sent four type 3 about 0.5 s apart and
-deauthenticated 2.0 s after the first (1.99, 2.02 and 2.03 s over three departures).
-`bin/za_host.py` answers each type 3 with a type 4; `bin/za_join.py` sends its own type 3 when it
+A retail Z-A whose host sends no type 4 sends four type 3 about 0.5 s apart and deauthenticates
+2.0 s after the first. `bin/za_host.py` answers each type 3 with a type 4; `bin/za_join.py` sends its own type 3 when it
 leaves on `--hold` or `--hold-after-trade`, and goes on the type 4 or after the fourth send.
 
 ### A host leaving
@@ -1071,17 +897,12 @@ deadline (`0x255a8c8`), after which the job fails with `0x6c0e`. `WaitStartHostM
 message only on the host, only when bytes 11 to 20 are the host's own ids, and sets +0xe0 through
 `0x255a630` when bytes 1 to 10 are the named next host's.
 
-With the type 9 unanswered, a retail Z-A hosting a trade whose player backed out sent five type 9 one
-second apart, then Net 0x11 sequence 3 from source 0 every 0.5 s for about 4 s, then Net 0x40 for
-about 2 s, and went silent 10.82 to 10.86 s after its first type 9 (four departures); its network
-went down 11.26 s after it in the one traced on the board. In an emulated pair the joiner answered
-the type 9 with a type 10 48 ms later, the host sent Net 0x11 sequence 3 and the joiner answered
-`0112000000000003`; the host's network was gone 0.25 s after its type 9. The joiner's type 10 and
-0x12 went out with header flags 2, destination 0, packet id 0 and no footer.
+| joiner's answer | retail host after its type 9 |
+|---|---|
+| none | five type 9 one second apart, Net 0x11 sequence 3 every 0.5 s for 4 s, Net 0x40 for 2 s, silent at 10.8 s, network down at 11.3 s |
+| type 10, then 0x12 `0112000000000003` | the 0x11 at 0.04 s, Net 0x40 (`01 40 00 00`, source 0) every 0.3 s for 4 s while the joiner stays |
 
-With the type 10 and the 0x12 sent at once, a retail host sent the 0x11 0.04 s after its type 9
-and then Net 0x40 (`01 40 00 00`, source 0) every 0.3 s for 4.06 s while the joiner stayed on its
-network; no second type 9 came.
+The joiner's type 10 and 0x12 go out with header flags 2, destination 0, packet id 0 and no footer.
 
 The Net 0x11 is the leaving host's connection status in the migration form of
 `NetDestroyNetworkJob` (`0x2516444`, flag at job+0xd8, set when the disconnecting station is host,
@@ -1098,41 +919,25 @@ from source 0, destination 0, packet id 0, header flags `0x3` (establishing, com
 the 0x40 goes out the same way with flags 2. The type 9 goes to the named station's variable id
 from the host's, with the footer.
 
-The 0x40 starts the next host's work: `0x2503d44`, on a station that is not host, calls
-NetHostMigration start `0x25099a4`, which picks the next host (`0x2505d10`) and runs
-`NetHostMigrationJob` (`0x2509da0`). On LDN it leaves the old network (`0x2503b14`); the next host
-opens a network (`0x2507050`) and waits 6000 ms for the remaining clients, dropping any that do not
-come back (`0x250acf0`); a client waits 1000 ms and reconnects. Success clears NetProtocol+0x12d0
-and stores result 1 or 2 (host) or 3 (client) at NetProtocol+0x12d4; failure stores 4 with error
-`0xc406`.
+The 0x40 starts host migration on a non-host station (`0x2503d44` -> `0x25099a4`,
+`NetHostMigrationJob` `0x2509da0`): the next host opens a network and waits 6000 ms for the others; a
+client waits 1000 ms and reconnects.
 
-A Link Trade ends at the handover. The type-9 handler `0x2550684` removes the leaving host's station
-(`0x2548500`) before starting `ProcessHostMigrationJob`, which drops the session's station count
-(session+0x110). The trade scene update `0x95f398` runs the trade only while that count is above 1
-(`0x95f45c`) and otherwise ends it with reason 3 (`0x95f508`), the ending a partner's leave request
-also reaches. In a two-station trade the leaver is the only partner, so the trade ends whatever the
-migration does, and the leaving console destroys its network.
+A Link Trade ends at the handover: the type-9 handler `0x2550684` removes the leaving host's station,
+and the trade scene update `0x95f398` ends the trade with reason 3 (`0x95f508`) once the session's
+station count (session+0x110) is 1.
 
-Measured on two emulated Z-A 2.0.2 consoles (Ryujinx, LDN over loopback), seated in the trade box
-when the host's player backed out (B, then Yes): the other station received the 30-byte type 9
-naming it, answered with the type 10, received the Net 0x11 of sequence 3 with byte 29 set, answered
-with the 0x12, and received the 0x40 0.12 s after the type 9. It left the network 4 ms after the
-0x40 and finalized its LDN service 0.24 s later with no network created. Its screen showed "Your
-trading partner chose to quit trading. The Link Trade will now end." and A returned it to the Link
-Play menu. Two runs of two matched.
-
-Leaving on that first 0x40, the joiner was off the network 0.09 s after the type 9 (no trade, the
-player backing out of the box).
+Between two emulated Z-A 2.0.2 consoles seated in the trade box, the host's player backing out (B,
+then Yes) runs type 9, type 10, Net 0x11 sequence 3 with byte 29 set, 0x12, then the 0x40 0.12 s
+after the type 9; the other station leaves the network 4 ms after the 0x40, creates no network, and
+shows "Your trading partner chose to quit trading. The Link Trade will now end."
 
 `bin/za_join.py` answers a type 9 naming it with the type 10, and the Net 0x11 after it with the
 0x12, and leaves the network on the first Net 0x40 (or once the console has been silent for a
 second).
 
-`pokeldn.za.host.HostSession.leave` runs the same departure: the type 9 (`build_start_migration`)
-each second until the type 10 or 5 s, the migration 0x11 every 0.5 s until the 0x12 of its sequence
-or 4 s, then the 0x40 every 0.3 s for 4 s (2 s when the 0x12 never came) or until the console leaves
-the network. Unanswered, it ends 11 s after its first type 9. `tests/test_za_host.py` runs it
-against `bin/za_join.py` and pins the type 9 and both Net messages to the emulated pair's bytes.
+`pokeldn.za.host.HostSession.leave` runs the same departure with the same timings;
+`tests/test_za_host.py` pins the type 9 and both Net messages.
 
 ## Mystery Gift
 

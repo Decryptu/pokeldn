@@ -7,13 +7,41 @@ import flet as ft
 
 from gui import theme as t
 from gui.views.widgets import MarkdownDocument, heading_sections
-from pokeldn.app import preview
+from pokeldn.app import i18n, preview
 from pokeldn.app.paths import ROOT
 from pokeldn.app.i18n import t as tr
 
 DOCS = os.path.join(ROOT, "docs")
 GUIDE = os.path.join(ROOT, "gui", "guide.md")
 SITE = "https://decryptu.github.io/pokeldn/"
+
+
+def _english(file: str) -> str:
+    return GUIDE if file == "guide" else os.path.join(DOCS, file)
+
+
+def _read(path) -> tuple[dict, str]:
+    with open(path, encoding="utf-8") as source:
+        return split_front_matter(source.read())
+
+
+def document_path(file: str):
+    """The language pack's copy of a page, else the English one (pokeldn.app.i18n.document)."""
+    return i18n.document(file, _english(file))
+
+
+def document_body(file: str) -> tuple[str, str | None]:
+    """A page's Markdown, and for a pack's copy the English page whose anchors its headings keep."""
+    path = document_path(file)
+    if os.path.samefile(path, _english(file)):
+        return _read(path)[1], None
+    return _read(path)[1], _read(_english(file))[1]
+
+
+def page_title(page: "Page") -> str:
+    path = document_path(page.file)
+    title = page.title if os.path.samefile(path, _english(page.file)) else _read(path)[0].get("title", page.title)
+    return i18n.message(title)
 
 
 @dataclass
@@ -70,16 +98,15 @@ def index(tree: list[Page], guide_title: str) -> list[Section]:
     found = []
 
     def add(file, title):
-        with open(GUIDE if file == "guide" else os.path.join(DOCS, file), encoding="utf-8") as f:
-            _, body = split_front_matter(f.read())
-        for key, heading, source in heading_sections(body):
+        body, reference = document_body(file)
+        for key, heading, source in heading_sections(body, reference=reference):
             text = plain(HEADING_LINE.sub("", source, count=1) if key else source)
             if text or heading:
                 found.append(Section(file, title, plain(heading) or title, key, text))
 
     def walk(items):
         for p in items:
-            add(p.file, p.title)
+            add(p.file, page_title(p))
             walk(p.children)
     add("guide", guide_title)
     walk(tree)
@@ -153,10 +180,8 @@ class DocsView:
 
     def show(self, file: str, update: bool = True) -> None:
         self.file = file
-        path = GUIDE if file == "guide" else os.path.join(DOCS, file)
-        with open(path, encoding="utf-8") as f:
-            _, body = split_front_matter(f.read())
-        self.markdown.set_value(body)
+        body, reference = document_body(file)
+        self.markdown.set_value(body, reference=reference)
         for root in self.tree:
             if file == root.file or any(file == c.file or any(file == g.file for g in c.children)
                                         for c in root.children):
@@ -175,7 +200,7 @@ class DocsView:
 
         def walk(items, depth):
             for p in items:
-                rows.append(self.row(p.title, p.file, depth, bool(p.children)))
+                rows.append(self.row(page_title(p), p.file, depth, bool(p.children)))
                 if p.children and p.file in self.open_parents:
                     walk(p.children, depth + 1)
         walk(self.tree, 0)

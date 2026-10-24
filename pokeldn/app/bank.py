@@ -129,6 +129,8 @@ def _keep(game: str, content: bytes, info: dict, folder: Path, origin: str, bank
         return None
     banked.add(digest)
     from pokeldn.pokemon import summary
+    # Display-service replies also enter here when a trade's received file is banked.
+    info = {**info, **info.get("canonical", {})}
     folder.mkdir(parents=True, exist_ok=True)
     name = re.sub(r"[^A-Za-z0-9]+", "", str(info.get("species", ""))) or "pokemon"
     stem = f"{name}-{time.strftime('%Y%m%d-%H%M%S')}-{random.getrandbits(32):08x}"
@@ -239,10 +241,10 @@ def remove(entry_id: str, folder=None) -> None:
 
 # The offer queues
 
-def destinations(entry: Entry, trainer: dict) -> dict[str, dict]:
+def destinations(entry: Entry, trainer: dict, *, service=None) -> dict[str, dict]:
     """Each game -> {ok, reason, home_tracker}, using the same conversion rules as offer."""
     from pokeldn.pokemon import SERVICE
-    return SERVICE.destinations(entry.game, data(entry), entry.tracker, trainer)
+    return (service or SERVICE).destinations(entry.game, data(entry), entry.tracker, trainer)
 
 
 def offer(entry: Entry, game: str, trainer: dict) -> dict:

@@ -17,13 +17,13 @@ if os.path.isdir(os.path.join(BUNDLED_LDN, "ldn")):
     sys.path.insert(0, BUNDLED_LDN)
 
 from pokeldn import pokemon as pokemon_service
-from pokeldn.host_support import needs_root
 from pokeldn.frlg import config as configmod, host_cli  # noqa: E402
 from pokeldn.frlg.link import trade_runtime  # noqa: E402
 from pokeldn.frlg.link import beacon as beaconmod
-from pokeldn.ldn import transport  # noqa: E402
 from pokeldn.frlg.link.host_app import HostApplication  # noqa: E402
 from pokeldn.online import session as online  # noqa: E402
+from pokeldn import trade_back  # noqa: E402
+from pokeldn.frlg.link import trade as tradeproto  # noqa: E402
 
 
 def build_parser(file_config=None, *, shared_path=None, local_path=None):
@@ -112,6 +112,7 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
         help=("post-trade standby rounds before the parties are exchanged again; default 6, "
               "the Switch FireRed count. GBA Emerald runs 5 (docs/rse.md, After the trade)"))
     online.add_arguments(parser)
+    trade_back.add_arguments(parser)
     host_cli.add_host_config_arguments(
         parser, shared_path=shared_path, local_path=local_path)
     host_cli.add_host_arguments(
@@ -151,12 +152,15 @@ def build_run_config(parser, args):
             args.slot = 0
         args.trades = 1
         args.slots = ""
+    slots, trades = _offered_slots(parser, args), args.trades
+    if args.trade_back:
+        slots, trades = tuple(tradeproto.trade_back_slots(slots)), trades * 2
     try:
         plan = configmod.TradePlan(
             party_paths=tuple(args.party), output_path=args.out,
             output_size=args.out_size, output_format=args.out_format,
-            trade_slot=args.slot, offered_slots=_offered_slots(parser, args),
-            trades=args.trades, anim_delay=args.anim_delay,
+            trade_slot=args.slot, offered_slots=slots,
+            trades=trades, anim_delay=args.anim_delay,
             player_ids_repeat_frames=args.player_ids_repeat_frames,
             link_player_idle_frames=args.link_player_idle_frames,
             save_rounds=args.save_rounds, trust_pia=args.trust_pia)
@@ -175,6 +179,7 @@ def main(argv=None):
     parser = build_parser(
         file_config, shared_path=shared_path, local_path=local_path)
     args = parser.parse_args(argv)
+    trade_back.check(parser, args, "party", "--online", "--colosseum", "--union-room")
     if args.online:
         # The consoles see each other's parties; ours only fills the trainer card's slot.
         if args.party:
@@ -190,13 +195,13 @@ def main(argv=None):
         parser.error("the following arguments are required: MON")
     if not args.live:
         parser.error("hosting only supports live mode; omit --no-live")
-    if needs_root():
-        parser.error("live LDN hosting requires root; run with sudo -E")
+    factory = host_cli.transport_factory(parser, args)
     run_config = build_run_config(parser, args)
     partner = online.partner("frlg", args, name=run_config.profile.to_link_player().name)
     try:
         joined = HostApplication(
-            run_config, log=trade_runtime.ConsoleLog(args.verbose), partner=partner).run()
+            run_config, log=trade_runtime.ConsoleLog(args.verbose), partner=partner,
+            transport_factory=factory).run()
     finally:
         if partner:
             partner.close()

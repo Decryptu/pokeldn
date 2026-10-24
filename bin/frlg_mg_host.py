@@ -8,7 +8,6 @@ Cards -> Friend; the delivery man in any Pokemon Center hands the gift over.
 """
 
 import argparse
-import functools
 import os
 import sys
 
@@ -20,7 +19,6 @@ BUNDLED_LDN = os.path.join(PROJECT_ROOT, "vendor", "LDN")
 if os.path.isdir(os.path.join(BUNDLED_LDN, "ldn")):
     sys.path.insert(0, BUNDLED_LDN)
 
-from pokeldn.host_support import needs_root
 from pokeldn.frlg import config as configmod, host_cli  # noqa: E402
 from pokeldn.frlg.gift import gift_artifact, gift_registry, wonder_news  # noqa: E402
 from pokeldn.frlg.link import trade_runtime  # noqa: E402
@@ -31,7 +29,6 @@ from pokeldn.frlg.gift.host_mg_app import (  # noqa: E402
     WonderNewsHostApplication)
 from pokeldn.frlg.gift import wonder_card_events  # noqa: E402
 from pokeldn.frlg.gift.wonder_card import GIFT_BEAST_CUTSCENE  # noqa: E402
-from pokeldn.ldn import ldn_mitm_host, transport  # noqa: E402
 
 HOST_GIFT_CHOICES = gift_registry.GIFT_REGISTRY.live_choices
 
@@ -69,6 +66,9 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
     payload_group.add_argument("--gift-file", help="a complete FRLG .pokegift file, or a .wc3 Wonder Card")
     parser.add_argument("--export-gift", metavar="FILE",
                         help="save a .pokegift file and exit without using the radio")
+    parser.add_argument("--save-to-board", action="store_true",
+                        help="store the gift on the ESP32 board, which then hosts it for every console "
+                             "that joins, with no computer, at every power-up, and exit")
     payload_group.add_argument(
         "--save-backup", metavar="FILE",
         help=("copy the console's whole 128 KB save into FILE (.sav); the console's save is not "
@@ -836,16 +836,41 @@ def build_run_config(parser, args):
         parser.error(str(exc))
 
 
-def _transport(parser, args):
-    factory = transport.HostTransport
-    if args.over_ip:
-        our_ip = None if args.over_ip == "auto" else args.over_ip
-        factory = functools.partial(ldn_mitm_host.IpHostTransport, our_ip=our_ip)
-        # functools.partial hides the class attribute the phy resolution reads.
-        factory.NEEDS_RADIO = False
-    elif needs_root():
-        parser.error("live LDN hosting requires root; run with sudo -E")
-    return factory
+def _save_to_board(parser, args, config, plan):
+    """Stores the gift on the board as a portable beacon that answers each console's join itself
+    (docs/hardware_esp32.md, Portable beacon)."""
+    from pokeldn.frlg.gift import portable
+    from pokeldn.host_support import resolve_keys
+    from pokeldn.ldn import api, esp32, esp32_wlan
+    from pokeldn.app import screen
+    try:
+        app = portable.application(config, plan)
+        title, line, species = app._screen_card()
+        display = [*screen.gift_payloads(title, line, species=species),
+                   esp32.display_show_payload("gifted", screen.GIFTED_HOLD_S, "", screen.ascii_text(line))]
+        image = portable.build(config, plan, api.load_keys(resolve_keys(config.ldn.keys_path)),
+                               display=display)
+    except (OSError, ValueError, KeyError) as exc:
+        print(f"--save-to-board: {exc}", file=sys.stderr)
+        return 1
+    radio = esp32_wlan.use_from_environment(log=print)
+    if radio is None:
+        print("--save-to-board needs the ESP32 board: POKELDN_RADIO=esp32:auto", file=sys.stderr)
+        return 1
+    try:
+        if esp32.firmware_version(radio.hello()) < esp32.BEACON_HOST_FIRMWARE:
+            print("the board's firmware hosts no FireRed or LeafGreen gift; install radio firmware "
+                  f"{'.'.join(map(str, esp32.BEACON_HOST_FIRMWARE))} or later from the Board page",
+                  file=sys.stderr)
+            return 1
+        state = radio.store_beacon(image)
+    except (OSError, RuntimeError, esp32.RadioError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(f"saved on the board: {state.length} bytes. Unplug it and power it from any USB charger; "
+          "3 s after power-up it hosts the gift for every console that joins, until a computer "
+          "opens it.")
+    return 0
 
 
 def _save_session(parser, args, config):
@@ -862,7 +887,7 @@ def _save_session(parser, args, config):
             parser.error("--save-restore: the save has no whole copy of a game in it")
     app = SaveTransferHostApplication(
         config, backup=args.save_backup, restore=args.save_restore,
-        resume_dir=args.save_resume_dir, transport_factory=_transport(parser, args),
+        resume_dir=args.save_resume_dir, transport_factory=host_cli.transport_factory(parser, args),
         log=trade_runtime.ConsoleLog(args.verbose))
     app.run()
     if app.interrupted:
@@ -892,11 +917,17 @@ def main(argv=None):
         parser.error("--save-resume-dir goes with --save-backup")
     config = build_run_config(parser, args)
     if args.save_backup or args.save_restore:
+        if args.save_to_board:
+            parser.error("--save-to-board keeps a gift; a save session sends none")
         return _save_session(parser, args, config)
     try:
         plan = configmod.plan_builds(config.payload, config.console_build, config.console_version)
     except ValueError as exc:
         parser.error(str(exc))
+    if args.save_to_board:
+        if args.export_gift:
+            parser.error("--save-to-board and --export-gift are two different ends; pick one")
+        return _save_to_board(parser, args, config, plan)
     if args.export_gift:
         from pokeldn import gifts
         from pokeldn.frlg.gift.file import from_payload
@@ -931,14 +962,14 @@ def main(argv=None):
         except OSError as exc:
             parser.error(f"could not write --artifact-dir {args.artifact_dir!r}: {exc}")
         print(f"wrote Mystery Gift artifact: {artifact_path}")
-    factory = _transport(parser, args)
+    factory = host_cli.transport_factory(parser, args)
     application = (WonderNewsHostApplication if plan.distribution.is_news
                    else BufferScriptHostApplication if plan.distribution.buffer_code is not None
                    else MysteryGiftHostApplication)
     app = application(
         config, plan=plan, transport_factory=factory,
         log=trade_runtime.ConsoleLog(args.verbose))
-    joined = app.run()
+    app.run()
     if app.interrupted:
         return 130
     if app.idle_timed_out:

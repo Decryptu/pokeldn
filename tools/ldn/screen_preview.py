@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 from pokeldn.ldn import esp32  # noqa: E402
 
 SOURCES = [ROOT / "firmware/esp32/main/scene.c", ROOT / "firmware/esp32/main/screen.c"]
+FIRMWARE_VERSION = (ROOT / "firmware/esp32/version.txt").read_text(encoding="ascii").strip()
 MODES = {"idle": 0, "joining": 1, "joined": 2, "hosting": 3, "sniffing": 4}
 # scene.h: enum scene_panel, and the window (x, y, w, h) of the frame each panel shows.
 PANELS = {"128x64": (0, (0, 0, 128, 64)), "72x40": (1, (30, 24, 72, 40))}
@@ -36,7 +37,8 @@ class Scene:
         folder = Path(build_dir or tempfile.mkdtemp(prefix="pokeldn-screen-"))
         lib = folder / ("libscene" + (".dylib" if sys.platform == "darwin" else ".so"))
         subprocess.run([os.environ.get("CC", "cc"), "-O1", "-Wall", "-Werror", "-shared", "-fPIC",
-                        "-o", str(lib), *map(str, SOURCES)], check=True)
+                        f'-DPOKELDN_FIRMWARE_VERSION="{FIRMWARE_VERSION}"', "-o", str(lib),
+                        *map(str, SOURCES)], check=True)
         self.lib = ctypes.CDLL(str(lib))
         self.lib.scene_command.restype = ctypes.c_bool
         self.lib.scene_draw.restype = ctypes.c_uint8

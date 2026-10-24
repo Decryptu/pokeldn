@@ -4,7 +4,7 @@ A decrypted, decompressed blob is <message>* <2-byte recipient station id> <0xff
 header field whose presence bit is clear inherits the previous message's value.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 PROTO_NAMES = {1: "Net", 3: "RTT", 4: "Sync", 5: "Unreliable",
                9: "Clock", 10: "Reliable", 13: "Session"}

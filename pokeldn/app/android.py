@@ -9,7 +9,6 @@ import serial
 from serial.serialutil import PortNotOpenError, SerialBase, SerialException, Timeout
 
 PORT = "android://board"
-VID, PID = 0x303A, 0x1001        # Espressif native USB, the only board the phone drives (Setup.java)
 
 
 def active() -> bool:
@@ -127,9 +126,11 @@ class _Port:
     """A ListPortInfo for the board, the fields gui.board and esp32_wlan read."""
 
     def __init__(self):
-        self.device, self.vid, self.pid = PORT, VID, PID
+        self.device = PORT
+        self.vid, self.pid = int(bridge().deviceVendorId()), int(bridge().deviceProductId())
         self.serial_number = self.description = self.product = bridge().deviceName()
-        self.manufacturer, self.hwid, self.location, self.interface = "Espressif", f"USB VID:PID={VID:04X}:{PID:04X}", "", ""
+        self.manufacturer = "Espressif" if (self.vid, self.pid) == (0x303A, 0x1001) else "Silicon Labs"
+        self.hwid, self.location, self.interface = f"USB VID:PID={self.vid:04X}:{self.pid:04X}", "", ""
 
     def __getitem__(self, index):
         return (self.device, self.description, self.hwid)[index]
@@ -184,16 +185,6 @@ def save_as(path: str, name: str = "", kind: str = "") -> None:
 
 def share(path: str, kind: str = "") -> None:
     bridge().share(path, kind)
-
-
-def wait_for_usb_change(seen: int, timeout: float) -> int:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        now = changes()
-        if now != seen:
-            return now
-        time.sleep(0.2)
-    return seen
 
 
 class PickedFile:

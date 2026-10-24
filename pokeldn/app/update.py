@@ -125,7 +125,8 @@ def install_root(executable: str = sys.executable, frozen: bool = bool(getattr(s
     """The folder a packed app was unpacked as: pokeldn.app on macOS, the pokeldn folder elsewhere."""
     if not frozen:
         return None
-    exe = Path(executable).resolve()
+    # Windows keeps the drive letter: resolve() turns a mapped or subst drive into the UNC path.
+    exe = Path(os.path.abspath(executable)) if system == "win32" else Path(executable).resolve()
     if system == "darwin":
         root = exe.parents[2]
         return root if root.suffix == ".app" and exe.parent.name == "MacOS" else None
@@ -138,12 +139,16 @@ def executable_in(root: Path, system: str = sys.platform) -> Path:
     return root / ("pokeldn.exe" if system == "win32" else "pokeldn")
 
 
-def _writable(folder: Path) -> bool:
-    # os.access on Windows reads only the read-only attribute, never the folder's ACL: create a file.
+def _writable(folder: Path, entry: str = "file") -> bool:
+    # os.access on Windows reads only the read-only attribute, never the folder's ACL: create one.
     probe = folder / f".pokeldn-write-{os.getpid()}"
     try:
-        probe.write_bytes(b"")
-        probe.unlink()
+        if entry == "folder":
+            probe.mkdir()
+            probe.rmdir()
+        else:
+            probe.write_bytes(b"")
+            probe.unlink()
         return True
     except OSError:
         return False
@@ -156,7 +161,7 @@ def blocker(root: Path | None, system: str = sys.platform) -> str:
     if "AppTranslocation" in root.parts:
         # macOS runs a quarantined app from Downloads out of a random read-only copy.
         return "Move pokeldn to your Applications folder, open it from there, then update."
-    if not needs_admin(root, system) and not (_writable(root.parent) and _writable(root)):
+    if not needs_admin(root, system) and not (_writable(root.parent, "folder") and _writable(root)):
         return f"pokeldn cannot write to {root.parent}."
     return ""
 
@@ -165,7 +170,8 @@ def needs_admin(root: Path | None, system: str = sys.platform) -> bool:
     """Windows: a folder only an administrator may change (C:\\Program Files); the swap asks Windows."""
     if system != "win32" or root is None:
         return False
-    return FORCE_ADMIN or not (_writable(root.parent) and _writable(root))
+    # The swap adds only folders beside root; a drive root (D:\) lets users add folders, not files.
+    return FORCE_ADMIN or not (_writable(root.parent, "folder") and _writable(root))
 
 
 def checksums(text: str) -> dict[str, str]:
@@ -377,6 +383,9 @@ def start_swap(new: Path, target: Path, version: str, system: str = sys.platform
     """Starts the new app as the helper that replaces target once this process (os.getpid()) exits."""
     args = ["--apply-update", str(new), str(target), str(os.getpid()), version]
     if admin:
+        # An elevated process sees no subst or mapped drive letter of the user's session: pass the
+        # folder the letter stands for (docs/gui.md, Updates).
+        args[2] = str(target.resolve())
         _run_as_admin(executable_in(new, system), args, new.parent, target.parent)
         return
     # Launched from Explorer, this app's working folder is target: inherited, Windows refuses the rename.
@@ -454,7 +463,8 @@ def running_from(root: Path) -> list[int]:
     size = wintypes.DWORD()
     if not psapi.EnumProcesses(pids, ctypes.sizeof(pids), ctypes.byref(size)):
         return []
-    prefix = os.path.normcase(str(root.resolve())) + os.sep
+    # Either spelling of a mapped drive: its letter, or the UNC path resolve() gives.
+    prefixes = tuple({os.path.normcase(os.path.abspath(p)).rstrip(os.sep) + os.sep for p in (root, root.resolve())})
     found = []
     for pid in pids[:size.value // ctypes.sizeof(wintypes.DWORD)]:
         handle = kernel.OpenProcess(0x1000, False, pid)   # PROCESS_QUERY_LIMITED_INFORMATION
@@ -463,7 +473,7 @@ def running_from(root: Path) -> list[int]:
         try:
             name, length = ctypes.create_unicode_buffer(32768), wintypes.DWORD(32768)
             if kernel.QueryFullProcessImageNameW(handle, 0, name, ctypes.byref(length)) and \
-                    os.path.normcase(name.value).startswith(prefix) and pid != os.getpid():
+                    os.path.normcase(name.value).startswith(prefixes) and pid != os.getpid():
                 found.append(pid)
         finally:
             kernel.CloseHandle(handle)

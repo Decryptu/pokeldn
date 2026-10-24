@@ -16,10 +16,10 @@ activity.
 | component | owns |
 |---|---|
 | `TradeRunConfig` | immutable run configuration: `TrainerProfile`, `TradePlan`, `LdnConfig`, `HostOptions` or `JoinerOptions` |
-| `HostApplication` | resource ordering: validation, transport startup, beacon injection, event loop, interruption, cleanup; activity hooks supply messages and persistence, so trade and Mystery Gift share the loop |
+| `HostApplication` | resource ordering: validation, transport startup, beacon publishing, event loop, interruption, cleanup; activity hooks supply messages and persistence, so trade and Mystery Gift share the loop |
 | `HostTransport` | the LDN AP, virtual interfaces, participant events, UDP :12345; no Pia parsing |
 | `HostPeerProtocol` | one peer's Pia state: Net, Session acceptance, RTT, packet ids, nonce selection, encryption, framing, Reliable batching; emits `OutboundDatagram` |
-| `HostSession` | Reliable + `RFULeader` + the activity engine (`engine=` picks trade or Mystery Gift); no socket, the boundary the offline end-to-end tests use |
+| `HostSession` | Reliable + `RFULeader` + the activity engine (`engine=` picks trade or Mystery Gift); no socket, the layer the offline end-to-end tests use |
 | `HostTradeEngine` | leader room entry, party and card exchange, selection, confirmation, animation and save barriers, cancel, room exit, close grace; `HostTradeTiming` names the frame counts |
 | `BeaconInjector` | its raw monitor socket and worker thread |
 
@@ -70,10 +70,9 @@ once.
 
 ## Shutdown and cleanup
 
-After the disconnect: save the received Pokemon if one exists, stop and join the beacon worker,
-close sockets and the network, clean the LDN vifs. The same cleanup runs on normal completion,
-`KeyboardInterrupt`, startup failure after partial allocation, and beacon-worker failure. Saving a
-received Pokemon is independent of capture logging.
+After the disconnect the host saves the received Pokemon if one exists, joins the beacon worker,
+closes sockets and the network and removes the LDN vifs. The same cleanup runs on completion,
+`KeyboardInterrupt`, partial startup failure and beacon-worker failure.
 
 Every host, trade, battle and Mystery Gift alike, stops when the console leaves LDN
 (`HostApplication.run`): at once when no close was confirmed, after a 2 s settle
@@ -100,14 +99,12 @@ and derives every view from it:
 - On a Linux Wi-Fi card the AP must mark the station `NL80211_STA_FLAG_AUTHORIZED` after LDN
   authentication. Driver profiles and flags are on [Adapters](hardware_adapters.md).
 - Transport or beacon-thread failure aborts the run and unwinds what was created.
-- An unexpected participant leave halts output. After a room-close confirmation, a participant that
-  disappears from LDN ends the run after a 2 s settle (`HOST_CLOSE_SETTLE_SECONDS`) rather than at
-  once; the fifteen-second grace runs to its end only while the participant stays.
+- An unexpected participant leave halts output. The fifteen-second grace runs to its end only while
+  the participant stays.
 - The grace (`HostTradeTiming.post_client_close_grace_frames`) counts only while the RFU leader is
   in UNI; the console's `D` moves it to DISCONNECTED (`pokeldn/gba/rfu_leader.py`), and the engine
   stops ticking. In 13 retail FireRed host trades the console sent `D` 0.1 s after its first
-  `READY_CLOSE_LINK`, kept the Pia transport answered and left LDN 0.5 to 4.0 s after it; the grace
-  never acts on a normal close.
+  `READY_CLOSE_LINK` and left LDN 0.5 to 4.0 s after it, so the grace never acts on a normal close.
 - Output is written only for a complete received Pokemon; input `.pk3`/`.ek3` files are never
   modified.
 
@@ -115,7 +112,7 @@ and derives every view from it:
 
 Add behaviour at the lowest layer that understands it: settings in the run configuration, OS and
 network in the application or transport, Pia in `HostPeerProtocol`, RFU in `RFULeader`, Direct
-Corner decisions in `HostTradeEngine`. Test each boundary on its emitted datagrams, payloads, frames
+Corner decisions in `HostTradeEngine`. Test each layer on its emitted datagrams, payloads, frames
 or command rows.
 
 The host serves one Switch. More peers need a `HostPeerProtocol` each (own Pia variables, nonces,

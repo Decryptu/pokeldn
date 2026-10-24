@@ -16,11 +16,9 @@ Switch keys).
 
 ## First deployment
 
-On the desktop, with the SSH alias and the Pi login user:
+On the desktop, from a committed checkout, with the SSH alias and the Pi login user:
 
 ```bash
-git add -A
-git commit -m "Prepare Raspberry Pi deployment"
 ./scripts/deploy_pi.sh --host pi-ldn --user PI_USER
 ```
 

@@ -16,9 +16,9 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pokeldn.host_support import open_output
+from pokeldn.host_support import open_output, resolve_keys
 from pokeldn.frlg.link import beacon
-from pokeldn.frlg import config as configmod  # noqa: E402
+from pokeldn.frlg import config as configmod, host_cli  # noqa: E402
 from pokeldn.frlg.link import sim as simmod  # noqa: E402
 from pokeldn.ldn import crypto as cryptomod  # noqa: E402
 from pokeldn.frlg.gift import mg_client  # noqa: E402
@@ -36,18 +36,6 @@ def _paced_sleep(s, period, slice_s=0.002):
         if left <= 0:
             return
         time.sleep(min(slice_s, left))
-
-
-def _hex_bytes(ap, option, value, *, size=None):
-    if not value:
-        return None
-    try:
-        result = bytes.fromhex(value)
-    except ValueError:
-        ap.error(f"{option} must contain hexadecimal bytes")
-    if size is not None and len(result) != size:
-        ap.error(f"{option} must contain exactly {size} bytes")
-    return result
 
 
 def save_outputs(engine, prefix, lg):
@@ -84,8 +72,8 @@ def save_outputs(engine, prefix, lg):
 def run_live(args, profile, lg):
     lg.info(f"scanning for the console's Mystery Gift LDN network (nickname={profile.name})...")
     t = tmod.LiveTransport(
-        password=_hex_bytes(None, "--password", args.password) if args.password else None,
-        nickname=profile.name, keys_path=args.keys,
+        password=args.password,
+        nickname=profile.name, keys_path=resolve_keys(args.keys),
         local_comm_id=int(args.comm_id, 16) if args.comm_id else None,
         phyname=args.phy, log=lg, beacon_debug=beacon.diagnose).start()
     pc = cryptomod.PiaCrypto(t.ssid)
@@ -108,8 +96,8 @@ def run_live(args, profile, lg):
     if args.random_player_id or args.rtt_before_finalize or args.join_repeat_ms:
         lg.info(f"[join-experiment] random_player_id={args.random_player_id} "
                 f"rtt_before_finalize={args.rtt_before_finalize} join_repeat_ms={args.join_repeat_ms}")
-    connect_id = _hex_bytes(None, "--connect-id", args.connect_id, size=2) if args.connect_id \
-        else (int.from_bytes(os.urandom(2), "big") or 1).to_bytes(2, "big")
+    connect_id = args.connect_id \
+        or (int.from_bytes(os.urandom(2), "big") or 1).to_bytes(2, "big")
     lg.info(f"emulator connect id {connect_id.hex()}")
     s = simmod.Sim(t, pc, engine, t.our_ip, t.host_ip, conn=conn, compress=args.compress,
                    linkstate=None, connect_id=connect_id, capture_path=args.capture, log=lg,
@@ -221,7 +209,7 @@ def build_parser():
     ap.add_argument("--connect-id", default="", help="override the 2-byte emulator connect id (hex)")
     ap.add_argument("--password", default="", help="LDN passphrase as hex (default: the built-in one)")
     ap.add_argument("--phy", default="phy0")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--comm-id", help="LDN local_communication_id (hex) to join")
     ap.add_argument("--capture", metavar="FILE", help="record every Pia datagram both ways (.jsonl)")
     ap.add_argument("--out", metavar="PREFIX", default="", help="write PREFIX_card.bin etc.")
@@ -232,6 +220,8 @@ def build_parser():
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    args.password = host_cli.parse_hex_bytes(ap, "--password", args.password)
+    args.connect_id = host_cli.parse_hex_bytes(ap, "--connect-id", args.connect_id, size=2)
     if not cryptomod.HAVE_ZSTD:
         sys.exit("FATAL: zstandard is not installed in this interpreter")
     profile = configmod.profile_from_overrides(ot=args.ot, version=args.version,

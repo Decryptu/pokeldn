@@ -29,8 +29,9 @@ from pokeldn.swsh import COMM_ID, PASSPHRASE, PIA_PORT, packet_iv, session_keys
 from pokeldn.swsh import trade as swsh_trade
 from pokeldn.swsh import raid as swsh_raid
 from pokeldn.swsh import raid_battle
+from pokeldn.swsh import lair as swsh_lair
 from pokeldn.ldn import sync_clock
-from pokeldn import gen8
+from pokeldn import gen8, trade_back
 from pokeldn.swsh import pokemon as swsh_pokemon
 from pokeldn.swsh import trade_payload
 from pokeldn.ldn import show_done
@@ -169,38 +170,7 @@ class _Advertised:
         self.ssid = ldn_mitm.session_id(info)
 
 
-def ip_scan_once(scan_ip, host_ip, timeout):
-    """-> the emulated host's NetworkInfo, or None. The bridge drops a scan from the host's own
-    address, so it leaves from `scan_ip` [docs/ldn.md, Hosting for an emulator]."""
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as us:
-        us.settimeout(timeout)
-        us.bind((scan_ip, 0))
-        try:
-            us.sendto(ldn_mitm.build(ldn_mitm.SCAN), (host_ip, ldn_mitm.PORT))
-            while True:
-                data, _ = us.recvfrom(4096)
-                kind, info = ldn_mitm.parse(data)
-                if kind == ldn_mitm.SCAN_RESP:
-                    return info
-        except (socket.timeout, OSError, ValueError):
-            return None
-
-
-def ip_associate(our_ip, host_ip, our_mac, name, timeout, version):
-    """-> (synced NetworkInfo, the TCP connection the seat lasts as long as)."""
-    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    tcp.settimeout(timeout)
-    tcp.bind((our_ip, 0))
-    tcp.connect((host_ip, ldn_mitm.PORT))
-    tcp.sendall(ldn_mitm.build(ldn_mitm.CONNECT,
-                               ldn_mitm.build_node_info(our_ip, our_mac, name.encode(),
-                                                        version=version)))
-    kind, synced = ldn_mitm.parse(tcp.recv(8192))
-    if kind != ldn_mitm.SYNC_NETWORK:
-        tcp.close()
-        raise RuntimeError(f"the host answered our connect with type {kind}, not SyncNetwork")
-    tcp.settimeout(None)
-    return synced, tcp
+ip_scan_once, ip_associate = ldn_mitm.scan_once, ldn_mitm.associate
 
 
 async def find_ip(args):
@@ -320,6 +290,7 @@ async def main_async(args):
               "block_out": 0, "block_acked": None}
 
         accepted = trio.Event()           # station handshake closed; a mesh join waits for it
+        rounds = trade_back.Rounds([]) if args.trade_back else None
         nonce = int.from_bytes(os.urandom(8), "big")
 
         def run_until(extra=0.0):
@@ -381,7 +352,11 @@ async def main_async(args):
             Contents 50 and 40 and pings 130 and 120 are built anew for every trade; content 30
             and ping 110 last the session (docs/swsh_trade.md, Trades in a row on one session)."""
             n = st["trades"] + 1
-            st["our_pk8"] = queued_offer(n)
+            if rounds is not None and rounds.returning:
+                # The console's 0x158 record as it came off the wire: never validated nor renewed.
+                st["our_pk8"] = rounds.current()
+            else:
+                st["our_pk8"] = queued_offer(rounds.round // 2 + 1 if rounds is not None else n)
             for key in ("offered_pk8", "confirm_queue", "confirm_last_step"):
                 st[key] = None
             for key in ("pk8_offer_sent", "trade_ready_sent", "ladder_finished",
@@ -500,6 +475,8 @@ async def main_async(args):
                         if step is not None and step[0] >= LADDER_FINAL_PHASE:
                             if not st["ladder_finished"]:
                                 st["trades"] += 1
+                                if rounds is not None:
+                                    rounds.done(st["offered_pk8"])
                                 show_done()
                                 screen.received("swsh", st["offered_pk8"])
                                 print(f"\n[rx] *** THE LADDER IS FINISHED - phase {step[0]} is the "
@@ -1695,6 +1672,9 @@ async def main_async(args):
             while not st["snapshot_done_sent"]:
                 await trio.sleep(0.1)
             await trio.sleep(0.3)
+            if args.lair_join:
+                await lair_sender()
+                return
             if st["our_pk8"] is None:
                 print("[raid] no Pokemon to select: pass --offer-slot N")
                 return
@@ -1759,12 +1739,67 @@ async def main_async(args):
                 if max(st["broadcast_ack_ids"], default=0) > 6:
                     print(f"[raid] *** THE HOST ACKED OUR SECOND READY *** after {attempt + 1} sends")
                     break
-            # The battle on 0x7C: raid_battle.Guest answers the host's messages; each port is its
-            # own reliable stream, resent until acked.
-            moves = [m for m in swsh_pokemon.read(st["our_pk8"])["moves"] if m]
+            await battle_loop(lambda: st["our_pk8"], lambda: 1)
+
+        async def lair_sender():
+            """A Dynamax Adventure guest: lair.Guest's lobby and between-battle messages on 0x80
+            port 0, each resent until acked, beside the battles (docs/swsh_raid.md)."""
+            rental = Path(args.lair_rental).read_bytes() if args.lair_rental else None
+            guest = swsh_lair.Guest(our_constant, rental, name=args.raid_name,
+                                    rental_choice=args.lair_rental_choice,
+                                    log=lambda line: print(line, flush=True))
+            sent = []
+            # PlayerInfo goes deflated with a 4 KB window under flag 0x10, as the emulated guest's.
+            z = zlib.compressobj(9, zlib.DEFLATED, 12)
+            info, *rest = guest.start()
+            sent.append(reliable4.build_message(z.compress(info) + z.flush(),
+                                                reliable4.FIRST_DATA_FLAGS | reliable5.FLAG_ZLIB, 1,
+                                                lowest_pending=1, destinations=[host_constant]))
+
+            def post(payload):
+                sent.append(reliable4.build_data_message(payload, len(sent) + 1,
+                                                         destinations=[host_constant]))
+                record(rec="lair_tx", sequence=len(sent), payload=payload.hex())
+
+            for payload in rest:
+                post(payload)
+            print(f"\n[lair] *** SENDING PlayerInfo {args.raid_name!r}, BattleReady, BigBoss ***")
+
+            async def chika():
+                done, last = 0, 0.0
+                while True:
+                    while done < len(st["raid_rx"]):
+                        for payload in guest.receive(st["raid_rx"][done]):
+                            post(payload)
+                            last = 0.0
+                        done += 1
+                    now = time.monotonic()
+                    if now - last > 0.5:
+                        last = now
+                        acked = max(st["broadcast_ack_ids"], default=1)
+                        for seq_, body in enumerate(sent, 1):
+                            if seq_ >= acked:
+                                sock.sendto(wrap(keys, our_mac, our_constant, next_nonce(), body,
+                                                 reliable4.BROADCAST_PROTOCOL,
+                                                 args.connect_station_first), (host_ip, PIA_PORT))
+                    await trio.sleep(0.05)
+
+            async with trio.open_nursery() as inner:
+                inner.start_soon(chika)
+                inner.start_soon(battle_loop, lambda: guest.pk8, lambda: guest.index or 1)
+
+        def battle_guest(pk8, slot):
+            moves = [m for m in swsh_pokemon.read(pk8)["moves"] if m]
             move = moves[min(args.raid_move, len(moves)) - 1]
             print(f"[raid] our Pokemon fights with move {move} (slot {args.raid_move} of {moves})")
-            guest = raid_battle.Guest(our_constant, slot=1, action=raid_battle.action(move))
+            template = raid_battle.LAIR_ACTION if args.lair_join else raid_battle.ACTION
+            return raid_battle.Guest(our_constant, slot=slot,
+                                     action=raid_battle.action(move, template=template))
+
+        async def battle_loop(pk8, slot):
+            """The battles on 0x7C: raid_battle.Guest answers the host's messages, a fresh one at the
+            first ping after a battle's end; each port is its own reliable stream, resent until acked."""
+            guest, ended = None, True
             done, seq, sent = 0, {0: 1, 1: 1}, {0: [], 1: []}
             last_send = 0.0
             while True:
@@ -1772,7 +1807,15 @@ async def main_async(args):
                 while done < len(st["raid_rx7c"]):
                     port, data = st["raid_rx7c"][done]
                     done += 1
+                    if ended and data == raid_battle.sync(raid_battle.PING):
+                        guest, ended = battle_guest(pk8(), slot()), False
+                    if guest is None:
+                        continue
                     for out_port, payload in guest.receive(port, data):
+                        got = raid_battle.parse_battle(payload)
+                        if got and got[0] == "command" and got[1] == 1:
+                            ended = True
+                            print("[raid] *** THE BATTLE IS OVER ***")
                         sent[out_port].append((seq[out_port], payload))
                         print(f"[raid] 0x7c/{out_port} seq {seq[out_port]} {payload.hex()[:80]}")
                         record(rec="raid_tx", port=out_port, sequence=seq[out_port],
@@ -2003,21 +2046,28 @@ def offer_edits(args):
 
 
 # The flags that completed a retail trade (docs/swsh_trade.md); later flags override them.
-_TRANSPORT = (
+_SEAT = (
     "--channels 1,6,11 --dwell 2.5 --listen-first 6 --station-sweep 0 --ack-seconds 12 --connect "
     "--no-variable-id --request-platform 9 --request-flags 0x09 --connect-station 0 --nat-flags 0 "
-    "--nat-location 0 --respond --respond-with theirs --join --answer-rtt --ack-reliable "
-    "--send-data 610000000a00 --sync-answers --send-protocol 0x7c --send-after 4 --send-count 1200 "
+    "--nat-location 0 --respond --respond-with theirs --join --answer-rtt --ack-reliable ")
+_TRANSPORT = (
+    _SEAT + "--send-data 610000000a00 --sync-answers --send-protocol 0x7c --send-after 4 --send-count 1200 "
     "--send-period 0.3 --send-seconds 350 --send2-data 60ea000012020801 "
     "--send2-trigger 60ea000012020801 --send2-protocol 0x80 --ack-snapshot")
 PRESETS = {
     "capture": _TRANSPORT + " --hold 90",
     "trade": (_TRANSPORT + " --snapshot-port 1 --rpc-port-answers --rpc-pair --rpc-bodies "
-              "--selection-final-delta 9 --selection-offer --offer-slot 1 --offer-nickname POKELDN "
+              "--selection-final-delta 9 --selection-offer --offer-slot 1 "
               "--open-content 30,50 --open-content-offer --box-commands 1 --box-on-accept 4 "
               "--box-period 0.35 --confirm-commands 0,1,2,3,0,1,2,3,0,1,2,3 "
               "--confirm-final-delta 9 --abort-on-stall 15 --hold 240 --send-seconds 0 "
               "--send-count 0 --answer-migration --update-mesh --leave-with-host"),
+    # The flags that seated a retail Max Raid and Max Lair guest (docs/swsh_raid.md).
+    "raid": (_SEAT + "--update-mesh --ack-snapshot --send-snapshot live --snapshot-port 1 "
+             "--offer-slot 1 --leave-with-host --scene 60006 --scans 20 --raid-join --raid-ready 3 "
+             "--hold 400"),
+    "lair": (_SEAT + "--update-mesh --ack-snapshot --send-snapshot live --snapshot-port 1 "
+             "--offer-slot 1 --leave-with-host --scene 50000 --scans 40 --lair-join --hold 1800"),
 }
 
 
@@ -2026,9 +2076,10 @@ def build_parser():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--preset", choices=sorted(PRESETS),
                     help="the tested flag set: 'capture' records the console's party snapshot, "
-                         "'trade' needs --send-snapshot")
+                         "'trade' needs --send-snapshot, 'raid' a Max Raid den guest, 'lair' a "
+                         "Dynamax Adventure guest")
     ap.add_argument("--comm-id", default=None, help="hex; defaults to Sword's 0x0100abf008968000")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--ip-join", action="store_true",
                     help="join an emulated console hosting over ldn_mitm on the LAN; no radio, "
@@ -2378,6 +2429,7 @@ def build_parser():
                          "ids become the snapshot's unless --offer-file-as-is. Repeatable, one per "
                          "trade on the session: the console's player picks again from the box; the "
                          "last serves every later trade")
+    trade_back.add_arguments(ap)
     ap.add_argument("--fresh-pid", action="store_true",
                     help="draw a new encryption constant and PID for every offered Pokemon")
     ap.add_argument("--offer-file-as-is", action="store_true",
@@ -2460,6 +2512,13 @@ def build_parser():
     ap.add_argument("--raid-join", action="store_true",
                     help="a Max Raid den guest: after the snapshot send PlayerInfo, BattleReady and "
                          "SelectPokemon (the --offer-slot Pokemon); use with --scene 60006")
+    ap.add_argument("--lair-join", action="store_true",
+                    help="a Dynamax Adventure (Max Lair) guest: the lobby, the paths and the "
+                         "battles; use with --scene 50000")
+    ap.add_argument("--lair-rental", default=None, metavar="PK8",
+                    help="an encrypted party PK8 sent as our rental instead of the offered one")
+    ap.add_argument("--lair-rental-choice", type=int, default=None, choices=(0, 1, 2),
+                    help="the offer place we take; by default the first the host left")
     ap.add_argument("--raid-ready", type=float, default=None, metavar="SECONDS",
                     help="press ready this many seconds after the host acked the lobby messages")
     ap.add_argument("--raid-move", type=int, default=1, choices=(1, 2, 3, 4),
@@ -2481,6 +2540,8 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     if preset == "trade" and not args.send_snapshot:
         args.send_snapshot = "live"
+    args.raid_join = args.raid_join or args.lair_join
+    trade_back.check(build_parser(), args, "--offer-file", "--raid-join", "--lair-join", "--offer-echo")
     args.connect_station_first = int(_expand(args.connect_station)[0], 0)
     try:
         offer_edits(args)

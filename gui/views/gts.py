@@ -10,6 +10,7 @@ import flet as ft
 from gui import theme as t
 from gui.views.bank import NAMES, game_icon
 from gui.views.sprites import MINI, SIZE, Sprite
+from gui.localization import SERVICE, summary_text, translate
 from pokeldn import __version__, pokemon
 from pokeldn.app import bank
 from pokeldn.app.gts import GtsError, Service
@@ -50,6 +51,7 @@ class GtsView:
         self.app = app
         self.visible = False
         self.species: list[tuple[str, str]] = []      # (id, name), every game's
+        self.canonical_species: dict[str, str] = {}  # English names for persisted/published Wants
         self.search = "has"
         self.chosen = ANY
         self.selected: tuple | str = ""                 # a listing's (key, d), or one of ours by id
@@ -103,14 +105,17 @@ class GtsView:
 
     def _load_species(self) -> None:
         names: dict[int, str] = {}
+        canonical: dict[str, str] = {}
         for game in NAMES:
             try:
-                names.update((s["id"], s["name"]) for s in pokemon.SERVICE.species(game))
+                canonical.update((str(s["id"]), s["name"]) for s in pokemon.SERVICE.species(game))
+                names.update((s["id"], s["name"]) for s in SERVICE.species(game))
             except (OSError, pokemon.BuilderError):
                 continue
 
         def done():
             self.species = sorted(((str(k), v) for k, v in names.items()), key=lambda s: s[1])
+            self.canonical_species = canonical
             self.picker.options = [ft.DropdownOption(key=ANY, text=tr('gts.any_pokemon_b21058', 'Any Pokemon'))] + [
                 ft.DropdownOption(key=k, text=v) for k, v in self.species]
             if self.visible:
@@ -159,7 +164,8 @@ class GtsView:
         self.status.value = (tr('gts.of_relays_connected_e3c2ac', '{value0} of {value1} relays connected', value0=relays, value1=len(gts.relay_urls())) if relays
                              else tr('gts.connecting_to_the_relays_ee096f', 'Connecting to the relays...'))
         if listings:
-            self.heading.value = tr('gts.open_listing_61602e', '{value0} open listing{value1}', value0=len(listings), value1='s' * (len(listings) != 1))
+            self.heading.value = (tr('gts.open_listing_count', '{count} open listing', count=len(listings)) if len(listings) == 1 else
+                                  tr('gts.open_listings_count', '{count} open listings', count=len(listings)))
         elif client.loaded():
             self.heading.value = tr('gts.no_open_listing_matches_deposit_one_of_yours_from_the_l_cd97a2', 'No open listing matches. Deposit one of yours from the left.')
         else:
@@ -178,17 +184,17 @@ class GtsView:
             t.pixel_icon("arrows-horizontal", size=12, color=t.FAINT),
             Sprite(self.app, listing.wants.species, size=MINI).control,
         ], spacing=4, tight=True), padding=4, border_radius=14,
-            tooltip=tr('gts.level_for_4ade2a', '{value0} level {value1} for {value2}', value0=shown.get('species'), value1=shown.get('level'), value2=listing.wants.text()),
+            tooltip=tr('gts.level_for_4ade2a', '{value0} level {value1} for {value2}', value0=translate(shown.get('species', '')), value1=shown.get('level'), value2=wanted_text(listing.wants)),
             border=ft.Border.all(2, t.BLUE if active else ft.Colors.TRANSPARENT),
             on_click=lambda e, k=(listing.key, listing.d): self._select(k))
 
     def _mine_row(self, state: dict) -> ft.Control:
         label, color, icon = STATUS[state["status"]]
-        title = state["info"].get("species", "")
+        title = translate(state["info"].get("species", ""))
         if state["role"] == "listing":
-            title += tr('gts.for_76b8cb', ' for {value0}', value0=gts.Wants(**state['wants']).name)
+            title += tr('gts.for_76b8cb', ' for {value0}', value0=wanted_text(gts.Wants(**state['wants'])))
         else:
-            title += tr('gts.offered_for_a2a379', ' offered for {value0}', value0=state['listing'] and gts.parse_listing(state['listing']).pokemon.get('species'))
+            title += tr('gts.offered_for_a2a379', ' offered for {value0}', value0=translate(gts.parse_listing(state['listing']).pokemon.get('species', '')) if state['listing'] else '')
         active = self.selected == state["id"]
         return ft.Container(ft.Row([
             Sprite(self.app, int(state["info"].get("species_id") or 0), bool(state["info"].get("shiny")),
@@ -219,22 +225,24 @@ class GtsView:
             return
         self.detail.controls = [self._about(listing.pokemon, listing.game),
                                 t.section(tr('gts.asks_for_f07bf1', 'Asks for'), ft.Row([Sprite(self.app, listing.wants.species, size=MINI).control,
-                                                              t.text(listing.wants.text(), 13)], spacing=10)),
+                                                              t.text(wanted_text(listing.wants), 13)], spacing=10)),
                                 t.text(tr('gts.from_open_until_d81849', 'From {value0}, open until {value1}', value0=listing.trainer or tr('gts.a_trainer_bda66d', 'a trainer'), value1=_when(listing.expires)),
                                        12, t.FAINT),
                                 t.section(tr('gts.your_pokemon_that_answer_it_2c53fc', 'Your Pokemon that answer it'), self._answers(listing))]
 
     def _about(self, shown: dict, game: str) -> ft.Control:
+        shown = {**shown, **{key: translate(shown.get(key, "")) for key in ("species", "nature", "ability", "ball", "held_item")},
+                 "moves": [translate(move) for move in shown.get("moves", ())]}
         facts = [shown.get("nature"), shown.get("ability"), shown.get("ball")]
         if shown.get("held_item"):
             facts.append(tr('gts.holding_b3a475', 'holding {value0}', value0=shown['held_item']))
         return ft.Row([
             Sprite(self.app, int(shown.get("species_id") or 0), bool(shown.get("shiny")), size=SIZE).control,
             ft.Column([
-                t.text(tr('gts.level_dcff87', '{value0} · level {value1}', value0=shown.get('species'), value1=shown.get('level')) + (tr('gts.shiny_3e4562', ' · shiny') if shown.get("shiny") else ""),
+                t.text(tr('gts.level_dcff87', '{value0} · level {value1}', value0=shown['species'], value1=shown.get('level')) + (tr('gts.shiny_3e4562', ' · shiny') if shown.get("shiny") else ""),
                        15, weight=ft.FontWeight.W_600),
                 t.text(" · ".join(str(f) for f in facts if f), 12, t.MUTED),
-                t.text(", ".join(shown.get("moves") or []), 12, t.MUTED),
+                t.text(tr("presentation.list_separator", ", ").join(shown.get("moves") or []), 12, t.MUTED),
                 ft.Row([game_icon(game), t.text(tr('gts.in_ot_abad3b', 'In {value0}, OT {value1}', value0=NAMES.get(game, game), value1=shown.get('ot')), 12, t.SOFT)],
                        spacing=6),
             ], spacing=4, expand=True),
@@ -245,7 +253,7 @@ class GtsView:
                 and not listing.wants.refusal(e.species_id, level_of(e))
                 and not bank.queued(self.app.settings, e.id)]
         if not held:
-            return t.text(tr('gts.your_bank_holds_no_legal_that_is_not_queued_for_a_trade_66b4ef', 'Your bank holds no legal {value0} that is not queued for a trade.', value0=listing.wants.text()),
+            return t.text(tr('gts.your_bank_holds_no_legal_that_is_not_queued_for_a_trade_66b4ef', 'Your bank holds no legal {value0} that is not queued for a trade.', value0=wanted_text(listing.wants)),
                           12, t.FAINT)
         return ft.Column([ft.Row([
             Sprite(self.app, e.species_id, e.shiny, size=MINI).control,
@@ -261,7 +269,7 @@ class GtsView:
         controls = [self._about(state["info"], state["game"]), t.badge(label, color, icon)]
         if state["role"] == "listing":
             wants = gts.Wants(**state["wants"])
-            controls.append(t.text(tr('gts.asks_for_open_until_offer_answered_7137e1', 'Asks for {value0}. Open until {value1}; {value2} offer{value3} answered.', value0=wants.text(), value1=_when(state['expires']), value2=len(state['answers']), value3='s' * (len(state['answers']) != 1)),
+            controls.append(t.text(tr('gts.asks_for_open_until_offer_answered_7137e1', 'Asks for {value0}. Open until {value1}; {value2} offer{value3} answered.', value0=wanted_text(wants), value1=_when(state['expires']), value2=len(state['answers']), value3='s' * (len(state['answers']) != 1)),
                                    12, t.MUTED))
             if state["status"] == "traded":
                 controls.append(t.text(tr('gts.traded_with_what_came_back_is_in_the_bank_d8f8bc', 'Traded with {value0}; what came back is in the bank.', value0=state['partner'] or tr('gts.a_trainer_bda66d', 'a trainer')),
@@ -271,7 +279,7 @@ class GtsView:
         else:
             listing = gts.parse_listing(state["listing"])
             if listing:
-                controls.append(t.text(tr('gts.offered_for_level_from_6f5c29', 'Offered for {value0} level {value1} from {value2}.', value0=listing.pokemon.get('species'), value1=listing.pokemon.get('level'), value2=listing.trainer or tr('gts.a_trainer_bda66d', 'a trainer')), 12, t.MUTED))
+                controls.append(t.text(tr('gts.offered_for_level_from_6f5c29', 'Offered for {value0} level {value1} from {value2}.', value0=translate(listing.pokemon.get('species', '')), value1=listing.pokemon.get('level'), value2=listing.trainer or tr('gts.a_trainer_bda66d', 'a trainer')), 12, t.MUTED))
             if state["status"] == "waiting":
                 controls.append(t.text(tr('gts.the_trade_happens_the_next_time_the_lister_s_app_is_ope_23acca', "The trade happens the next time the lister's app is open. If it ends unanswered, your Pokemon comes back to the bank."), 12, t.FAINT))
             if state["why"]:
@@ -309,8 +317,8 @@ class GtsView:
                        tr('gts.offered_yours_lists_the_answer_once_the_lister_s_app_se_e8e078', "Offered. Yours lists the answer once the lister's app sends it."))
 
         self.app.page.show_dialog(t.dialog(
-            title=t.text(tr('gts.offer_e4293e', 'Offer {value0}?', value0=entry.summary.split(' · ')[0]), 18),
-            content=t.text(tr('gts.it_leaves_your_bank_and_waits_for_the_lister_s_app_you__ff4ccc', "It leaves your bank and waits for the lister's app. You get {value0} if your offer is the first that answers the listing; otherwise it comes back. Nothing on the relays can make the lister send theirs: a trade depends on the other app being the real one.", value0=listing.pokemon.get('species')), 13, t.MUTED, width=400),
+            title=t.text(tr('gts.offer_e4293e', 'Offer {value0}?', value0=summary_text(entry.summary).split(' · ')[0]), 18),
+            content=t.text(tr('gts.it_leaves_your_bank_and_waits_for_the_lister_s_app_you__ff4ccc', "It leaves your bank and waits for the lister's app. You get {value0} if your offer is the first that answers the listing; otherwise it comes back. Nothing on the relays can make the lister send theirs: a trade depends on the other app being the real one.", value0=translate(listing.pokemon.get('species', ''))), 13, t.MUTED, width=400),
             actions=[t.button(tr('gts.cancel_19766e', 'Cancel'), lambda e: self.app.page.pop_dialog(), filled=False),
                      t.button(tr('gts.offer_0cf57c', 'Offer'), go, "arrows-horizontal")]))
 
@@ -332,7 +340,7 @@ class GtsView:
         if not self.species:
             self._say(tr('gts.pkhex_is_still_reading_the_species_list_try_again_in_a__9f683f', 'PKHeX is still reading the species list; try again in a moment.'), t.AMBER)
             return
-        choice = t.dropdown([(e.id, tr('gts._99a2ff', '{value0}, {value1} ({value2})', value0=e.summary.split(' · ')[0], value1=e.summary.split(' · ')[1], value2=NAMES[e.game])) for e in held], held[0].id, enable_filter=True,
+        choice = t.dropdown([(e.id, tr('gts._99a2ff', '{value0}, {value1} ({value2})', value0=summary_text(e.summary).split(' · ')[0], value1=summary_text(e.summary).split(' · ')[1], value2=NAMES[e.game])) for e in held], held[0].id, enable_filter=True,
                             editable=True, menu_height=320)
         wanted = t.dropdown(self.species, None, enable_filter=True, editable=True, menu_height=320)
         low = t.field(value="1", mono=True, width=80, digits=True, limit=3)
@@ -341,7 +349,7 @@ class GtsView:
 
         def go(e):
             entry = next((x for x in held if x.id == choice.value), None)
-            name = dict(self.species).get(wanted.value or "")
+            name = self.canonical_species.get(wanted.value or "")
             levels = (low.value or "").strip(), (high.value or "").strip()
             if entry is None or not name:
                 message.value = tr('gts.pick_your_pokemon_and_the_one_you_ask_for_536386', 'Pick your Pokemon and the one you ask for.')
@@ -373,3 +381,11 @@ class GtsView:
             self.note.update()
         except RuntimeError:
             pass
+
+
+def wanted_text(wants: gts.Wants) -> str:
+    name = translate(wants.name)
+    if (wants.min_level, wants.max_level) == (1, 100):
+        return name
+    return tr("presentation.wanted_levels", "{name}, level {low} to {high}",
+              name=name, low=wants.min_level, high=wants.max_level)

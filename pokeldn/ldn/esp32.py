@@ -33,6 +33,14 @@ CMD_DISPLAY = 0x0E
 # stops for 5 s; older firmware answers an unknown command. docs/hardware_esp32.md, The host watchdog.
 CMD_ALIVE = 0x0F
 ALIVE_FIRMWARE = (1, 4, 0)
+# The portable beacon (pokeldn/ldn/portable.py): u8 op, then WRITE u32 offset and bytes, COMMIT u16
+# length; QUERY answers MSG_BEACON. docs/hardware_esp32.md, Portable beacon.
+CMD_BEACON = 0x10
+BEACON_FIRMWARE = (1, 8, 0)
+# A host image (portable.KIND_HOST): the board answers the join and plays the session itself.
+BEACON_HOST_FIRMWARE = (1, 9, 0)
+BEACON_WRITE, BEACON_COMMIT, BEACON_ERASE, BEACON_START, BEACON_QUERY = range(5)
+BEACON_CHUNK = 1024
 ALIVE_EVERY = 1.0
 WRITE_TIMEOUT = 1.0
 LINK_PROBE_AFTER = 1.0
@@ -73,6 +81,21 @@ def display_sprite_payload(slot: str, rows: list[list[bool]]) -> bytes:
             bits.append(sum(0x80 >> i for i, on in enumerate(row[start:start + 8]) if on))
     return struct.pack("<BBBB", 1, DISPLAY_SLOTS.index(slot), width, height) + bytes(bits)
 
+
+def display_lobby_payload(title: str, name: str, joined: int, seats: int, stars: int = 0,
+                          code: str = "") -> bytes:
+    """LOBBY: a hosted raid or adventure, its Pokemon in the ours slot; stars 0 draws none."""
+    if not 0 <= stars <= 7 or not 0 <= joined <= seats <= 3 or seats < 1:
+        raise ValueError(f"a lobby of {joined}/{seats} at {stars} stars")
+    text = b"".join(t.encode("ascii", "replace")[:DISPLAY_TEXT] + b"\0" for t in (title, name, code))
+    return bytes((2, stars, joined, seats)) + text
+
+
+def display_joined_payload(joined: int) -> bytes:
+    """JOINED: the consoles in the lobby on show now."""
+    return bytes((3, joined))
+
+
 MSG_INFO = 0x81
 MSG_RESULT = 0x82
 MSG_LOG = 0x83
@@ -88,6 +111,7 @@ MSG_CREDIT = 0x8B
 MSG_BUTTON = 0x8E
 MSG_RX_CENSUS = 0x8F
 MSG_TX_DONE = 0x8D
+MSG_BEACON = 0x90
 
 # The board handles a command on the task that reads the UART, so an ETH_TX waiting on a full Wi-Fi
 # queue stops the reading; past 16 KB its RX ring overflows and commands are lost. Once the board
@@ -275,6 +299,20 @@ class ManagementFrame:
     @classmethod
     def parse(cls, payload: bytes) -> "ManagementFrame":
         return cls(payload[0], struct.unpack("b", payload[1:2])[0], payload[2:])
+
+
+@dataclass
+class BeaconState:
+    stored: bool
+    running: bool
+    fragments: int
+    length: int
+    crc: int
+
+    @classmethod
+    def parse(cls, payload: bytes) -> "BeaconState":
+        length, crc = struct.unpack_from("<HI", payload, 3)
+        return cls(bool(payload[0]), bool(payload[1]), payload[2], length, crc)
 
 
 class RadioError(Exception):
@@ -683,6 +721,27 @@ class Radio:
 
     def stop(self) -> None:
         self.request(CMD_STOP, b"", MSG_RESULT, timeout=5.0)
+
+    def beacon_state(self) -> BeaconState:
+        return BeaconState.parse(self.request(CMD_BEACON, bytes([BEACON_QUERY]), MSG_BEACON))
+
+    def store_beacon(self, image: bytes) -> BeaconState:
+        """Writes a portable beacon image in place of the stored one and reads it back."""
+        for offset in range(0, len(image), BEACON_CHUNK):
+            self.request(CMD_BEACON, struct.pack("<BI", BEACON_WRITE, offset)
+                         + image[offset:offset + BEACON_CHUNK], MSG_RESULT)
+        self.request(CMD_BEACON, struct.pack("<BH", BEACON_COMMIT, len(image)), MSG_RESULT, timeout=5.0)
+        state = self.beacon_state()
+        if (state.length, state.crc) != (len(image), zlib.crc32(image)):
+            raise RadioError(f"the board kept {state.length} bytes, crc {state.crc:#010x}, "
+                             f"not the {len(image)} sent")
+        return state
+
+    def erase_beacon(self) -> None:
+        self.request(CMD_BEACON, bytes([BEACON_ERASE]), MSG_RESULT, timeout=5.0)
+
+    def start_beacon(self) -> None:
+        self.request(CMD_BEACON, bytes([BEACON_START]), MSG_RESULT, timeout=5.0)
 
     def kick(self, mac, reason: int = 1) -> None:
         self.request(CMD_AP_KICK, mac_bytes(mac) + struct.pack("<H", reason), MSG_RESULT)

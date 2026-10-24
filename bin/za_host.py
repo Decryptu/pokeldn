@@ -20,11 +20,10 @@ from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
 from pokeldn import config, za
 from pokeldn.za import host as za_host
-from pokeldn.za import streams
 from pokeldn.online import session as online
-from pokeldn import receiver_gift
+from pokeldn import receiver_gift, trade_back
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
-from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
+from pokeldn.ldn.transport import HostTransport, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
 
 
@@ -39,7 +38,7 @@ def build_parser():
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--channel", type=int, default=6,
                     help="a searching console put both of its measured sessions on channel 6")
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--code", default="00000000", help="the link code the player types")
     ap.add_argument("--capture", default=None, help="every datagram as one JSON line")
     ap.add_argument("--player-name", default=" ",
@@ -73,6 +72,7 @@ def build_parser():
                          "waits for the console to leave")
     online.add_arguments(ap)
     receiver_gift.add_arguments(ap, "--trade-offer")
+    trade_back.add_arguments(ap)
     return ap
 
 
@@ -123,6 +123,7 @@ def describe_offer(body):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    trade_back.check(ap, args, "--trade-offer", "--online", "--for-receiver")
     if args.online and args.trade_offer:
         print("[za-host] --online offers the partner's Pokemon; --trade-offer is ignored")
         args.trade_offer = []
@@ -193,8 +194,9 @@ def main(argv=None):
                 log=print, record=record,
                 renew_offer=(lambda raw: pokemon_service.offer_bytes("za",
                     pokemon_service.prepare("za", raw, fresh=True))) if renew_offer else None,
-                partner=partner if receiving is None else receiver_gift.ReceiverGift(
-                    "za", *receiving, notify=receiver_gift.pop_up(f"gift-{ip}")))
+                partner=(trade_back.TradeBack("za", offers) if args.trade_back
+                         else partner if receiving is None else receiver_gift.ReceiverGift(
+                             "za", *receiving, notify=receiver_gift.pop_up(f"gift-{ip}"))))
         for ip in set(sessions) - seated:
             s = sessions.pop(ip)
             print(f"[za-host] the console at {ip} left; {s.console_offers} offer(s), "

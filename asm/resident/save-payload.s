@@ -69,7 +69,7 @@ entry:
     str     r2, [r0]                @ install, last
 
 .Ldone:
-    @ A one-shot probe of the Sloop syscall boundary, run after the hook is in and skipped when
+    @ A one-shot call into the Sloop syscall table, run after the hook is in and skipped when
     @ p_probe_enable is zero. The markers go down BEFORE the call, because a syscall that does not
     @ return freezes the overworld and the only thing left to read is what was written first.
     ldr     r0, p_probe_count

@@ -8,7 +8,6 @@ from pokeldn.frlg.gift.gift_composer import (
     SPECIAL_GET_MYSTERY_GIFT_CARD_STAT,
     VAR_MYSTERY_GIFT_2,
     AnyOf,
-    FlagSet,
     BattleLegendary,
     DeliveryPlan,
     DeliveryStage,

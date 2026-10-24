@@ -114,3 +114,35 @@ def advertise_data(network_info):
 
 def host_mac(network_info):
     return network_info[OFF_HOST_MAC:OFF_HOST_MAC + 6]
+
+
+def scan_once(our_ip, host_ip, timeout):
+    """-> the emulated host's NetworkInfo, or None. The bridge drops a scan from the host's own
+    address, so it leaves from `our_ip` [docs/ldn.md, Hosting for an emulator]."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as us:
+        us.settimeout(timeout)
+        us.bind((our_ip, 0))
+        try:
+            us.sendto(build(SCAN), (host_ip, PORT))
+            while True:
+                data, _ = us.recvfrom(4096)
+                kind, info = parse(data)
+                if kind == SCAN_RESP:
+                    return info
+        except (socket.timeout, OSError, ValueError):
+            return None
+
+
+def associate(our_ip, host_ip, our_mac, name, timeout, version=0):
+    """-> (synced NetworkInfo, the TCP connection the seat lasts as long as)."""
+    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    tcp.settimeout(timeout)
+    tcp.bind((our_ip, 0))
+    tcp.connect((host_ip, PORT))
+    tcp.sendall(build(CONNECT, build_node_info(our_ip, our_mac, name.encode(), version=version)))
+    kind, synced = parse(tcp.recv(8192))
+    if kind != SYNC_NETWORK:
+        tcp.close()
+        raise RuntimeError(f"the host answered our connect with type {kind}, not SyncNetwork")
+    tcp.settimeout(None)
+    return synced, tcp

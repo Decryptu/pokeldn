@@ -11,13 +11,12 @@
 
 # pokeldn
 
-Trade with retail Pokémon games on Switch and Switch 2 through an ESP32 board connected to your
+pokeldn trades with retail Pokémon games on Switch and Switch 2 through an ESP32 board connected to a
 computer by USB. Nothing is installed on the console.
 
 The desktop app runs on macOS (Apple silicon), Windows and Linux. The same app runs on Android, with
 the board on the phone's USB port, and on iPhone and iPad, with the board reached over Bluetooth.
-Command-line tools run from source.
-The project also documents the games' local wireless protocols. AI tools helped reverse engineer
+Command-line tools run from source, and the docs describe the games' local wireless protocols. AI tools helped reverse engineer
 those protocols and write parts of the code.
 
 ## Supported games
@@ -36,10 +35,12 @@ those protocols and write parts of the code.
 FRLG: FireRed/LeafGreen · LGPE: Let's Go Pikachu/Eevee · SwSh: Sword/Shield ·
 BDSP: Brilliant Diamond/Shining Pearl · PLA: Legends Arceus · SV: Scarlet/Violet · PLZA: Legends Z-A
 
-Scarlet/Violet also supports [local Tera Raids](docs/sv_raid.md). Event Pokemon arrive through Mystery
-Gift on FRLG and SwSh, and on the other titles as a fresh legal copy of an official gift traded by the
-game's trade host ([Simulated Mystery Gifts](docs/gift_simulated.md)).
-See each game's docs for setup, features and verification coverage.
+Scarlet/Violet also supports [local Tera Raids](docs/sv_raid.md) and the
+[Union Circle](docs/sv_union_circle.md) as a guest, and Sword/Shield
+[Max Raid Battles and Dynamax Adventures](docs/swsh_raid.md), hosted with a chosen boss or legendary
+or joined as the console's partner. Event Pokemon arrive through Mystery
+Gift on FRLG and SwSh, and elsewhere as an official gift traded by the host
+([Simulated Mystery Gifts](docs/gift_simulated.md)).
 
 ## Get started
 
@@ -55,15 +56,16 @@ Switch `prod.keys`, and a Switch or Switch 2 with a supported game.
 
 On a phone:
 
-- **Android**: install `pokeldn-android-arm64.apk` from Releases and plug an ESP32-S3, C3 or C6 into
-  the phone with a USB data cable ([Android setup](docs/gui.md#android-setup-requirements)).
+- **Android**: install `pokeldn-android-arm64.apk` from Releases and plug an ESP32-S3, C3 or C6, or a
+  classic ESP32 with a CP210x USB chip, into the phone with a USB data cable
+  ([Android setup](docs/gui.md#android-setup-requirements)).
 - **iPhone and iPad**: install `pokeldn-ios.ipa` with AltStore or SideStore (the app's
   [AltStore source](https://raw.githubusercontent.com/Decryptu/pokeldn/main/.github/altstore/source.json)).
   Flash the board once with the **Bluetooth wireless** firmware from the desktop app's Board page; it
   then needs USB only for power ([iOS setup](docs/gui.md#ios-setup)).
 
-See [app setup](docs/gui.md), [first launch](docs/gui.md#first-launch),
-[Windows USB drivers](docs/gui.md#windows-usb-drivers) and [Linux serial ports](docs/gui.md#linux-serial-ports).
+Platform notes: [first launch](docs/gui.md#first-launch), [Windows USB drivers](docs/gui.md#windows-usb-drivers),
+[Linux serial ports](docs/gui.md#linux-serial-ports).
 
 ## Documentation
 
@@ -99,18 +101,29 @@ Contributors to this repository (GitHub does not list contributors on a fork):
 - [Gr3nSkyDragon](https://github.com/Gr3nSkyDragon): ESP32-S3 firmware
 - [ismailhasannnnnn](https://github.com/ismailhasannnnnn): Scarlet/Violet Tera Raid hosting and joining,
   reverse engineering and reconstruction of the RaidPoint structure, including reward encoding and
-  raid bootstrap compression, and hosted raid reward templates
-- [easyworld](https://github.com/easyworld): ESP32 serial reconnects after a high-baud session
+  raid bootstrap compression, and hosted raid reward templates, with mint, battle item, berry and
+  evolution item bundles
+- [easyworld](https://github.com/easyworld): ESP32 serial reconnects after a high-baud session,
+  language packs that translate game names, module messages, tool help, the documentation and its
+  page titles, game choices and raid partners' names, the language pack checker, CJK tooltips, and
+  game names and gift summaries in the display language
 - [capito27](https://github.com/capito27): Scarlet/Violet event Tera Raids, the raid finder's reward
   filter, its full seed search, its ranking by rewards and its size mark filter, and the Tera Raid
   NPC partners: their draw from the RaidPoint and the host's choice of them; Simulated Mystery Gifts
   made for the receiving save, pop-ups for programs, Pokemon HOME's gifts among Sword/Shield's
-  official events, a Tera Raid boss's scripted actions, Legends Arceus's trainer gender, and the
-  ESP32 credit for a frame still being written, near doubling USB upload speed
+  official events, a Tera Raid boss's scripted actions, Legends Arceus's trainer gender, the
+  ESP32 credit for a frame still being written, near doubling USB upload speed, and the
+  Scarlet/Violet Union Circle guest: Blueberry Quest clears, Snacksworth's legendaries and
+  crafted wild encounters
+- [DedHapp3n](https://github.com/DedHapp3n): classic ESP32 boards with a CP210x USB chip in the Android
+  app
 - [elsardine6k7](https://github.com/elsardine6k7): friendship in the Pokemon builder, Showdown sets and
   the Simulated Mystery Gift queue
 - [junkmailkeep](https://github.com/junkmailkeep): Mystery Gift sprites and form previews in the gift
   and trade editors
+- [MarcJa420](https://github.com/MarcJa420): the E32R40T 4-inch screen build, the firmware version on
+  the idle screen, hosted raid and Dynamax Adventure lobbies on the board's screen, and Gigantamax
+  sprites
 
 - [unlimitedcoder2](https://github.com/unlimitedcoder2): [ldnrs](https://github.com/unlimitedcoder2/ldnrs),
   the external Windows USB Wi-Fi daemon supported by the optional radio backend
@@ -127,6 +140,12 @@ Contributors to this repository (GitHub does not list contributors on a fork):
 - [Project Pokemon](https://github.com/projectpokemon): the [EventsGallery](https://github.com/projectpokemon/EventsGallery)
   of Scarlet/Violet raid event deliveries the app downloads, with pkNX's text of each
 - [Matcore962](https://github.com/Matcore962): importing Pokemon files and game saves into the Bank
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+What is signed, the team roles and the privacy policy are on the
+[Code signing policy](https://decryptu.github.io/pokeldn/code_signing.html) page.
 
 ## License
 

@@ -121,6 +121,12 @@ def ldn_nonce_crc(network_id_le, source_mac):
     return zlib.crc32(bytes(network_id_le) + bytes(source_mac)) & 0xFFFFFFFF
 
 
+def packet_iv(keys, source_mac, nonce8, source_id=0):
+    """The twelve-byte GCM IV: three bytes of crc32(network id || sender MAC), one byte of source
+    id, the packet's own nonce; `keys` carries `network_id_le`."""
+    return gcm_iv(ldn_nonce_crc(keys.network_id_le, source_mac), source_id, nonce8)
+
+
 MESSAGE_FLAG_DESTINATION_BITMAP = 0x01
 MESSAGE_FLAG_RELAY_ONE = 0x02
 MESSAGE_FLAG_RELAY_MANY = 0x04

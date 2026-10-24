@@ -1,8 +1,8 @@
 @ CLI_RUN_BUFFER_SCRIPT payload: compose a sector in EWRAM and write it straight to flash with
-@ swi 0x48, the Sloop raw sector write [docs/frlg_rom.md, the Sloop syscall boundary].
+@ swi 0x48, the Sloop raw sector write [docs/frlg_rom.md, the dispatcher and its jump table].
 @
-@ swi 0x48 copies 0x1000 bytes from r1 into flash sector r0 (dest 0x0E000000 + r0*0x1000), bypassing
-@ the game's save code, and returns no register. The source is filled here, on the console, so the
+@ swi 0x48 copies 0x1000 bytes from r1 into flash sector r0 (dest 0x0E000000 + r0*0x1000), instead
+@ of going through the game's save code, and returns no register. The source is filled here, on the console, so the
 @ bytes are ours: word[i] = fillbase + i*fillstep over `words` words, into a scratch inside
 @ gDecompressionBuffer (0x4000 at 0x0201C000), above this payload's own image.
 @

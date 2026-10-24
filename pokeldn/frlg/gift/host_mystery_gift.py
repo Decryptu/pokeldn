@@ -241,11 +241,11 @@ class HostMysteryGiftEngine:
                 payload = self._receiver.feed_block(block)
             except mg_link.MysteryGiftLinkError as exc:
                 # A console retransmit of the previous message surfaces as a stale header; drop it
-                # and re-arm the same ident.
+                # and expect the same ident again.
                 want = self._receiver.expected_ident
                 self.trace.append(("recv_resync", want, str(exc)))
                 self.info(f"[mg] ignoring a stale/duplicate child block while awaiting ident "
-                          f"{want} ({exc}); re-arming.")
+                          f"{want} ({exc}); expecting it again.")
                 self._receiver.expect(want)
                 continue
             if payload is None:

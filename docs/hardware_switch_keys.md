@@ -6,7 +6,7 @@ nav_order: 2
 
 # Installing Switch keys on the Raspberry Pi
 
-`prod.keys` is a credential for your own Switch, required by the live LDN host. Never commit it,
+`prod.keys` holds the keys of the user's own Switch and is required by the live LDN host. Never commit it,
 paste it into configuration, include it in a capture, or copy a desktop virtual environment to the
 Pi; deployment never transfers it. It goes in `/home/PI_USER/.switch/prod.keys`, and the Pi's
 ignored `config/host.local.toml` names that absolute path, since the host runs under `sudo` and `~`

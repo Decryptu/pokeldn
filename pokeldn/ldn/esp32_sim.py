@@ -8,6 +8,7 @@ import random
 import struct
 import threading
 import time
+import zlib
 
 from pokeldn.ldn import esp32
 
@@ -117,6 +118,9 @@ class SimulatedBoard:
         self.sent_raw: list[bytes] = []
         self.led_looks: list[bytes] = []
         self.displays: list[bytes] = []
+        self.beacon = b""                 # the stored portable beacon image
+        self.beacon_on = False
+        self._staged = bytearray()
         self.version = ""                 # the firmware version HELLO reports, "" for none
         self.host_silent_after = 5.0      # the firmware's HOST_SILENT_US
         self._host_seen = 0.0
@@ -215,12 +219,53 @@ class SimulatedBoard:
         elif t == esp32.CMD_DISPLAY:
             self.displays.append(p)
             self._result(t)
+        elif t == esp32.CMD_BEACON and self.version:
+            self._beacon(p)
         elif t == esp32.CMD_BENCH:
             total, size = struct.unpack("<IH", p)
             self._result(t)
             for seq in range(-(-total // size)):
                 self._emit(esp32.MSG_BENCH, struct.pack("<I", seq) + random.randbytes(size - 4))
             self._emit(esp32.MSG_BENCH, struct.pack("<II", 0xFFFFFFFF, 0))
+        else:
+            self._result(t, 0x106)
+
+    def _beacon(self, p: bytes) -> None:
+        """advert_parse's size, magic and CRC checks; START brings up the image's access point."""
+        t, op = esp32.CMD_BEACON, p[0]
+        if op == esp32.BEACON_WRITE:
+            offset = struct.unpack_from("<I", p, 1)[0]
+            data = p[5:]
+            if offset + len(data) > 12288:
+                return self._result(t, 0x104)
+            self._staged[len(self._staged):offset + len(data)] = bytes(max(0, offset + len(data) - len(self._staged)))
+            self._staged[offset:offset + len(data)] = data
+            self._result(t)
+        elif op == esp32.BEACON_COMMIT:
+            image = bytes(self._staged[:struct.unpack_from("<H", p, 1)[0]])
+            if len(image) < 132 or struct.unpack_from("<H", image, 6)[0] != len(image):
+                return self._result(t, 0x104)
+            if image[:4] != b"PKSA" or image[4] != 1:
+                return self._result(t, 0x10A)
+            if struct.unpack_from("<I", image, len(image) - 4)[0] != zlib.crc32(image[:-4]):
+                return self._result(t, 0x109)
+            self.beacon, self._staged = image, bytearray()
+            self._result(t)
+        elif op == esp32.BEACON_ERASE:
+            self.beacon = b""
+            self._result(t)
+        elif op == esp32.BEACON_START:
+            if not self.beacon:
+                return self._result(t, 0x105)
+            self._go_idle()
+            b = self.beacon
+            self.channel, self.bssid, self.ssid, self.key = b[8], b[9:15], b[15:47], b[47:63]
+            self.mode, self.beacon_on = AP, True
+            self._result(t)
+        elif op == esp32.BEACON_QUERY:
+            n = len(self.beacon)
+            self._emit(esp32.MSG_BEACON, bytes((bool(n), self.beacon_on, self.beacon[124] if n else 0))
+                       + struct.pack("<HI", n, zlib.crc32(self.beacon) if n else 0))
         else:
             self._result(t, 0x106)
 
@@ -231,8 +276,9 @@ class SimulatedBoard:
             with self.air.lock:
                 if self._watched and self.mode != IDLE and time.monotonic() - self._host_seen > self.host_silent_after:
                     self._watched = False
-                    self._go_idle()
-                    self._emit(esp32.MSG_LOG, b"host silent: left the network")
+                    if not self.beacon_on:
+                        self._go_idle()
+                        self._emit(esp32.MSG_LOG, b"host silent: left the network")
 
     def _go_idle(self) -> None:
         if self.mode == STA and self.ap is not None:
@@ -241,7 +287,7 @@ class SimulatedBoard:
         elif self.mode == AP:
             for mac in list(self.stations):
                 self._drop_station(mac, 3)
-        self.mode, self.ap = IDLE, None
+        self.mode, self.ap, self.beacon_on = IDLE, None, False
         self.key = b""
 
     def _drop_station(self, mac: bytes, reason: int) -> None:

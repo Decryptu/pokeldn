@@ -84,7 +84,8 @@ def test_signed_pack_install_selection_and_views(isolated, monkeypatch):
 
 
 @pytest.mark.parametrize("text", ['bad = [', '"bank.title" = 3', '"bank.title" = "Hello {name"',
-                                      '"bank.title" = "{name.__class__}"'])
+                                      '"bank.title" = "{name.__class__}"', '"bank.title" = "{name:>999999999}"',
+                                      pytest.param("bad = " + "[" * 5000 + "]" * 5000, id="deep")])
 def test_bad_pack_refused_by_installer_and_loader(isolated, monkeypatch, text):
     folder = isolated / "bad"
     folder.mkdir()
@@ -140,6 +141,33 @@ def test_bundled_font_covers_cjk():
                    for start, end, glyph in ranges), character
 
 
+def test_punctuation_font_draws_latin_width_ahead_of_cjk():
+    """The CJK font's ’ is a 1000-unit cell: "Reveler’s Road" read as "Reveler’ s Road"."""
+    import struct
+    from gui import theme
+    assert theme.FALLBACK_FONTS.index(theme.PUNCTUATION_FONT) < theme.FALLBACK_FONTS.index(theme.CJK_FONT)
+    font = (ROOT / "gui/assets" / theme.FONT_ASSETS[theme.PUNCTUATION_FONT]).read_bytes()
+    tables = {font[at:at + 4]: struct.unpack_from(">I", font, at + 8)[0]
+              for at in range(12, 12 + struct.unpack_from(">H", font, 4)[0] * 16, 16)}
+    cmap, hmtx = tables[b"cmap"], tables[b"hmtx"]
+    metrics = struct.unpack_from(">H", font, tables[b"hhea"] + 34)[0]
+    per_em = struct.unpack_from(">H", font, tables[b"head"] + 18)[0]
+    count = struct.unpack_from(">H", font, cmap + 2)[0]
+    at = next(cmap + struct.unpack_from(">I", font, cmap + 4 + n * 8 + 4)[0] for n in range(count)
+              if struct.unpack_from(">H", font, cmap + struct.unpack_from(">I", font, cmap + 4 + n * 8 + 4)[0])[0] == 4)
+    segments = struct.unpack_from(">H", font, at + 6)[0] // 2
+    ends, starts, deltas, offsets = (struct.unpack_from(f">{segments}H", font, base) for base in
+                                     (at + 14, at + 16 + segments * 2, at + 16 + segments * 4, at + 16 + segments * 6))
+    for character in "‘’“”·":
+        code = ord(character)
+        n = next(n for n in range(segments) if starts[n] <= code <= ends[n])
+        assert offsets[n] == 0, character
+        glyph = (code + deltas[n]) & 0xFFFF
+        assert glyph, character
+        advance = struct.unpack_from(">H", font, hmtx + min(glyph, metrics - 1) * 4)[0]
+        assert advance < per_em // 2, (character, advance)
+
+
 def test_translations_do_not_change_catalog_arguments(isolated):
     code = '''
 import json, os
@@ -177,3 +205,19 @@ assert GAMES[0].tools[0].name == "[Trade (Host)]"
         env={**os.environ, "POKELDN_DATA": str(isolated / "child"),
              "POKELDN_PLUGINS": os.pathsep.join((str(folder), str(SAMPLE)))})
     assert result.returncode == 0, result.stderr
+
+
+def test_pack_check_reports_against_this_release(tmp_path):
+    from scripts.check_language_pack import check
+    folder = tmp_path / "pack"
+    folder.mkdir()
+    (folder / "plugin.toml").write_text('id = "checked"\napi = "1.9"\nlocale = "fr"\nstrings = "strings.toml"\n'
+                                        'help = "help.toml"\n')
+    (folder / "strings.toml").write_text('"bank.bank_676c47" = "Banque"\n"gone.key" = "Parti"\n'
+                                         '"games.of_ca6c5e" = "{value0} sur {total}"\n')
+    (folder / "help.toml").write_text('"frlg-gift:--news" = "Nouvelles"\n"frlg-gift:--gone" = "Parti"\n')
+    report = check(folder)
+    assert report["unknown strings"] == ["gone.key"] and report["placeholders differ"] == ["games.of_ca6c5e"]
+    assert "bank.bank_676c47" not in report["missing strings"] and "docs.no_page_matches" in report["missing strings"]
+    assert report["unknown help"] == ["frlg-gift:--gone"]
+    assert "frlg-gift:--news" not in report["missing help"] and "frlg-gift:--gift" in report["missing help"]

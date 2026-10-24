@@ -6,7 +6,7 @@
 Itanium-ABI type_info names and vtable slots are relative relocations, so the whole map falls out
 of the relocation table. docs/switch_re.md.
 """
-import sys, os, struct, collections
+import sys, os, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from nso_relocs import relatives
 

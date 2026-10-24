@@ -845,8 +845,3 @@ def resolve(build):
     return for_game_code(build)
 
 
-def for_version(version, language="french"):
-    for build in BUILDS.values():
-        if build.version == version and build.language == language:
-            return build
-    raise UnknownBuild(f"no {language} {version} build")

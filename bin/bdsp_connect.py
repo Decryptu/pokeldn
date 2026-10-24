@@ -4,7 +4,7 @@ follows it.
 
 docs/bdsp_session.md. Never pass --verbose to a live run; use --capture.
 """
-import argparse, json, os, pathlib, signal, socket, struct, sys, time, zlib
+import argparse, json, os, pathlib, signal, sys, time, zlib
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
@@ -14,7 +14,7 @@ if os.path.isdir(BUNDLED):
 
 import trio, ldn
 from pokeldn.host_support import open_output
-from pokeldn import pokemon as pokemon_service
+from pokeldn import pokemon as pokemon_service, trade_back
 from pokeldn.bdsp import COMM_ID, PASSPHRASE, PIA_PORT, pokemon, room, session_keys
 from pokeldn.bdsp.host import player_info
 from pokeldn.bdsp.session import answer_departure
@@ -42,19 +42,7 @@ def cleanup():
 
 def make_socket(ifname):
     from pokeldn.ldn import userspace_ip  # no kernel interface on the ESP32
-    if (user := userspace_ip.udp_socket(ifname, PIA_PORT)) is not None:
-        user.setblocking(False)
-        return user
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    try:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, ifname.encode())
-    except PermissionError:
-        pass
-    s.bind(("", PIA_PORT))
-    s.setblocking(False)
-    return s
+    return userspace_ip.pia_socket(ifname, PIA_PORT)
 
 
 def wrap(keys, our_mac, src_var, dst_var, nonce8, payload, protocol, port=0,
@@ -176,8 +164,16 @@ async def main_async(args):
             offered = pokemon.read(poke)
             print(f"[cx] trade {n} offers species {offered['species']}, {offered['nickname']!r}, "
                   f"OT {offered['ot_name']!r}, IVs {offered['ivs']}, pid {offered['pid']:08x}")
+        # --trade-back: every other round returns the console's last PB8 as it came (docs/architecture.md)
+        rounds = trade_back.Rounds(st["our_pokes"]) if args.trade_back else None
+
+        def our_offer():
+            if rounds:
+                return rounds.current()
+            return st["our_pokes"][min(st["trades"], len(st["our_pokes"]) - 1)]
+
         if st["our_pokes"]:
-            screen.offer("bdsp", st["our_pokes"][0])
+            screen.offer("bdsp", our_offer())
 
         # Read now, so a missing file fails before the console waits on us.
         answer_with = {}
@@ -538,8 +534,6 @@ async def main_async(args):
             if not st["rel_max_seq"]:
                 print("[cx] no reliable data to ack yet")
                 return
-            ack_id, streams = st["rel_max_seq"], sorted(st["rel_streams"]) or [0]
-
             # On a RESET byte 1 is a counter: `0x0159fa24` rejects it when equal to the value held
             # for us, `0x0159fa4c` when it is not exactly one more.
             def send(msg, label):
@@ -1141,8 +1135,10 @@ async def main_async(args):
                     show_done()
                     record(rec="security_phase_end", t=now)
                     screen.received("bdsp", st["their_raw"])
+                    if rounds:
+                        rounds.done(st["their_raw"])
                     if st["our_pokes"]:
-                        screen.offer("bdsp", st["our_pokes"][min(st["trades"], len(st["our_pokes"]) - 1)])
+                        screen.offer("bdsp", our_offer())
                 reply = room.build_trade_ready_ok(st["our_security_state"], is_trade_ok=1)
                 st["ready_oks_sent"] += 1
                 label = (f"our state {room.TRADE_STATE_NAMES.get(st['our_security_state'])} "
@@ -1191,7 +1187,7 @@ async def main_async(args):
                 if not st["our_pokes"]:
                     print("[cx] no --trade-template, so nothing to offer back")
                     return
-                reply = room.build_trade_poke(st["our_pokes"][min(st["trades"], len(st["our_pokes"]) - 1)])
+                reply = room.build_trade_poke(our_offer())
                 label = "our Pokemon"
             send_trade_message(reply, label, now)
 
@@ -1527,7 +1523,7 @@ def build_parser():
     ap.add_argument("--print-packets", action="store_true",
                     help="print every packet in and out; the --capture file keeps them either way")
     ap.add_argument("--comm-id", default=None)
-    ap.add_argument("--keys", default="~/.switch/prod.keys")
+    ap.add_argument("--keys", default=None)
     ap.add_argument("--phy", default="auto")
     ap.add_argument("--ifname", default="ldnclient")
     ap.add_argument("--channels", default="1,6,11")
@@ -1611,6 +1607,7 @@ def build_parser():
                          "from nothing. Repeatable, one per trade in order; the last is offered "
                          "again after the list")
     ap.add_argument("--trade-nickname", metavar="TEXT", help="nickname for the offered Pokemon")
+    trade_back.add_arguments(ap)
     ap.add_argument("--answer-return-select", action="store_true",
                     help="answer the console's NetDataReturnSelectData, a round reset, ONCE; "
                          "the answer has no measured effect")
@@ -1771,6 +1768,9 @@ def build_parser():
 def main():
     ap = build_parser()
     args = ap.parse_args()
+    trade_back.check(ap, args, "--trade-template", "--answer-with", "--ug-join")
+    if args.trade_back and not args.complete_trade:
+        ap.error("--trade-back needs --complete-trade: no trade completes without it")
     fields = {k: v for k, v in (("nickname", args.trade_nickname), ("ot_name", args.trade_ot))
               if v is not None}
     args.trade_template = [pokemon_service.prepare_file("bdsp", path, fresh=args.fresh_pid, fields=fields)

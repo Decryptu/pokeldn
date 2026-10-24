@@ -16,7 +16,11 @@ import tomllib
 from dataclasses import dataclass, field, replace
 from importlib import metadata
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from pokeldn.app.catalog import Game, Tool
+
 
 def __getattr__(name):
     if name in ("Field", "Game", "Tool"):
@@ -27,7 +31,7 @@ def __getattr__(name):
 
 # docs/plugins.md, Versions: a removal or a change of meaning raises the major, an addition the level.
 API_VERSION = 1                    # the major this pokeldn serves
-API_LEVEL = 8                      # 1.8 status cards, library notes and sorting; docs/plugins.md, Versions
+API_LEVEL = 10                     # 1.10 offer edits; docs/plugins.md, Versions
 API_OLDEST = 1                     # an older major is refused
 DEPRECATED: dict[int, str] = {}    # a served major due for removal -> the release that drops it
 ENTRY_POINT_GROUP = "pokeldn.plugins"
@@ -48,6 +52,7 @@ class Plugin:
     module: str = "plugin"
     locale: str = ""
     translations: dict = field(default_factory=dict)
+    resources: dict = field(default_factory=dict)
     library: str = ""                     # a folder the player sees, named in plugin.toml (1.7)
     library_sort: str = ""                # its order until the player picks one (1.8)
     entry_point: object = None
@@ -57,6 +62,7 @@ class Plugin:
     games: list = field(default_factory=list)
     radios: list = field(default_factory=list)   # scheme names
     battle_servers: list = field(default_factory=list)   # (game, name)
+    offer_edits: list = field(default_factory=list)      # game keys
 
 
 @dataclass(frozen=True)
@@ -65,6 +71,14 @@ class BattleServer:
     name: str
     label: str
     factory: Callable      # (bootstrap, partners) -> a server (docs/plugins.md, A battle server)
+    plugin: str = ""
+
+
+@dataclass(frozen=True)
+class OfferEdit:
+    game: str
+    label: str
+    edit: Callable[[bytes], bytes]   # a record PKHeX reads -> the record to offer (docs/plugins.md, Offer edits)
     plugin: str = ""
 
 
@@ -143,6 +157,17 @@ class API:
         _battle_servers[(game, name)] = BattleServer(game, name, label or name, factory, self.plugin.id)
         self.plugin.battle_servers.append((game, name))
 
+    def add_offer_edit(self, game: str, edit: Callable, label: str = "") -> None:
+        """Runs `edit(record) -> record` on every Pokemon a built-in launcher of `game` offers, after
+        the launcher's own edits and before PKHeX's legality check, which still refuses an illegal
+        result (1.10)."""
+        if game not in OFFER_GAMES:
+            raise ValueError(f"no game {game!r} takes an offer edit")
+        if not callable(edit):
+            raise ValueError("an offer edit is a function from bytes to bytes")
+        _offer_edits.append(OfferEdit(game, label or self.plugin.name, edit, self.plugin.id))
+        self.plugin.offer_edits.append(game)
+
 
 def parse_api(value) -> tuple | None:
     """plugin.toml's api: 1 is (1, 0), "1.1" is (1, 1)."""
@@ -178,6 +203,8 @@ _loaded: dict[str, Plugin] = {}
 _radios: dict[str, Radio] = {}
 _battle_servers: dict[tuple, BattleServer] = {}
 BATTLE_GAMES = ("sv",)
+_offer_edits: list[OfferEdit] = []
+OFFER_GAMES = ("frlg", "lgpe", "swsh", "bdsp", "pla", "sv", "za")
 _done = False
 generation = 0          # counts reloads, so a view knows its catalog is stale
 
@@ -248,11 +275,55 @@ def enabled() -> list[str]:
     return [i for i in ids if isinstance(i, str)]
 
 
+MAX_TOML_NESTING = 64
+
+
+def _escaped(text: str, at: int) -> bool:
+    slashes = 0
+    while text[at - 1 - slashes] == "\\":
+        slashes += 1
+    return slashes % 2 == 1
+
+
+def _toml_nesting(text: str) -> int:
+    """-> the deepest run of open [ and { outside strings and comments."""
+    depth = deepest = i = 0
+    while i < len(text):
+        char = text[i]
+        if char == "#":
+            i = text.find("\n", i)
+            if i < 0:
+                break
+        elif char in "\"'":
+            quote = char * 3 if text.startswith(char * 3, i) else char
+            end = text.find(quote, i + len(quote))
+            while end > 0 and char == '"' and _escaped(text, end):
+                end = text.find(quote, end + 1)
+            if end < 0:
+                break
+            i = end + len(quote) - 1
+        elif char in "[{":
+            depth += 1
+            deepest = max(deepest, depth)
+        elif char in "]}":
+            depth -= 1
+        i += 1
+    return deepest
+
+
+def toml_loads(text: str) -> dict:
+    """tomllib.loads for a file a plugin supplies. Nesting deep enough to reach the recursion limit is
+    refused unparsed: a finalizer that runs at that depth raises as well."""
+    if _toml_nesting(text) > MAX_TOML_NESTING:
+        raise tomllib.TOMLDecodeError(f"nested deeper than {MAX_TOML_NESTING} arrays or tables")
+    return tomllib.loads(text)
+
+
 def _read_folder(path: Path) -> Plugin:
     plugin = Plugin(id=path.name, name=path.name, folder=path)
     try:
-        meta = tomllib.loads((path / "plugin.toml").read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
+        meta = toml_loads((path / "plugin.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError, RecursionError) as error:
         plugin.error = f"plugin.toml: {error}"
         return plugin
     plugin.id = str(meta.get("id", path.name))
@@ -278,9 +349,15 @@ def _read_folder(path: Path) -> Plugin:
         else:
             plugin.error = f"plugin.toml's library_sort is one of {', '.join(SORTS)}"
     if "locale" in meta or "strings" in meta:
-        from pokeldn.app.i18n import read_pack
+        from pokeldn.app.i18n import read_pack, read_resources
+        def read_resource(name):
+            resource = (path / name).resolve()
+            if not resource.is_relative_to(path.resolve()):
+                raise ValueError("Language pack resources must remain inside the plugin folder.")
+            return resource.read_bytes()
         try:
-            plugin.translations = read_pack(meta, lambda name: (path / name).read_bytes())
+            plugin.translations = read_pack(meta, read_resource)
+            plugin.resources = read_resources(meta, read_resource)
             plugin.locale = meta["locale"]
         except ValueError as error:
             plugin.error = str(error)
@@ -354,7 +431,7 @@ def load() -> list[Plugin]:
                 plugin.error = f"its library {plugin.library!r} is already the plugin {owner!r}'s"
         if plugin.error:          # plugin.toml did not parse, or names another's library
             continue
-        radios_before, servers_before = dict(_radios), dict(_battle_servers)
+        radios_before, servers_before, edits_before = dict(_radios), dict(_battle_servers), list(_offer_edits)
         if watch:
             _marker().write_text(plugin.id, encoding="utf-8")
         try:
@@ -370,6 +447,8 @@ def load() -> list[Plugin]:
             plugin.battle_servers.clear()
             _battle_servers.clear()
             _battle_servers.update(servers_before)
+            plugin.offer_edits.clear()
+            _offer_edits[:] = edits_before
         finally:
             if watch:
                 _marker().unlink(missing_ok=True)
@@ -467,6 +546,12 @@ def battle_server(game: str, name: str = "") -> BattleServer | None:
     return found[0] if found else None
 
 
+def offer_edits(game: str) -> list[OfferEdit]:
+    """The loaded plugins' offer edits for `game`, in load order."""
+    load()
+    return [e for e in _offer_edits if e.game == game]
+
+
 def _reset() -> None:
     """Forgets every loaded plugin; for tests."""
     global _done
@@ -475,6 +560,7 @@ def _reset() -> None:
     _loaded.clear()
     _radios.clear()
     _battle_servers.clear()
+    _offer_edits.clear()
     plugin_guard.clear()
 
 

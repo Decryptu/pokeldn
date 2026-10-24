@@ -60,11 +60,6 @@ def segments(nso):
     return segs
 
 
-def module_id(nso):
-    """The NSO header's 0x20-byte module (build) id at +0x40."""
-    return bytes(nso[0x40:0x60])
-
-
 def layout(nso):
     """-> the segments at their memory offsets, extended with zeros to the end of .bss (MOD0)."""
     segs = segments(nso)

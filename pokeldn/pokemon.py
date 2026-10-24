@@ -154,7 +154,7 @@ class Service:
         return self.species_cache[game]
 
     def names(self, game: str, kind: str) -> list[dict]:
-        """species, moves, items or balls the game has, by name."""
+        """Names by ID; form IDs encode (national species << 8) | form, unlike cartridge species3 IDs."""
         key = f"{game}:{kind}"
         if key not in self.species_cache:
             names = self._ask({"cmd": "names", "game": game, "list": kind})["names"]
@@ -162,7 +162,8 @@ class Service:
         return self.species_cache[key]
 
     def options(self, game: str, species: int, trainer: dict, version: str = "", form: int = 0) -> dict:
-        """The forms, natures, abilities, held items, balls and effort kind an offer of this species can ask for."""
+        """The forms, natures, abilities, held items, balls and effort kind an offer of this species can ask for;
+        alpha is whether it has an Alpha encounter, None in a game with no Alphas."""
         key = f"{game}:options:{species}:{form}:{version}"
         if key not in self.species_cache:
             self.species_cache[key] = self._ask({"cmd": "options", "game": game, "species": species,
@@ -176,7 +177,7 @@ class Service:
     def make(self, game: str, species: int, trainer: dict, level: int = 0, shiny: bool = False,
              nickname: str = "", version: str = "", options: dict | None = None) -> dict:
         """options: form, nature, ability, gender, held_item, ball (ids), friendship (0-255), moves (up to four
-        ids), and ivs / effort as {hp, atk, def, spa, spd, spe}."""
+        ids), alpha (Legends Arceus and Z-A; true or false), and ivs / effort as {hp, atk, def, spa, spd, spe}."""
         reply = self._ask({"cmd": "make", "game": game, "species": species, "level": level, "shiny": shiny,
                            "nickname": nickname, "trainer": trainer, "version": version,
                            "options": options or {}})
@@ -326,7 +327,8 @@ class Service:
         data = base64.b64decode(reply["data"])
         folder = POKEMON / game
         folder.mkdir(parents=True, exist_ok=True)
-        name = re.sub(r"[^A-Za-z0-9]+", "", reply["species"]) or "pokemon"
+        species = reply.get("canonical", {}).get("species", reply["species"])
+        name = re.sub(r"[^A-Za-z0-9]+", "", species) or "pokemon"
         path = folder / f"{name}-{time.strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:8]}.{EXTENSIONS[game]}"
         path.write_bytes(data)
         return str(path)
@@ -341,10 +343,13 @@ HOME_TRACKER_WARNINGS = {"empty": "PKHeX flags the missing HOME tracker", "made"
 
 
 def summary(info: dict) -> str:
+    info = {**info, **info.get("canonical", {})}
     parts = [f"{info['species']}-{info['form']}" if info.get("form") else info["species"], f"level {info['level']}"]
     if info.get("shiny"):
         parts.append("shiny")
-    if info.get("nickname") and info["nickname"].lower() != info["species"].lower():
+    if info.get("alpha"):
+        parts.append("alpha")
+    if info.get("nickname") and info.get("is_nicknamed", info["nickname"].lower() != info["species"].lower()):
         parts.append(f"'{info['nickname']}'")
     parts += [info.get("nature", ""), info.get("ability", ""), info.get("ball", "")]
     if info.get("held_item"):
@@ -386,13 +391,28 @@ def offer_bytes(game, data):
 
 
 def prepare_offer(game, data, *, fresh=False, fields=None, transform=None):
-    """-> `data` as a host offers it, through the offer check every offer takes: `transform`, PKHeX's check
-    (`prepare`) and the game's offer form. A Mystery Gift made during the trade takes it too
-    (pokeldn.receiver_gift)."""
+    """-> `data` as a host offers it, through the offer check every offer takes: `transform`, the
+    plugins' offer edits, PKHeX's check (`prepare`) and the game's offer form. A Mystery Gift made
+    during the trade takes it too (pokeldn.receiver_gift)."""
     data = entity_bytes(game, data)
     if transform is not None:
         data = entity_bytes(game, transform(data))
-    return offer_bytes(game, prepare(game, data, fresh=fresh, fields=fields))
+    return offer_bytes(game, prepare(game, plugin_edits(game, data), fresh=fresh, fields=fields))
+
+
+def plugin_edits(game, data):
+    """`data` through each loaded plugin's offer edit for `game` (docs/plugins.md, Offer edits)."""
+    from pokeldn import plugins
+    for edit in plugins.offer_edits(game):
+        try:
+            out = edit.edit(bytes(data))
+        except Exception as error:
+            raise BuilderError(f"The plugin {edit.label} could not edit the Pokemon: {error}") from error
+        if not isinstance(out, (bytes, bytearray)) or not out:
+            raise BuilderError(f"The plugin {edit.label} returned no Pokemon to offer.")
+        data = entity_bytes(game, out)
+        print(f"[pokemon] the plugin {edit.label} edited the offer", flush=True)
+    return data
 
 
 def prepare_file(game, path, *, fresh=False, fields=None, transform=None):
