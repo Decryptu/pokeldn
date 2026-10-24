@@ -446,7 +446,7 @@ ANY = "-"
 
 
 class OfferOptions:
-    """Nature, ability, gender, held item, ball, friendship, IVs and effort for the built Pokemon, folded under the
+    """Nature, ability, gender, held item, ball, friendship, Alpha, IVs and effort for the built Pokemon, folded under the
     form.
 
     The choices offered are the ones PKHeX permits for the species (services/pkhex Options); the build is
@@ -531,6 +531,8 @@ class OfferOptions:
                 self.chosen.pop(key)
         if not found["gendered"]:
             self.chosen.pop("gender", None)
+        if not found.get("alpha"):     # None: the game has no Alphas; False: the species is never one
+            self.chosen.pop("alpha", None)
         if "form" in self.chosen and all(f["id"] != self.chosen["form"] for f in found["forms"]):
             self.chosen.pop("form")
             self.picker.show_sprite()
@@ -545,6 +547,11 @@ class OfferOptions:
                 "gender", [{"id": int(k), "name": n} for k, n in GENDERS]), expand=True))
         second = [t.labeled_control(tr('pokemon.ball_ae5859', 'Ball'), self._choice("ball", found["balls"]), expand=True),
                   t.labeled_control(tr('pokemon.friendship_0_255_30186d', 'Friendship (0-255)'), self._number("friendship", 255), width=130)]
+        if found.get("alpha"):
+            second.append(t.labeled_control(tr('pokemon.alpha_b1a96d', 'Alpha'), self._alpha(), expand=True))
+        elif found.get("alpha") is False:
+            second.append(t.labeled_control(tr('pokemon.alpha_b1a96d', 'Alpha'), t.text(
+                tr('pokemon.never_an_alpha_in_this_game_883ade', 'Never an Alpha in this game'), 12, t.MUTED), expand=True))
         if found["held"]:
             second.insert(0, t.labeled_control(tr('pokemon.held_item_6af4a4', 'Held item'), self._choice("held_item", found["held"], search=True),
                                                expand=True))
@@ -582,6 +589,19 @@ class OfferOptions:
                                        (sorted(names, key=lambda n: n["name"]) if search else names)]
         return t.dropdown(options, ANY if current is None else str(current), on_select=picked,
                           enable_filter=search, editable=search, menu_height=320)
+
+    def _alpha(self) -> ft.Dropdown:
+        def picked(e):
+            if e.control.value == ANY:
+                self.chosen.pop("alpha", None)
+            else:
+                self.chosen["alpha"] = e.control.value == "yes"
+            self._label()
+            self.label.update()
+        current = self.chosen.get("alpha")
+        return t.dropdown([(ANY, tr('pokemon.random_67bc48', 'Random')), ("yes", tr('pokemon.yes_85a39a', 'Yes')),
+                           ("no", tr('pokemon.no_1ea442', 'No'))],
+                          ANY if current is None else "yes" if current else "no", on_select=picked)
 
     def _moves(self, names: list[dict]) -> ft.Control:
         moves = (list(self.chosen.get("moves", [])) + [0] * 4)[:4]

@@ -244,10 +244,31 @@ def test_a_tr_move_in_the_suggested_moveset_does_not_make_a_request_fail_at_rand
     ("sv", 150, {"level": 50}, "cannot be lower than level"),  # a fixed-level encounter names its level
     ("sv", 377, {}, "no legal"),                               # an encounter PKHeX does not have
     ("swsh", 802, {"shiny": True}, "cannot be shiny"),         # every encounter is shiny-locked
+    ("pla", 483, {"options": {"alpha": True}}, "cannot be an Alpha"),   # Dialga's encounters are not Alphas
+    ("za", 150, {"options": {"alpha": True}}, "cannot be an Alpha"),
+    ("swsh", 25, {"options": {"alpha": True}}, "Only Legends Arceus and Legends Z-A"),
 ])
 def test_an_impossible_request_is_refused_with_its_reason(service, game, species, edit, message):
     with pytest.raises(pokemon.BuilderError, match=message):
         service.make(game, species, TRAINER, **edit)
+
+
+@pytest.mark.parametrize("game, species, alpha", [
+    ("pla", 399, True), ("pla", 25, True), ("pla", 215, False),
+    ("za", 4, True), ("za", 6, True), ("za", 4, False),     # the shiny Alpha Charmander a player made in PKHeX
+])
+def test_an_alpha_request_is_built_legal_and_shiny_with_its_alpha_move(service, game, species, alpha):
+    assert service.options(game, species, TRAINER)["alpha"]
+    built = service.make(game, species, TRAINER, shiny=True, options={"alpha": alpha})
+    assert built["legal"] and built["shiny"] and built["alpha"] == alpha
+    if game == "pla":
+        f = pa8.read(pa8.load(base64.b64decode(built["data"])))
+        assert f["is_alpha"] == alpha and (f["alpha_move"] != 0) == alpha
+
+
+def test_only_a_species_with_an_alpha_encounter_offers_the_choice(service):
+    assert service.options("pla", 483, TRAINER)["alpha"] is False
+    assert service.options("swsh", 25, TRAINER)["alpha"] is None
 
 
 def named(names, name):

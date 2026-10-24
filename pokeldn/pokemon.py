@@ -162,7 +162,8 @@ class Service:
         return self.species_cache[key]
 
     def options(self, game: str, species: int, trainer: dict, version: str = "", form: int = 0) -> dict:
-        """The forms, natures, abilities, held items, balls and effort kind an offer of this species can ask for."""
+        """The forms, natures, abilities, held items, balls and effort kind an offer of this species can ask for;
+        alpha is whether it has an Alpha encounter, None in a game with no Alphas."""
         key = f"{game}:options:{species}:{form}:{version}"
         if key not in self.species_cache:
             self.species_cache[key] = self._ask({"cmd": "options", "game": game, "species": species,
@@ -176,7 +177,7 @@ class Service:
     def make(self, game: str, species: int, trainer: dict, level: int = 0, shiny: bool = False,
              nickname: str = "", version: str = "", options: dict | None = None) -> dict:
         """options: form, nature, ability, gender, held_item, ball (ids), friendship (0-255), moves (up to four
-        ids), and ivs / effort as {hp, atk, def, spa, spd, spe}."""
+        ids), alpha (Legends Arceus and Z-A; true or false), and ivs / effort as {hp, atk, def, spa, spd, spe}."""
         reply = self._ask({"cmd": "make", "game": game, "species": species, "level": level, "shiny": shiny,
                            "nickname": nickname, "trainer": trainer, "version": version,
                            "options": options or {}})
@@ -346,6 +347,8 @@ def summary(info: dict) -> str:
     parts = [f"{info['species']}-{info['form']}" if info.get("form") else info["species"], f"level {info['level']}"]
     if info.get("shiny"):
         parts.append("shiny")
+    if info.get("alpha"):
+        parts.append("alpha")
     if info.get("nickname") and info.get("is_nicknamed", info["nickname"].lower() != info["species"].lower()):
         parts.append(f"'{info['nickname']}'")
     parts += [info.get("nature", ""), info.get("ability", ""), info.get("ball", "")]

@@ -89,7 +89,8 @@ legal level. Hydrapple in Scarlet/Violet is legal only at scattered levels.
 ### Offer options
 
 A build can ask for a form, nature, ability, gender, held item, ball, friendship, up to four moves, IVs
-and effort values. Moves and form narrow the encounter search; nature, ability, gender and IVs go into
+and effort values, and in Legends Arceus and Legends Z-A whether it is an Alpha. Moves, form and Alpha
+narrow the encounter search; nature, ability, gender and IVs go into
 the encounter criteria. When the encounter rolls something else, the record is changed as a player
 would:
 
@@ -113,6 +114,7 @@ trade page says what a trade rewrites. FireRed/LeafGreen set 70 on every receive
 | option | listed when |
 |---|---|
 | ball | PKHeX permits it for at least one encounter |
+| Alpha | Legends Arceus or Legends Z-A has an Alpha encounter of the species (`IAlphaReadOnly.IsAlpha`) |
 | ability | a legal build carrying it exists; Legends Z-A lists none |
 | held item | a released held item for the game; Let's Go and Legends Arceus have none |
 | effort | EVs 252 each, 510 in all; AVs in Let's Go, 200 each; effort levels in Legends Arceus, 10 each |

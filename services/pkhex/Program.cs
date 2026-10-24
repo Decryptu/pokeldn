@@ -119,7 +119,8 @@ static partial class Program
         // The encounters a build tries: per version wild slots, static encounters, trades, eggs; Mystery Gifts last, as an
         // event's fixed PID makes a new-PID offer illegal. PKHeX lists eggs first; each kind is cut at 80 on its own
         // (docs/architecture.md, Encounter order).
-        List<IEncounterable> Encounters(PKM blank, ITrainerInfo trainer, ReadOnlyMemory<ushort> moves, GameVersion[] versions)
+        List<IEncounterable> Encounters(PKM blank, ITrainerInfo trainer, ReadOnlyMemory<ushort> moves, GameVersion[] versions,
+                                        Func<IEncounterable, bool>? keep = null)
         {
             List<IEncounterable> found = [], gifts = [];
             try
@@ -130,7 +131,7 @@ static partial class Program
                     {
                         EncounterMovesetGenerator.PriorityList = [group];
                         (group == EncounterTypeGroup.Mystery ? gifts : found)
-                            .AddRange(EncounterMovesetGenerator.GenerateEncounters(blank, trainer, moves, version).Take(80));
+                            .AddRange(EncounterMovesetGenerator.GenerateEncounters(blank, trainer, moves, version).Where(keep ?? (_ => true)).Take(80));
                     }
             }
             finally
@@ -249,6 +250,9 @@ static partial class Program
                 foreach (var ball in found[..BallApplicator.GetLegalBalls(found, pk, encounter)])
                     permitted.Add(ball);
             }
+            // Only Legends Arceus and Z-A have Alphas; the cut at 80 can hide one, so a species without one in the list is asked again.
+            bool? alpha = game.Context is EntityContext.Gen8a or EntityContext.Gen9a
+                ? Encounters(blank, trainer, ReadOnlyMemory<ushort>.Empty, versions, IsAlpha).Count > 0 : null;
             var balls = new JsonArray();
             foreach (var ball in permitted.Order())
                 balls.Add(new JsonObject { ["id"] = (int)ball, ["name"] = strings.balllist[(int)ball] });
@@ -293,8 +297,11 @@ static partial class Program
                 ["effort"] = effort,
                 ["held"] = Names(game, "held")["names"]!.DeepClone(),
                 ["balls"] = balls,
+                ["alpha"] = alpha,
             };
         }
+
+        static bool IsAlpha(IEncounterable encounter) => encounter is IAlphaReadOnly { IsAlpha: true };
 
         (GameVersion[], SimpleTrainerInfo) Trainer(Game game, JsonObject request)
         {
@@ -324,6 +331,8 @@ static partial class Program
             var shiny = (bool?)request["shiny"] ?? false;
             var nickname = (string?)request["nickname"] ?? "";
             var wish = Wish.From(request["options"] as JsonObject);
+            if (wish.Alpha is true && game.Context is not (EntityContext.Gen8a or EntityContext.Gen9a))
+                throw new ArgumentException("Only Legends Arceus and Legends Z-A have Alpha Pokemon.");
             // A request that names no form takes the first that builds: Sword/Shield holds Zygarde only in its Power
             // Construct forms, Scarlet/Violet Ursaluna only as Bloodmoon.
             if (wish.Form is null)
@@ -367,9 +376,11 @@ static partial class Program
             string? firstProblem = null, firstUnmet = null;
             var lowest = int.MaxValue;
             var shinyLocked = false;
+            // An Alpha is one from its encounter: the flag, size, moves and IVs come with it [EncounterSlot8a, EncounterSlot9a].
+            var encounters = Encounters(blank, trainer, wish.Moves, versions,
+                wish.Alpha is { } alpha ? e => IsAlpha(e) == alpha : null);
             // The first encounter that stays legal with the requested level, shininess and nickname wins.
             // The first pass takes encounters as they come; the second lets an evolved Pokemon climb to its evolution level.
-            var encounters = Encounters(blank, trainer, wish.Moves, versions);
             foreach (var climb in new[] { false, true })
             {
                 foreach (var encounter in encounters)
@@ -484,6 +495,8 @@ static partial class Program
                     ? $"{name} cannot be lower than level {lowest} in this game."
                     : shinyLocked
                         ? $"{name} cannot be shiny in this game."
+                    : encounters.Count == 0 && wish.Alpha is { } asked
+                        ? asked ? $"{name} cannot be an Alpha in this game." : $"{name} is always an Alpha in this game."
                         : wish.Moves.Length > 1
                             ? $"No legal {name} in this game can know these moves together."
                             : $"PKHeX has no legal {name} for this game.");
@@ -1637,6 +1650,7 @@ static partial class Program
                 ["form_id"] = pk.Form,
                 ["level"] = pk.CurrentLevel,
                 ["shiny"] = pk.IsShiny,
+                ["alpha"] = pk is IAlphaReadOnly { IsAlpha: true },
                 ["nickname"] = pk.Nickname,
                 ["is_nicknamed"] = pk.IsNicknamed,
                 ["ot"] = pk.OriginalTrainerName,
@@ -1711,7 +1725,7 @@ static partial class Program
 
 // The offer options a request asks for; a stat array is HP, Atk, Def, SpA, SpD, Spe and -1 leaves a stat alone.
 record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effort, int? Item, byte? Ball,
-            byte? Form, byte? Friendship, ushort[] Moves)
+            byte? Form, byte? Friendship, ushort[] Moves, bool? Alpha)
 {
     static readonly string[] Stats = ["hp", "atk", "def", "spa", "spd", "spe"];
     static readonly string[] StatNames = ["HP", "Attack", "Defense", "Sp. Atk", "Sp. Def", "Speed"];
@@ -1739,7 +1753,7 @@ record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effor
         return new Wish(Number("nature") is { } n ? (Nature)n : null, Number("ability"),
             Number("gender") is { } g ? (Gender)g : null, ivs, effort,
             Number("held_item"), Number("ball") is { } b ? checked((byte)b) : null,
-            Number("form") is { } f ? checked((byte)f) : null, (byte?)Number("friendship"), moves);
+            Number("form") is { } f ? checked((byte)f) : null, (byte?)Number("friendship"), moves, (bool?)o?["alpha"]);
     }
 
     public ushort[] Moveset() => [.. Moves, .. new ushort[4 - Moves.Length]];
@@ -1843,6 +1857,8 @@ record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effor
             return "this form";
         if (Friendship is { } friendship && pk.OriginalTrainerFriendship != friendship)
             return $"friendship {friendship}";
+        if (Alpha is { } alpha && pk is IAlphaReadOnly a && a.IsAlpha != alpha)
+            return alpha ? "an Alpha" : "a Pokemon that is not an Alpha";
         foreach (var move in Moves)
             if (!pk.HasMove(move))
                 return $"the move {strings.movelist[move]}";

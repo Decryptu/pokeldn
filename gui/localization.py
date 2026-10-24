@@ -58,9 +58,11 @@ def summary_text(value: str) -> str:
 
 
 def summary_lines(value: str) -> tuple[str, str]:
-    """A summary's species, level and shininess, then the rest."""
+    """A summary's species, level, shininess and Alpha, then the rest."""
     parts = value.split(" · ")
-    head = 3 if len(parts) > 2 and parts[2] == "shiny" else 2
+    head = 2
+    while len(parts) > head and parts[head] in ("shiny", "alpha"):
+        head += 1
     return summary_text(" · ".join(parts[:head])), summary_text(" · ".join(parts[head:]))
 
 
