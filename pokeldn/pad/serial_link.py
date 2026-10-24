@@ -66,7 +66,8 @@ class SerialPad:
     def __init__(self, port: str):
         import serial
         s = serial.Serial()
-        s.port, s.baudrate, s.timeout = port, BAUD, 0.05
+        # A port no firmware drains (a blank C3's USB Serial/JTAG) blocks a write with no timeout forever.
+        s.port, s.baudrate, s.timeout, s.write_timeout = port, BAUD, 0.05, 1.0
         s.dtr = s.rts = False   # most boards reset on a DTR/RTS edge
         s.open()
         self.port = port
@@ -97,10 +98,14 @@ class SerialPad:
         return self.serial.is_open
 
     def _ask(self, kind: int, payload: bytes, want: int, timeout: float = 1.0) -> bytes:
+        import serial
         with self.lock:
             self.serial.reset_input_buffer()
             self.reader.buf.clear()
-            self.serial.write(frame(kind, payload))
+            try:
+                self.serial.write(frame(kind, payload))
+            except serial.SerialTimeoutException as error:
+                raise SerialError(f"the board on {self.port} did not take the request") from error
             end = time.monotonic() + timeout
             while time.monotonic() < end:
                 for got, body in self.reader.feed(self.serial.read(256)):

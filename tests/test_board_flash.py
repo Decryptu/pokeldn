@@ -249,3 +249,55 @@ def test_a_board_built_for_its_own_screen_is_never_offered_the_app_image(tmp_pat
     assert facts.update == "9.0.0"
     facts.stock = False      # display=e32r40t: the OLED image would leave its panel dark
     assert facts.update == ""
+
+
+def test_a_board_that_never_takes_a_write_ends_the_check(monkeypatch):
+    """A blank ESP32-C3 on Windows: its USB Serial/JTAG port opens but no firmware drains it, so a write
+    with no write_timeout never returns and the Board page stayed on Checking with Install disabled."""
+    import threading
+    import serial as pyserial
+    from pokeldn.pad.serial_link import SerialError
+    hung = threading.Event()
+
+    class Undrained:
+        def __init__(self):
+            self.port, self.baudrate, self.timeout, self.write_timeout = None, 115200, 0.02, None
+            self.dtr = self.rts = False
+            self.is_open, self.out_waiting = True, 0
+
+        def open(self):
+            pass
+
+        def write(self, data):
+            if self.write_timeout is None:
+                hung.set()
+                threading.Event().wait(30)   # stands in for forever
+            else:
+                threading.Event().wait(self.write_timeout)
+            raise pyserial.SerialTimeoutException("Write timeout")
+
+        def read(self, n):
+            threading.Event().wait(self.timeout or 0.02)
+            return b""
+
+        def reset_input_buffer(self):
+            pass
+
+        def close(self):
+            self.is_open = False
+
+    monkeypatch.setattr(board.serial, "Serial", Undrained)
+    errors = []
+
+    def check():
+        for probe in (lambda: board.identify("COM3", blink=False), lambda: board.identify_pad("COM3")):
+            try:
+                probe()
+            except (esp32.RadioError, SerialError, OSError) as error:
+                errors.append(error)
+
+    worker = threading.Thread(target=check, daemon=True)
+    worker.start()
+    worker.join(20)
+    assert not hung.is_set()
+    assert not worker.is_alive() and len(errors) == 2
