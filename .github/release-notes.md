@@ -1,22 +1,21 @@
-# pokeldn 0.36.0
+# pokeldn 0.37.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Sword/Shield Mystery Gift: a new switch, Keep it on the board, saves the gift on the board. Powered
-  from any USB charger, the board then hands the gift to every Sword and Shield nearby with no
-  computer, until the app opens it again. The Board page shows a kept gift and removes it. This is
-  new and not yet tried with a console: tell us how it goes.
-- Board page: Copy board details puts everything the app can learn about your ports and board
-  on the clipboard (USB ids, drivers, what the board answers, the chip esptool finds). Paste it when
-  you ask for help with a board that does not work.
-- Plugins: API 1.10 adds offer edits. A plugin can change the Pokemon a built-in Trade tool sends;
-  PKHeX's legality check still runs last and refuses an illegal result.
+- Pokemon builder: an Alpha choice under More options for Legends Arceus and Legends Z-A (Random,
+  Yes or No). Shiny and Alpha combine where the game allows it, and PKHeX still checks the result. A
+  species with no Alpha encounter says so, and a refused build gives the reason.
+- The app adapts to its window: on a small laptop screen the options column no longer shrinks to a
+  word per line. Games and Options share one column beside Session when room runs short, and fields
+  and gift tiles fit as many to a row as the width allows. Long Pokemon names, raid cards and
+  advanced options no longer overflow, on a computer or a phone.
+- A cleaner look: flat brand blue and red in place of gradients, one card style across every tool,
+  and trades in a queue split by a hairline.
 
-The radio firmware is now 1.8.0; update the board from the Board page to keep a gift on it. The
-controller firmware stays at 1.3.0.
+The radio firmware stays at 1.8.0 and the controller firmware at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
