@@ -18,7 +18,7 @@ from pokeldn.app.catalog import Field, Game, Tool
 from pokeldn.app.introspect import flags_of
 from pokeldn.app.paths import SESSION
 from gui.views.event_gifts import EventGiftPicker
-from gui.views.pokemon import NAME_LISTS, LinkCodePicker, NamePicker, OfferQueue, PokemonPicker
+from gui.views.pokemon import NAME_LISTS, VERSIONS, LinkCodePicker, NamePicker, OfferQueue, PokemonPicker
 from gui.views.raid_event import FOLDED, RaidEventPicker
 from gui.views.encounter import EncounterPicker
 from gui.views.raid_partners import RaidPartnersPicker
@@ -1093,18 +1093,24 @@ class SessionPanel:
             self.refresh()
             return
         try:
-            command.prepare(tool, self.games.values)
+            game = self.games.game.key
+            values = command.prepare(tool, self.games.values, game, s.trainer(game),
+                                     VERSIONS.get(str(self.games.values.get("--version", "")), ""))
         except (OSError, ValueError) as error:
             self.log.add(f'[app] {error}')
             self.set_status(tr('games.not_started_ba35f0', 'Not started'), t.RED)
             self.refresh()
             return
         stamp = time.strftime("%Y%m%d-%H%M%S")
-        args = command.build(tool, self.games.values, self.games.extra, s, stamp)
+        args = command.build(tool, values, self.games.extra, s, stamp)
         for folder in (SESSION / "captures", os.path.expanduser(s.received)):
             os.makedirs(folder, exist_ok=True)
         trace = f"captures/{tool.key}-{stamp}_esp32.trace" if s.board_trace else None
         self.log.add(f'[app] {tool.name} · {self.games.game.name} · radio {port}')
+        for field in tool.fields:
+            if field.random and values.get(field.key) is not self.games.values.get(field.key):
+                self.log.add(f'[app] {tr("games.random_offer", "Random offer")}: '
+                             f'{command.offers(values[field.key])[0]["summary"]}')
         self.seen, self.received.content, self.received.visible = {}, None, False
         self.transfer.content, self.transfer.visible, self.rates = None, False, {}
         self.partner.content, self.partner.visible, self.partner_state = None, False, None

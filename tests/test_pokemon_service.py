@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 
 from pokeldn import gen8, gen9, pokemon
+from pokeldn.app import command
+from pokeldn.app.catalog import GAMES
 from pokeldn.app.settings import Settings
 from pokeldn.pla import pokemon as pa8
 from pokeldn.swsh import wc8
@@ -843,3 +845,23 @@ def test_a_plugin_edit_that_makes_the_pokemon_illegal_is_refused(service, offer_
     built = service.make("frlg", 25, TRAINER)
     with pytest.raises(pokemon.BuilderError, match="(?i)checksum"):
         pokemon.prepare_file("frlg", built["file"])
+
+
+TRADE_TOOLS = [(game.key, tool.key) for game in GAMES for tool in game.tools
+               for field in tool.fields if field.random]
+
+
+@pytest.mark.parametrize("game,key", TRADE_TOOLS, ids=[k for _, k in TRADE_TOOLS])
+def test_an_empty_offer_starts_every_trade_tool_with_a_random_legal_pokemon(service, game, key):
+    """Every title's trade tool takes an empty offer the same way: Start builds a random legal Pokemon
+    of that game, the launcher receives its file, and the saved values stay empty for the next run."""
+    tool = next(t for g in GAMES for t in g.tools if t.key == key)
+    field = next(f for f in tool.fields if f.random)
+    values = {}
+    assert command.missing_offer(tool, values) == ""
+    filled = command.prepare(tool, values, game, Settings().trainer(game))
+    assert values == {}
+    (entry,) = command.offers(filled[field.key])
+    assert entry["legal"] and service.check(game, entry["file"])["legal"]
+    args = command.build(tool, filled, {}, Settings())
+    assert entry["file"] in args

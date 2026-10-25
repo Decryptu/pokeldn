@@ -293,11 +293,34 @@ def problems(tool: Tool, values: dict) -> list[str]:
     return errors
 
 
-def prepare(tool: Tool, values: dict) -> None:
-    """Write what the arguments name but no field holds yet: a built gift's file."""
+def prepare(tool: Tool, values: dict, game: str = "", trainer: dict | None = None,
+            version: str = "") -> dict:
+    """Write what the arguments name but no field holds yet: a built gift's file, and a random legal
+    Pokemon for an empty offer. -> the values to build the arguments from; `values` keeps the
+    empty offer, so the next run draws again."""
+    filled = dict(values)
     for field in tool.fields:
         if field.kind == "builder":
             gift_builder.prepare(tool, value_of(field, values))
+        elif (field.random and game and applies(field, tool, values)
+              and not any(e.get("file") for e in offers(value_of(field, values)))):
+            filled[field.key] = [random_offer(game, trainer or {}, version)]
+    return filled
+
+
+def random_offer(game: str, trainer: dict, version: str = "", tries: int = 20,
+                 rng=random) -> dict:
+    """A random species of `game` that PKHeX builds legally for `trainer`, as the builder holds it."""
+    from pokeldn import pokemon
+    species = pokemon.SERVICE.species(game)
+    for _ in range(tries):
+        try:
+            info = pokemon.SERVICE.make(game, rng.choice(species)["id"], trainer, version=version)
+        except Exception:  # noqa: BLE001  - a species with no legal encounter here; draw again
+            continue
+        if info.get("legal"):
+            return {"file": info["file"], "summary": pokemon.summary(info), "legal": True}
+    raise ValueError(tr("command.random_offer", "PKHeX built no legal Pokemon to offer; pick one."))
 
 
 def code_error(field: Field, value, game: str = "sv") -> str:

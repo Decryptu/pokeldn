@@ -85,9 +85,13 @@ def _bindable(ip, port):
     return True
 
 
-def test_the_apps_lan_trade_trades_twice_with_our_lan_host_on_loopback(tmp_path, monkeypatch):
+@pytest.mark.parametrize("empty_offer", [False, True], ids=["offer-files", "empty-offer"])
+def test_the_apps_lan_trade_trades_twice_with_our_lan_host_on_loopback(tmp_path, monkeypatch,
+                                                                        empty_offer):
     """The app's Trade (LAN mode) arguments, pointed at our LAN host: two trades on one seat, keyed
-    by nothing but the browse, with no board and no keys."""
+    by nothing but the browse, with no board and no keys. An empty offer trades the console's own
+    first party Pokemon back; PKHeX refuses that record under a new PID, as it refused a retail
+    Gengar whose PID is tied to its encounter, so only PKHeX may renew it."""
     ports = (pia_lan.BROWSE_PORT, pia_lan.BROADCAST_PORT, pia_lan.STATION_PORTS[0])
     if not all(_bindable(ip, port) for ip in (HOST_IP, JOIN_IP) for port in ports):
         pytest.skip("needs the lo0 aliases 127.0.0.2 and 127.0.0.3 with ports 30000, 40000 and "
@@ -102,9 +106,17 @@ def test_the_apps_lan_trade_trades_twice_with_our_lan_host_on_loopback(tmp_path,
     from pokeldn import gen8, pokemon as pokemon_service
     from pokeldn.swsh import pokemon
     monkeypatch.setattr(pokemon_service, "prepare_file", lambda game, path, **kw: path)
-    monkeypatch.setattr(pokemon_service, "prepare", lambda game, raw, **kw: gen8.decrypt(raw))
-
     party = a_payload(count=4)
+    own_pids = {gen8.decrypt(party[i * gen8.SIZE_PARTY:(i + 1) * gen8.SIZE_PARTY])[0x1C:0x20]
+                for i in range(4)}
+
+    def prepare(game, raw, fresh=False, **kw):
+        plain = gen8.decrypt(raw)
+        if plain[0x1C:0x20] not in own_pids:
+            raise ValueError("PID+ correlation does not match")
+        return plain
+    monkeypatch.setattr(pokemon_service, "prepare", prepare)
+
     (tmp_path / "snapshot.bin").write_bytes(party)
     for slot in range(4):
         (tmp_path / f"offer{slot}.pk8").write_bytes(
@@ -118,8 +130,9 @@ def test_the_apps_lan_trade_trades_twice_with_our_lan_host_on_loopback(tmp_path,
          "--offer-file", str(tmp_path / "offer1.pk8")])), daemon=True)
     tool = next(t for game in GAMES for t in game.tools if t.key == "swsh-lan")
     assert not tool.radio
-    offers = [{"file": str(tmp_path / "offer2.pk8")}, {"file": str(tmp_path / "offer3.pk8")}]
-    args = build(tool, {"--offer-file": offers, "--fresh-pid": False}, {}, Settings())
+    offers = [] if empty_offer else [{"file": str(tmp_path / "offer2.pk8")},
+                                     {"file": str(tmp_path / "offer3.pk8")}]
+    args = build(tool, {"--offer-file": offers}, {}, Settings())
     args[args.index("--save-offered") + 1] = str(tmp_path / "join.pk8")
     # Our host is on an alias, not on a local /24: the address replaces the tool's `auto`.
     join = threading.Thread(target=lambda: result.setdefault("join", swsh_connect.main(
@@ -136,4 +149,5 @@ def test_the_apps_lan_trade_trades_twice_with_our_lan_host_on_loopback(tmp_path,
     def species(name):
         return pokemon.read(pokemon.encrypt(gen8.load((tmp_path / name).read_bytes())))["species"]
     assert [species(n) for n in ("join.pk8", "join-2.pk8")] == [94, 95]
-    assert [species(n) for n in ("host.pk8", "host-2.pk8")] == [96, 97]
+    assert [species(n) for n in ("host.pk8", "host-2.pk8")] == ([94, 94] if empty_offer
+                                                                else [96, 97])

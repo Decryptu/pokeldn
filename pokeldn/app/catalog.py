@@ -47,6 +47,8 @@ class Field:
     remembered: bool = True       # False: the value starts empty at every launch, as a Union
                                   # Circle's Link Code, new each time
     bounds: tuple[int, int] = ()  # a number field's lowest and highest value
+    random: bool = False          # a pokemon field left empty: PKHeX builds a random legal one at
+                                  # Start (command.prepare)
 
     identity: str = ""         # stable key for a translated positional field
 
@@ -123,16 +125,19 @@ def join_seconds(default: str) -> Field:
 QUEUE = 6   # a party's worth
 
 
-def offer(flag: str = "", required: bool = True, help: str = "", queue: int = 1, more: str = "",
-          count: str = "") -> Field:
-    return Field(flag, tr('catalog.pokemon_to_offer_585ae1', 'Pokemon to offer'), "pokemon", required=required,
-                 help=help or tr('catalog.pick_a_species_pkhex_builds_a_legal_one_for_this_game_a135d7', 'Pick a species; PKHeX builds a legal one for this game.'),
-                 queue=queue, more=more, count=count, identity="#Pokemon to offer")
+def offer(flag: str = "", help: str = "", queue: int = 1, more: str = "", count: str = "") -> Field:
+    """Every title's trade offer: left empty, the session trades a random legal Pokemon."""
+    return Field(flag, tr('catalog.pokemon_to_offer_585ae1', 'Pokemon to offer'), "pokemon", random=True,
+                 help=help or OFFER_HELP, queue=queue, more=more, count=count,
+                 identity="#Pokemon to offer")
+
+
+OFFER_HELP = tr('catalog.pick_a_species_pkhex_builds_a_legal_one_empty_trades_a_r_5c1e0a', 'Pick a species; PKHeX builds a legal one for this game. Empty trades a random legal Pokemon.')
 
 
 def queued(flag: str = "", help: str = "", **kw) -> Field:
     """An offer field whose session trades each entry in turn, on one seat."""
-    help = help or tr('catalog.pick_a_species_pkhex_builds_a_legal_one_for_this_game_a135d7', 'Pick a species; PKHeX builds a legal one for this game.')
+    help = help or OFFER_HELP
     return offer(flag, help=tr('catalog.add_a_trade_to_queue_more_one_session_trades_them_in_or_4b4782', '{value0} Add a trade to queue more: one session trades them in order.', value0=help),
                  queue=QUEUE, **kw)
 
@@ -287,8 +292,7 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           tr('catalog.start_the_joiner_while_the_console_searches_5f19a9', 'Start the joiner while the console searches.'),
           tr('catalog.pokeldn_appears_on_the_trade_screen_choose_a_pokemon_an_18ef79', 'POKELDN appears on the trade screen: choose a Pokemon and confirm.'),
           tr('catalog.queued_pokemon_follow_one_per_trade_pick_again_from_the_06fa29', 'Queued Pokemon follow, one per trade: pick again from the box.')),
-         (queued("--offer-file", required=False,
-                 help=tr('catalog.pick_a_species_pkhex_builds_a_legal_one_empty_offers_yo_38b1cc', 'Pick a species; PKHeX builds a legal one. Empty offers your own first party Pokemon back.')),
+         (queued("--offer-file"),
           FRESH_PID, TRADE_BACK,
           join_seconds("900")),
          fixed=("--preset", "trade", "--send-snapshot", "live",
@@ -298,8 +302,7 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
     Tool("swsh-lan", tr('catalog.trade_lan_mode_7f1572', 'Trade (LAN mode)'), "bin/swsh_connect.py",
          tr('catalog.trade_with_a_console_in_lan_mode_over_your_own_network_n_fe2d77', 'Trade with a console in LAN mode over your own network, no board.'),
          (tr('catalog.in_options_press_l_r_and_the_left_stick_together_the_gam_cba14e', 'In Options, press L, R and the Left Stick together: the game turns LAN mode on.'), tr('catalog.y_comm_link_trade_no_code_press_a_on_both_messages_44a9b9', 'Y-Comm, Link Trade, no code; press A on both messages.'), tr('catalog.start_the_joiner_while_the_console_searches_the_console_18ac1a', 'Start the joiner while the console searches; the console and this computer share one network.'), tr('catalog.pokeldn_appears_on_the_trade_screen_choose_a_pokemon_and_68f6a5', 'POKELDN appears on the trade screen: choose a Pokemon and confirm.')),
-         (queued("--offer-file", required=False,
-                 help=tr('catalog.pick_a_species_pkhex_builds_a_legal_one_empty_offers_yo_38b1cc', 'Pick a species; PKHeX builds a legal one. Empty offers your own first party Pokemon back.')),
+         (queued("--offer-file"),
           FRESH_PID, TRADE_BACK,
           join_seconds("900")),
          fixed=("--lan", "auto", "--preset", "trade", "--send-snapshot", "live", "--scans", "60",
@@ -422,14 +425,13 @@ BDSP = Game("bdsp", tr('catalog.brilliant_diamond_shining_pearl_f30922', 'Brilli
 
 PLA_STEPS = (tr('catalog.talk_to_the_trade_npc_in_jubilife_village_trade_local_p_63341c', 'Talk to the trade NPC in Jubilife Village: trade, local, past the warning.'),
              tr('catalog.enter_the_same_eight_digit_code_and_press_to_search_2d0ec5', 'Enter the same eight-digit code and press + to search.'))
-PLA_OFFER_HELP = tr('catalog.pick_a_species_pkhex_builds_a_legal_one_empty_offers_po_304364', "Pick a species; PKHeX builds a legal one. Empty offers pokeldn's own Azelf.")
 
 PLA = Game("pla", tr('catalog.legends_arceus_260415', 'Legends Arceus'), tr('catalog.pla_eafc6b', 'PLA'), "pla.md", (
     Tool("pla-host", tr('catalog.trade_host_7198bc', 'Trade (Host)'), "bin/pla_host.py",
          tr('catalog.host_a_trade_under_a_link_code_the_console_joins_bf0e81', 'Host a trade under a link code; the console joins.'),
          (tr('catalog.start_the_host_first_40ac31', 'Start the host first.'), *PLA_STEPS, tr('catalog.offer_a_pokemon_and_confirm_ae970b', 'Offer a Pokemon and confirm.'),
           tr('catalog.leave_the_host_running_until_the_trade_ends_an_interrup_adc091', 'Leave the host running until the trade ends: an interrupted trade locks trading for a while.')),
-         (queued("--trade-box-record", required=False, help=PLA_OFFER_HELP),
+         (queued("--trade-box-record"),
           Field("--code", tr('catalog.link_code_0b8f86', 'Link code'), "code", default="00000000", help=CODE_HELP),
           FRESH_PID, TRADE_BACK,
           host_seconds("900")),
@@ -440,7 +442,7 @@ PLA = Game("pla", tr('catalog.legends_arceus_260415', 'Legends Arceus'), tr('cat
     Tool("pla-join", tr('catalog.trade_join_8cec7d', 'Trade (Join)'), "bin/pla_join.py",
          tr('catalog.find_your_console_s_trade_search_and_connect_automatica_388352', "Find your console's trade search and connect automatically."),
          (*PLA_STEPS, tr('catalog.start_the_joiner_84b994', 'Start the joiner.'), tr('catalog.offer_and_confirm_once_the_partner_shows_b0b40e', 'Offer and confirm once the partner shows.')),
-         (queued("--offer", required=False, help=PLA_OFFER_HELP),
+         (queued("--offer"),
           Field("--code", tr('catalog.link_code_0b8f86', 'Link code'), "code", default="00000000", help=CODE_HELP),
           FRESH_PID, TRADE_BACK),
          fixed=("--player-name", "{ot}", "--gender", "{gender}",
@@ -620,7 +622,7 @@ def simulated_gift(game: Game, host: Tool, steps: tuple[str, ...]) -> Tool:
             return ()
         if f.kind != "pokemon":
             return f,
-        return (replace(f, identity="#Mystery Gift Pokemon" if not f.flag else f.identity, label=tr('catalog.mystery_gift_pokemon_e3340b', 'Mystery Gift Pokemon'), required=True, events=True, queue=QUEUE,
+        return (replace(f, identity="#Mystery Gift Pokemon" if not f.flag else f.identity, label=tr('catalog.mystery_gift_pokemon_e3340b', 'Mystery Gift Pokemon'), required=True, events=True, random=False, queue=QUEUE,
                         help=tr('catalog.every_pokemon_gift_gave_from_pkhex_s_event_database_add_cbef41', "Every Pokemon gift {value0} gave, from PKHeX's event database. Add up to {value1}; one session trades them in order, each as a fresh legal copy.", value0=game.name, value1=QUEUE)),
                 FOR_RECEIVER)
     return Tool(host.key.replace("-host", "-gift-host"), tr('catalog.mystery_gift_simulated_d9d548', 'Mystery Gift - Simulated'), host.script,

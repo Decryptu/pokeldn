@@ -203,7 +203,8 @@ def test_a_board_unplugged_is_checked_again_when_it_returns(monkeypatch, platfor
     (None, True, True, False),          # still checking: the check holds the port, Start follows it
     (NO_FIRMWARE, True, True, False),   # a warning; a mistaken check must not lock the player out
     (CURRENT, False, True, True),
-    (CURRENT, True, False, True),
+    (CURRENT, True, None, False),       # empty: Start builds a random legal one
+    (CURRENT, True, False, True),       # picked, but its file is gone
 ])
 def test_start_waits_for_keys_and_a_built_offer_but_not_for_a_doubtful_board(tmp_path, monkeypatch, ident,
                                                                               keys, offer, blocked):
@@ -216,7 +217,8 @@ def test_start_waits_for_keys_and_a_built_offer_but_not_for_a_doubtful_board(tmp
     pk = tmp_path / "offer.pk9"
     pk.write_bytes(b"")
     tool = next(t for t in TOOLS if t.key == "sv-host")
-    values = {"--trade-offer": {"file": str(pk)}} if offer else {}
+    values = ({} if offer is None else
+              {"--trade-offer": {"file": str(pk) if offer else str(tmp_path / "gone.pk9")}})
     panel = SimpleNamespace(app=app, tool=tool, games=SimpleNamespace(values=values))
     states = [state for state, *_ in SessionPanel.checklist(panel)]
     assert ("block" in states) == blocked

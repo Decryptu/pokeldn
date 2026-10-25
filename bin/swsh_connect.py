@@ -396,13 +396,13 @@ async def main_async(args):
                   f"[tx]       {pair[0].hex()}\n[tx]       {pair[1].hex()}")
 
 
-        def validated(raw):
+        def validated(raw, fresh=False):
+            # PKHeX renews the PID only where the record stays legal: an event or a PID-correlated
+            # encounter keeps its own.
             if getattr(args, "validate_offer", False):
-                raw = swsh_pokemon.encrypt(gen8.load(pokemon_service.prepare("swsh", raw)))
-            return raw
-
-        def renewed(raw):
-            return swsh_pokemon.encrypt(gen8.fresh_identity(gen8.decrypt(raw)))
+                return swsh_pokemon.encrypt(gen8.load(pokemon_service.prepare("swsh", raw,
+                                                                              fresh=fresh)))
+            return swsh_pokemon.encrypt(gen8.fresh_identity(gen8.decrypt(raw))) if fresh else raw
 
         def queued_offer(n):
             """-> our record for trade n > 1: the n-th --offer-file, else the last again, else the
@@ -412,7 +412,7 @@ async def main_async(args):
                 return validated(swsh_pokemon.encrypt(gen8.load(Path(files[n - 1]).read_bytes())))
             raw = (swsh_pokemon.encrypt(gen8.load(Path(files[-1]).read_bytes())) if files
                    else st["first_pk8"])
-            return validated(renewed(raw) if args.fresh_pid else raw)
+            return validated(raw, fresh=args.fresh_pid)
 
         def next_trade():
             """The console offers from its box after a finished ladder: the next trade.
@@ -1534,9 +1534,7 @@ async def main_async(args):
             if args.offer_slot:
                 at = (args.offer_slot - 1) * swsh_pokemon.SIZE_PARTY
                 raw = payload[at:at + swsh_pokemon.SIZE_PARTY]
-                if args.fresh_pid and not args.offer_file:
-                    raw = renewed(raw)
-                raw = validated(raw)
+                raw = validated(raw, fresh=args.fresh_pid and not args.offer_file)
                 payload = payload[:at] + raw + payload[at + swsh_pokemon.SIZE_PARTY:]
                 st["our_pk8"] = st["first_pk8"] = raw
                 screen.offer("swsh", raw)

@@ -13,6 +13,9 @@ radio firmware for ESP32, ESP32-S3, ESP32-C3 and ESP32-C6; the user supplies `pr
 3. Choose a game and a tool, prepare a Pokemon or a file, follow the console steps and press Start.
    Received Pokemon go to the Settings folder, opened by the button beside Output.
 
+Every trade tool's Pokemon to offer may be left empty: Start has PKHeX build a random legal Pokemon
+of that game for your trainer (`command.prepare`), new at each run.
+
 Mystery Gift tools share one builder (preset, build your own, `.pokegift`, `.wc8` on Sword/Shield).
 Save gift file exports without a board as `.pokegift`, `.wc3` or `.wc8`
 ([Mystery Gift files](gifts.md#desktop-app)).

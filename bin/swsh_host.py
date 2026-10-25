@@ -111,12 +111,11 @@ def offer_record(args, offer_file, renew, slot_record):
         raw = slot_record
     if struct.unpack_from("<I", raw)[0] == 0:
         raise ValueError(f"offer slot {args.offer_slot} is empty; pass --offer-file")
-    if args.fresh_pid or renew:
-        raw = swsh_pokemon.encrypt(gen8.fresh_identity(gen8.decrypt(raw)))
+    fresh = bool(args.fresh_pid or renew)
+    # PKHeX keeps the PID of a record that is legal only with it (an event, a correlated encounter).
     if getattr(args, "validate_offer", False):
-        raw = pokemon_service.prepare("swsh", raw)
-        raw = swsh_pokemon.encrypt(gen8.load(raw))
-    return raw
+        return swsh_pokemon.encrypt(gen8.load(pokemon_service.prepare("swsh", raw, fresh=fresh)))
+    return swsh_pokemon.encrypt(gen8.fresh_identity(gen8.decrypt(raw))) if fresh else raw
 
 
 def prepare_snapshot(source, args, app_data, offer_file=None, renew=False):
