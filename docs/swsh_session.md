@@ -293,6 +293,7 @@ offset `0xB0` therefore sits at application data `0x98`.
 |---|---|
 | a den host's session ("Combat à plusieurs") | game mode 60006, maximum 4 |
 | Y-Comm's browse | game mode 0, flags 0x2, maximum participants 4..4, opened and vacant only, result size 1; it lists a den session by its application data |
+| a Max Lair Invite Others with no Link Code (retail Sword) | one browse at its start: game mode 50000, maximum 4..4, flags 0x712, attribute 2 = `0xfffffffe`, 3 = `0x33d39298`, 4 = `0x253cad29`; with no answer it hosts game mode 50000, maximum 4 |
 | joining a listed raid ("Participer", then "Commencer le combat") | a fresh browse with open ranges, a plaintext keep-alive, then the session request (type 5) sent to the subnet broadcast on ports 49152 to 49155, with no host request before it |
 
 `bin/swsh_host.py --lan` with `--raid-boss`, `--raid-event` or `--lair-legendary` hosts a 4-seat
@@ -301,7 +302,15 @@ emulated Shield and a retail Sword on a Switch 2 over Wi-Fi listed it, joined an
 the console serving ([Which station serves](swsh_raid.md#which-station-serves)).
 `bin/swsh_connect.py --lan` with `--preset raid` or `--preset lair` browses for a 4-seat session of
 scene 60006 or 50000; it joined the den lobby of the emulated Shield and of the retail Sword, and the
-battle started.
+battle started, and joined a retail Sword's adventure, whose rentals were chosen and whose first
+battle loaded.
+
+A browse's attribute criteria are six lists of up to 20 u32 at criteria `0x1A + 0x50 k`, their
+counts as u8 at `0x1FA + k`, and search flag `0x40 << k` turns attribute k on. A Max Lair search
+passes over a session whose attributes do not hold its values. What the three values encode is
+unknown; two searches by one console carried the same values. The LAN host copies the
+values of a search for its own game mode into its session info (`pia_lan.criteria_attributes`); a
+retail Sword then joined `bin/swsh_host.py --lan --lair-legendary` and its adventure started.
 
 ### The Link Code over LAN
 

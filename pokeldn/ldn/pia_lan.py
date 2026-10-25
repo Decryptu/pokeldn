@@ -32,6 +32,15 @@ STATION_INFO_SIZE = 50
 
 SEARCH_MIN_PLAYERS, SEARCH_MAX_PLAYERS, SEARCH_OPENED, SEARCH_VACANT = 0x1, 0x2, 0x4, 0x8
 SEARCH_GAME_MODE, SEARCH_SESSION_TYPE = 0x10, 0x20
+SEARCH_ATTRIBUTE = 0x40      # << k for attribute k, 0 to 5
+ATTRIBUTE_VALUES, ATTRIBUTE_COUNTS = 0x1A, 0x1FA   # six lists of up to 20 u32, then their u8 counts
+
+
+def criteria_attributes(criteria):
+    """-> {k: first value} of the attributes a browse filters on (a Max Lair search sets 2, 3, 4)."""
+    flags = struct.unpack_from(">I", criteria, 0x236)[0]
+    return {k: struct.unpack_from(">I", criteria, ATTRIBUTE_VALUES + k * 0x50)[0] for k in range(6)
+            if flags & SEARCH_ATTRIBUTE << k and criteria[ATTRIBUTE_COUNTS + k]}
 
 
 def constant_id(ip, port):
@@ -512,6 +521,7 @@ class LanHostTransport:
         self.versions = (system_version, application_version, session_type)
         self.quiet = quiet
         self.log = log
+        self.attributes = [0] * 6
         self.network_id = service_variable_id(self.our_ip, our_port)
         self.key_param = None
         self.session_key = None
@@ -528,6 +538,7 @@ class LanHostTransport:
         self._browse = []
         self._station = []
         self._browses = 0
+        self._seen = set()                 # criteria already logged
 
     def bind_host(self, constant, variable, service_variable, location):
         self.host_constant, self.host_variable = constant, variable
@@ -591,7 +602,8 @@ class LanHostTransport:
             self.host_variable, self.host_service, self.key_param or bytes(32), self.stations(),
             max_players=self.max_participants, system_version=self.versions[0],
             application_version=self.versions[1], session_type=self.versions[2],
-            app_data=self.app_data, opened=len(self.participants) + 1 < self.max_participants)
+            app_data=self.app_data, opened=len(self.participants) + 1 < self.max_participants,
+            attributes=self.attributes)
 
     def _on_browse(self, sock):
         data, addr = sock.recvfrom(4096)
@@ -602,9 +614,20 @@ class LanHostTransport:
         except ValueError:
             return
         players = len(self.participants) + 1
-        if not criteria_match(req["criteria"], self.game_mode, players, self.max_participants,
-                              session_type=self.versions[2]):
+        matched = criteria_match(req["criteria"], self.game_mode, players, self.max_participants,
+                                 session_type=self.versions[2])
+        wanted = criteria_attributes(req["criteria"])
+        if req["criteria"] not in self._seen:
+            self._seen.add(req["criteria"])
+            self.log(f"[lan] browse from {addr[0]}: game mode {req['game_mode']}, flags "
+                     f"{req['flags']:#x}, ranges {req['criteria'][:0x12].hex()}, attributes "
+                     f"{ {k: hex(v) for k, v in wanted.items()} }{'' if matched else ', not answered'}")
+        if not matched:
             return
+        # A Max Lair search joins only a session holding the attribute values it names.
+        if req["game_mode"] == self.game_mode:
+            for k, value in wanted.items():
+                self.attributes[k] = value
         plain = open_challenge(self.game_key, self.broadcast, req["challenge"])
         if plain is None:
             self.log(f"[lan] browse from {addr[0]}:{addr[1]} whose challenge does not open with "
@@ -613,10 +636,6 @@ class LanHostTransport:
         c = parse_challenge(req["challenge"])
         if self.key_param is None:
             self.first_request = data
-            attrs = sum(1 for b in req["criteria"][0x1A:0x236] if b)
-            self.log(f"[lan] first browse: game mode {req['game_mode']}, session type "
-                     f"{req['session_type']}, flags {req['flags']:#x}, {attrs} attribute bytes set, "
-                     f"ranges {req['criteria'][:0x12].hex()}")
             # The first valid request keys the session (wiki, Session Key Param).
             self.key_param = os.urandom(16) + c["key"]
             self.session_key = session_key(self.game_key, self.key_param)

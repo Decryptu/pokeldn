@@ -491,6 +491,44 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
          activity="lair", variant=(("role", "join"),)),
 ))
 
+SWSH_LAN_MODE = tr('catalog.in_options_press_l_r_and_the_left_stick_together_the_gam_cba14e', 'In Options, press L, R and the Left Stick together: the game turns LAN mode on.')
+
+
+def swsh_lan(tool: Tool, key: str, name: str, summary: str, steps: tuple) -> Tool:
+    """`tool` over the console's LAN mode: no board, no channel (docs/swsh_session.md, LAN mode)."""
+    return replace(tool, key=key, name=name, summary=summary, steps=(SWSH_LAN_MODE,) + steps,
+                   fields=tuple(f for f in tool.fields if f.flag != "--channel"),
+                   fixed=(("--lan", "auto", "--scans", "60") if tool.script == "bin/swsh_connect.py"
+                          else ("--lan",)) + tool.fixed, doc="swsh_session.md", radio=False,
+                   variant=tool.variant + (("link", "lan"),))
+
+
+_swsh = {t.key: t for t in SWSH.tools}
+SWSH = replace(SWSH, tools=tuple(
+    replace(t, variant=t.variant + (("link", "board"),)) if t.activity in ("max-raid", "lair") else t
+    for t in SWSH.tools) + (
+    swsh_lan(_swsh["swsh-raid-host"], "swsh-lan-raid-host", tr('catalog.max_raid_lan_host_7d21c0', 'Max Raid (LAN Host)'),
+             tr('catalog.host_a_max_raid_a_console_in_lan_mode_joins_over_your_o_4e8a51', 'Host a Max Raid a console in LAN mode joins over your own network, no board.'),
+             (tr('catalog.choose_the_boss_the_pokemon_our_player_brings_and_if_yo_3b8e90', 'Choose the boss, the Pokemon our player brings and, if you like, the rewards.'),
+              tr('catalog.start_the_host_the_console_and_this_computer_share_one__2f6b81', 'Start the host; the console and this computer share one network.'),
+              tr('catalog.y_comm_press_x_to_refresh_choose_pokeldn_s_raid_then_jo_5b1d02', "Y-Comm: press X to refresh, choose POKELDN's raid, then Join and Start Battle."),
+              tr('catalog.press_ready_the_console_runs_the_battle_and_our_pokemon_6f02b3', 'Press Ready: the console runs the battle and our Pokemon fights at your side.'))),
+    swsh_lan(_swsh["swsh-raid-join"], "swsh-lan-raid-join", tr('catalog.max_raid_lan_join_2c96e4', 'Max Raid (LAN Join)'),
+             tr('catalog.join_a_max_raid_a_console_in_lan_mode_hosts_from_a_den__b07d3a', 'Join a Max Raid a console in LAN mode hosts from a den, over your own network, no board.'),
+             (tr('catalog.at_a_den_with_a_beam_press_a_and_choose_invite_others_8e15f7', 'At a den with a beam, press A and choose Invite Others.'),
+              tr('catalog.choose_the_pokemon_our_player_brings_and_its_move_then_6a70f4', 'Choose the Pokemon our player brings and its move, then start the joiner.'),
+              tr('catalog.pokeldn_joins_the_lobby_and_readies_choose_ready_for_ba_eb2a1f', 'POKELDN joins the lobby and readies: choose Ready for battle! on the console.'))),
+    swsh_lan(_swsh["swsh-lair-raid-host"], "swsh-lan-lair-host", tr('catalog.dynamax_adventure_lan_host_91f3a7', 'Dynamax Adventure (LAN Host)'),
+             tr('catalog.host_a_dynamax_adventure_a_console_in_lan_mode_joins_ov_c6e2d9', 'Host a Dynamax Adventure a console in LAN mode joins over your own network, no board.'),
+             (tr('catalog.choose_the_legendary_then_start_the_host_5be0c4', 'Choose the legendary, then start the host.'),
+              tr('catalog.at_the_max_lair_talk_to_the_receptionist_with_no_link_c_5e29d1', 'At the Max Lair, talk to the receptionist, with no Link Code, and choose Invite Others.'),
+              tr('catalog.press_ready_once_pokeldn_is_in_the_lobby_80d6b3', 'Press Ready once POKELDN is in the lobby.'),
+              tr('catalog.pokeldn_leaves_once_the_adventure_starts_a_computer_par_2c7f05', 'POKELDN leaves once the adventure starts: a computer partner takes its seat and the adventure goes on.'))),
+    swsh_lan(_swsh["swsh-lair-raid-join"], "swsh-lan-lair-join", tr('catalog.dynamax_adventure_lan_join_5a0f82', 'Dynamax Adventure (LAN Join)'),
+             tr('catalog.join_a_dynamax_adventure_a_console_in_lan_mode_hosts_ov_3d7b16', 'Join a Dynamax Adventure a console in LAN mode hosts, over your own network, no board.'),
+             _swsh["swsh-lair-raid-join"].steps),
+))
+
 BDSP_ROOM = tr('catalog.pokemon_center_2f_left_attendant_plain_yes_no_password__35cfcc', 'Pokemon Center 2F, left attendant, plain Yes (no password, not the group option).')
 
 BDSP = Game("bdsp", tr('catalog.brilliant_diamond_shining_pearl_f30922', 'Brilliant Diamond & Shining Pearl'), tr('catalog.bdsp_1358ba', 'BDSP'), "bdsp.md", (
