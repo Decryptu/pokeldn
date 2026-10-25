@@ -259,7 +259,8 @@ class LanSocket(_Readable):
         else:
             self._socks.append(self._bind("", BROADCAST_PORT))
         self._stop = False
-        threading.Thread(target=self._pump, daemon=True).start()
+        self._thread = threading.Thread(target=self._pump, daemon=True)
+        self._thread.start()
 
     @staticmethod
     def _bind(ip, port):
@@ -303,6 +304,9 @@ class LanSocket(_Readable):
 
     def _detach(self):
         self._stop = True
+        thread = getattr(self, "_thread", None)
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(1.0)            # as LanHostTransport.stop
         for s in self._socks:
             s.close()
 
@@ -559,13 +563,18 @@ class LanHostTransport:
         self._browse = self._binds(BROWSE_PORT)
         self._station = [self._bind(self.our_ip if self.loopback else "", self.our_port)]
         self._station += self._binds(BROADCAST_PORT)
-        threading.Thread(target=self._serve, daemon=True).start()
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
         self.log(f"[lan] session {self.network_id:#010x} on {self.our_ip}:{self.our_port}, "
                  f"answering browse requests on {BROWSE_PORT} (broadcast {self.broadcast})")
         return self
 
     def stop(self):
+        # Trap: closed under this thread's live select(), the next transport on Linux missed a host
+        # request (3 of 8 runs of tests/test_swsh_lan.py's browse then seat tests); join first.
         self._stop.set()
+        if getattr(self, "_thread", None) is not None and self._thread is not threading.current_thread():
+            self._thread.join(1.0)
         for s in self._browse + self._station:
             s.close()
 
