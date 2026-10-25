@@ -81,6 +81,23 @@ live, and back when widened; a desktop window keeps its title bar row above the 
 Below 760 points wide, pages sit in a bottom tab bar and panels show one at a time on a switcher
 (Games, Options, Session). Android and iOS have no Control or Update page.
 
+## The Games page
+
+A game's list shows one row per activity: Trade, Mystery Gift, then each raid kind and the Union
+Circle. The row's ways of running it are buttons above its options, one line per choice:
+
+| choice | buttons | shown on |
+|---|---|---|
+| Your console | Joins (pokeldn hosts), Hosts (pokeldn joins) | Trade on a board or LAN, raids, Dynamax Adventure |
+| Connection | Board, Wi-Fi with no board, Online | Trade; Wi-Fi only on Sword/Shield |
+| Mode | Quests, Encounters | Union Circle |
+
+Each combination is one catalog tool (`pokeldn/app/catalog.py`, a `Tool`'s `activity` and
+`variant`), so a run, its saved fields and `python -m pokeldn TOOL` keep the tool's key. A choice
+with one option is not shown: an online trade has no console choice. Changing one choice keeps the
+others last picked on that row. A plugin tool joins a row the same way
+([A tool's row](plugins.md#a-tools-row-112)).
+
 ## App language
 
 Settings, App language lists English and installed language packs

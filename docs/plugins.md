@@ -111,6 +111,30 @@ def register(api):
     ))
 ```
 
+### A tool's row (1.12)
+
+A game's list shows one row per activity ([The Games page](gui.md#the-games-page)). A tool with no
+`activity` is a row of its own. A tool with `activity` set joins that row and is shown by its
+`variant` buttons:
+
+```python
+Tool("my-lan-trade", "Trade over my LAN", "lan.py", "Trades over this computer's network.", (),
+     activity="trade", variant=(("role", "host"), ("link", "lan")))
+```
+
+| `activity` | the row |
+|---|---|
+| `trade`, `gift`, `max-raid`, `lair`, `tera-raid`, `circle` | Trade, Mystery Gift, Max Raid, Dynamax Adventure, Tera Raid, Union Circle |
+
+| axis | options | buttons |
+|---|---|---|
+| `role` | `host`, `join` | Your console: Joins (pokeldn hosts), Hosts (pokeldn joins) |
+| `link` | `board`, `lan`, `online` | Connection: Board, Wi-Fi with no board, Online |
+| `mode` | `quests`, `encounters` | Mode |
+
+`pokeldn.app.catalog.AXES` and `ACTIVITIES` are the lists. `add_tool` refuses an unknown activity or
+option, and a variant another tool of that game's row already has: the app could never show it.
+
 ### A tool's script
 
 The app imports the script for `build_parser()` (the Advanced tab), then runs it as a child process
@@ -428,6 +452,7 @@ major still served is listed in `DEPRECATED` with its last release; one dropped 
 | 1.9 | language-pack messages, templates, terms, tool help, documents and font preference |
 | 1.10 | `add_offer_edit` |
 | 1.11 | FireRed/LeafGreen RNG: `lcg`, `rng_countdown.mon_from`, `scan`, `buffer_script.read_rng_trace` |
+| 1.12 | a `Tool`'s `activity` and `variant` ([A tool's row](#a-tools-row-112)) |
 
 ## The API, version 1
 
@@ -439,7 +464,7 @@ major still served is listed in `DEPRECATED` with its last release; one dropped 
 | `api.add_battle_server(game, name, factory, label="")` | a raid battle server (1.6) |
 | `api.add_offer_edit(game, edit, label="")` | an edit to every offer of a built-in launcher, before PKHeX's check (1.10, [Offer edits](#offer-edits-110)) |
 | `api.folder` | the plugin's folder, or None for a package |
-| `api.version`, `api.level` | the app's API, `1` and `10` |
+| `api.version`, `api.level` | the app's API, `1` and `12` |
 | `api.data` | the kept data folder (1.1) |
 | `pokeldn.plugins.data_folder(plugin_id)` | the same from a script (1.1) |
 | `api.library`, `pokeldn.plugins.library_folder(plugin_id)` | the library folder (1.7, [A library](#a-library-17)) |

@@ -508,6 +508,13 @@ def segmented(options: list[tuple[str, str, str]], value: str, on_change, wrap: 
     return row
 
 
+def choice_row(label: str, options: list[tuple[str, str, str]], value: str, on_change) -> ft.Column:
+    """A labelled capsule switcher on a card: one of a few ways to run the same thing (Joins / Hosts)."""
+    track = ft.Container(segmented(options, value, on_change, wrap=True), bgcolor=FIELD,
+                         border_radius=TOOLBAR_ITEM / 2 + 3, padding=3)
+    return labeled_control(label, ft.Row([track], wrap=True))
+
+
 def fade(scrollable: ft.ScrollableControl, size: float = 24) -> ft.ShaderMask:
     """The scrollable, its top and bottom edges fading out over size px while content lies beyond them."""
     edges = {"height": 0.0, "top": False, "bottom": not getattr(scrollable, "auto_scroll", False)}

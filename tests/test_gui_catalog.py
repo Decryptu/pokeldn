@@ -2,7 +2,7 @@
 flag renamed in bin/ fails here instead of in a user's session."""
 import pytest
 
-from pokeldn.app.catalog import GAMES
+from pokeldn.app.catalog import GAMES, activities, check_variant
 from pokeldn.app.command import accepted, build, missing_offer
 from pokeldn.app.introspect import parser_of
 from pokeldn.app.settings import Settings
@@ -263,21 +263,27 @@ def test_the_other_switch_games_simulate_their_mystery_gifts_through_their_trade
     assert missing_offer(gift, {}) == "Choose the Mystery Gift Pokemon first."
 
 
-def test_every_game_lists_its_tools_in_one_order():
-    """Trade (Host), Trade (Join), Trade (Online), Trade (LAN Host), Trade (LAN Join), Mystery Gift, then
-    each raid kind's host and join together, then the Union Circle."""
-    def rank(key, raids):
-        kind = key.split("-", 1)[1]
-        if "raid-" in kind:
-            feature, role = kind.rsplit("raid-", 1)
-            raids.setdefault(feature, len(raids))
-            return 5, raids[feature], {"host": 0, "join": 1}[role]
-        for part in ("circle", "online", "lan", "join", "gift", "host"):
-            if part in kind:
-                role = 0 if part == "lan" and kind.endswith("-host") else 1 if part == "lan" else 0
-                return {"host": 0, "join": 1, "online": 2, "lan": 3, "gift": 4, "circle": 6}[part], 0, role
-        raise AssertionError(key)
+def test_every_game_lists_its_activities_in_one_order():
+    """Trade, Mystery Gift, then each raid kind, then the Union Circle: one list row each."""
+    order = ["trade", "gift", "max-raid", "lair", "tera-raid", "circle"]
     for game in GAMES:
-        raids = {}
-        ranks = [rank(t.key, raids) for t in game.tools if t.key.startswith(game.key + "-")]
-        assert ranks == sorted(ranks), (game.key, [t.key for t in game.tools])
+        rows = [a.key for a in activities(game)]
+        assert rows[:2] == ["trade", "gift"] and rows == sorted(rows, key=order.index), (game.key, rows)
+
+
+@pytest.mark.parametrize("game", GAMES, ids=[g.key for g in GAMES])
+def test_every_tool_is_reached_by_its_buttons(game):
+    """Clicking a tool's own options from any other tool of its row shows it: no two tools share a
+    variant and none is unreachable."""
+    for activity in activities(game):
+        for tool in activity.tools:
+            check_variant(tool)
+            assert tool.activity
+            for shown in activity.tools:
+                chosen = dict(shown.variant)
+                for _ in tool.variant:    # an axis can show only once another is picked
+                    for axis, option in tool.variant:
+                        if any(a == axis for a, _, _ in activity.axes(shown)):
+                            shown = activity.pick(chosen, axis, option)
+                            chosen.update(shown.variant)
+                assert shown is tool, (tool.key, shown.key)

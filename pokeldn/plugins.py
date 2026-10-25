@@ -31,7 +31,7 @@ def __getattr__(name):
 
 # docs/plugins.md, Versions: a removal or a change of meaning raises the major, an addition the level.
 API_VERSION = 1                    # the major this pokeldn serves
-API_LEVEL = 11                     # 1.11 FireRed/LeafGreen RNG; docs/plugins.md, Versions
+API_LEVEL = 12                     # 1.12 a tool's activity and variant; docs/plugins.md, Versions
 API_OLDEST = 1                     # an older major is refused
 DEPRECATED: dict[int, str] = {}    # a served major due for removal -> the release that drops it
 ENTRY_POINT_GROUP = "pokeldn.plugins"
@@ -117,9 +117,11 @@ class API:
             return script
         return str(self.folder / script)
 
-    def _tool(self, tool: Tool) -> Tool:
+    def _tool(self, tool: Tool, siblings: tuple[Tool, ...] = ()) -> Tool:
         if tool.key in _builtin_tool_keys() or any(t.key == tool.key for t in tools_added()):
             raise ValueError(f"tool key {tool.key!r} is already taken")
+        from pokeldn.app.catalog import check_variant
+        check_variant(tool, siblings)
         return replace(tool, script=self._script(tool.script))
 
     def add_tool(self, game: str, tool: Tool) -> None:
@@ -128,13 +130,16 @@ class API:
         keys = {g.key for g in _builtin_games()} | {g.key for p in _loaded.values() for g in p.games}
         if game not in keys:
             raise ValueError(f"no game {game!r}")
-        self.plugin.tools.append((game, self._tool(tool)))
+        siblings = (*(t for g in (*_builtin_games(), *(g for p in _loaded.values() for g in p.games))
+                      if g.key == game for t in g.tools),
+                    *(t for p in (*_loaded.values(), self.plugin) for k, t in p.tools if k == game))
+        self.plugin.tools.append((game, self._tool(tool, siblings)))
 
     def add_game(self, game: Game, icon: str = "") -> None:
         """Adds a new game section with its own tools. `icon` is an image file in the plugin."""
         if game.key in {g.key for g in _builtin_games()} | {g.key for p in _loaded.values() for g in p.games}:
             raise ValueError(f"game key {game.key!r} is already taken")
-        tools = tuple(self._tool(t) for t in game.tools)
+        tools = tuple(self._tool(t, game.tools[:n]) for n, t in enumerate(game.tools))
         self.plugin.games.append(replace(game, tools=tools, icon=self._script(icon) if icon else ""))
 
     def add_radio(self, scheme: str, install: Callable, label: str = "") -> None:

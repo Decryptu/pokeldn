@@ -173,10 +173,14 @@ def test_a_plugin_in_the_data_folder_loads_only_once_enabled(isolated):
      f"needs plugin API {plugins.API_VERSION}.{plugins.API_LEVEL + 1}"),
     (TOOL_PLUGIN.replace('"example-echo"', '"frlg-trade-host"'), 1, "already taken"),
     (TOOL_PLUGIN.replace('add_tool("frlg"', 'add_tool("snes"'), 1, "no game 'snes'"),
+    (TOOL_PLUGIN.replace('("Nothing to press.",),', '("Nothing to press.",), activity="battle",'), 1,
+     "no activity 'battle'"),
+    (TOOL_PLUGIN.replace('("Nothing to press.",),', '("Nothing to press.",), activity="trade", variant=(("link", "online"),),'),
+     1, "same variant"),
     (RADIO_PLUGIN.replace('"fake"', '"esp32"'), 1, "already taken"),
     (RADIO_PLUGIN + "\n    raise ValueError('half done')\n", 1, "half done"),
     (TOOL_PLUGIN + "\n    raise SystemExit(3)\n", 1, "SystemExit: 3"),
-], ids=["api-major", "api-level", "tool-key-taken", "unknown-game", "radio-taken", "raises-after-a-radio", "exits"])
+], ids=["api-major", "api-level", "tool-key-taken", "unknown-game", "unknown-activity", "variant-taken", "radio-taken", "raises-after-a-radio", "exits"])
 def test_a_broken_plugin_keeps_its_error_and_adds_nothing(isolated, tmp_path, monkeypatch, source, api, error):
     broken = make(tmp_path, "broken", source, api=api)
     good = make(tmp_path, "good", TOOL_PLUGIN.replace("example-echo", "good-echo"))
@@ -946,3 +950,13 @@ def test_the_library_lists_names_and_copies_files_and_survives_the_plugins_remov
     (kept / "backup.nsp").write_text("hours of work")
     plugin_store.remove("test-kit", data=True)
     assert (kept / "backup.nsp").read_text() == "hours of work"
+
+
+def test_a_plugin_tool_with_a_new_variant_joins_its_activity_row(isolated, tmp_path, monkeypatch):
+    from pokeldn.app.catalog import activities
+    lan = make(tmp_path, "lan", TOOL_PLUGIN.replace('("Nothing to press.",),',
+                                                    '("Nothing to press.",), activity="trade", variant=(("role", "host"), ("link", "lan")),'))
+    monkeypatch.setenv("POKELDN_PLUGINS", str(lan))
+    assert plugins.load()[0].loaded
+    trade = next(a for a in activities(next(g for g in plugins.games() if g.key == "frlg")) if a.key == "trade")
+    assert trade.pick({"role": "host"}, "link", "lan").key == "example-echo"

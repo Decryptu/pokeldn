@@ -14,7 +14,7 @@ from pokeldn.swsh import raid_event as swsh_raid_event
 from pokeldn.sv import raid_event as raid_events
 from gui import theme as t
 from pokeldn import plugins
-from pokeldn.app.catalog import Field, Game, Tool
+from pokeldn.app.catalog import Field, Game, Tool, activities, activity_of
 from pokeldn.app.introspect import flags_of
 from pokeldn.app.paths import SESSION
 from gui.views.event_gifts import EventGiftPicker
@@ -42,27 +42,17 @@ RAID_CONTEXT = {"--raid-version": ("version", "violet"), "--raid-map": ("map_nam
 ADVANCED_NOTE = (tr('games.the_tested_defaults_work_for_most_players_change_these__1815f2', 'The tested defaults work for most players. Change these only when a guide or a bug report asks you to. A value set here overrides the Basic tab.'))
 
 
-def tool_icon(tool: Tool):
-    if plugins.owner(tool.key):
-        return "plug"
-    if tool.key.endswith("-online"):
-        return "globe"
-    if "circle" in tool.key:
-        return "users"
-    # "Trade (Host)" and "Mystery Gift - Simulated" take their kind's icon.
-    return "gift" if "gift" in tool.key else "diamond-gem" if "raid" in tool.key else "arrows-horizontal"
-
-
 def tool_role(tool: Tool) -> str:
     """Who looks for whom, said from the console's side; a plugin's tool names its plugin."""
     if owner := plugins.owner(tool.key):
         return tr('games.plugin_c37b59', 'Plugin: {value0}', value0=owner.name)
-    if tool.key.endswith("-host"):
-        return tr('games.your_console_joins_pokeldn_269e96', 'Your console joins pokeldn')
-    if tool.key.endswith("-join"):
-        return tr('games.pokeldn_joins_your_console_7e1f2f', 'pokeldn joins your console')
-    if tool.key.endswith("-online"):
+    variant = dict(tool.variant)
+    if variant.get("link") == "online":
         return tr('games.your_console_joins_pokeldn_which_reaches_your_partner_0a41b2', 'Your console joins pokeldn, which reaches your partner')
+    if variant.get("role") == "host":
+        return tr('games.your_console_joins_pokeldn_269e96', 'Your console joins pokeldn')
+    if variant.get("role") == "join":
+        return tr('games.pokeldn_joins_your_console_7e1f2f', 'pokeldn joins your console')
     return ""
 
 
@@ -94,6 +84,8 @@ class GamesView:
         self.generation = plugins.generation
         self.game: Game = self.catalog[0]
         self.tool: Tool = self.game.tools[0]
+        self.last: dict[tuple[str, str], str] = {}   # (game, activity) -> the key of the tool last shown there
+        self.chosen: dict[tuple[str, str], dict] = {}   # (game, activity) -> each axis's option last shown there
         self.tab = "basic"
         self.search = ""
         self.sprites: dict[str, Sprite] = {}   # a species field's key -> the sprite on its card
@@ -113,10 +105,11 @@ class GamesView:
         forget_unremembered(app.settings.tool_values, self.catalog)
         self.tree = ft.ListView(spacing=2, padding=ft.Padding(8, 8, 8, 8), expand=True)
         self.summary = t.text("", 12, t.MUTED, text_align=ft.TextAlign.CENTER)
+        self.variants = ft.Column(spacing=t.GAP)    # render_variants
         self.cards = ft.Column(spacing=t.GAP)
         self.run_panel = ft.Column(spacing=t.GAP, visible=False)    # show_run_cards
         # The cards start below the toolbar and scroll under its glass.
-        self.body = ft.ListView([ft.Container(self.summary, alignment=ft.Alignment.CENTER,
+        self.body = ft.ListView([self.variants, ft.Container(self.summary, alignment=ft.Alignment.CENTER,
                                               padding=ft.Padding(12, 0, 12, 4)), self.run_panel, self.cards],
                                 spacing=t.GAP, padding=ft.Padding(0, 62, 0, 24), expand=True)
         self.tabs = ft.Container()
@@ -301,10 +294,14 @@ class GamesView:
         if tool is not self.tool:
             self.tab, self.search = "basic", ""
         self.game, self.tool = game, tool
+        row = (game.key, activity_of(game, tool).key)
+        self.last[row] = tool.key
+        self.chosen.setdefault(row, {}).update(tool.variant)
         self.summary.value = tool.summary
         self.tabs.content = t.segmented([("basic", tr('games.basic_0e35f6', 'Basic'), "sliders-horizontal"),
                                           ("all", tr('games.advanced_9f088d', 'Advanced'), "bulletlist")], self.tab, self._tab)
         self.render_tree()
+        self.render_variants()
         self.render_body()
         self.session.show(tool)
         if update:
@@ -328,19 +325,23 @@ class GamesView:
             ], spacing=10), padding=ft.Padding(8, 6, 8, 6), border_radius=12,
                 on_click=lambda e, g=game: self.select(g, g.tools[0])))
             if open_:
-                for tool in game.tools:
-                    active = tool is self.tool
-                    name = t.text(tool.name, 13, t.TEXT if active else (t.FAINT if tool.unavailable else t.MUTED))
-                    role = tool_role(tool)
+                for activity in activities(game):
+                    active = self.tool in activity.tools
+                    soon = all(x.unavailable for x in activity.tools)
+                    name = t.text(activity.name, 13, t.TEXT if active else (t.FAINT if soon else t.MUTED))
+                    role = tool_role(activity.tools[0]) if len(activity.tools) == 1 else ""
+                    shown = next((x for x in activity.tools if x.key == self.last.get((game.key, activity.key))),
+                                 activity.tools[0])
                     rows.append(ft.Container(ft.Row([
-                        t.pixel_icon(tool_icon(tool), color=t.BLUE if active else t.FAINT),
+                        t.pixel_icon(activity.icon, color=t.BLUE if active else t.FAINT),
                         ft.Column([name, t.text(role, 11, t.FAINT, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS)],
                                   spacing=0, expand=True) if role else
                         ft.Container(name, expand=True),
-                        t.badge(tr('games.soon_cf0ee3', 'Soon'), t.FAINT) if tool.unavailable else ft.Container(),
-                    ], spacing=10), padding=ft.Padding(24, 7, 8, 7), border_radius=12, tooltip=tool.summary,
+                        t.badge(tr('games.soon_cf0ee3', 'Soon'), t.FAINT) if soon else ft.Container(),
+                    ], spacing=10), padding=ft.Padding(24, 7, 8, 7), border_radius=12,
+                        tooltip=shown.summary if len(activity.tools) == 1 else None,
                         bgcolor=t.SELECTED if active else None,
-                        on_click=lambda e, g=game, x=tool: self.pick(g, x)))
+                        on_click=lambda e, g=game, x=shown: self.pick(g, x)))
                 rows.append(ft.Container(height=6))
         self.tree.controls = rows
 
@@ -357,6 +358,16 @@ class GamesView:
                 self.run_panel.update()
             except RuntimeError:    # not on the page: the next render_body draws it
                 pass
+
+    def render_variants(self) -> None:
+        """A row of buttons for each choice the shown tool's activity offers: who hosts, the connection."""
+        activity = activity_of(self.game, self.tool)
+        rows = [t.choice_row(axis.label, list(options), dict(self.tool.variant)[name],
+                             lambda option, a=name: self.select(self.game, activity.pick(
+                                 self.chosen[(self.game.key, activity.key)], a, option)))
+                for name, axis, options in activity.axes(self.tool)]
+        self.variants.controls = [t.card_box(ft.Column(rows, spacing=12, tight=True))] if rows else []
+        self.variants.visible = bool(rows)
 
     def render_body(self) -> None:
         self.raid_partners = self.reward_picker = None

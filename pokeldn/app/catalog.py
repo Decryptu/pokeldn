@@ -74,6 +74,8 @@ class Tool:
     doc: str = ""
     unavailable: str = ""         # why the tool cannot run yet; it is shown greyed out
     radio: bool = True            # False: it runs over this computer's own network, no board, no keys
+    activity: str = ""            # an ACTIVITIES key: the one list row it shares; empty, a row of its own
+    variant: tuple[tuple[str, str], ...] = ()   # (AXES key, option) pairs telling it from its row's others
 
 
 @dataclass(frozen=True)
@@ -84,6 +86,81 @@ class Game:
     doc: str
     tools: tuple[Tool, ...]
     icon: str = ""                # an image file; empty: the app's games/<key>.png
+
+
+@dataclass(frozen=True)
+class Axis:
+    label: str
+    options: tuple[tuple[str, str, str], ...]   # (key, label, icon) in the order the buttons show
+
+
+# What tells an activity's tools apart, shown as one row of buttons each. "host" is pokeldn hosting.
+AXES = {
+    "role": Axis(tr('catalog.axis_role', 'Your console'), (
+        ("host", tr('catalog.axis_role_host', 'Joins'), "search"),
+        ("join", tr('catalog.axis_role_join', 'Hosts'), "home"))),
+    "link": Axis(tr('catalog.axis_link', 'Connection'), (
+        ("board", tr('catalog.axis_link_board', 'Board'), "radio"),
+        ("lan", tr('catalog.axis_link_lan', 'Wi-Fi, no board'), "wifi"),
+        ("online", tr('catalog.axis_link_online', 'Online'), "globe"))),
+    "mode": Axis(tr('catalog.axis_mode', 'Mode'), (
+        ("quests", tr('catalog.axis_mode_quests', 'Quests'), "star"),
+        ("encounters", tr('catalog.axis_mode_encounters', 'Encounters'), "sparkles"))),
+}
+ACTIVITIES = {    # key -> (name, icon)
+    "trade": (tr('catalog.activity_trade', 'Trade'), "arrows-horizontal"),
+    "gift": (tr('catalog.mystery_gift_68b50f', 'Mystery Gift'), "gift"),
+    "max-raid": (tr('catalog.activity_max_raid', 'Max Raid'), "diamond-gem"),
+    "lair": (tr('catalog.activity_lair', 'Dynamax Adventure'), "diamond-gem"),
+    "tera-raid": (tr('catalog.activity_tera_raid', 'Tera Raid'), "diamond-gem"),
+    "circle": (tr('catalog.activity_circle', 'Union Circle'), "users"),
+}
+
+
+@dataclass(frozen=True)
+class Activity:
+    """One row of a game's list: the tools that do one thing, told apart by their variants."""
+    key: str
+    name: str
+    icon: str
+    tools: tuple[Tool, ...]
+
+    def axes(self, tool: Tool) -> list[tuple[str, Axis, tuple[tuple[str, str, str], ...]]]:
+        """-> (axis key, axis, options) for each axis of `tool`'s variant the row offers a choice on."""
+        offered = {pair for t in self.tools for pair in t.variant}
+        rows = [(axis, AXES[axis], tuple(o for o in AXES[axis].options if (axis, o[0]) in offered))
+                for axis, _ in tool.variant]
+        return [row for row in rows if len(row[2]) > 1]
+
+    def pick(self, chosen: dict[str, str], axis: str, option: str) -> Tool:
+        """-> the row's first tool with `option` on `axis` that keeps the most of the other `chosen` options."""
+        return max((t for t in self.tools if (axis, option) in t.variant),
+                   key=lambda t: sum(chosen.get(a) == o for a, o in t.variant))
+
+
+def activities(game: Game) -> tuple[Activity, ...]:
+    """`game`'s list rows, in the order of their first tools; a tool with no activity is a row alone."""
+    rows: dict[tuple[str, str], list[Tool]] = {}
+    for tool in game.tools:
+        rows.setdefault((tool.activity, "" if tool.activity else tool.key), []).append(tool)
+    return tuple(Activity(activity or own, *(ACTIVITIES[activity] if activity else (tools[0].name, "plug")),
+                          tuple(tools)) for (activity, own), tools in rows.items())
+
+
+def activity_of(game: Game, tool: Tool) -> Activity:
+    return next(a for a in activities(game) if tool in a.tools)
+
+
+def check_variant(tool: Tool, siblings: tuple[Tool, ...] = ()) -> None:
+    """Raises ValueError for an activity or a variant option the app has no row or button for, or a
+    variant one of `siblings`, the other tools of its game, already shows in that row."""
+    if tool.activity and tool.activity not in ACTIVITIES:
+        raise ValueError(f"{tool.key}: no activity {tool.activity!r}")
+    for axis, option in tool.variant:
+        if axis not in AXES or option not in {o[0] for o in AXES[axis].options}:
+            raise ValueError(f"{tool.key}: no variant {axis}={option!r}")
+    if tool.activity and any(t.activity == tool.activity and set(t.variant) == set(tool.variant) for t in siblings):
+        raise ValueError(f"{tool.key}: another {tool.activity} tool has the same variant")
 
 
 VERSIONS = (("firered", tr('catalog.firered_7d9d1b', 'FireRed')), ("leafgreen", tr('catalog.leafgreen_578f94', 'LeafGreen')))
@@ -171,7 +248,8 @@ def online(host: Tool, steps: tuple[str, ...], code: Field) -> Tool:
                 (code,) + kept + ((host_seconds("1800", tr('catalog.leave_time_to_find_a_partner_and_trade_aba8cd', 'Leave time to find a partner and trade.')),)
                                   if any(f.flag == "--seconds" for f in host.fields)
                                   or "--seconds" in host.fixed else ()),
-                fixed=without(host.fixed, "--seconds") + ("--online",), doc="online.md")
+                fixed=without(host.fixed, "--seconds") + ("--online",), doc="online.md",
+                activity="trade", variant=(("link", "online"),))
 
 
 FRLG_PATH = tr('catalog.pokemon_center_2f_third_attendant_direct_corner_trade_c_2e7181', 'Pokemon Center 2F, third attendant, Direct Corner, Trade Center')
@@ -192,7 +270,8 @@ FRLG = Game("frlg", tr('catalog.firered_leafgreen_2b757f', 'FireRed & LeafGreen'
           Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="11", choices=CHANNELS, help=CHANNEL_HELP, hidden=True)),
          fixed=("--live", "--phy", "auto", "--slot", "0", "--ot", "{ot}", "--id", "{tid}:{sid}",
                 "--out", "{received}/frlg-{stamp}.pk3"),
-         doc="frlg_link.md"),
+         doc="frlg_link.md",
+         activity="trade", variant=(("role", "host"), ("link", "board"))),
     Tool("frlg-trade-join", tr('catalog.trade_join_8cec7d', 'Trade (Join)'), "bin/frlg_trade_join.py",
          tr('catalog.join_a_trade_group_the_console_leads_a29709', 'Join a trade group the console leads.'),
          (tr('catalog.start_the_joiner_first_it_scans_until_the_console_appea_c11e9c', 'Start the joiner first: it scans until the console appears.'),
@@ -202,7 +281,8 @@ FRLG = Game("frlg", tr('catalog.firered_leafgreen_2b757f', 'FireRed & LeafGreen'
          (queued(count="--trades"), TRADE_BACK),
          fixed=("--live", "--phy", "auto", "--slot", "0", "--ot", "{ot}", "--id", "{tid}:{sid}",
                 "--out", "{received}/frlg-{stamp}.pk3"),
-         doc="frlg_link.md"),
+         doc="frlg_link.md",
+         activity="trade", variant=(("role", "join"), ("link", "board"))),
     Tool("frlg-gift", tr('catalog.mystery_gift_68b50f', 'Mystery Gift'), "bin/frlg_mg_host.py",
          tr('catalog.send_pokemon_items_or_game_boosts_back_up_or_restore_yo_d6ff78', 'Send Pokemon, items or game boosts, back up or restore your save, or read your trainer IDs through Mystery Gift.'),
          (tr('catalog.title_screen_mystery_gift_wonder_cards_friend_for_news__4fd567', 'Title screen: Mystery Gift, Wonder Cards, Friend. For news: the second entry, Wonder News.'),
@@ -220,7 +300,8 @@ FRLG = Game("frlg", tr('catalog.firered_leafgreen_2b757f', 'FireRed & LeafGreen'
           Field("--save-to-board", tr('catalog.keep_it_on_the_board_a36969', 'Keep it on the board'), "switch",
                 help=tr('catalog.start_saves_the_gift_on_the_board_and_stops_unplugged_a_1d7482', 'Start saves the gift on the board and stops. Unplugged and powered from any USB charger, the board then hosts it for every FireRed and LeafGreen that joins, with no computer. It stops when the app opens it again.'))),
          fixed=("--live", "--ot", "{ot}", "--id", "{tid}:{sid}", "--dump-file",
-                "{received}/frlg-dump-{stamp}.bin"), doc="frlg_gift.md"),
+                "{received}/frlg-dump-{stamp}.bin"), doc="frlg_gift.md",
+         activity="gift"),
 ))
 
 RSE_VERSIONS = (("emerald", tr('catalog.emerald', 'Emerald')), ("ruby", tr('catalog.ruby', 'Ruby')),
@@ -261,7 +342,8 @@ LGPE = Game("lgpe", tr('catalog.let_s_go_pikachu_eevee_188f2e', "Let's Go Pikach
           FRESH_PID, TRADE_BACK,
           host_seconds("1200", tr('catalog.a_trade_under_way_when_it_runs_out_is_finished_first_5f61a0', 'A trade under way when it runs out is finished first.'))),
          fixed=("--first", "echo", "--trainer-name", "{ot}", "--our-trainer", "{tid}:{sid}",
-                "--received", "{received}/lgpe-{stamp}.pb7"), doc="lgpe.md"),
+                "--received", "{received}/lgpe-{stamp}.pb7"), doc="lgpe.md",
+         activity="trade", variant=(("role", "host"), ("link", "board"))),
     Tool("lgpe-join", tr('catalog.trade_join_8cec7d', 'Trade (Join)'), "bin/lgpe_join.py",
          tr('catalog.join_the_console_s_trade_search_2e2f10', "Join the console's trade search."),
          (tr('catalog.start_the_joiner_it_scans_for_up_to_five_minutes_9d2ad3', 'Start the joiner: it scans for up to five minutes.'), LGPE_STEPS,
@@ -271,7 +353,8 @@ LGPE = Game("lgpe", tr('catalog.let_s_go_pikachu_eevee_188f2e', "Let's Go Pikach
                 "--ack-peer-clock", "--ack-re-announce", "--facts", "lgpe_net_facts.json",
                 "--trainer-name", "{ot}", "--our-trainer", "{tid}:{sid}",
                 "--received", "{received}/lgpe-{stamp}.pb7"),
-         doc="lgpe_session.md"),
+         doc="lgpe_session.md",
+         activity="trade", variant=(("role", "join"), ("link", "board"))),
 ))
 
 SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('catalog.swsh_dc0b3b', 'SwSh'), "swsh.md", (
@@ -286,7 +369,8 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           host_seconds("900")),
          fixed=("--player-name", "{ot}", "--trainer-name", "{ot}",
                 "--trainer-tid", "{tid}", "--trainer-sid", "{sid}",
-                "--received", "{received}/swsh-{stamp}.pk8"), doc="swsh_trade.md"),
+                "--received", "{received}/swsh-{stamp}.pk8"), doc="swsh_trade.md",
+         activity="trade", variant=(("role", "host"), ("link", "board"))),
     Tool("swsh-join", tr('catalog.trade_join_8cec7d', 'Trade (Join)'), "bin/swsh_connect.py", tr('catalog.join_the_console_s_link_trade_search_52ee13', "Join the console's Link Trade search."),
          (tr('catalog.y_comm_link_trade_local_communication_no_code_press_a_o_db5138', 'Y-Comm, Link Trade, local communication, no code; press A on both messages.'),
           tr('catalog.start_the_joiner_while_the_console_searches_5f19a9', 'Start the joiner while the console searches.'),
@@ -298,7 +382,8 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
          fixed=("--preset", "trade", "--send-snapshot", "live",
                 "--snapshot-name", "{ot}", "--snapshot-tid", "{tid}", "--snapshot-sid", "{sid}",
                 "--save-offered", "{received}/swsh-{stamp}.pk8"),
-         doc="swsh_trade.md"),
+         doc="swsh_trade.md",
+         activity="trade", variant=(("role", "join"), ("link", "board"))),
     Tool("swsh-lan-host", tr('catalog.trade_lan_host_8b27d0', 'Trade (LAN Host)'), "bin/swsh_host.py",
          tr('catalog.host_a_trade_a_console_in_lan_mode_joins_over_your_own__5a0c17', 'Host a trade a console in LAN mode joins over your own network, no board.'),
          (tr('catalog.in_options_press_l_r_and_the_left_stick_together_the_gam_cba14e', 'In Options, press L, R and the Left Stick together: the game turns LAN mode on.'),
@@ -311,7 +396,8 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
          fixed=("--lan", "--player-name", "{ot}", "--trainer-name", "{ot}",
                 "--trainer-tid", "{tid}", "--trainer-sid", "{sid}",
                 "--received", "{received}/swsh-{stamp}.pk8"),
-         doc="swsh_session.md", radio=False),
+         doc="swsh_session.md", radio=False,
+         activity="trade", variant=(("role", "host"), ("link", "lan"))),
     Tool("swsh-lan", tr('catalog.trade_lan_join_3e91c4', 'Trade (LAN Join)'), "bin/swsh_connect.py",
          tr('catalog.trade_with_a_console_in_lan_mode_over_your_own_network_n_fe2d77', 'Trade with a console in LAN mode over your own network, no board.'),
          (tr('catalog.in_options_press_l_r_and_the_left_stick_together_the_gam_cba14e', 'In Options, press L, R and the Left Stick together: the game turns LAN mode on.'), tr('catalog.y_comm_link_trade_with_or_without_a_link_code_in_la_64e689', 'Y-Comm, Link Trade, with or without a Link Code (in LAN mode the code is ignored); press A on both messages.'), tr('catalog.start_the_joiner_while_the_console_searches_the_console_18ac1a', 'Start the joiner while the console searches; the console and this computer share one network.'), tr('catalog.pokeldn_appears_on_the_trade_screen_choose_a_pokemon_and_68f6a5', 'POKELDN appears on the trade screen: choose a Pokemon and confirm.')),
@@ -321,7 +407,8 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
          fixed=("--lan", "auto", "--preset", "trade", "--send-snapshot", "live", "--scans", "60",
                 "--snapshot-name", "{ot}", "--snapshot-tid", "{tid}", "--snapshot-sid", "{sid}",
                 "--save-offered", "{received}/swsh-{stamp}.pk8"),
-         doc="swsh_session.md", radio=False),
+         doc="swsh_session.md", radio=False,
+         activity="trade", variant=(("role", "join"), ("link", "lan"))),
     Tool("swsh-gift", tr('catalog.mystery_gift_68b50f', 'Mystery Gift'), "bin/swsh_gift_host.py",
          tr('catalog.send_a_local_wireless_gift_choose_a_preset_an_official__e32c41', 'Send a local wireless gift: choose a preset, an official event, or build your own.'),
          (tr('catalog.mystery_gift_receive_a_gift_via_local_wireless_0c1758', 'Mystery Gift, Receive a Gift, via local wireless.'),
@@ -332,7 +419,8 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
                 help=tr('catalog.how_long_the_card_is_advertised_after_start_0dba41', 'How long the card is advertised after Start.')),
           Field("--save-to-board", tr('catalog.keep_it_on_the_board_a36969', 'Keep it on the board'), "switch",
                 help=tr('catalog.start_saves_the_gift_on_the_board_and_stops_unplugged_a_a436f2', 'Start saves the gift on the board and stops. Unplugged and powered from any USB charger, the board then hands the gift to every Sword and Shield nearby, with no computer. It stops when the app opens it again.'))),
-         doc="swsh_gift.md"),
+         doc="swsh_gift.md",
+         activity="gift"),
     Tool("swsh-raid-host", tr('catalog.max_raid_host_5d0e1a', 'Max Raid (Host)'), "bin/swsh_host.py",
          tr('catalog.host_a_max_raid_the_console_joins_you_choose_the_boss_i_7c2f41', 'Host a Max Raid the console joins: you choose the boss, its rewards and the Pokemon we bring.'),
          (tr('catalog.choose_the_boss_the_pokemon_our_player_brings_and_if_yo_3b8e90', 'Choose the boss, the Pokemon our player brings and, if you like, the rewards.'),
@@ -356,7 +444,8 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="6", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
           host_seconds("900")),
          fixed=("--raid-console-serves", "--player-name", "{ot}", "--trainer-name", "{ot}",
-                "--trainer-tid", "{tid}", "--trainer-sid", "{sid}"), doc="swsh_raid.md"),
+                "--trainer-tid", "{tid}", "--trainer-sid", "{sid}"), doc="swsh_raid.md",
+         activity="max-raid", variant=(("role", "host"),)),
     Tool("swsh-raid-join", tr('catalog.max_raid_join_9f9f97', 'Max Raid (Join)'), "bin/swsh_connect.py",
          tr('catalog.join_a_max_raid_the_console_hosts_from_a_den_and_fight_e2f3ac', 'Join a Max Raid the console hosts from a den and fight at its side.'),
          (tr('catalog.y_comm_in_local_wireless_mode_at_a_den_with_a_beam_pres_875c3f', 'Y-Comm in local wireless mode: at a den with a beam, press A and choose Invite Others.'),
@@ -370,7 +459,8 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
                 help=tr('catalog.the_move_our_pokemon_uses_every_turn_33ca6d', 'The move our Pokemon uses every turn.')),
           join_seconds("400")),
          fixed=("--preset", "raid", "--raid-name", "{ot}", "--snapshot-name", "{ot}",
-                "--snapshot-tid", "{tid}", "--snapshot-sid", "{sid}"), doc="swsh_raid.md"),
+                "--snapshot-tid", "{tid}", "--snapshot-sid", "{sid}"), doc="swsh_raid.md",
+         activity="max-raid", variant=(("role", "join"),)),
     Tool("swsh-lair-raid-host", tr('catalog.dynamax_adventure_host_4c81e2', 'Dynamax Adventure (Host)'), "bin/swsh_host.py",
          tr('catalog.host_a_dynamax_adventure_the_console_joins_you_choose_t_9a3f17', 'Host a Dynamax Adventure the console joins: you choose the legendary at the end of the Max Lair.'),
          (tr('catalog.choose_the_legendary_then_start_the_host_5be0c4', 'Choose the legendary, then start the host.'),
@@ -387,7 +477,8 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="6", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
           host_seconds("600")),
          fixed=("--player-name", "{ot}", "--trainer-name", "{ot}",
-                "--trainer-tid", "{tid}", "--trainer-sid", "{sid}"), doc="swsh_raid.md"),
+                "--trainer-tid", "{tid}", "--trainer-sid", "{sid}"), doc="swsh_raid.md",
+         activity="lair", variant=(("role", "host"),)),
     Tool("swsh-lair-raid-join", tr('catalog.dynamax_adventure_join_edc971', 'Dynamax Adventure (Join)'), "bin/swsh_connect.py",
          tr('catalog.join_a_dynamax_adventure_the_console_hosts_and_play_it_571027', 'Join a Dynamax Adventure the console hosts and play it as its partner with a rental Pokemon.'),
          (tr('catalog.at_the_max_lair_talk_to_the_receptionist_with_no_link_c_5e29d1', 'At the Max Lair, talk to the receptionist, with no Link Code, and choose Invite Others.'),
@@ -396,7 +487,8 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           tr('catalog.pokeldn_fights_each_battle_at_your_side_with_its_rental_6b0c8e', 'POKELDN fights each battle at your side with its rental.')),
          (join_seconds("1800"),),
          fixed=("--preset", "lair", "--raid-name", "{ot}", "--snapshot-name", "{ot}",
-                "--snapshot-tid", "{tid}", "--snapshot-sid", "{sid}"), doc="swsh_raid.md"),
+                "--snapshot-tid", "{tid}", "--snapshot-sid", "{sid}"), doc="swsh_raid.md",
+         activity="lair", variant=(("role", "join"),)),
 ))
 
 BDSP_ROOM = tr('catalog.pokemon_center_2f_left_attendant_plain_yes_no_password__35cfcc', 'Pokemon Center 2F, left attendant, plain Yes (no password, not the group option).')
@@ -413,7 +505,8 @@ BDSP = Game("bdsp", tr('catalog.brilliant_diamond_shining_pearl_f30922', 'Brilli
           host_seconds("1500")),
          fixed=("--ldn-protocol", "1", "--complete-trade", "--save-theirs", "{received}/bdsp-{stamp}",
                 "--language", "{language}", "--name", "{ot}", "--trainer", "{ot}:{tid}:{sid}"),
-         doc="bdsp_trade.md"),
+         doc="bdsp_trade.md",
+         activity="trade", variant=(("role", "host"), ("link", "board"))),
     Tool("bdsp-join", tr('catalog.trade_join_8cec7d', 'Trade (Join)'), "bin/bdsp_connect.py",
          tr('catalog.join_the_console_s_union_room_as_a_character_and_trade_e07848', "Join the console's Union Room as a character and trade."),
          (tr('catalog.wait_in_the_room_clear_of_the_walls_c546ae', '{value0} Wait in the room, clear of the walls.', value0=BDSP_ROOM),
@@ -433,7 +526,8 @@ BDSP = Game("bdsp", tr('catalog.brilliant_diamond_shining_pearl_f30922', 'Brilli
                 "--complete-trade", "--src-var", "{src_var}",
                 "--trade-save-poke", "{received}/bdsp-{stamp}.pb8", "--language", "{language}",
                 "--name", "{ot}", "--trade-name", "{ot}", "--trade-tid", "{tid}", "--trade-sid", "{sid}"),
-         doc="bdsp_trade.md"),
+         doc="bdsp_trade.md",
+         activity="trade", variant=(("role", "join"), ("link", "board"))),
 ))
 
 PLA_STEPS = (tr('catalog.talk_to_the_trade_npc_in_jubilife_village_trade_local_p_63341c', 'Talk to the trade NPC in Jubilife Village: trade, local, past the warning.'),
@@ -451,7 +545,8 @@ PLA = Game("pla", tr('catalog.legends_arceus_260415', 'Legends Arceus'), tr('cat
          fixed=("--channel", "6", "--session-update", "--sustain", "--clock", "--data-exchange",
                 "--game-channel", "--trade-box", "--player-name", "{ot}", "--gender", "{gender}",
                 "--offer-out", "{received}/pla-{stamp}.pa8"),
-         doc="pla.md"),
+         doc="pla.md",
+         activity="trade", variant=(("role", "host"), ("link", "board"))),
     Tool("pla-join", tr('catalog.trade_join_8cec7d', 'Trade (Join)'), "bin/pla_join.py",
          tr('catalog.find_your_console_s_trade_search_and_connect_automatica_388352', "Find your console's trade search and connect automatically."),
          (*PLA_STEPS, tr('catalog.start_the_joiner_84b994', 'Start the joiner.'), tr('catalog.offer_and_confirm_once_the_partner_shows_b0b40e', 'Offer and confirm once the partner shows.')),
@@ -460,7 +555,8 @@ PLA = Game("pla", tr('catalog.legends_arceus_260415', 'Legends Arceus'), tr('cat
           FRESH_PID, TRADE_BACK),
          fixed=("--player-name", "{ot}", "--gender", "{gender}",
                 "--offer-out", "{received}/pla-{stamp}.pa8"),
-         doc="pla.md"),
+         doc="pla.md",
+         activity="trade", variant=(("role", "join"), ("link", "board"))),
 ))
 
 SV_SEARCH = tr('catalog.x_poke_portal_link_trade_offline_then_search_634a34', 'X, Poke Portal, Link Trade, offline, then search.')
@@ -485,7 +581,8 @@ SV = Game("sv", tr('catalog.scarlet_violet_504657', 'Scarlet & Violet'), tr('cat
                 "--announce", "--announce-delay", "5.25",
                 "--send-at", "6.00:0x7c:1:b90101b902b90280800001", "--offer-after-open", "2",
                 "--trainer-name", "{ot}", "--offer-out", "{received}/sv-{stamp}.pk9"),
-         doc="sv.md"),
+         doc="sv.md",
+         activity="trade", variant=(("role", "host"), ("link", "board"))),
     Tool("sv-join", tr('catalog.trade_join_8cec7d', 'Trade (Join)'), "bin/sv_join.py",
          tr('catalog.join_the_console_s_link_trade_search_52ee13', "Join the console's Link Trade search."),
          (SV_SEARCH, tr('catalog.start_the_joiner_84b994', 'Start the joiner.'), tr('catalog.offer_and_confirm_on_the_trade_screen_7d393b', 'Offer and confirm on the trade screen.'),
@@ -497,7 +594,8 @@ SV = Game("sv", tr('catalog.scarlet_violet_504657', 'Scarlet & Violet'), tr('cat
                 "--dwell", "0.4", "--connect-timeout", "6", "--open-delay", "0.3", "--record-delay", "0.3",
                 "--session-join", "--answer-migration", "--net-ack", "--ack-flags", "0x00",
                 "--game-channel", "--announce-timeout", "20", "--rtt-delay", "0.3",
-                "--trainer-name", "{ot}", "--offer-out", "{received}/sv-{stamp}.pk9"), doc="sv.md"),
+                "--trainer-name", "{ot}", "--offer-out", "{received}/sv-{stamp}.pk9"), doc="sv.md",
+         activity="trade", variant=(("role", "join"), ("link", "board"))),
     Tool("sv-raid-host", tr('catalog.tera_raid_host_d3c097', 'Tera Raid (Host)'), "bin/sv_host.py",
          tr('catalog.host_a_tera_raid_the_console_joins_you_choose_the_raid__ba0395', 'Host a Tera Raid the console joins: you choose the raid, its rewards and the Pokemon we bring.'),
          (tr('catalog.choose_the_pokemon_our_player_brings_the_raid_and_if_yo_c1ebd8', 'Choose the Pokemon our player brings, the raid and, if you like, its rewards.'),
@@ -544,7 +642,8 @@ SV = Game("sv", tr('catalog.scarlet_violet_504657', 'Scarlet & Violet'), tr('cat
                 "--rtt-probe", "--clock", "--net-stations", "4", "--record-delay", "0.1",
                 "--record-spacing", "0.003", "--host-player-id", "00000000000000010000000000000000",
                 "--host-player-name", "{ot}", "--trainer-name", "{ot}"),
-         doc="sv_raid.md"),
+         doc="sv_raid.md",
+         activity="tera-raid", variant=(("role", "host"),)),
     Tool("sv-raid-join", tr('catalog.tera_raid_join_75d587', 'Tera Raid (Join)'), "bin/sv_join.py",
          tr('catalog.join_a_tera_raid_the_console_hosts_and_leave_one_of_you_b6a64d', 'Join a Tera Raid the console hosts and leave one of your Pokemon to fight in it.'),
          (tr('catalog.on_the_console_a_tera_raid_crystal_challenge_as_a_group_d752cd', 'On the console: a Tera Raid crystal, Challenge as a group, and wait for players.'),
@@ -555,7 +654,8 @@ SV = Game("sv", tr('catalog.scarlet_violet_504657', 'Scarlet & Violet'), tr('cat
                 help=tr('catalog.the_pokemon_our_player_brings_pkhex_checks_it_is_legal_abc1cf', 'The Pokemon our player brings. PKHeX checks it is legal.')),
           join_seconds("240")),
          fixed=("--seconds", "900", "--name", 'POKELDN', "--trainer-name", "{ot}"),
-         doc="sv_raid.md"),
+         doc="sv_raid.md",
+         activity="tera-raid", variant=(("role", "join"),)),
     Tool("sv-circle-join", tr('catalog.union_circle_quests_6ec3ee', 'Union Circle - Quests'), "bin/sv_join.py",
          tr('catalog.join_the_union_circle_the_console_hosts_and_clear_blueb_a7f910', 'Join the Union Circle the console hosts and clear Blueberry Quests for it: every Snacksworth legendary, or the BP you choose.'),
          (tr('catalog.on_the_console_x_poke_portal_union_circle_then_start_a__28de4e', 'On the console: X, Poke Portal, Union Circle, then start a group playing locally under a Link Code.'),
@@ -580,7 +680,8 @@ SV = Game("sv", tr('catalog.scarlet_violet_504657', 'Scarlet & Violet'), tr('cat
                 help=tr('catalog.from_1_to_9_999_999_the_most_bp_a_player_holds_99d199', 'From 1 to 9,999,999, the most BP a player holds.')),
           join_seconds("900")),
          fixed=("--union-circle", "--seconds", "900", "--name", 'POKELDN', "--trainer-name", "{ot}"),
-         doc="sv_union_circle.md"),
+         doc="sv_union_circle.md",
+         activity="circle", variant=(("mode", "quests"),)),
     Tool("sv-circle-encounters-join", tr('catalog.union_circle_encounters_31663b', 'Union Circle - Encounters'), "bin/sv_join.py",
          tr('catalog.join_the_union_circle_the_console_hosts_and_spawn_the_w_88db74', 'Join the Union Circle the console hosts and spawn the wild Pokemon you craft around its player, to battle and catch.'),
          (tr('catalog.on_the_console_x_poke_portal_union_circle_then_start_a__28de4e', 'On the console: X, Poke Portal, Union Circle, then start a group playing locally under a Link Code.'),
@@ -597,7 +698,8 @@ SV = Game("sv", tr('catalog.scarlet_violet_504657', 'Scarlet & Violet'), tr('cat
           join_seconds("3600")),
          fixed=("--union-circle", "--seconds", "3600", "--follow-host", "--name", 'POKELDN',
                 "--trainer-name", "{ot}"),
-         doc="sv_union_circle.md"),
+         doc="sv_union_circle.md",
+         activity="circle", variant=(("mode", "encounters"),)),
 ))
 
 ZA = Game("za", tr('catalog.legends_z_a_594c26', 'Legends Z-A'), tr('catalog.plza_bc9316', 'PLZA'), "za.md", (
@@ -611,7 +713,8 @@ ZA = Game("za", tr('catalog.legends_z_a_594c26', 'Legends Z-A'), tr('catalog.plz
           Field("--code", tr('catalog.link_code_0b8f86', 'Link code'), "code", default="00000000", help=CODE_HELP),
           FRESH_PID, TRADE_BACK,
           host_seconds("900")),
-         fixed=("--trainer-name", "{ot}", "--offer-out", "{received}/za-{stamp}.pa9"), doc="za.md"),
+         fixed=("--trainer-name", "{ot}", "--offer-out", "{received}/za-{stamp}.pa9"), doc="za.md",
+         activity="trade", variant=(("role", "host"), ("link", "board"))),
     Tool("za-join", tr('catalog.trade_join_8cec7d', 'Trade (Join)'), "bin/za_join.py",
          tr('catalog.join_the_console_s_link_trade_search_52ee13', "Join the console's Link Trade search."),
          (tr('catalog.link_trade_local_communication_search_with_the_link_cod_4e7c15', 'Link Trade, local communication, search with the link code.'),
@@ -623,7 +726,8 @@ ZA = Game("za", tr('catalog.legends_z_a_594c26', 'Legends Z-A'), tr('catalog.plz
          fixed=("--channels", "1,6,11", "--dwell", "0.35", "--seconds", "1200", "--hold", "900",
                 "--quiet-seat", "25", "--connect-timeout", "6", "--mac", "02:11:32:54:76:98", "--game",
                 "--offer-delay", "4", "--trainer-name", "{ot}", "--offer-out", "{received}/za-{stamp}.pa9"),
-         doc="za.md"),
+         doc="za.md",
+         activity="trade", variant=(("role", "join"), ("link", "board"))),
 ))
 
 def simulated_gift(game: Game, host: Tool, steps: tuple[str, ...]) -> Tool:
@@ -640,7 +744,7 @@ def simulated_gift(game: Game, host: Tool, steps: tuple[str, ...]) -> Tool:
                 FOR_RECEIVER)
     return Tool(host.key.replace("-host", "-gift-host"), tr('catalog.mystery_gift_simulated_d9d548', 'Mystery Gift - Simulated'), host.script,
                 tr('catalog.trade_an_official_mystery_gift_pokemon_to_the_console_a_a079f5', 'Trade an official Mystery Gift Pokemon to the console: a fresh legal copy, as your trainer received it.'), steps, tuple(g for f in host.fields for g in gift(f)), fixed=host.fixed,
-                doc="gift_simulated.md")
+                doc="gift_simulated.md", activity="gift")
 
 
 def trade_keys(game: Game) -> tuple[str, str]:
