@@ -27,7 +27,7 @@ jobs:
             gui/requirements.txt
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0.402"  # 10.0.x resolved to 10.0.403, whose files answered 409 on 2026-10-25
       - run: python -m pip install -r requirements.txt pytest==9.1.1 pytest-xdist==3.8.0 esptool==5.4.0 "flet[desktop]==1.0.2"
       - run: dotnet build -c Release services/pkhex -warnaserror
       - run: python -m pytest tests/ -q -W error -n auto --dist worksteal
