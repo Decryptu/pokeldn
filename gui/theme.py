@@ -44,6 +44,7 @@ SESSION_WIDTH = 360
 COMPACT_WIDTH = 760
 READABLE_WIDTH = 720   # the options column's widest: a wider form spreads a field's label far from its value
 compact = False
+window_width = 0.0   # the page's width, kept by gui/main.py: a pane built later starts in the right layout
 
 
 def app_theme() -> ft.Theme:
@@ -120,7 +121,8 @@ class Panes:
         self.holders = [ft.Container(expand=True) for _ in panes]
         self.switcher = ft.Container()
         self.control = ft.Container(expand=True, size_change_interval=50, on_size_change=self._resized)
-        self._arrange("single" if compact else "full")
+        # A pane gets no size event when it first appears; the rail and the margins take 108 points.
+        self._arrange(self._choose(window_width - 108) if window_width else "full")
 
     def _choose(self, width: float) -> str:
         fixed = [w for w in self.widths if w]
@@ -187,6 +189,22 @@ class Panes:
         self._render()
         if update and self.control.page:
             self.control.update()
+
+
+def readable(column: ft.Control, widest: float) -> ft.ShaderMask:
+    """A faded, scrolled column as wide as the window allows, up to `widest`, centred."""
+    view = ft.ListView([column], padding=ft.Padding(4, 8, 4, 24), expand=True)
+    mask = fade(view)
+    faded = mask.on_size_change
+
+    def fit(e) -> None:
+        faded(e)
+        side = max(4, (e.width - widest) // 2)
+        if view.padding.left != side:
+            view.padding = ft.Padding(side, 8, side, 24)
+            view.update()
+    mask.on_size_change = fit
+    return mask
 
 
 def notch(*controls: ft.Control) -> ft.Row:

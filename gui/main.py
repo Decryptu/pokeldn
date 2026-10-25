@@ -52,6 +52,8 @@ PAGES = (
 PLUGINS = ("plugins", tr('main.plugins_9514b7', 'Plugins'), "plug")
 SETTINGS = ("settings", tr('main.settings_74a883', 'Settings'), "gear")
 UPDATE = ("update", tr('main.update_c1c100', 'Update'), "download")
+# The narrowest window: a phone's width, where the tab bar takes over from the rail (docs/gui.md, Window sizes).
+MIN_WIDTH = 380
 
 
 ANDROID = os.environ.get("POKELDN_PLATFORM") == "android"
@@ -61,6 +63,7 @@ if ANDROID or IOS:   # no Bluetooth controller and no self-update on a phone (ex
 
 
 def main(page: ft.Page) -> None:
+    t.window_width = page.width or 0.0
     t.compact = bool(page.width) and page.width < t.COMPACT_WIDTH
     page.title = "pokeldn"
     page.theme_mode = ft.ThemeMode.DARK
@@ -69,7 +72,7 @@ def main(page: ft.Page) -> None:
     page.bgcolor = t.BG
     page.padding = 0
     # 1440 x 900 overflows a 13-inch MacBook Air (1440 x 932 points less the menu bar): fit, then center.
-    (width, height), (min_width, min_height) = screen.fit((1440, 900), (1180, 720), screen.size())
+    (width, height), (min_width, min_height) = screen.fit((1440, 900), (MIN_WIDTH, 560), screen.size())
     page.window.min_width, page.window.min_height = min_width, min_height
     page.window.width, page.window.height = width, height
     page.window.bgcolor = t.BG
@@ -112,16 +115,15 @@ def main(page: ft.Page) -> None:
     def item(entry) -> ft.Control:
         key, label, icon = entry
         active = key == current["key"]
+        fresh = key == "update" or (key == "plugins" and bool(app.plugin_updates))
+        color = t.RED if active else t.GREEN if fresh else t.MUTED
         if t.compact:
-            color = t.RED if active else t.MUTED
             return ft.Container(ft.Column([
                 t.pixel_icon(icon, size=24, color=color),
                 t.text(label, 10, color, weight=ft.FontWeight.W_500, no_wrap=True),
             ], spacing=1, horizontal_alignment=ft.CrossAxisAlignment.CENTER), expand=True,
                 padding=ft.Padding(0, 7, 0, 6), border_radius=12, on_click=lambda e, k=key: navigate(k),
                 bgcolor=ft.Colors.with_opacity(0.12, t.RED) if active else None)
-        fresh = key == "update" or (key == "plugins" and bool(app.plugin_updates))
-        color = t.RED if active else t.GREEN if fresh else t.MUTED
         return ft.Semantics(selected=active, button=True, label=label, exclude_semantics=True,
                             on_tap=lambda e, k=key: navigate(k), content=ft.Container(ft.Column([
             t.pixel_icon(icon, size=24, color=color),
@@ -133,11 +135,12 @@ def main(page: ft.Page) -> None:
             tooltip=tr('main.plugin_updates_1cc5ea', 'Plugin updates') if key == "plugins" and app.plugin_updates else label))
 
     def render_rail() -> None:
+        fresh = [UPDATE] * bool(app.update and not (ANDROID or IOS))
         if t.compact:
-            tabs.controls = [item(p) for p in (*PAGES, PLUGINS, SETTINGS)]
+            tabs.controls = [item(p) for p in (*PAGES, *fresh, PLUGINS, SETTINGS)]
             return
         rail.controls = [item(p) for p in PAGES]
-        bottom.controls = [item(UPDATE)] * bool(app.update and not (ANDROID or IOS)) + [item(PLUGINS), item(SETTINGS)]
+        bottom.controls = [item(p) for p in (*fresh, PLUGINS, SETTINGS)]
 
     def navigate(key: str, **kwargs) -> None:
         if key == "update":
@@ -159,14 +162,6 @@ def main(page: ft.Page) -> None:
     app.navigate = navigate
     page.on_keyboard_event = page_key     # set once, before a code box takes the focus
     tabs = ft.Row(spacing=2)
-    if t.compact:
-        bar = t.glass(ft.Container(tabs, padding=4), radius=18)
-        window = t.backdrop(ft.Column([content, bar], spacing=8, expand=True))
-        window.padding = ft.Padding(8, 8, 8, 8)
-        page.add(window)
-        navigate("games")
-        compact_start(app)
-        return
     side = t.panel(ft.Column([
         ft.Container(ft.Image(src="logo.svg", width=28, height=32), padding=ft.Padding(0, 16, 0, 18)),
         rail,
@@ -174,13 +169,44 @@ def main(page: ft.Page) -> None:
         bottom,
         ft.Container(height=8),
     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0), width=72)
-    body = ft.Row([side, content], spacing=t.GAP, expand=True,
-                  vertical_alignment=ft.CrossAxisAlignment.STRETCH)
-    # The header sits on the checkerboard so the grid runs under the hidden title bar too.
-    window = t.backdrop(ft.Column([window_header(page), body], spacing=0, expand=True))
-    window.padding = ft.Padding(t.GAP, 0, t.GAP, t.GAP)
-    page.add(window)
+    header = window_header(page)
+
+    def shell() -> ft.Control:
+        """The tab bar below the content on a narrow window, the rail beside it otherwise (docs/gui.md, Phones)."""
+        if t.compact:
+            bar = t.glass(ft.Container(tabs, padding=4), radius=18)
+            # A desktop window keeps its header: the title bar's buttons and drag area live there.
+            window = t.backdrop(ft.Column([*[header] * (not page.web and not phone), content, bar],
+                                          spacing=8, expand=True))
+            window.padding = ft.Padding(8, 0 if not page.web and not phone else 8, 8, 8)
+            return window
+        body = ft.Row([side, content], spacing=t.GAP, expand=True,
+                      vertical_alignment=ft.CrossAxisAlignment.STRETCH)
+        # The header sits on the checkerboard so the grid runs under the hidden title bar too.
+        window = t.backdrop(ft.Column([header, body], spacing=0, expand=True))
+        window.padding = ft.Padding(t.GAP, 0, t.GAP, t.GAP)
+        return window
+
+    def resized(e) -> None:
+        t.window_width = e.width
+        narrow = bool(e.width) and e.width < t.COMPACT_WIDTH
+        if narrow == t.compact:
+            return
+        t.compact = narrow
+        for view in views.values():
+            if hasattr(view, "relayout"):    # a view whose controls depend on t.compact
+                view.relayout()
+        page.controls = [shell()]
+        render_rail()
+        page.update()
+
+    phone = ANDROID or IOS
+    page.on_resize = resized
+    page.add(shell())
     navigate("games")
+    if phone:
+        compact_start(app)
+        return
     if not page.web:
         page.run_task(page.window.center)
     outcome = update.finish(update.install_root())

@@ -68,11 +68,10 @@ class PluginsView:
     def __init__(self, app):
         self.app = app
         self.notice = ft.Container()
-        self.column = ft.Column(spacing=t.GAP, width=None if t.compact else 760, expand=t.compact)
+        self.column = ft.Column(spacing=t.GAP)
         self.zone = ft.Container()
-        self.scroll = ft.ListView([ft.Row([self.column], alignment=ft.MainAxisAlignment.CENTER)],
-                                  padding=ft.Padding(4, 8, 4, 24), expand=True)
-        self.control = drop.target(ft.Container(t.fade(self.scroll), expand=True), self._dropped,
+        self.scroll = t.readable(self.column, 760)
+        self.control = drop.target(ft.Container(self.scroll, expand=True), self._dropped,
                                    glow=lambda: self.zone)
         self.downloading = ""      # the plugin whose package is downloading
         self.tab = "installed"
@@ -89,6 +88,9 @@ class PluginsView:
         self.notice.content = None
 
     # Rendering
+
+    def relayout(self) -> None:
+        self.render()
 
     def render(self, update: bool = False) -> None:
         found = plugins.discover()

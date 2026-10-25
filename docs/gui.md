@@ -67,7 +67,11 @@ A page's panels are laid out by the width they have, measured as the window chan
 | less | one panel at a time on a switcher |
 
 Narrowing a window from side by side brings the options column forward. On a wide window the options
-column keeps to 720 points, centred, and fields go as many to a row as fit.
+column keeps to 720 points, centred, and fields go as many to a row as fit; Settings and Plugins keep
+to 760. A page opened after a resize starts in the layout its width allows.
+
+The desktop window goes down to 380 points wide. Below 760 it switches to the phone layout below,
+live, and back when widened; a desktop window keeps its title bar row above the content.
 
 ## Phones
 
