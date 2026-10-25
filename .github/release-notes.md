@@ -1,20 +1,20 @@
-# pokeldn 0.39.1
+# pokeldn 0.40.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Keep it on the board: a board kept with a FireRed or LeafGreen gift now hands it to a console on
-  its own, with no computer. Before, the console joined and then showed a communication error.
-- Send it back works in Scarlet and Violet hosting, and in Brilliant Diamond and Shining Pearl
-  joining. Both stopped on "Waiting for a response" before the second trade.
-- Find mine reads your trainer when the app hosts a Legends Arceus trade.
-- The Board page reads a kept gift right after the board is plugged in; before, it could say none
-  was kept.
+- The desktop window narrows down to 380 points wide. Below 760 it switches to the phone layout, with
+  the pages in a bottom tab bar, and back when widened; pages with three panels show two on a
+  switcher instead of squeezing the middle one (#42).
+- Bank: search by name, sort by newest, oldest, Pokedex number or name, and Select (or a long press)
+  to export, take out of trades or remove several Pokemon at once.
+- The bank opens much faster with many Pokemon: each small sprite is read once and remembered, which
+  also speeds up every other page that shows them.
+- The Find mine buttons in Settings, and a few other buttons, now line up with the fields beside them.
 
-The radio firmware is 1.9.1 (install it from the Board page for the kept FireRed gift); the
-controller firmware stays at 1.3.0.
+The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
