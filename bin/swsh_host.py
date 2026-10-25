@@ -534,6 +534,11 @@ def main(argv=None):
             guarded(trades[st.ip].on_broadcast, port, payload, bool(flags & 0x10))
 
     def on_other(st, protocol, port, payload):
+        if (args.lan and protocol == pia_lan.PROTOCOL
+                and pia_lan.parse_lan_message(payload) == (pia_lan.SESSION_REQUEST,
+                                                           transport.network_id)):
+            transport.answer_session_request(st.ip)
+            return
         print(f"[sw] <- {st.ip} {protocol:#04x}/{port} (unhandled) {payload.hex()[:96]}")
 
     def start_trade(st):

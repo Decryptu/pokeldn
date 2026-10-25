@@ -244,7 +244,18 @@ and room for the joining stations. With none, it creates its own session.
 
 After the browse the joiner sends a host request, protocol 0x44 type 3: `03`, 11 zero bytes, the
 u32 network id. The host answers type 4: `04`, 11 zero bytes, the network id, its station location.
-The station handshake that follows is the same as over LDN; there is no Local Protocol (0x24).
+The station handshake that follows is the same as over LDN; there is no Local Protocol (0x24). A
+retail Sword's host request carries source constant id 0; its constant id is its address over its
+station port, and a host's connection request to any other id goes unanswered.
+
+Once in the mesh, a retail Sword sends a session request, type 5: `05`, 11 zero bytes, the network
+id. The host answers with the session info in session messages, type 6: `06`, 11 zero bytes, a u32
+value shared by the fragments, a u16 sequence id, the fragment index and count (u8 each), a u32
+fragment size, then at most 800 bytes of the session info. A Sword left without one goes silent 5 s
+later and leaves the mesh.
+
+A station sends a keep-alive, type 7 (`07` and 11 zero bytes), every two seconds, in plaintext
+outside a session; the receiver ignores it.
 
     IV[0..3]  = the sender's IPv4 address
     IV[4]     = the connection id from the packet header

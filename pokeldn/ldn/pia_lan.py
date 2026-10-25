@@ -635,7 +635,9 @@ class LanHostTransport:
                          f"host request")
                 continue
             if got[0] == HOST_REQUEST:
-                self.constants[ip] = m["source"]
+                # A retail Sword's host request names source 0; its constant id is its address.
+                self.constants[ip] = m["source"] or constant_id(
+                    ip, self.ports.get(ip, STATION_PORTS[0]))
                 if not any(p[1] == ip for p in self.participants):
                     index = 1 + max((p[0] for p in self.participants), default=0)
                     self.participants.append((index, ip, station_mac(ip), ""))
@@ -644,8 +646,13 @@ class LanHostTransport:
                              f"constant {m['source']:#018x}")
                 self._send_lan(build_host_message(self.network_id, self.location), ip)
             elif got[0] == SESSION_REQUEST:
-                for body in build_session_messages(self.session_info(), 0):
-                    self._send_lan(body, ip)
+                self.answer_session_request(ip)
+
+    def answer_session_request(self, ip):
+        """A station's 0x44 type 5: the session info back as type 6 fragments. A retail Sword asks
+        right after it joins the mesh and leaves 5 s later without an answer."""
+        for body in build_session_messages(self.session_info(), 0):
+            self._send_lan(body, ip)
 
     def _send_lan(self, body, ip):
         from pokeldn.ldn import pia4

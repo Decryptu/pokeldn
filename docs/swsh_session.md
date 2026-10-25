@@ -267,8 +267,8 @@ A Link Trade search's own session does not match the browse it sends when it sta
 `bin/swsh_connect.py --lan auto` (the app's Trade (LAN mode)) browses every local /24 with
 `--preset trade`'s flags and completed a trade with a retail Sword on a Switch 2 over Wi-Fi and with
 the emulated console; it takes the console's silence as its departure (`--lan-quiet`, default 3 s),
-which ended the retail run 3.1 s after the player backed out. `bin/swsh_host.py --lan` hosts a session that
-our joiner trades with.
+which ended the retail run 3.1 s after the player backed out. `bin/swsh_host.py --lan` hosts a session a
+retail Sword joins from its Link Trade search and trades in, on a Switch 2 over Wi-Fi.
 
 A Link Trade search in LAN mode sends two kinds of browse:
 

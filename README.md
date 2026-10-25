@@ -39,7 +39,7 @@ Scarlet/Violet also supports [local Tera Raids](docs/sv_raid.md) and the
 [Union Circle](docs/sv_union_circle.md) as a guest, and Sword/Shield
 [Max Raid Battles and Dynamax Adventures](docs/swsh_raid.md), hosted with a chosen boss or legendary
 or joined as the console's partner. Sword/Shield also trades in its hidden LAN mode over the
-computer's own network, with no board ([LAN mode](docs/swsh_session.md#lan-mode)). Event Pokemon arrive through Mystery
+computer's own network, joining or hosting, with no board ([LAN mode](docs/swsh_session.md#lan-mode)). Event Pokemon arrive through Mystery
 Gift on FRLG and SwSh, and elsewhere as an official gift traded by the host
 ([Simulated Mystery Gifts](docs/gift_simulated.md)).
 

@@ -101,6 +101,56 @@ def test_our_host_answers_a_swords_trade_browse_as_a_console_host_does():
             != pia_lan.parse_challenge(second["challenge_reply"])["key"])
 
 
+def test_our_host_seats_a_retail_swords_host_request_and_answers_its_session_request():
+    """A retail Sword's host request names source constant 0, and once in the mesh it asks for the
+    session info (0x44 type 5) and leaves 5 s later without it. Its constant id is its address and
+    station port; the answer is the session info in type 6 fragments, the Sword seated in it."""
+    if not (_bindable(HOST_IP, pia_lan.BROWSE_PORT) and _bindable(JOIN_IP, 49155)):
+        pytest.skip("needs the lo0 aliases 127.0.0.2 and 127.0.0.3 with ports 30000 and 49155 free")
+    host = pia_lan.LanHostTransport(GAME_KEY, 60001, our_ip=HOST_IP, broadcast=BROADCAST,
+                                    console_ip=CONSOLE_IP, log=lambda *a: None)
+    host.bind_host(pia_lan.constant_id(HOST_IP, 49152), 1, host.network_id, bytes(32))
+    host.start()
+    sword = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sword.bind((JOIN_IP, 49155))
+    sword.settimeout(2)
+    try:
+        assert pia_lan.browse(GAME_KEY, HOST_IP, bytes.fromhex(VECTORS["criteria"]["trade"]),
+                              our_ip=JOIN_IP, broadcast=BROADCAST, tries=1, wait=0.5)
+        msg = pia4.build_message(pia_lan.build_host_request(host.network_id),
+                                 protocol=pia_lan.PROTOCOL, source=0)
+        nonce8 = bytes(8)
+        sword.sendto(pia4.build_packet(host.session_key, pia_lan.packet_iv(JOIN_IP, 0, nonce8),
+                                       msg, nonce8=nonce8), (HOST_IP, 49152))
+        deadline = time.time() + 2
+        while not host.participants and time.time() < deadline:
+            host.recv()
+            time.sleep(0.02)
+        assert host.constants[JOIN_IP] == pia_lan.constant_id(JOIN_IP, 49155)
+        sword.recvfrom(4096)                                  # the host message
+        host.answer_session_request(JOIN_IP)
+        fragments = {}
+        while len(fragments) < 2:
+            data, _ = sword.recvfrom(4096)
+            h = pia4.PiaHeader4.parse(data)
+            plain = pia4.decrypt_payload(host.session_key,
+                                         pia_lan.packet_iv(HOST_IP, h.station, h.nonce8),
+                                         pia4.ciphertext(data), h.tag)
+            (m,) = pia4.parse_packet(plain)
+            body = m["payload"]
+            assert body[0] == pia_lan.SESSION_MESSAGE
+            index, count, size = struct.unpack_from(">BBI", body, 0x12)
+            fragments[index] = body[0x18:0x18 + size]
+            assert count == 2
+    finally:
+        host.stop()
+        sword.close()
+    info = pia_lan.parse_session_info(fragments[0] + fragments[1])
+    assert info["players"] == 2 and info["key_param"] == host.key_param
+    assert [s["constant_id"] for s in info["stations"]] == [
+        pia_lan.constant_id(HOST_IP, 49152), pia_lan.constant_id(JOIN_IP, 49155)]
+
+
 def _bindable(ip, port):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)   # as LanSocket binds
