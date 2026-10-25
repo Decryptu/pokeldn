@@ -1,15 +1,12 @@
-# pokeldn 0.43.0
+# pokeldn 0.43.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Bank: import a PKSM bank (`.bnk`), see each Pokemon's IVs, effort values and stats, and copy it
-  as a Showdown set. A Pokedex box shows which species your bank's games hold, which you have and
-  which have no shiny yet; filters pick shiny, queued and not-legal Pokemon.
-- Sword/Shield Max Raids: once the battle has started, the raid goes on if the board disconnects,
-  in both roles; the console finishes it on its own.
+- Android: Install on the Board page flashes ESP32-S3, C3 and C6 boards over the cable. The app
+  failed with "Failed to get VID/PID" and the board never entered flash mode.
 
 The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 
