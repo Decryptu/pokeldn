@@ -6,7 +6,9 @@ The game key is a literal with no version substitution; the session seed is at a
 import struct
 from dataclasses import dataclass
 
-from pokeldn.ldn.pia5 import ldn_nonce_crc, ldn_session_key, packet_iv  # noqa: F401
+from pokeldn.ldn import pia_lan
+from pokeldn.ldn.pia5 import ldn_nonce_crc, ldn_session_key  # noqa: F401
+from pokeldn.ldn.pia5 import packet_iv as ldn_packet_iv
 
 # 64 bytes used raw, main.bin 0x203ff04; the length is the literal 0x40 at 0x006c3ec8.
 PASSPHRASE = b"W3GoSMEn7RIIUQ89rzqBHGhGferRNb7K18ZBq2aNuj8Us9RO9Q9JYyGOZlLy8MYL"
@@ -63,3 +65,28 @@ def session_keys(net, game_key=GAME_KEY):
     return SessionKeys(ldn_session_key(game_key, param), bytes(game_key),
                        app[NETWORK_ID_OFF:NETWORK_ID_OFF + 4], param)
 
+
+@dataclass
+class LanSessionKeys:
+    """A LAN-mode session (docs/swsh_session.md, LAN mode): the key comes off the browse reply, and a
+    station's "MAC" is `pia_lan.station_mac(ip)`, from which the IV takes the address."""
+    session_key: bytes
+    network_id: int
+    key_param: bytes
+    session_param: int = 0
+
+    def __repr__(self):
+        return (f"LanSessionKeys(session={self.session_key.hex()} network_id={self.network_id:#010x} "
+                f"key_param={self.key_param.hex()})")
+
+
+def lan_session_keys(reply, game_key=GAME_KEY):
+    """-> LanSessionKeys from `pia_lan.parse_browse_reply`."""
+    return LanSessionKeys(pia_lan.session_key(game_key, reply["key_param"]), reply["network_id"],
+                          reply["key_param"])
+
+
+def packet_iv(keys, source_mac, nonce8, source_id=0):
+    if isinstance(keys, LanSessionKeys):
+        return pia_lan.packet_iv(pia_lan.station_ip(source_mac), source_id, nonce8)
+    return ldn_packet_iv(keys, source_mac, nonce8, source_id=source_id)

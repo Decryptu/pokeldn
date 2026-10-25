@@ -6,6 +6,10 @@ An emulated console hosting over ldn_mitm, with no radio:
 
     ./.venv/bin/python bin/swsh_connect.py --ip-join --host-ip 127.0.0.2 --our-ip 127.0.0.3 \
         --preset trade --offer-file FILE
+
+A console in Sword's LAN mode on the same IP network (Options, L + R + Left Stick), no radio:
+
+    ./.venv/bin/python bin/swsh_connect.py --lan 192.168.1.255 --preset trade --offer-file FILE
 """
 from pathlib import Path
 import argparse, contextlib, json, math, os, shlex, socket, struct, sys, time, traceback, zlib
@@ -20,12 +24,14 @@ import trio, ldn
 from pokeldn.host_support import open_output, write_file
 from pokeldn import pokemon as pokemon_service
 from pokeldn.host_support import resolve_keys, needs_root
+from pokeldn.ldn import pia_lan
 from pokeldn.ldn import (broadcast4, ldn_mitm, ldn_mitm_host, local_protocol as lp,
                         mesh_protocol as mesh, pia4, reliable4,
                         reliable5, rtt_protocol as rtt, station4,
                         station_protocol as stp, host4)
 from pokeldn.ldn.transport import board_radio, find_ap_phy
-from pokeldn.swsh import COMM_ID, PASSPHRASE, PIA_PORT, packet_iv, session_keys
+from pokeldn.swsh import (COMM_ID, GAME_KEY, PASSPHRASE, PIA_PORT, lan_session_keys, packet_iv,
+                         session_keys)
 from pokeldn.swsh import trade as swsh_trade
 from pokeldn.swsh import raid as swsh_raid
 from pokeldn.swsh import raid_battle
@@ -223,8 +229,60 @@ async def find_ip(args):
     return keys, target, seat
 
 
+async def find_lan(args):
+    """`find_radio` against a console in LAN mode: a browse to `--lan`, which is the console's address
+    or its subnet's broadcast (docs/swsh_session.md, LAN mode)."""
+    auto = args.lan == "auto"
+    our_ip = args.our_ip
+    if our_ip is None and not auto:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect((args.lan, pia_lan.BROWSE_PORT))
+            our_ip = probe.getsockname()[0]
+    # The LDN scene id is the LAN game mode: 60001 is the trade search.
+    scene = args.scene
+    criteria = pia_lan.build_search_criteria(
+        scene or 0, max_players=args.lan_max_players,
+        flags=pia_lan.SEARCH_MAX_PLAYERS | (0 if scene is None else pia_lan.SEARCH_GAME_MODE))
+    where = (", ".join(pia_lan.local_addresses()) or "no address") if auto else args.lan
+    print(f"[cx] lan: browsing {where} for scene {scene}")
+    reply = None
+    for _ in range(args.scans):
+        if auto:
+            reply = await trio.to_thread.run_sync(lambda: pia_lan.browse_any(
+                GAME_KEY, criteria, tries=1, wait=args.dwell))
+        else:
+            reply = await trio.to_thread.run_sync(lambda: pia_lan.browse(
+                GAME_KEY, args.lan, criteria, our_ip=our_ip or "", broadcast=args.lan_broadcast,
+                tries=1, wait=args.dwell))
+        if reply is not None:
+            break
+    if reply is None:
+        print(f"[cx] no LAN session answered at {args.lan} - is the console in LAN mode (Options, "
+              "L + R + Left Stick) on Y-Comm -> Link Trade, past BOTH messages?")
+        return 3
+    print(f"[cx] lan: session {reply['network_id']:#010x} host {reply['host_ip']}:"
+          f"{reply['host_port']} {reply['players']}/{reply['max_players']} "
+          f"{[s['name'] for s in reply['stations']]}")
+    if reply["players"] >= reply["max_players"]:
+        print("[cx] the session is FULL, no seat to take")
+        return 5
+    if auto:
+        our_ip, args.lan_broadcast = reply["our_ip"], reply["broadcast"]
+    keys = lan_session_keys(reply)
+    print(f"[cx] {keys}")
+    args.lan_reply, args.lan_our_ip = reply, our_ip
+    target = dict(comm_id=None, channel=None, scene_id=reply["game_mode"],
+                  ssid=f"{reply['network_id']:08x}", application_data=reply["application_data"].hex())
+
+    @contextlib.asynccontextmanager
+    async def seat():
+        yield (reply["host_ip"], pia_lan.station_mac(reply["host_ip"]), our_ip,
+               pia_lan.station_mac(our_ip))
+    return keys, target, seat
+
+
 async def main_async(args):
-    found = await (find_ip if args.ip_join else find_radio)(args)
+    found = await (find_lan if args.lan else find_ip if args.ip_join else find_radio)(args)
     if isinstance(found, int):
         return found
     keys, target, seat = found
@@ -240,20 +298,30 @@ async def main_async(args):
 
     async with seat() as (host_ip, host_mac, our_ip, our_mac):
         # Over ldn_mitm the subnet broadcast reaches no emulator: the host is the only peer.
-        bcast = host_ip if args.ip_join else our_ip.rsplit(".", 1)[0] + ".255"
+        bcast = host_ip if args.ip_join or args.lan else our_ip.rsplit(".", 1)[0] + ".255"
         print(f"[cx] *** ASSOCIATED *** us={our_ip} ({our_mac.hex()}) "
               f"host={host_ip} ({host_mac.hex()})")
         if len(our_mac) != 6 or len(host_mac) != 6:
             print("[cx] a MAC is missing - the IV and the constant ids cannot be built")
             return 6
-        our_constant = stp.ldn_constant_id(our_mac)
-        host_constant = stp.ldn_constant_id(host_mac)
+        our_port = args.lan_port if args.lan else PIA_PORT
+        if args.lan:
+            our_constant = pia_lan.constant_id(our_ip, our_port)
+            host_constant = args.lan_reply["host_constant"]
+        else:
+            our_constant = stp.ldn_constant_id(our_mac)
+            host_constant = stp.ldn_constant_id(host_mac)
         print(f"[cx] our constant id  {our_constant:#018x}")
-        print(f"[cx] host constant id {host_constant:#018x}  (from its MAC)")
+        print(f"[cx] host constant id {host_constant:#018x}  "
+              f"({'from the browse reply' if args.lan else 'from its MAC'})")
         record(rec="seat", us=our_ip, our_mac=our_mac.hex(), host=host_ip,
                host_mac=host_mac.hex(), our_constant=our_constant, host_constant=host_constant)
 
-        sock = make_socket(args.ifname, our_ip if args.ip_join else None)
+        if args.lan:
+            sock = pia_lan.LanSocket(our_ip, our_port, host_ip, args.lan_reply["host_port"],
+                                     PIA_PORT, broadcast=args.lan_broadcast)
+        else:
+            sock = make_socket(args.ifname, our_ip if args.ip_join else None)
         t0 = time.monotonic()
         st = {"seq": None, "host_var": None, "host_constant_seen": None, "last_update": None,
               "updates": 0, "phase": "listen", "station": None, "acks": 0,
@@ -279,7 +347,7 @@ async def main_async(args):
               "selection_sent": False, "box_queue": [], "box_seen": [], "box_next": 0.0,
               "we_are_host": False, "update_mesh_out": 0,
               "migration_pending": None, "migration_out": 0, "migration_acked": None,
-              "host_leaving": None,
+              "host_leaving": None, "last_rx": None, "lan_host_message": None,
               "said_serial": 0, "serial_by_proto": {}, "serial_by_port": {},
               "rpc_seen": {}, "rpc_pair_sent": set(), "offer_status_answered": set(),
               "rpc_bodies_answered": set(), "confirmation_opened": False, "rpc_pair_delta": {},
@@ -794,6 +862,7 @@ async def main_async(args):
                     record(rec="rx_nonpia", t=now, src=addr[0], data=data[:64].hex())
                     continue
                 st["rx"] += 1
+                st["last_rx"] = now
                 h = pia4.PiaHeader4.parse(data)
                 iv = packet_iv(keys, host_mac, h.nonce8, source_id=h.station)
                 pt = pia4.decrypt_payload(keys.session_key, iv, pia4.ciphertext(data), h.tag)
@@ -824,6 +893,10 @@ async def main_async(args):
                         record(rec="leave_with_host", t=now)
                         print(f"\n[rx] t={now:6.2f} *** START_HOST_MIGRATION: THE CONSOLE IS "
                               f"CLOSING ITS NETWORK - LEAVING IT ***")
+                    if f["protocol"] == pia_lan.PROTOCOL and body[:1] == bytes(
+                            [pia_lan.HOST_MESSAGE]) and st["lan_host_message"] is None:
+                        st["lan_host_message"] = body
+                        print(f"[rx] t={now:6.2f} lan host message, {len(body)} B")
                     if f["protocol"] == lp.PROTOCOL and len(body) >= 2 \
                             and body[1] == lp.UPDATE_SESSION:
                         us = lp.parse_update_session(body)
@@ -1126,8 +1199,27 @@ async def main_async(args):
                         print(f"\n[rx] t={now:6.2f} *** PROTOCOL {f['protocol']:#04x}, "
                               f"{len(body)} B, phase {st['phase']} *** {body[:32].hex()}")
 
+        if args.lan:
+            # The browse reply names the host station; there is no Local Protocol to acknowledge.
+            st["host_var"] = args.lan_reply["host_variable"]
+            st["host_constant_seen"] = host_constant
+
         async def sender():
             await trio.sleep(args.listen_first)
+            if args.lan:
+                # The host request, answered by the host's station location (wiki, LAN Protocol).
+                request = pia_lan.build_host_request(args.lan_reply["network_id"])
+                deadline = time.monotonic() + args.lan_host_wait
+                while st["lan_host_message"] is None and time.monotonic() < deadline:
+                    sock.sendto(wrap(keys, our_mac, our_constant, next_nonce(), request,
+                                     pia_lan.PROTOCOL, 0), (host_ip, PIA_PORT))
+                    await trio.sleep(0.5)
+                print(f"[tx] lan host request: "
+                      f"{'answered' if st['lan_host_message'] else 'NOT answered'}")
+                if args.connect:
+                    await connect_sweep(host_ip)
+                st["phase"] = "hold"
+                return
             if st["seq"] is None:
                 print("[cx] no update session seen - the console is not hosting a Pia network. "
                       "Nothing to answer; holding so the capture says so.")
@@ -1172,8 +1264,9 @@ async def main_async(args):
             variable_id = args.src_var if args.src_var is not None else \
                 int.from_bytes(os.urandom(4), "big")
             st["our_variable_id"] = variable_id
-            location = stp.station_location(our_ip, PIA_PORT, our_constant, variable_id,
-                                            stp.ldn_service_variable_id(our_mac))
+            service = (pia_lan.service_variable_id(our_ip, our_port) if args.lan
+                       else stp.ldn_service_variable_id(our_mac))
+            location = stp.station_location(our_ip, our_port, our_constant, variable_id, service)
             target_constant = st["host_constant_seen"] or stp.ldn_constant_id(host_mac)
             target_var = st["host_var"] or 0
             flags = [int(x, 0) for x in _expand(args.nat_flags)]
@@ -1931,6 +2024,13 @@ async def main_async(args):
                 await trio.sleep(0.25)
                 if st["host_leaving"] is not None:
                     break
+                quiet = time.monotonic() - t0 - (st["last_rx"] or math.inf)
+                if args.lan and quiet > args.lan_quiet:
+                    # No network to lose on LAN: a console that left is one that went quiet; RTT
+                    # alone keeps a seated one talking about three times a second.
+                    st["host_leaving"] = time.monotonic() - t0
+                    print(f"\n[cx] *** THE CONSOLE WENT QUIET FOR {quiet:.1f} s - IT LEFT ***")
+                    break
                 if stall_abort(st["confirm_last_step"], time.monotonic() - t0,
                                args.abort_on_stall, st["ladder_finished"]):
                     print(f"\n[tx] *** THE LADDER STALLED FOR {args.abort_on_stall:.1f} s - "
@@ -2088,6 +2188,19 @@ def build_parser():
     ap.add_argument("--our-ip", default=None, help="--ip-join: our own address on that LAN")
     ap.add_argument("--scan-ip", default=None,
                     help="--ip-join: the address a scan leaves from; default --our-ip")
+    ap.add_argument("--lan", default=None, metavar="ADDRESS",
+                    help="join a console in Sword's LAN mode over the IP network: its address, "
+                         "the subnet broadcast, or auto for every local /24 (docs/swsh_session.md, "
+                         "LAN mode); no radio, no keys")
+    ap.add_argument("--lan-port", type=int, default=pia_lan.STATION_PORTS[0],
+                    help="--lan: our station port")
+    ap.add_argument("--lan-broadcast", default=None,
+                    help="--lan: the console's broadcast address; default --lan's /24")
+    ap.add_argument("--lan-max-players", type=int, default=2)
+    ap.add_argument("--lan-host-wait", type=float, default=5.0,
+                    help="--lan: seconds to repeat the host request before the station handshake")
+    ap.add_argument("--lan-quiet", type=float, default=3.0,
+                    help="--lan: seconds of silence that mean the console left")
     ap.add_argument("--ifname", default="ldnclient")
     ap.add_argument("--channels", default="1,6,11")
     ap.add_argument("--dwell", type=float, default=1.5)
@@ -2556,7 +2669,7 @@ def main(argv=None):
         for key in ("species", "ability", "level", "experience", "nickname", "ot", "ivs", "moves"):
             setattr(args, "offer_" + key, None)
     args.validate_offer = True
-    if not args.ip_join and needs_root():
+    if not (args.ip_join or args.lan) and needs_root():
         build_parser().error("must run as root (LDN needs the raw radio)")
     try:
         return trio.run(main_async, args)
@@ -2564,7 +2677,7 @@ def main(argv=None):
         print(f"[cx] {type(e).__name__}: {e}")
         for sub in getattr(e, "exceptions", ()) or ():
             print(f"[cx]   caused by: {type(sub).__name__}: {sub}")
-        if not args.ip_join:
+        if not (args.ip_join or args.lan):
             cleanup()
         raise
 

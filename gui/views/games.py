@@ -821,7 +821,9 @@ class SessionPanel:
             ("ok", tr('games.switch_keys_added_0e91df', 'Switch keys added'), "", "") if keys_found(self.app.settings.keys) else
             ("block", tr('games.add_your_switch_keys_c4f190', 'Add your Switch keys'), tr('games.choose_prod_keys_in_settings_259956', 'Choose prod.keys in Settings.'), "settings"),
         ]
-        if self.app.settings.radio:
+        if not self.tool.radio:
+            items = [("ok", tr('games.no_board_needed_lan', 'No board needed: this computer\'s network'), "", "")]
+        elif self.app.settings.radio:
             radio = self.app.plugin_radio()
             items.append(("ok", tr('games.radio_78fa73', 'Radio: {value0}', value0=radio.label), "", "") if radio else
                          ("block", tr('games.radio_plugin_not_loaded_199762', 'Radio plugin not loaded'), tr('games.turn_its_plugin_on_or_pick_the_board_d49846', 'Turn its plugin on, or pick the board.'),
@@ -1076,12 +1078,12 @@ class SessionPanel:
             return
         if self.app.busy:
             return
-        radio = self.app.plugin_radio() if s.radio else None
-        port = radio.scheme if radio else "" if s.radio else self.app.radio_port()
+        radio = self.app.plugin_radio() if s.radio and tool.radio else None
+        port = (radio.scheme if radio else "" if s.radio else self.app.radio_port()) if tool.radio else "lan"
         problems = [p for p in (
             "" if port else tr('games.the_radio_plugin_is_not_loaded_3f5a2c', 'The radio plugin is not loaded.') if s.radio else
             tr('games.no_board_found_plug_it_in_or_pick_one_on_the_board_page_39a182', 'No board found. Plug it in, or pick one on the Board page.'),
-            "" if os.path.isfile(os.path.expanduser(s.keys)) else tr('games.choose_your_prod_keys_in_settings_eb3db2', 'Choose your prod.keys in Settings.'),
+            "" if not tool.radio or os.path.isfile(os.path.expanduser(s.keys)) else tr('games.choose_your_prod_keys_in_settings_eb3db2', 'Choose your prod.keys in Settings.'),
             command.missing_offer(tool, self.games.values), *command.problems(tool, self.games.values)) if p]
         self.log.clear()
         if problems:
@@ -1113,8 +1115,11 @@ class SessionPanel:
         self.stopping = False
         self.app.process_label = tool.name
         self.running_tool = tool
+        env = runner.base_env(s, port, trace)
+        if not tool.radio:
+            env.pop("POKELDN_RADIO", None)     # the run opens no board
         self.app.process = runner.Process(["--run", tool.script, *args], str(SESSION),
-                                          runner.base_env(s, port, trace), self._line, self._exited,
+                                          env, self._line, self._exited,
                                           popups=self.app.popups, label=tool.name)
         self.run = (self.app.process, stamp, self.games.game.key)
         self.games.panes.show(2)

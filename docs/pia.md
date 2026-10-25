@@ -136,7 +136,7 @@ authentication with no other symptom.
 | network type | class | derivation |
 |---|---|---|
 | LDN (local wireless) | `nn::pia::local::LocalProtocol` | AES-128-ECB under the game key, over 16 bytes from an xorshift128 seeded from a session value |
-| LAN | `nn::pia::lan::LanProtocol` | first 16 bytes of HMAC-SHA256(game key, a 32-byte parameter whose last byte is incremented) |
+| LAN | `nn::pia::lan::LanProtocol` | first 16 bytes of HMAC-SHA256(game key, a 32-byte parameter whose last byte is incremented) ([LAN mode](#lan-mode)) |
 | NEX (internet) | `nn::pia::nex::*` | session key from the matchmaking server |
 
 ### The game key
@@ -171,6 +171,76 @@ For Pia 5.27-5.45 and version 4 (`ldn_nonce_crc()`, `gcm_iv()`):
     IV[4..11] = the packet's 8-byte header nonce
 
 The plaintext's `0xFF` padding is known plaintext that tests a candidate key in one AES block.
+
+## LAN mode
+
+LAN mode carries Pia over UDP on an ordinary IP network: a station finds a session by broadcast,
+with no radio and no LDN. `pokeldn/ldn/pia_lan.py` implements Pia 5.45 and earlier; every fact below
+was measured against an emulated Shield 1.3.2 (`tests/test_swsh_lan.py` pins them to its bytes).
+
+| port | carries |
+|---|---|
+| 30000 | browse requests (broadcast) and browse replies (unicast to the requester), not wrapped in Pia |
+| 49152-49155 | a station's Pia packets; a console takes the first free one |
+| 40000 | broadcast reliable (0x80) messages a station sends to the subnet broadcast |
+
+### Browse request and reply
+
+A browse request is `00`, a u32 size `0x23A`, the 0x23A-byte search criteria and a 0x12A-byte crypto
+challenge. A reply is `01`, a u32 size `0x511`, the session info and a 0x3A-byte challenge reply.
+
+| criteria offset | field |
+|---|---|
+| 0x00 | minimum participants, a (maximum, minimum) pair of u16 |
+| 0x04 | maximum participants, the same pair |
+| 0x08 | opened only, vacant only |
+| 0x0A | result offset, result size (u32 each) |
+| 0x12 | game mode (u32) |
+| 0x16 | session type (u32) |
+| 0x236 | search flags: 0x1 minimum, 0x2 maximum, 0x4 opened, 0x8 vacant, 0x10 game mode, 0x20 session type |
+
+| session info offset | field |
+|---|---|
+| 0x00 | game mode, network id (u32 each) |
+| 0x08 | six u32 attributes |
+| 0x20 | participants, minimum, maximum (u16 each) |
+| 0x26 | system communication version, application communication version (u8 each; 7 and 7 in Sword) |
+| 0x28 | session type (u16) |
+| 0x2A | 384 bytes of application data, then its u32 size at 0x1AA |
+| 0x1AE | opened |
+| 0x1AF | host address: IPv4, 12 zero bytes, u16 port |
+| 0x1C1 | host constant id (u64), variable id (u32), service variable id (u32) |
+| 0x1D1 | sixteen 50-byte stations: role (1 host, 2 player), name encoding (1 UTF-8), 40-byte name, u64 constant id |
+| 0x4F1 | 32-byte session key parameter |
+
+A station's ids come from its address: the constant id is the IPv4 address over the port
+(`c0a8011f0000c001` for 192.168.1.31:49153), the service variable id is the address's low half over
+the port, and the network id equals the host's service variable id.
+
+### The challenge
+
+    challenge  = version 2, enabled 1, u64 counter, 16-byte challenge key, 16-byte tag,
+                 256 random bytes under AES-GCM(AES-ECB(game key, challenge key),
+                                                 nonce = receiver's broadcast address || counter)
+    key param  = the reply's challenge key || the challenge key of the session's first valid request
+    reply      = HMAC-SHA256(game key, the 256 bytes)[:16]
+                 under AES-GCM(HMAC-SHA256(game key, key param)[:16], the same nonce)
+    session key = HMAC-SHA256(game key, key param with its last byte plus one)[:16]
+
+The nonce opens with the broadcast address of the receiver's subnet (`local | ~mask`). A host builds
+its reply once, for the first valid request it hears, and sends that same reply to every later
+request, so the reply verifies only against that first challenge. A searching console hears its own
+broadcast browse, which can key its session before any other station asks.
+
+### Host request and the AES-GCM IV
+
+After the browse the joiner sends a host request, protocol 0x44 type 3: `03`, 11 zero bytes, the
+u32 network id. The host answers type 4: `04`, 11 zero bytes, the network id, its station location.
+The station handshake that follows is the same as over LDN; there is no Local Protocol (0x24).
+
+    IV[0..3]  = the sender's IPv4 address
+    IV[4]     = the connection id from the packet header
+    IV[5..11] = the last seven bytes of the header nonce
 
 ## The protocols
 
@@ -531,6 +601,9 @@ A receiver that never answers never sees the last three, and the sender keeps re
 1.
 
 ## Unresolved
+
+- Whether a LAN host's reply to the session's first request keeps a 0xFF last key-parameter byte at
+  0xFF or carries into the byte before it when it increments.
 
 - What a retail Sword reads at `[0x37]` of a 17-byte connection response, in bytes the sender does
   not write.

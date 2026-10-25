@@ -6,7 +6,8 @@ Wonder Card record and `beacon` its advertise-data transport.
 
 from pokeldn.swsh import beacon, wc8
 from pokeldn.swsh.session import (COMM_ID, GAME_KEY, PASSPHRASE, PIA_HEADER_SIZE, PIA_PORT,
-                                  PIA_TAG_SIZE, PIA_VERSION, packet_iv, session_key, session_keys)
+                                  PIA_TAG_SIZE, PIA_VERSION, LanSessionKeys, lan_session_keys, packet_iv,
+                                  session_key, session_keys)
 
 __all__ = ["beacon", "wc8", "COMM_ID", "GAME_KEY", "PASSPHRASE", "PIA_HEADER_SIZE", "PIA_PORT", "PIA_TAG_SIZE",
-           "PIA_VERSION", "packet_iv", "session_key", "session_keys"]
+           "PIA_VERSION", "LanSessionKeys", "lan_session_keys", "packet_iv", "session_key", "session_keys"]

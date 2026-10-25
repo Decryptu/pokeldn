@@ -71,6 +71,7 @@ class Tool:
     fixed: tuple[str, ...] = ()
     doc: str = ""
     unavailable: str = ""         # why the tool cannot run yet; it is shown greyed out
+    radio: bool = True            # False: it runs over this computer's own network, no board, no keys
 
 
 @dataclass(frozen=True)
@@ -294,6 +295,17 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
                 "--snapshot-name", "{ot}", "--snapshot-tid", "{tid}", "--snapshot-sid", "{sid}",
                 "--save-offered", "{received}/swsh-{stamp}.pk8"),
          doc="swsh_trade.md"),
+    Tool("swsh-lan", tr('catalog.trade_lan_mode_7f1572', 'Trade (LAN mode)'), "bin/swsh_connect.py",
+         tr('catalog.trade_with_a_console_in_lan_mode_over_your_own_network_n_fe2d77', 'Trade with a console in LAN mode over your own network, no board.'),
+         (tr('catalog.in_options_press_l_r_and_the_left_stick_together_the_gam_cba14e', 'In Options, press L, R and the Left Stick together: the game turns LAN mode on.'), tr('catalog.y_comm_link_trade_no_code_press_a_on_both_messages_44a9b9', 'Y-Comm, Link Trade, no code; press A on both messages.'), tr('catalog.start_the_joiner_while_the_console_searches_the_console_18ac1a', 'Start the joiner while the console searches; the console and this computer share one network.'), tr('catalog.pokeldn_appears_on_the_trade_screen_choose_a_pokemon_and_68f6a5', 'POKELDN appears on the trade screen: choose a Pokemon and confirm.')),
+         (queued("--offer-file", required=False,
+                 help=tr('catalog.pick_a_species_pkhex_builds_a_legal_one_empty_offers_yo_38b1cc', 'Pick a species; PKHeX builds a legal one. Empty offers your own first party Pokemon back.')),
+          FRESH_PID, TRADE_BACK,
+          join_seconds("900")),
+         fixed=("--lan", "auto", "--preset", "trade", "--send-snapshot", "live", "--scans", "60",
+                "--snapshot-name", "{ot}", "--snapshot-tid", "{tid}", "--snapshot-sid", "{sid}",
+                "--save-offered", "{received}/swsh-{stamp}.pk8"),
+         doc="swsh_session.md", radio=False),
     Tool("swsh-gift", tr('catalog.mystery_gift_68b50f', 'Mystery Gift'), "bin/swsh_gift_host.py",
          tr('catalog.send_a_local_wireless_gift_choose_a_preset_an_official__e32c41', 'Send a local wireless gift: choose a preset, an official event, or build your own.'),
          (tr('catalog.mystery_gift_receive_a_gift_via_local_wireless_0c1758', 'Mystery Gift, Receive a Gift, via local wireless.'),

@@ -264,17 +264,17 @@ def test_the_other_switch_games_simulate_their_mystery_gifts_through_their_trade
 
 
 def test_every_game_lists_its_tools_in_one_order():
-    """Trade (Host), Trade (Join), Trade (Online), Mystery Gift, then each raid kind's host and join together,
-    then the Union Circle."""
+    """Trade (Host), Trade (Join), Trade (Online), Trade (LAN mode), Mystery Gift, then each raid kind's host
+    and join together, then the Union Circle."""
     def rank(key, raids):
         kind = key.split("-", 1)[1]
         if "raid-" in kind:
             feature, role = kind.rsplit("raid-", 1)
             raids.setdefault(feature, len(raids))
-            return 4, raids[feature], {"host": 0, "join": 1}[role]
-        for part in ("circle", "online", "join", "gift", "host"):
+            return 5, raids[feature], {"host": 0, "join": 1}[role]
+        for part in ("circle", "online", "lan", "join", "gift", "host"):
             if part in kind:
-                return {"host": 0, "join": 1, "online": 2, "gift": 3, "circle": 5}[part], 0, 0
+                return {"host": 0, "join": 1, "online": 2, "lan": 3, "gift": 4, "circle": 6}[part], 0, 0
         raise AssertionError(key)
     for game in GAMES:
         raids = {}

@@ -4,6 +4,10 @@
     ./.venv/bin/python bin/swsh_host.py --ip-host --our-ip 127.0.0.2 --offer-file FILE
     (them) Y-Comm -> Link Trade -> local communication, no code (or --code) -> search
 
+A console in Sword's LAN mode on the same IP network (Options, L + R + Left Stick), no radio:
+
+    ./.venv/bin/python bin/swsh_host.py --lan --offer-file FILE
+
 Below the game `pokeldn.ldn.host4`, above it `pokeldn.swsh.host_trade`. docs/swsh_session.md,
 docs/swsh_trade.md.
 """
@@ -26,11 +30,12 @@ from pokeldn.host_support import write_file
 from pokeldn import config, gen8
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn.ldn import host4, left_after_trade, mesh_protocol as mesh
+from pokeldn.ldn import pia_lan
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, find_ap_phy
 from pokeldn.swsh import beacon, host_trade, lair, lair_host, league_card, pokemon as swsh_pokemon, raid, raid_event, raid_host, trade_payload
 from pokeldn.ldn.pia5 import password_crc
-from pokeldn.swsh.session import COMM_ID, PASSPHRASE, session_keys
+from pokeldn.swsh.session import COMM_ID, GAME_KEY, PASSPHRASE, session_keys
 from pokeldn.app import screen
 from pokeldn.online import session as online
 from pokeldn import trade_back
@@ -159,7 +164,19 @@ def build_parser():
     ap.add_argument("--channel", type=int, default=None)
     ap.add_argument("--ip-host", action="store_true",
                     help="host over ldn_mitm on the LAN for an emulator; no radio and no root")
-    ap.add_argument("--our-ip", default=None, help="with --ip-host, the address to advertise")
+    ap.add_argument("--our-ip", default=None,
+                    help="with --ip-host or --lan, the address to advertise")
+    ap.add_argument("--lan", action="store_true",
+                    help="host a session for a console in Sword's LAN mode on this IP network "
+                         "(docs/swsh_session.md, LAN mode); no radio, no root, no keys")
+    ap.add_argument("--lan-port", type=int, default=pia_lan.STATION_PORTS[0])
+    ap.add_argument("--lan-max-players", type=int, default=None,
+                    help="--lan: the maximum the session info states")
+    ap.add_argument("--lan-broadcast", default=None,
+                    help="--lan: the subnet broadcast address the console's challenge uses")
+    ap.add_argument("--lan-console-ip", default=None,
+                    help="--lan from a loopback address: the address a console on this machine "
+                         "believes it has; default this machine's own")
     ap.add_argument("--comm-id", type=lambda s: int(s, 0), default=COMM_ID)
     ap.add_argument("--scene-id", type=int, default=SCENE_ID)
     ap.add_argument("--app-version", type=int, default=APP_VERSION)
@@ -362,11 +379,11 @@ def main(argv=None):
                        for path in args.offer_file]
     # A trade past the queue offers the last file again, under a new PID with --fresh-pid.
     args.renew_offer, args.fresh_pid = args.fresh_pid, False
-    if not args.ip_host and needs_root():
+    if not (args.ip_host or args.lan) and needs_root():
         print("[sw] hosting over the radio needs root, a board (POKELDN_RADIO), or --ip-host")
         return 1
     phy = None
-    if not args.ip_host:
+    if not (args.ip_host or args.lan):
         phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
     network_id = (bytes.fromhex(args.network_id) if args.network_id
                   else os.urandom(2) + NETWORK_ID_HIGH)       # little-endian: the high half last
@@ -464,8 +481,15 @@ def main(argv=None):
             cap.flush()
 
     machine = config.load_project_host_file_config()
-    factory = IpHostTransport if args.ip_host else HostTransport
-    transport = factory(
+    if args.lan:
+        transport = pia_lan.LanHostTransport(
+            GAME_KEY, args.scene_id, our_ip=args.our_ip, our_port=args.lan_port,
+            max_participants=args.lan_max_players or (
+                RAID_PARTICIPANTS if boss_pk8 or lairing else MAX_PARTICIPANTS),
+            nickname=args.player_name, broadcast=args.lan_broadcast,
+            console_ip=args.lan_console_ip)
+    else:
+        transport = (IpHostTransport if args.ip_host else HostTransport)(
         app_data=app_data, password=PASSPHRASE, nickname=args.player_name,
         keys_path=resolve_keys(args.keys), local_comm_id=args.comm_id, scene_id=args.scene_id,
         app_version=args.app_version,
@@ -475,6 +499,7 @@ def main(argv=None):
         **({"mirror_comm_version": True} if args.ip_host else {}),
         **({} if args.ip_host else dict(skip_encryption=machine.skip_encryption,
                                         accept_decrypted_ccmp=machine.accept_decrypted_ccmp)))
+
     print(f"[sw] advertising comm id {args.comm_id:#018x} scene {args.scene_id} "
           f"app version {args.app_version}; {keys}")
     record({"rec": "host", "comm_id": args.comm_id, "app_data": app_data.hex(),
@@ -586,11 +611,19 @@ def main(argv=None):
     except RuntimeError as exc:
         print(f"[sw] the network did not come up: {exc}")
         return 2
-    host = host4.Pia4Host(keys.network_id_le, keys.session_key, transport.our_ip,
-                          transport.our_mac, transport.send, on_data=on_data,
-                          on_other=on_other, on_broadcast=on_broadcast,
-                          name=args.player_name, capture=record,
-                          max_stations=RAID_PARTICIPANTS if boss_pk8 or lairing else 2)
+    if args.lan:
+        host = host4.Pia4LanHost(None, transport.our_ip, transport.send, args.lan_port,
+                                 transport.constants.get, on_data=on_data, on_other=on_other,
+                                 on_broadcast=on_broadcast, name=args.player_name,
+                                 capture=record,
+                                 max_stations=RAID_PARTICIPANTS if boss_pk8 or lairing else 2)
+        transport.bind_host(host.constant, host.variable, host.service_variable, host.location)
+    else:
+        host = host4.Pia4Host(keys.network_id_le, keys.session_key, transport.our_ip,
+                              transport.our_mac, transport.send, on_data=on_data,
+                              on_other=on_other, on_broadcast=on_broadcast,
+                              name=args.player_name, capture=record,
+                              max_stations=RAID_PARTICIPANTS if boss_pk8 or lairing else 2)
     if boss_pk8 is not None:
         party[0] = raid_host.RaidParty(host.constant, args.raid_console_serves)
     show_lobby(app_data, boss_pk8, args.lair_legendary, args.code)
@@ -599,6 +632,8 @@ def main(argv=None):
     try:
         while time.time() < deadline:
             now = time.time()
+            if args.lan and transport.session_key is not None:
+                host.session_key = transport.session_key    # keyed by the first browse
             present = {p[1]: p for p in transport.participants}
             for ip, (index, _ip, mac, name) in present.items():
                 if ip not in host.stations:

@@ -11,7 +11,7 @@ import zlib
 
 from pokeldn.ldn import local_protocol as lp
 from pokeldn.ldn import mesh_protocol as mesh
-from pokeldn.ldn import pia4, reliable4, reliable5, rtt_protocol as rtt
+from pokeldn.ldn import pia4, pia_lan, reliable4, reliable5, rtt_protocol as rtt
 from pokeldn.ldn import station4
 from pokeldn.ldn import station_protocol as stp
 from pokeldn.ldn.pia5 import gcm_iv, ldn_nonce_crc
@@ -96,6 +96,8 @@ class Station:
 class Pia4Host:
     """Everything below the game: seat a joiner, keep the mesh, carry both reliable windows."""
 
+    LOCAL_PROTOCOL = True         # the LDN session's update session and network teardown
+
     def __init__(self, network_id_le, session_key, our_ip, our_mac, send, log=print,
                  on_data=None, on_other=None, name="POKELDN", account=None, token=None,
                  session=None, capture=None, on_broadcast=None, max_stations=2):
@@ -127,6 +129,9 @@ class Pia4Host:
         self.migrating = None         # when we started handing the session over, or None
         self.last_destroy = 0.0
 
+    def packet_iv(self, mac, nonce8, source_id=0):
+        return packet_iv(self.network_id_le, mac, nonce8, source_id=source_id)
+
     def record(self, **row):
         if self.capture is not None:
             row.setdefault("t", round(time.time() - self.t0, 4))
@@ -139,10 +144,13 @@ class Pia4Host:
                                  message_flags=flags | (pia4.MESSAGE_FLAG_ZLIB if compress else 0),
                                  destination=destination)
         nonce8 = os.urandom(8)
-        iv = packet_iv(self.network_id_le, self.our_mac, nonce8)
+        iv = self.packet_iv(self.our_mac, nonce8)
         self._send(pia4.build_packet(self.session_key, iv, msg, nonce8=nonce8), dst_ip)
         self.record(rec="tx", dst=dst_ip, protocol=protocol, port=port, flags=flags,
                     destination=destination, payload=payload.hex())
+
+    def station_constant(self, ip, st):
+        return st.constant
 
     def next_ack_id(self):
         self.ack_counter = (self.ack_counter + 1) & 0xFFFFFFFF
@@ -153,6 +161,7 @@ class Pia4Host:
         if ip in self.stations:
             return self.stations[ip]
         st = Station(ip, mac, index)
+        st.constant = self.station_constant(ip, st)
         self.stations[ip] = st
         self.sequence += 1
         self.log(f"[pia4] seat {index}: {ip} {st.mac.hex()} constant {st.constant:#018x}")
@@ -191,13 +200,16 @@ class Pia4Host:
 
     def tick(self, now=None):
         now = time.time() if now is None else now
-        if self.migrating is not None and now - self.last_destroy >= DESTROY_PERIOD:
+        if (self.LOCAL_PROTOCOL and self.migrating is not None
+                and now - self.last_destroy >= DESTROY_PERIOD):
             for broadcast in self.broadcast_ips():
                 self.send_message(broadcast, bytes([1, lp.START_HOST_MIGRATION]) + bytes(14),
                                   lp.PROTOCOL, flags=0x09)
             self.last_destroy = now
-        if (any(st.update_acked < self.sequence for st in self.stations.values())
-                or not self.stations) and now - self.last_update >= UPDATE_SESSION_PERIOD:
+        if self.LOCAL_PROTOCOL and (any(st.update_acked < self.sequence
+                                        for st in self.stations.values())
+                                    or not self.stations) and (
+                now - self.last_update >= UPDATE_SESSION_PERIOD):
             upd = lp.build_update_session(self.sequence, self.local_network_id, self.variable,
                                           self.service_variable, self.constant, self.nodes(),
                                           host_migration_state=int(self.migrating is not None))
@@ -315,7 +327,7 @@ class Pia4Host:
         if st is None or not pia4.is_pia4(data):
             return
         h = pia4.PiaHeader4.parse(data)
-        iv = packet_iv(self.network_id_le, st.mac, h.nonce8, source_id=h.station)
+        iv = self.packet_iv(st.mac, h.nonce8, source_id=h.station)
         plain = pia4.decrypt_payload(self.session_key, iv, pia4.ciphertext(data), h.tag)
         if plain is None:
             self.record(rec="rx_unauthenticated", src=src_ip, head=data[:16].hex())
@@ -427,3 +439,28 @@ class Pia4Host:
             self.mesh_counter += 1
             st.last_update_mesh = 0.0
             self.log(f"[pia4] {st.ip}: joined the mesh as station {st.index}")
+
+
+class Pia4LanHost(Pia4Host):
+    """`Pia4Host` in LAN mode (docs/swsh_session.md, LAN mode): no Local Protocol, ids from the
+    address and port, the IV from the sender's address. `constant_of(ip)` names a seated console's
+    constant id, which its host request carried."""
+
+    LOCAL_PROTOCOL = False
+
+    def __init__(self, session_key, our_ip, send, our_port, constant_of, **kw):
+        super().__init__(bytes(4), session_key or bytes(16), our_ip, pia_lan.station_mac(our_ip),
+                         send, **kw)
+        self.our_port = our_port
+        self.constant_of = constant_of
+        self.constant = pia_lan.constant_id(our_ip, our_port)
+        self.service_variable = pia_lan.service_variable_id(our_ip, our_port)
+        self.location = stp.station_location(our_ip, our_port, self.constant, self.variable,
+                                             self.service_variable, nat_flags=0, nat_location=0,
+                                             probeinit=0, private_available=1, public=False)
+
+    def packet_iv(self, mac, nonce8, source_id=0):
+        return pia_lan.packet_iv(pia_lan.station_ip(mac), source_id, nonce8)
+
+    def station_constant(self, ip, st):
+        return self.constant_of(ip) or st.constant
