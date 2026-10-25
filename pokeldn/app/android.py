@@ -152,6 +152,14 @@ def install() -> None:
     sys.modules["pokeldn_android_serial"] = types.ModuleType("pokeldn_android_serial")
     sys.modules["pokeldn_android_serial.protocol_android"] = protocol
     serial.protocol_handler_packages.append("pokeldn_android_serial")
+    # esp_pylib refuses a URL port's ids; without them esptool resets a native USB chip the
+    # classic way and never reaches its loader (docs/hardware_esp32.md, Building and flashing).
+    import esp_pylib.serial_ports as serial_ports
+    lookup = serial_ports.get_port_vid_pid
+    serial_ports.get_port_vid_pid = lambda name: (
+        (int(bridge().deviceVendorId()), int(bridge().deviceProductId())) if name == PORT else lookup(name))
+    if "esptool.loader" in sys.modules:
+        sys.modules["esptool.loader"].get_port_vid_pid = serial_ports.get_port_vid_pid
 
 
 def usb_state() -> str:

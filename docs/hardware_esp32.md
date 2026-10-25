@@ -520,6 +520,10 @@ Console output is off; on classic ESP32 the firmware assigns UART0's GPIO1 and G
 bootloader at the chip's flash offset (ESP32 `0x1000`, others `0x0`) before writing: esptool 5.4.0's
 `write_flash` can skip its chip check when an image starts with padding. Never choose firmware from a
 USB bridge ID.
+esptool picks its reset from the port's USB ids, which esp-pylib 1.1.5 refuses to look up for a URL
+port such as Android's `android://board`; with no ids it gives an ESP32-S3, C3 or C6 the classic
+DTR/RTS reset, the chip never enters its ROM loader, and the log reads `Failed to get VID/PID`. The
+Android app answers the lookup from the board's own USB ids (`pokeldn/app/android.py`).
 [Desktop builds](gui.md) covers packaging all four images.
 
 ### Bluetooth
