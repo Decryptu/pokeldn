@@ -537,7 +537,7 @@
 "catalog.y_comm_link_trade_local_communication_no_code_press_a_o_db5138" = "Y-Comm, Link Trade, local communication, no code; press A on both messages."
 "catalog.y_comm_link_trade_local_communication_press_a_on_both_m_19fa15" = "Y-Comm, Link Trade, local communication; press A on both messages, then wait in the overworld."
 "catalog.y_comm_link_trade_local_communication_with_the_same_lin_316b85" = "Y-Comm, Link Trade, local communication with the same Link Code; press A on both messages, then wait in the overworld."
-"catalog.y_comm_link_trade_no_code_press_a_on_both_messages_44a9b9" = "Y-Comm, Link Trade, no code; press A on both messages."
+"catalog.y_comm_link_trade_with_or_without_a_link_code_in_la_64e689" = "Y-Comm, Link Trade, with or without a Link Code (in LAN mode the code is ignored); press A on both messages."
 "catalog.y_communicate_trade_pokemon_accept_the_greeting_bc6aa6" = "Y, Communicate, Trade Pokemon; accept the greeting."
 "catalog.y_communicate_trade_pokemon_accept_the_greeting_then_ch_068c66" = "Y, Communicate, Trade Pokemon; accept the greeting, then choose and confirm."
 "catalog.y_communicate_trade_pokemon_accept_the_greeting_then_ch_2c7215" = "Y, Communicate, Trade Pokemon; accept the greeting, then choose."

@@ -291,7 +291,8 @@ and the NEX random join (`0x006c6b7c`) format it with `%u` and pass it as the se
 code in the LAN matching class (`0x006b6000`..`0x006bc000`, constructed at `0x006ba480`) reads
 +0x278, and its create, browse and random-join settings carry no password. A coded Link Trade search
 in LAN mode therefore sends the same browses as an uncoded one and joins any session that matches
-them.
+them. A retail Sword searching with code 12345678 sent the uncoded trade browse (game mode 60001,
+flags 0x12, no attributes), joined `bin/swsh_host.py --lan` and traded.
 
 ## Operational notes
 
