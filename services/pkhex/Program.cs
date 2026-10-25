@@ -852,7 +852,13 @@ static partial class Program
             var name = (string?)request["name"] ?? "";
             var found = new JsonArray();
             var reply = new JsonObject { ["pokemon"] = found };
-            if (SaveUtil.TryGetSaveFile(data, out var sav, name))
+            if (PksmBank.Read(data) is { } bank)
+            {
+                reply["save"] = $"PKSM bank, {bank.Boxes} boxes";
+                foreach (var (box, slot, pk) in bank.Pokemon)
+                    found.Add(Imported(request, pk, $"Box {box + 1}, slot {slot + 1}"));
+            }
+            else if (SaveUtil.TryGetSaveFile(data, out var sav, name))
             {
                 // A GBA save does not say which of its pair it is; PKHeX guesses FireRed or Ruby.
                 var version = sav switch
@@ -1673,6 +1679,7 @@ static partial class Program
                 ["legal"] = accepted,
                 ["report"] = la.Report(displayLanguage),
                 ["problems"] = accepted ? "" : Plain(la),
+                ["battle"] = Battle(pk),
             };
             if (displayLanguage != "en")
             {
@@ -1691,6 +1698,32 @@ static partial class Program
                 };
             }
             return result;
+        }
+
+        // IVs, effort (EVs; Let's Go's AVs; Legends Arceus's GVs as the game shows them) and stats in Showdown's
+        // order (HP, Atk, Def, SpA, SpD, Spe; PKHeX keeps Speed fourth), and the record as an English Showdown set.
+        static JsonObject Battle(PKM pk)
+        {
+            int[] order = [0, 1, 2, 4, 5, 3];
+            int[] ivs = new int[6], evs = new int[6];
+            pk.GetIVs(ivs);
+            pk.GetEVs(evs);
+            var stats = pk.GetStats(pk.PersonalInfo);
+            var (kind, effort) = pk switch
+            {
+                IAwakened av => ("avs", (Func<int, int>)(i => av.GetAV(i))),
+                IGanbaru gv => ("gvs", i => gv.GetGV(i) + GanbaruExtensions.GetBias(ivs[i])),
+                _ => ("evs", i => evs[i]),
+            };
+            JsonArray Pick(Func<int, int> value) => new(order.Select(i => (JsonNode?)value(i)).ToArray());
+            return new JsonObject
+            {
+                ["ivs"] = Pick(i => ivs[i]),
+                ["effort_kind"] = kind,
+                ["effort"] = Pick(effort),
+                ["stats"] = Pick(i => stats[i]),
+                ["showdown"] = new ShowdownSet(pk).Text,
+            };
         }
 
         // "made" for a tracker this request filled, "empty" for one PKHeX wants and the record lacks.

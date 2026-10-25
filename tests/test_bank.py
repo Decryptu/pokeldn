@@ -243,6 +243,43 @@ def test_a_record_of_a_game_the_bank_holds_is_kept_byte_for_byte(service, vault)
     assert bank.deposit("swsh", str(path), service.check("swsh", str(path))) is None
 
 
+def pksm_bank(version, slots, boxes=1):
+    """A PKSM bank as PKSM's BankFile::parse reads it: "PKSMBANK", u32 version, u32 boxes (none in version 1), then
+    30 entries per box of a u32 generation tag and the decrypted record, 0xFF filled [PKSM common/source/BankFile.cpp]."""
+    size = 0x150 if version == 3 else 264
+    entries = [b"\xff" * size] * (30 * boxes)
+    for index, (tag, record) in slots.items():
+        entries[index] = (tag.to_bytes(4, "little") + record).ljust(size, b"\xff")
+    head = b"PKSMBANK" + version.to_bytes(4, "little") + (b"" if version == 1 else boxes.to_bytes(4, "little"))
+    return head + b"".join(entries)
+
+
+@pytest.mark.parametrize("version", [1, 2, 3])
+def test_a_pksm_bank_is_imported_slot_by_slot_as_its_records_would_be(service, vault, version):
+    """PKSM tags a Gen 4 record 0 and a Gen 6 record 2 [PKSM-Core include/enums/Generation.hpp]."""
+    path = vault / "mine.bnk"
+    path.write_bytes(pksm_bank(version, {3: (0, bytes.fromhex(FIXTURE["pk4"])),
+                                         31: (2, bytes.fromhex(FIXTURE["pk6"]))}, boxes=2))
+    result = bank.import_file(str(path), TRAINERS)
+    assert result.save == "PKSM bank, 2 boxes"
+    assert [(p.where, p.species_id, p.state) for p in result.pokemon] == [
+        ("Box 1, slot 4", 399, "banked"), ("Box 2, slot 2", 661, "banked")]
+    from_bank = sorted((e.game, e.summary, e.legal) for e in bank.entries())
+    for name in ("bidoof.pk4", "fletchling.pk6"):
+        (vault / name).write_bytes(bytes.fromhex(FIXTURE[name.split(".")[1]]))
+    alone = bank.import_file(str(vault / "bidoof.pk4"), TRAINERS, folder=vault / "Alone").pokemon
+    alone += bank.import_file(str(vault / "fletchling.pk6"), TRAINERS, folder=vault / "Alone").pokemon
+    assert [p.state for p in alone] == ["banked", "banked"]
+    assert from_bank == sorted((e.game, e.summary, e.legal) for e in bank.entries(vault / "Alone"))
+
+
+def test_a_pksm_bank_from_a_newer_pksm_is_refused(service, vault):
+    path = vault / "newer.bnk"
+    path.write_bytes(pksm_bank(3, {})[:8] + (4).to_bytes(4, "little") + pksm_bank(3, {})[12:])
+    with pytest.raises(pokemon.BuilderError, match="PKSM bank version 4"):
+        bank.import_file(str(path), TRAINERS)
+
+
 def test_a_file_pkhex_cannot_read_is_refused(service, vault):
     path = vault / "notes.pk6"
     path.write_bytes(b"not a pokemon")
@@ -315,3 +352,21 @@ def test_removal_uses_an_exact_id_and_preserves_unrelated_files(tmp_path):
         assert {p.name for p in tmp_path.iterdir()} == before
     bank.remove("pokemon", folder=tmp_path)
     assert {p.name for p in tmp_path.iterdir()} == {"pokemon.txt", "other.pk8", "other.json"}
+
+
+@pytest.mark.parametrize("game, kind, effort", [
+    ("lgpe", "avs", {"hp": 200, "atk": 20, "def": 20, "spa": 20, "spd": 20, "spe": 100}),
+    # The levels the game shows: never under the IV's bias, 3 at most [GanbaruExtensions.GetBias].
+    ("pla", "gvs", {"hp": 10, "atk": 3, "def": 3, "spa": 3, "spd": 3, "spe": 5}),
+    ("swsh", "evs", {"hp": 252, "atk": 0, "def": 0, "spa": 0, "spd": 4, "spe": 252}),
+])
+def test_a_battle_set_reads_back_the_effort_it_was_built_with_and_its_showdown_set_pastes(service, game, kind, effort):
+    built = service.make(game, 25, TRAINER, level=30, options={"effort": effort, "nature": 10})
+    battle = service.check_bytes(game, base64.b64decode(built["data"]))["battle"]
+    assert battle["effort_kind"] == kind
+    assert battle["effort"] == [effort[s] for s in ("hp", "atk", "def", "spa", "spd", "spe")]
+    [pasted] = service.paste(game, battle["showdown"], TRAINER)
+    assert not pasted["errors"] and (pasted["species_id"], pasted["options"]["nature"], pasted["moves"]) == (
+        25, 10, built["moves"])
+    ivs = pasted["options"].get("ivs", {})      # Showdown leaves out an IV of 31
+    assert [ivs.get(s, 31) for s in ("hp", "atk", "def", "spa", "spd", "spe")] == battle["ivs"]

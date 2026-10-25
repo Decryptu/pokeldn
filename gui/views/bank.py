@@ -19,6 +19,8 @@ from pokeldn.app.catalog import GAMES
 
 NAMES = {game.key: game.name for game in GAMES}
 ALL = "all"
+DEX = "dex"   # the Pokedex: every species a bank game holds, and whether the bank has one
+STATS = ["HP", "Atk", "Def", "SpA", "SpD", "Spe"]
 SORTS = {"newest": lambda e: (-e.created, e.id), "oldest": lambda e: (e.created, e.id),
          "dex": lambda e: (e.species_id, -e.created), "name": lambda e: (e.summary.split(" · ")[0].casefold(), -e.created)}
 
@@ -66,14 +68,19 @@ class BankView:
         self.selected: str = ""           # an Entry.id
         self.target: str = ""             # the game chosen to send the selected Pokemon to
         self.routes: dict[str, dict] = {}   # Entry.id -> pokemon.Service.destinations
+        self.battle: dict[str, dict] = {}   # Entry.id -> the helper's "battle": IVs, effort, stats, Showdown set
         self.working = False
         self.tiles: dict[str, Tile] = {}
         self.picking = False              # several Pokemon are being chosen for one action
         self.picked: set[str] = set()
-        self.query, self.sort = "", "newest"
+        self.query, self.sort, self.only = "", "newest", "any"
+        self.dex_names: dict[int, str] = {}   # species id -> name, every species one of the bank's games holds
+        self.dex_only = "all"
+        self.queued: set[str] = set()       # bank.queued_ids, read once per render
         self.boxes = ft.ListView(spacing=2, padding=ft.Padding(8, 8, 8, 8), expand=True)
         # A lazy grid: only the tiles on screen are laid out and their sprites decoded.
         self.grid = ft.GridView(max_extent=64, spacing=6, run_spacing=6, padding=ft.Padding(0, 0, 0, 24), expand=True)
+        self.dex = ft.GridView(max_extent=64, spacing=6, run_spacing=6, padding=ft.Padding(0, 0, 0, 24), expand=True)
         self.heading = t.text("", 12, t.MUTED)
         self.search = t.field(hint=tr('bank.search_by_name', 'Search'), on_change=self._search, expand=True)
         self.pick_button = t.secondary_button(tr('bank.select_several', 'Select'), lambda e: self._picking(not self.picking),
@@ -84,7 +91,7 @@ class BankView:
         self.panes = t.Panes(
             (tr('bank.pane_boxes', 'Boxes'), "archive", t.panel(ft.Column([
                 t.panel_header(tr('bank.bank_676c47', 'Bank'),
-                               t.icon_button("plus", self._pick, tr('bank.import_a_pokemon_file_or_a_game_save_da7f8c', 'Import a Pokemon file or a game save')),
+                               t.icon_button("plus", self._pick, tr('bank.import_a_file', 'Import a Pokemon file, a game save or a PKSM bank')),
                                t.icon_button("folder", lambda e: open_folder(str(self._folder())),
                                              tr('bank.open_the_bank_folder_438a67', 'Open the bank folder')),
                                t.icon_button("refresh", lambda e: self.refresh(), tr('bank.refresh_0e9161', 'Refresh'))),
@@ -92,15 +99,29 @@ class BankView:
             ], spacing=0, expand=True), width=t.SIDEBAR_WIDTH)),
             (tr('bank.pane_box', 'Box'), "package", drop.target(ft.Container(ft.Column([
                 ft.Row([self.search], spacing=8),
-                ft.Row([t.dropdown([("newest", tr('bank.sort_newest', 'Newest first')),
-                                    ("oldest", tr('bank.sort_oldest', 'Oldest first')),
-                                    ("dex", tr('bank.sort_dex', 'Pokedex number')),
-                                    ("name", tr('bank.sort_name', 'Name'))], self.sort,
-                                   on_select=lambda e: self._sorted(e.control.value)),
-                        self.pick_button], spacing=8),
+                box_tools := ft.Row([
+                    t.dropdown([("newest", tr('bank.sort_newest', 'Newest first')),
+                                ("oldest", tr('bank.sort_oldest', 'Oldest first')),
+                                ("dex", tr('bank.sort_dex', 'Pokedex number')),
+                                ("name", tr('bank.sort_name', 'Name'))], self.sort,
+                               on_select=lambda e: self._sorted(e.control.value)),
+                    t.dropdown([("any", tr('bank.only_any', 'Every Pokemon')),
+                                ("shiny", tr('bank.only_shiny', 'Shiny')),
+                                ("queued", tr('bank.only_queued', 'Waiting to trade')),
+                                ("illegal", tr('bank.only_illegal', 'Not legal'))], self.only,
+                               on_select=lambda e: self._only(e.control.value)),
+                    self.pick_button], spacing=8),
+                dex_tools := ft.Row([
+                    t.dropdown([("all", tr('bank.dex_all', 'Every species')),
+                                ("have", tr('bank.dex_have', 'In the bank')),
+                                ("missing", tr('bank.dex_missing', 'Missing')),
+                                ("shiny", tr('bank.dex_no_shiny', 'No shiny yet'))], self.dex_only,
+                               on_select=lambda e: self._dex_only(e.control.value)),
+                ], spacing=8, visible=False),
                 self.actions,
                 ft.Container(self.heading, padding=ft.Padding(4, 0, 4, 0)),
-                t.fade(self.grid),
+                grid_box := t.fade(self.grid),
+                dex_box := t.fade(self.dex),
             ], spacing=10, expand=True), padding=ft.Padding(0, 14, 0, 0), expand=True, border_radius=16),
                 self._import, expand=True)),
             (tr('bank.pane_pokemon', 'Pokemon'), "user", t.panel(ft.Column([
@@ -108,6 +129,8 @@ class BankView:
                 ft.Container(ft.Column([self.detail, self.note], spacing=8, expand=True),
                              padding=ft.Padding(18, 8, 18, 18), expand=True),
             ], spacing=0, expand=True), width=t.SESSION_WIDTH)))
+        self.box_tools, self.dex_tools = box_tools, dex_tools
+        self.grid_box, self.dex_box = grid_box, dex_box   # the grids' fades: a hidden grid's fade would still fill
         self.control = self.panes.control
         self.panes.show(1, update=False)   # a phone opens on the box itself
 
@@ -146,10 +169,14 @@ class BankView:
     def render_boxes(self) -> None:
         counts = {key: sum(e.game == key for e in self.items) for key in NAMES}
         rows = [self._box(ALL, tr('bank.all_pokemon_fe268d', 'All Pokemon'), len(self.items), t.pixel_icon("package", color=t.MUTED))]
+        held = len({e.species_id for e in self.items})
+        rows.append(self._box(DEX, tr('bank.pokedex', 'Pokedex'),
+                              f"{held} / {len(self.dex_names)}" if self.dex_names else held,
+                              t.pixel_icon("book-open", color=t.MUTED)))
         rows += [self._box(key, NAMES[key], counts[key], game_icon(key, 28)) for key in NAMES if counts[key]]
         self.boxes.controls = rows
 
-    def _box(self, key: str, label: str, count: int, icon: ft.Control) -> ft.Control:
+    def _box(self, key: str, label: str, count: int | str, icon: ft.Control) -> ft.Control:
         active = key == self.shown
         return ft.Container(ft.Row([
             ft.Container(icon, width=32, alignment=ft.Alignment.CENTER),
@@ -160,7 +187,16 @@ class BankView:
 
     def _show(self, key: str) -> None:
         self.shown = key
+        if key == DEX and self.picking:
+            self._picking(False)
         self.render_boxes()
+        self.render_grid()
+        self.control.update()
+        if key == DEX and not self.dex_names:
+            threading.Thread(target=self._load_dex, daemon=True).start()
+
+    def _only(self, key: str) -> None:
+        self.only = key
         self.render_grid()
         self.control.update()
 
@@ -175,6 +211,10 @@ class BankView:
         self.control.update()
 
     def _matches(self, entry: bank.Entry) -> bool:
+        if self.only == "shiny" and not entry.shiny or self.only == "illegal" and entry.legal:
+            return False
+        if self.only == "queued" and entry.id not in self.queued:
+            return False
         return (self.shown in (ALL, entry.game)
                 and (not self.query or self.query in summary_text(entry.summary).casefold()))
 
@@ -184,16 +224,87 @@ class BankView:
     def render_grid(self) -> None:
         """Every tile stays in the grid and a filter only hides some: a hidden tile costs nothing on screen,
         and showing it again sends no sprite."""
+        dex = self.shown == DEX
+        self.queued = bank.queued_ids(self.app.settings)
+        self.grid_box.visible, self.dex_box.visible = not dex, dex
+        self.box_tools.visible, self.dex_tools.visible = not dex, dex
+        if dex:
+            self.render_dex()
+            self.render_actions()
+            return
         shown = self._shown()
         where = tr('bank.in_the_bank_f69744', 'in the bank') if self.shown == ALL else tr('bank.from_7f2df4', 'from {value0}', value0=NAMES[self.shown])
         self.heading.value = (tr('bank.pokemon_3a4d02', '{value0} Pokemon {value1}', value0=len(shown), value1=where) if shown else
-                              tr('bank.nothing_matches', 'No Pokemon matches this search.') if self.query and self.items else
+                              tr('bank.nothing_matches', 'No Pokemon matches this search.') if (self.query or self.only != "any") and self.items else
                               tr('bank.the_bank_is_empty_every_pokemon_a_trade_brings_in_lands_e05ff4', 'The bank is empty. Every Pokemon a trade brings in lands here, from any game.')
-                              + (tr('bank.drop_a_pokemon_file_or_a_game_save_here_to_import_what__7adc95', ' Drop a Pokemon file or a game save here to import what it holds.')
+                              + (tr('bank.drop_a_file_here', ' Drop a Pokemon file, a game save or a PKSM bank here to import what it holds.')
                                  if drop.AVAILABLE else ""))
-        queued = bank.queued_ids(self.app.settings)
-        self.grid.controls = [self._tile(e, e.id in queued) for e in sorted(self.items, key=SORTS[self.sort])]
+        self.grid.controls = [self._tile(e, e.id in self.queued) for e in sorted(self.items, key=SORTS[self.sort])]
         self.render_actions()
+
+    # The Pokedex
+
+    def _load_dex(self) -> None:
+        names: dict[int, str] = {}
+        try:
+            for key in NAMES:
+                names.update({s["id"]: s["name"] for s in SERVICE.species(key)})
+        except (OSError, pokemon.BuilderError) as error:
+            self.app.ui(lambda: self._say(str(error), t.RED))
+            return
+
+        def done():
+            self.dex_names = names
+            if self.visible:
+                self.render_boxes()
+                self.render_grid()
+                self.control.update()
+        self.app.ui(done)
+
+    def render_dex(self) -> None:
+        """One cell per species: its sprite while the bank holds one, its number while it does not."""
+        held: dict[int, list[bank.Entry]] = {}
+        for entry in self.items:
+            held.setdefault(entry.species_id, []).append(entry)
+        shiny = {s for s, entries in held.items() if any(e.shiny for e in entries)}
+        if not self.dex_names:
+            self.heading.value = tr('bank.dex_loading', 'Reading the species of every game...')
+            self.dex.controls = []
+            return
+        keep = {"all": lambda s: True, "have": lambda s: s in held, "missing": lambda s: s not in held,
+                "shiny": lambda s: s not in shiny}[self.dex_only]
+        self.heading.value = tr('bank.dex_heading', '{held} of {total} species in the bank, {shiny} of them shiny',
+                                held=len(held.keys() & self.dex_names.keys()), total=len(self.dex_names),
+                                shiny=len(shiny & self.dex_names.keys()))
+        self.dex.controls = [self._dex_cell(s, name, held.get(s, []), s in shiny)
+                             for s, name in sorted(self.dex_names.items())
+                             if keep(s) and (not self.query or self.query in name.casefold())]
+
+    def _dex_cell(self, species: int, name: str, entries: list[bank.Entry], shiny: bool) -> ft.Control:
+        number = t.text(f"{species:04d}", 10, t.FAINT if entries else t.MUTED)
+        if not entries:
+            return ft.Container(ft.Column([number, t.text(name, 9, t.FAINT, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)],
+                                          spacing=2, horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                                          alignment=ft.MainAxisAlignment.CENTER),
+                                padding=4, tooltip=name)
+        tip = tr('bank.dex_cell_tip', '{name}: {count} in the bank', name=name, count=len(entries))
+        return ft.Container(ft.Stack([
+            Sprite(self.app, species, shiny, size=MINI).control,
+            ft.Container(t.pixel_icon("sparkles", size=12, color=t.AMBER), right=2, top=2, visible=shiny),
+            ft.Container(t.text(str(len(entries)), 10, t.SOFT, weight=ft.FontWeight.W_600), right=4, bottom=2,
+                         visible=len(entries) > 1),
+        ]), padding=4, border_radius=14, tooltip=tip, on_click=lambda e: self._find(name))
+
+    def _dex_only(self, key: str) -> None:
+        self.dex_only = key
+        self.render_grid()
+        self.control.update()
+
+    def _find(self, name: str) -> None:
+        """A held species opens the box searched for it."""
+        self.query = name.casefold()
+        self.search.value = name
+        self._show(ALL)
 
     def _tile(self, entry: bank.Entry, queued: bool) -> ft.Control:
         tile = self.tiles.get(entry.id)
@@ -335,9 +446,14 @@ class BankView:
             routes = bank.destinations(entry, trainer, service=SERVICE)
         except (OSError, pokemon.BuilderError) as error:
             routes = {key: {"ok": key == entry.game, "reason": str(error)} for key in NAMES}
+        try:
+            battle = SERVICE.check_bytes(entry.game, bank.data(entry))["battle"]
+        except (OSError, pokemon.BuilderError):
+            battle = {}
 
         def done():
             self.routes[entry.id] = routes
+            self.battle[entry.id] = battle
             if self.visible and self.selected == entry.id:
                 self.render_detail()
                 self.detail.update()
@@ -372,12 +488,27 @@ class BankView:
             ], spacing=10)))
         else:
             controls.append(t.section(tr('bank.send_it_to_a_game_da82fb', 'Send it to a game'), self._routes(entry)))
+        if battle := self.battle.get(entry.id):
+            controls.append(t.section(tr('bank.battle_set', 'Battle set'), self._battle(battle)))
         controls.append(ft.Row([
             *([] if queued else [t.secondary_button(tr('bank.edit_464c4f', 'Edit'), lambda e: self._edit(entry), "edit")]),
             t.secondary_button(tr('bank.export_366489', 'Export'), lambda e: self.app.page.run_task(self._export, entry), "upload"),
             t.secondary_button(tr('bank.remove_c3812f', 'Remove'), lambda e: self._remove(entry), "trash"),
         ], spacing=8, wrap=True))
         self.detail.controls = controls
+
+    def _battle(self, battle: dict) -> ft.Control:
+        effort = {"evs": tr('bank.evs', 'EVs'), "avs": tr('bank.avs', 'AVs'), "gvs": tr('bank.gvs', 'GVs')}
+        columns = [("", STATS), (tr('bank.ivs', 'IVs'), battle["ivs"]),
+                   (effort[battle["effort_kind"]], battle["effort"]), (tr('bank.stat', 'Stat'), battle["stats"])]
+        table = ft.Row([ft.Column([t.text(head, 11, t.MUTED, weight=ft.FontWeight.W_600),
+                                   *(t.text(str(v), 12, t.SOFT if n == 0 else t.TEXT) for v in values)],
+                                  spacing=4, width=56 if n == 0 else 44,
+                                  horizontal_alignment=ft.CrossAxisAlignment.START if n == 0 else ft.CrossAxisAlignment.END)
+                        for n, (head, values) in enumerate(columns)], spacing=12)
+        return ft.Column([table, t.secondary_button(
+            tr('bank.copy_as_showdown_set', 'Copy as a Showdown set'),
+            lambda e: self.app.page.run_task(self.app.copy, battle["showdown"]), "copy")], spacing=12)
 
     def _routes(self, entry: bank.Entry) -> ft.Control:
         routes = self.routes.get(entry.id)
