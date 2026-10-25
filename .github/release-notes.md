@@ -1,17 +1,16 @@
-# pokeldn 0.41.0
+# pokeldn 0.42.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- GTS: a listing asks for up to three species under one level range, each optionally shiny, and an
-  offer matching any of them answers. Listings from 0.40.0 still read, and a 0.40.0 app sees a new
-  listing as asking for its first species.
-- GTS: Shiny only and My bank can answer filters, a sort menu (newest, ending soonest, Pokedex number,
-  highest level), sparkles on every shiny Pokemon, and Enter picks a typed species when depositing.
-- Sword/Shield: the raid tools are grouped by feature, Max Raid (Host) and (Join), then Dynamax
-  Adventure (Host) and (Join).
+- Sword/Shield: trade with no board over the game's hidden LAN mode (Options, then L, R and the
+  Left Stick together), with the console and the computer on the same network. Trade (LAN Join)
+  joins the console's Link Trade search; Trade (LAN Host) hosts one the console joins. Any Link Code,
+  or none, works in LAN mode.
+- Every trade tool: leave the Pokemon to offer empty and Start has PKHeX build a random legal
+  Pokemon for your trainer, new at each run.
 
 The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 
@@ -60,6 +59,7 @@ Received Pokemon are saved in `Documents/pokeldn/Received`, with a configurable 
 
 - Trades in both directions: FireRed/LeafGreen, Let's Go Pikachu/Eevee, Sword/Shield, Brilliant
   Diamond/Shining Pearl, Legends Arceus, Scarlet/Violet and Legends Z-A.
+- Sword/Shield trades in both directions with no board, over the game's LAN mode.
 - Mystery Gift: FireRed/LeafGreen and Sword/Shield.
 - Tera Raids in both roles and the Union Circle as a guest: Scarlet/Violet.
 - Max Raids and Dynamax Adventures in both roles: Sword/Shield.
