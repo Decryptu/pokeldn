@@ -161,7 +161,7 @@ class RewardFilter:
             line = [ft.Row([
                 t.labeled_control(tr('reward_filter.item_652bcc', 'Item'), picker, expand=True),
                 t.labeled_control(tr('reward_filter.at_least_325198', 'At least'), ft.Container(least, width=96)),
-                t.icon_button("close", lambda _e, n=index: self._remove(n), tr('reward_filter.remove_reward_242188', 'Remove reward')),
+                t.field_line(t.icon_button("close", lambda _e, n=index: self._remove(n), tr('reward_filter.remove_reward_242188', 'Remove reward'))),
             ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.END)]
             if item is not None and not here and self.choices is not None:
                 line.append(t.text(tr('reward_filter.no_raid_searched_gives_it_e1cce4', 'No raid searched gives it.'), 11, t.RED))

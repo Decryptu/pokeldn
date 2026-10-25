@@ -205,14 +205,13 @@ class RewardPicker:
                 quantity.tooltip = tr('rewards.this_den_gives_this_item_at_this_count_8d2c41', 'This den gives this item at this count.')
             self.quantities.append(quantity)
             rows.append(ft.Row([
-                ft.Container(t.text(str(index + 1), 11, t.BLUE, weight=ft.FontWeight.W_700), width=24, height=24,
-                             margin=ft.Margin(0, 25, 0, 0), alignment=ft.Alignment.CENTER, border_radius=12,
-                             bgcolor=ft.Colors.with_opacity(0.12, t.BLUE)),
+                t.field_line(ft.Container(t.text(str(index + 1), 11, t.BLUE, weight=ft.FontWeight.W_700), width=24, height=24,
+                                          alignment=ft.Alignment.CENTER, border_radius=12,
+                                          bgcolor=ft.Colors.with_opacity(0.12, t.BLUE))),
                 t.labeled_control(tr('rewards.item_652bcc', 'Item'), item, expand=True),
                 t.labeled_control(tr('rewards.quantity_822bab', 'Quantity'), quantity),
-                ft.Container(t.icon_button("close", lambda _e, n=index: self._remove(n), tr('rewards.remove_reward_242188', 'Remove reward')),
-                             margin=ft.Margin(0, 20, 0, 0)),
-            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START))
+                t.field_line(t.icon_button("close", lambda _e, n=index: self._remove(n), tr('rewards.remove_reward_242188', 'Remove reward'))),
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.END))
         if not rows:
             note = (tr('rewards.choose_a_boss_a_den_holds_to_choose_its_rewards_5be1d7', 'Choose a boss a den holds to choose its rewards.')
                     if self.den_of is not None and not self.den

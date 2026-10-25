@@ -2,6 +2,7 @@
 [pokeldn.app.bank, docs/gui.md, The bank]."""
 from pokeldn.app.i18n import t as tr
 import os
+import shutil
 import threading
 
 import flet as ft
@@ -18,6 +19,8 @@ from pokeldn.app.catalog import GAMES
 
 NAMES = {game.key: game.name for game in GAMES}
 ALL = "all"
+SORTS = {"newest": lambda e: (-e.created, e.id), "oldest": lambda e: (e.created, e.id),
+         "dex": lambda e: (e.species_id, -e.created), "name": lambda e: (e.summary.split(" · ")[0].casefold(), -e.created)}
 
 
 def trade_tools(game_key: str) -> list:
@@ -32,6 +35,28 @@ def game_icon(key: str, size: int = 20) -> ft.Control:
                     filter_quality=ft.FilterQuality.NONE, semantics_label=NAMES.get(key, key))
 
 
+class Tile:
+    """One banked Pokemon in the grid, built once and repainted in place: a click redraws one tile, not the box."""
+
+    def __init__(self, view, entry: bank.Entry, queued: bool):
+        self.entry, self.queued = entry, queued
+        self.check = ft.Container(left=2, top=2, bgcolor=t.BG, border_radius=4, visible=False)
+        self.control = ft.Container(ft.Stack([
+            Sprite(view.app, entry.species_id, entry.shiny, size=MINI).control,
+            ft.Container(game_icon(entry.game, 16), right=0, bottom=0),
+            ft.Container(t.pixel_icon("arrows-horizontal", size=12, color=t.BLUE), right=2, top=2, visible=queued),
+            self.check,
+        ]), padding=4, border_radius=14, tooltip=summary_text(entry.summary),
+            on_click=lambda e: view.click(entry.id), on_long_press=lambda e: view.pick(entry.id))
+
+    def paint(self, active: bool, picking: bool, picked: bool) -> None:
+        self.control.border = ft.Border.all(2, t.BLUE if active or picked else ft.Colors.TRANSPARENT)
+        self.control.bgcolor = t.SELECTED if picked else None
+        self.check.visible = picking
+        self.check.content = t.pixel_icon("checkbox-on" if picked else "checkbox", size=18,
+                                          color=t.BLUE if picked else t.MUTED)
+
+
 class BankView:
     def __init__(self, app):
         self.app = app
@@ -42,9 +67,18 @@ class BankView:
         self.target: str = ""             # the game chosen to send the selected Pokemon to
         self.routes: dict[str, dict] = {}   # Entry.id -> pokemon.Service.destinations
         self.working = False
+        self.tiles: dict[str, Tile] = {}
+        self.picking = False              # several Pokemon are being chosen for one action
+        self.picked: set[str] = set()
+        self.query, self.sort = "", "newest"
         self.boxes = ft.ListView(spacing=2, padding=ft.Padding(8, 8, 8, 8), expand=True)
-        self.grid = ft.Row(spacing=8, run_spacing=8, wrap=True)
+        # A lazy grid: only the tiles on screen are laid out and their sprites decoded.
+        self.grid = ft.GridView(max_extent=64, spacing=6, run_spacing=6, padding=ft.Padding(0, 0, 0, 24), expand=True)
         self.heading = t.text("", 12, t.MUTED)
+        self.search = t.field(hint=tr('bank.search_by_name', 'Search'), on_change=self._search, expand=True)
+        self.pick_button = t.secondary_button(tr('bank.select_several', 'Select'), lambda e: self._picking(not self.picking),
+                                              "checkbox")
+        self.actions = ft.Row(spacing=8, run_spacing=8, wrap=True, visible=False)
         self.detail = ft.Column(spacing=24, scroll=ft.ScrollMode.AUTO, expand=True)
         self.note = t.text("", 12, t.MUTED)
         self.panes = t.Panes(
@@ -56,9 +90,18 @@ class BankView:
                                t.icon_button("refresh", lambda e: self.refresh(), tr('bank.refresh_0e9161', 'Refresh'))),
                 t.fade(self.boxes),
             ], spacing=0, expand=True), width=t.SIDEBAR_WIDTH)),
-            (tr('bank.pane_box', 'Box'), "package", drop.target(ft.Container(t.fade(ft.ListView(
-                [ft.Container(self.heading, padding=ft.Padding(4, 14, 4, 0)), self.grid],
-                spacing=12, padding=ft.Padding(0, 0, 0, 24), expand=True)), expand=True, border_radius=16),
+            (tr('bank.pane_box', 'Box'), "package", drop.target(ft.Container(ft.Column([
+                ft.Row([self.search], spacing=8),
+                ft.Row([t.dropdown([("newest", tr('bank.sort_newest', 'Newest first')),
+                                    ("oldest", tr('bank.sort_oldest', 'Oldest first')),
+                                    ("dex", tr('bank.sort_dex', 'Pokedex number')),
+                                    ("name", tr('bank.sort_name', 'Name'))], self.sort,
+                                   on_select=lambda e: self._sorted(e.control.value)),
+                        self.pick_button], spacing=8),
+                self.actions,
+                ft.Container(self.heading, padding=ft.Padding(4, 0, 4, 0)),
+                t.fade(self.grid),
+            ], spacing=10, expand=True), padding=ft.Padding(0, 14, 0, 0), expand=True, border_radius=16),
                 self._import, expand=True)),
             (tr('bank.pane_pokemon', 'Pokemon'), "user", t.panel(ft.Column([
                 t.panel_header(tr('bank.pokemon_224642', 'Pokemon')),
@@ -87,10 +130,13 @@ class BankView:
     # The listing
 
     def refresh(self, update: bool = True) -> None:
-        bank.prune(self.app.settings)
         self.items = bank.entries()
-        if self.selected not in {e.id for e in self.items}:
+        held = {e.id for e in self.items}
+        bank.prune(self.app.settings, held)
+        if self.selected not in held:
             self.selected, self.target = "", ""
+        self.picked &= held
+        self.tiles = {key: tile for key, tile in self.tiles.items() if key in held}
         self.render_boxes()
         self.render_grid()
         self.render_detail()
@@ -118,36 +164,164 @@ class BankView:
         self.render_grid()
         self.control.update()
 
+    def _search(self, e) -> None:
+        self.query = e.control.value.strip().casefold()
+        self.render_grid()
+        self.control.update()
+
+    def _sorted(self, key: str) -> None:
+        self.sort = key
+        self.render_grid()
+        self.control.update()
+
+    def _matches(self, entry: bank.Entry) -> bool:
+        return (self.shown in (ALL, entry.game)
+                and (not self.query or self.query in summary_text(entry.summary).casefold()))
+
+    def _shown(self) -> list[bank.Entry]:
+        return [e for e in self.items if self._matches(e)]
+
     def render_grid(self) -> None:
-        shown = [e for e in self.items if self.shown in (ALL, e.game)]
+        """Every tile stays in the grid and a filter only hides some: a hidden tile costs nothing on screen,
+        and showing it again sends no sprite."""
+        shown = self._shown()
         where = tr('bank.in_the_bank_f69744', 'in the bank') if self.shown == ALL else tr('bank.from_7f2df4', 'from {value0}', value0=NAMES[self.shown])
         self.heading.value = (tr('bank.pokemon_3a4d02', '{value0} Pokemon {value1}', value0=len(shown), value1=where) if shown else
+                              tr('bank.nothing_matches', 'No Pokemon matches this search.') if self.query and self.items else
                               tr('bank.the_bank_is_empty_every_pokemon_a_trade_brings_in_lands_e05ff4', 'The bank is empty. Every Pokemon a trade brings in lands here, from any game.')
                               + (tr('bank.drop_a_pokemon_file_or_a_game_save_here_to_import_what__7adc95', ' Drop a Pokemon file or a game save here to import what it holds.')
                                  if drop.AVAILABLE else ""))
-        self.grid.controls = [self._tile(e) for e in shown]
+        queued = bank.queued_ids(self.app.settings)
+        self.grid.controls = [self._tile(e, e.id in queued) for e in sorted(self.items, key=SORTS[self.sort])]
+        self.render_actions()
 
-    def _tile(self, entry: bank.Entry) -> ft.Control:
-        sprite = Sprite(self.app, entry.species_id, entry.shiny, size=MINI)
-        active = entry.id == self.selected
-        queued = bool(bank.queued(self.app.settings, entry.id))
-        return ft.Container(ft.Stack([
-            sprite.control,
-            ft.Container(game_icon(entry.game, 16), right=0, bottom=0),
-            ft.Container(t.pixel_icon("arrows-horizontal", size=12, color=t.BLUE), left=2, top=2,
-                         visible=queued),
-        ]), padding=4, border_radius=14, tooltip=summary_text(entry.summary),
-            border=ft.Border.all(2, t.BLUE if active else ft.Colors.TRANSPARENT),
-            on_click=lambda e, i=entry.id: self.select(i))
+    def _tile(self, entry: bank.Entry, queued: bool) -> ft.Control:
+        tile = self.tiles.get(entry.id)
+        if tile is None or tile.entry != entry or tile.queued != queued:
+            tile = self.tiles[entry.id] = Tile(self, entry, queued)
+        self._paint(entry.id)
+        tile.control.visible = self._matches(entry)
+        return tile.control
+
+    def _paint(self, entry_id: str, update: bool = False) -> None:
+        if tile := self.tiles.get(entry_id):
+            tile.paint(entry_id == self.selected and not self.picking, self.picking, entry_id in self.picked)
+            if update and tile.control.page:
+                tile.control.update()
+
+    # Several at once
+
+    def click(self, entry_id: str) -> None:
+        if not self.picking:
+            self.select(entry_id)
+            return
+        self.picked ^= {entry_id}
+        self._paint(entry_id, update=True)
+        self.render_actions()
+        self.actions.update()
+
+    def pick(self, entry_id: str) -> None:
+        """A long press starts choosing several, with that one chosen."""
+        if not self.picking:
+            self._picking(True)
+        if entry_id not in self.picked:
+            self.click(entry_id)
+
+    def _picking(self, on: bool) -> None:
+        self.picking = on
+        self.picked.clear()
+        for key in self.tiles:
+            self._paint(key)
+        self.render_actions()
+        self.control.update()
+
+    def _pick_all(self, on: bool) -> None:
+        self.picked = {e.id for e in self._shown()} if on else set()
+        for key in self.tiles:
+            self._paint(key)
+        self.render_actions()
+        self.control.update()
+
+    def render_actions(self) -> None:
+        self.pick_button.content = tr('bank.done_selecting', 'Done') if self.picking else tr('bank.select_several', 'Select')
+        self.actions.visible = self.picking
+        if not self.picking:
+            return
+        count = len(self.picked)
+        queued = bank.queued_ids(self.app.settings) & self.picked
+        everything = count and count == len(self._shown())
+        self.actions.controls = [
+            ft.Container(t.text(tr('bank.picked_count', '{count} selected', count=count) if count else
+                                tr('bank.pick_some', 'Click Pokemon to select them.'), 13, t.SOFT),
+                         height=t.CONTROL_HEIGHT, alignment=ft.Alignment.CENTER_LEFT),
+            t.secondary_button(tr('bank.select_none', 'Select none') if everything else tr('bank.select_all', 'Select all'),
+                               lambda e: self._pick_all(not everything), "checkbox-on"),
+            t.secondary_button(tr('bank.export_366489', 'Export'), lambda e: self.app.page.run_task(self._export_picked),
+                               "upload", disabled=not count),
+            *([t.secondary_button(tr('bank.take_them_out', 'Take out of trades'), lambda e: self._dequeue_picked(),
+                                  "close")] if queued else []),
+            t.button(tr('bank.remove_c3812f', 'Remove'), lambda e: self._remove_picked(), "trash", color=t.RED,
+                     disabled=not count),
+        ]
+
+    async def _export_picked(self) -> None:
+        folder = await self.app.picker.get_directory_path(dialog_title=tr('bank.export_pokemon_0cfbf8', 'Export Pokemon'))
+        if not folder:
+            return
+        chosen = [e for e in self.items if e.id in self.picked]
+        try:
+            for entry in chosen:
+                name, extension = os.path.splitext(os.path.basename(entry.path))
+                path, n = os.path.join(folder, name + extension), 1
+                while os.path.exists(path):
+                    n += 1
+                    path = os.path.join(folder, f"{name} ({n}){extension}")
+                shutil.copyfile(entry.path, path)
+            self._say(tr('bank.exported_many', '{count} Pokemon exported to {folder}', count=len(chosen), folder=folder), t.MUTED)
+        except OSError as error:
+            self._say(str(error), t.RED)
+
+    def _dequeue_picked(self) -> None:
+        bank.dequeue(self.app.settings, *self.picked)
+        self.render_grid()
+        self.render_detail()
+        self.control.update()
+
+    def _remove_picked(self) -> None:
+        chosen = [e for e in self.items if e.id in self.picked]
+        if not chosen:
+            return
+
+        def done(e):
+            bank.dequeue(self.app.settings, *(entry.id for entry in chosen))
+            for entry in chosen:
+                bank.remove(entry.id)
+            self.app.page.pop_dialog()
+            self.picking = False
+            self.picked.clear()
+            self.refresh()
+            self._say(tr('bank.removed_many', '{count} Pokemon removed.', count=len(chosen)), t.MUTED)
+
+        names = ", ".join(e.summary.split(" · ")[0] for e in chosen[:6]) + (", ..." if len(chosen) > 6 else "")
+        self.app.page.show_dialog(t.dialog(
+            title=t.text(tr('bank.remove_many_title', 'Remove {count} Pokemon?', count=len(chosen)), 18),
+            content=t.text(tr('bank.remove_many_detail', '{names} are deleted from the bank on this computer. Export them first to keep files.',
+                              names=names), 13, t.MUTED, width=380),
+            actions=[t.button(tr('bank.cancel_19766e', 'Cancel'), lambda e: self.app.page.pop_dialog(), filled=False),
+                     t.button(tr('bank.remove_c3812f', 'Remove'), done, color=t.RED)]))
 
     # The selected Pokemon
 
     def select(self, entry_id: str) -> None:
+        previous = self.selected
         self.selected, self.target = entry_id, ""
         self.note.value = ""
-        self.render_grid()
+        self._paint(previous, update=True)
+        self._paint(entry_id, update=True)
         self.render_detail()
-        self.control.update()
+        self.detail.update()
+        self.note.update()
+        self.panes.show(2)
         entry = self._entry()
         if entry and entry.id not in self.routes:
             threading.Thread(target=self._find_routes, args=(entry,), daemon=True).start()

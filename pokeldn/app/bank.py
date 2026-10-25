@@ -289,6 +289,13 @@ def queued(settings, entry_id: str) -> list[str]:
             if any(isinstance(v, dict) and v.get("bank") == entry_id for v in value)]
 
 
+def queued_ids(settings) -> set[str]:
+    """Every banked Pokemon some offer queue holds."""
+    return {v["bank"] for stored in settings.tool_values.values()
+            for value in stored.get("values", {}).values() if isinstance(value, list)
+            for v in value if isinstance(v, dict) and v.get("bank")}
+
+
 def enqueue(settings, tool, field, item: dict) -> str:
     """Append a moved Pokemon to a tool's queue; why it cannot be, or ""."""
     from pokeldn.app.command import offers
@@ -301,16 +308,18 @@ def enqueue(settings, tool, field, item: dict) -> str:
     return ""
 
 
-def dequeue(settings, entry_id: str) -> None:
-    """Take a banked Pokemon out of every queue; it stays in the bank."""
-    _drop(settings, lambda v: v.get("bank") == entry_id)
+def dequeue(settings, *entry_ids: str) -> None:
+    """Take banked Pokemon out of every queue; they stay in the bank."""
+    _drop(settings, lambda v: v.get("bank") in entry_ids)
 
 
-def prune(settings) -> None:
-    """Drop queued Pokemon whose bank record is gone: traded away, or removed from the folder."""
+def prune(settings, held: set[str] | None = None) -> None:
+    """Drop queued Pokemon whose bank record is gone: traded away, or removed from the folder. `held` is
+    the ids of entries() when the caller just listed them."""
     if not BANK.is_dir():     # an unplugged or unreadable folder says nothing about what was traded
         return
-    held = {e.id for e in entries()}
+    if held is None:
+        held = {e.id for e in entries()}
     _drop(settings, lambda v: bool(v.get("bank")) and v["bank"] not in held)
 
 

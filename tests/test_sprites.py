@@ -149,6 +149,25 @@ def test_damaged_cache_file_is_replaced(host, tmp_path):
     assert (tmp_path / "normal" / "25.png").read_bytes() == png(4)
 
 
+def test_a_sprite_read_again_is_not_decoded_again_unless_its_file_changed(host, tmp_path, monkeypatch):
+    host.routes = {"/pokemon/25.png": (200, png(6))}
+    assert sprites.SpriteCache(tmp_path, host.url).get(25) == png(6)
+
+    def decode(data):
+        raise AssertionError("decoded")
+    monkeypatch.setattr(sprites, "pixels", decode)
+    cache = sprites.SpriteCache(tmp_path, dead_url())
+    data = cache.cached(25)
+    assert data == png(6) and cache.crop(25, False, data) == (0, 0, 1, 1)
+    (tmp_path / "normal" / "25.png").write_bytes(png(7))
+    with pytest.raises(AssertionError, match="decoded"):
+        sprites.SpriteCache(tmp_path, dead_url()).cached(25)
+    monkeypatch.undo()
+    (tmp_path / "normal" / "25.png").write_bytes(png(6)[:-3])
+    assert sprites.SpriteCache(tmp_path, dead_url()).cached(25) is None
+    assert not (tmp_path / "normal" / "25.png").exists()
+
+
 def test_damaged_cache_file_offline_is_just_absent(tmp_path):
     (tmp_path / "normal").mkdir()
     (tmp_path / "normal" / "25.png").write_bytes(b"half a fi")

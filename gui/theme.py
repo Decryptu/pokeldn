@@ -377,6 +377,12 @@ def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, 
                        **kwargs)
 
 
+def field_line(control: ft.Control, alignment: ft.Alignment = ft.Alignment.CENTER, **kwargs) -> ft.Container:
+    """A bare control on a field's line: as tall as the field and centred on it. In a row aligned END beside
+    labeled controls it sits level with their fields; a hard-coded height or margin drifts off it."""
+    return ft.Container(control, height=CONTROL_HEIGHT, alignment=alignment, **kwargs)
+
+
 def labeled_control(label: str, control: ft.Control, **kwargs) -> ft.Column:
     return ft.Column([ft.Container(text(label, 11, MUTED),
                                    alignment=ft.Alignment.CENTER_LEFT), control],

@@ -547,8 +547,9 @@ class OfferOptions:
         if found.get("alpha"):
             second.append(t.labeled_control(tr('pokemon.alpha_b1a96d', 'Alpha'), self._alpha(), expand=True))
         elif found.get("alpha") is False:
-            second.append(t.labeled_control(tr('pokemon.alpha_b1a96d', 'Alpha'), t.text(
-                tr('pokemon.never_an_alpha_in_this_game_883ade', 'Never an Alpha in this game'), 12, t.MUTED), expand=True))
+            second.append(t.labeled_control(tr('pokemon.alpha_b1a96d', 'Alpha'), t.field_line(t.text(
+                tr('pokemon.never_an_alpha_in_this_game_883ade', 'Never an Alpha in this game'), 12, t.MUTED),
+                ft.Alignment.CENTER_LEFT), expand=True))
         if found["held"]:
             second.insert(0, t.labeled_control(tr('pokemon.held_item_6af4a4', 'Held item'), self._choice("held_item", found["held"], search=True),
                                                expand=True))

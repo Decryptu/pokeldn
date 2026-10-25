@@ -287,8 +287,8 @@ class GiftBuilder:
 
         box = t.field(value=str(shown), mono=True, width=96, digits=True, on_change=changed)
         return ft.Row([t.labeled_control(tr('gifts.card_id_30f8dc', 'Card id'), box),
-                       t.text(tr('gifts.change_it_to_receive_a_card_that_shares_its_id_with_one_aad698', 'Change it to receive a card that shares its id with one the save already took.'),
-                              12, t.MUTED, expand=True)], spacing=10,
+                       t.field_line(t.text(tr('gifts.change_it_to_receive_a_card_that_shares_its_id_with_one_aad698', 'Change it to receive a card that shares its id with one the save already took.'),
+                                           12, t.MUTED), ft.Alignment.CENTER_LEFT, expand=True)], spacing=10,
                       vertical_alignment=ft.CrossAxisAlignment.END)
 
     def _event_tile(self, card) -> ft.Control:
@@ -659,8 +659,7 @@ class GiftBuilder:
                                                                 item, optional=False).control, expand=True),
                            t.labeled_control(tr('gifts.how_many_e2a6ff', 'How many'), t.field(value=str(items[n][1]), mono=True, width=72, digits=True,
                                                                  on_change=quantity)),
-                           ft.Container(t.icon_button("close", remove, tr('gifts.remove_c3812f', 'Remove')), height=t.CONTROL_HEIGHT,
-                                        alignment=ft.Alignment.CENTER)],
+                           t.field_line(t.icon_button("close", remove, tr('gifts.remove_c3812f', 'Remove')))],
                           spacing=10, vertical_alignment=ft.CrossAxisAlignment.END)
 
         def add(e):

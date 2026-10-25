@@ -181,8 +181,7 @@ class SettingsView:
         ]
 
     def _find_button(self, row: str) -> ft.Control:
-        return ft.Container(t.button(tr('settings.find_mine', 'Find mine'), lambda e: self._find_trainer(row),
-                                     "search", filled=False), height=48, alignment=ft.Alignment.CENTER)
+        return t.button(tr('settings.find_mine', 'Find mine'), lambda e: self._find_trainer(row), "search", filled=False)
 
     def _find_trainer(self, row: str) -> None:
         """Fills the trainer from the newest one a run read off a console (pokeldn.console_trainer)."""

@@ -3,6 +3,8 @@
 The app never needs a sprite: every call returns bytes or None, never raises, and never waits longer
 than TIMEOUT on a dead network. docs/gui.md (Pokemon sprites) describes the cache layout.
 """
+import hashlib
+import json
 import os
 import re
 import ssl
@@ -26,6 +28,8 @@ MAX_BYTES = 200_000
 MAX_DIMENSION = 256
 MAX_PIXELS = 65536
 PNG = b"\x89PNG\r\n\x1a\n"
+# Each file this cache cleaned, by SHA-256, with its bounds: a file read again is not decoded again.
+INDEX = "index.json"
 
 
 def _context() -> ssl.SSLContext:
@@ -181,6 +185,11 @@ def bounds(data: bytes) -> tuple[int, int, int, int] | None:
     return min(xs), min(ys), max(xs) + 1, max(ys) + 1
 
 
+def _box(value) -> bool:
+    return (isinstance(value, list) and len(value) == 4 and all(type(v) is int for v in value)
+            and 0 <= value[0] < value[2] <= MAX_DIMENSION and 0 <= value[1] < value[3] <= MAX_DIMENSION)
+
+
 class SpriteCache:
     def __init__(self, folder: Path | None = None, base: str | None = None, online: bool = True):
         self.folder = Path(folder) if folder else DATA / "sprites"
@@ -190,6 +199,8 @@ class SpriteCache:
         self.lock = threading.Lock()
         self.slots = threading.BoundedSemaphore(4)
         self.memory: dict[tuple[int | str, bool], bytes | None] = {}
+        self.crops: dict[tuple[int | str, bool], tuple[int, int, int, int] | None] = {}
+        self.index: dict | None = None
 
     def _path(self, species: int | str, shiny: bool) -> Path:
         return self.folder / ("shiny" if shiny else "normal") / f"{species}.png"
@@ -210,17 +221,57 @@ class SpriteCache:
         path = self._path(species, shiny)
         try:
             with path.open("rb") as source:
-                data = clean(source.read(MAX_BYTES + 1))
+                raw = source.read(MAX_BYTES + 1)
         except OSError:
             return None
+        known = self._indexed().get(self._name(species, shiny))
+        if (isinstance(known, dict) and known.get("sha256") == hashlib.sha256(raw).hexdigest()
+                and (known.get("bounds") is None or _box(known["bounds"]))):
+            self.crops[key] = tuple(known["bounds"]) if known["bounds"] else None
+            self.memory[key] = raw
+            return raw
+        data = clean(raw)
         if data is not None:
             self.memory[key] = data
+            self._remember(species, shiny, data)
             return data
         try:
             path.unlink()
         except OSError:
             pass
         return None
+
+    def crop(self, species: int | str, shiny: bool, data: bytes) -> tuple[int, int, int, int] | None:
+        """bounds() of the sprite this cache returned for (species, shiny), read from the index when it has it."""
+        found = self.crops.get((species, shiny), False)
+        return bounds(data) if found is False or self.memory.get((species, shiny)) is not data else found
+
+    @staticmethod
+    def _name(species: int | str, shiny: bool) -> str:
+        return f"{'shiny' if shiny else 'normal'}/{species}"
+
+    def _indexed(self) -> dict:
+        if self.index is None:
+            try:
+                index = json.loads((self.folder / INDEX).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                index = {}
+            self.index = index if isinstance(index, dict) else {}
+        return self.index
+
+    def _remember(self, species: int | str, shiny: bool, data: bytes) -> None:
+        crop = bounds(data)
+        self.crops[(species, shiny)] = crop
+        with self.lock:
+            self._indexed()[self._name(species, shiny)] = {"sha256": hashlib.sha256(data).hexdigest(),
+                                                          "bounds": list(crop) if crop else None}
+            try:
+                self.folder.mkdir(parents=True, exist_ok=True)
+                tmp = self.folder / f".{INDEX}.{threading.get_ident()}.tmp"
+                tmp.write_text(json.dumps(self.index), encoding="utf-8")
+                os.replace(tmp, self.folder / INDEX)
+            except OSError:
+                pass
 
     def known_missing(self, species: int | str, shiny: bool = False) -> bool:
         if not self._valid_key(species):
@@ -276,6 +327,7 @@ class SpriteCache:
             path.with_suffix(".none").unlink(missing_ok=True)
         except OSError:
             pass                        # a read-only data folder still shows the sprite this session
+        self._remember(species, shiny, data)
         return data
 
     def _remember_missing(self, path: Path) -> None:
@@ -288,7 +340,11 @@ class SpriteCache:
     def clear(self) -> int:
         """Delete every cached sprite; returns the number of files removed."""
         self.memory.clear()
+        self.crops.clear()
+        self.index = None
         removed = 0
+        for index in self.folder.rglob(INDEX):
+            index.unlink(missing_ok=True)
         for path in self.folder.rglob("*"):
             if path.is_file() and path.suffix in (".png", ".none", ".tmp"):
                 try:

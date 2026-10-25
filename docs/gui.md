@@ -199,6 +199,11 @@ IDs are kept, and the run omits `--fresh-pid`.
 | species or form absent | destination's personal table |
 | Legends Z-A records out | PKHeX.Core 26.8.26 has no route |
 
+The box lists every banked Pokemon with a search over its summary, a sort (newest, oldest, Pokedex
+number, name) and Select, which picks several Pokemon (a long press starts it too) for one Export to a
+folder, Take out of trades or Remove. A sprite's crop is kept with its SHA-256 in the sprite cache's
+`index.json`, so a box opens without decoding a PNG it has shown before.
+
 Edit allows what the game allows: nickname, level upward, moves, held item. The helper's `check`
 refuses an edit that makes a legal Pokemon illegal. Queued Pokemon are not editable.
 `tests/test_bank.py` covers moves, refusals, edits and imports through the real helper.

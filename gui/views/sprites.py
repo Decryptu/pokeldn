@@ -4,7 +4,7 @@ import flet as ft
 
 from gui import theme as t
 from gui.views.widgets import PixelActivity
-from pokeldn.app.sprites import CACHE, bounds
+from pokeldn.app.sprites import CACHE
 from pokeldn.app.sprite_forms import sprite_key
 from pokeldn.app.i18n import t as tr
 
@@ -39,11 +39,11 @@ class Sprite:
             return
         data = CACHE.cached(species, shiny)
         if data:
-            self._set(self._image(data), update)
+            self._set(self._image(data, species, shiny), update)
             return
         shown = CACHE.cached(species) if shiny else None    # the plain sprite stands in while the shiny loads
         if shown:
-            self._set(self._image(shown), update)
+            self._set(self._image(shown, species, False), update)
         if CACHE.known_missing(species, shiny) and (not shiny or CACHE.known_missing(species)):
             if not shown:
                 self._set(self._placeholder(tr('sprites.no_sprite_for_this_species_2c7400', 'No sprite for this species.')), update)
@@ -59,13 +59,16 @@ class Sprite:
     def _load(self, token: int, species: int | str, shiny: bool, shown: bool) -> None:
         if token != self.token:
             return
-        data = CACHE.get(species, shiny) or (CACHE.get(species) if shiny and not shown else None)
+        data = CACHE.get(species, shiny)
+        plain = not data and shiny and not shown
+        if plain:
+            data = CACHE.get(species)
 
         def done():
             if token != self.token:
                 return
             if data:
-                self._set(self._image(data))
+                self._set(self._image(data, species, shiny and not plain))
             elif not shown:
                 self._set(self._placeholder(self._why()))
         self.app.ui(done)
@@ -75,12 +78,12 @@ class Sprite:
             return tr('sprites.sprite_downloads_are_off_in_settings_bd65ba', 'Sprite downloads are off in Settings.')
         return tr('sprites.sprite_not_available_it_downloads_once_when_the_app_is__aee73c', 'Sprite not available. It downloads once when the app is online.')
 
-    def _image(self, data: bytes) -> ft.Control:
+    def _image(self, data: bytes, species: int | str, shiny: bool) -> ft.Control:
         if self.size >= SIZE:
             return ft.Image(src=t.image_src(data), width=self.size, height=self.size, fit=ft.BoxFit.CONTAIN,
                             filter_quality=ft.FilterQuality.NONE, anti_alias=False, gapless_playback=True,
                             error_content=self._placeholder())
-        x0, y0, x1, y1 = bounds(data) or (0, 0, SIZE, SIZE)
+        x0, y0, x1, y1 = CACHE.crop(species, shiny, data) or (0, 0, SIZE, SIZE)
         scale = (self.size - 2 * PAD) / max(x1 - x0, y1 - y0)
         image = ft.Image(src=t.image_src(data), width=SIZE * scale, height=SIZE * scale, fit=ft.BoxFit.FILL,
                          left=round(self.size / 2 - (x0 + x1) / 2 * scale),
