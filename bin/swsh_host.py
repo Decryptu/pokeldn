@@ -491,7 +491,9 @@ def main(argv=None):
             max_participants=args.lan_max_players or (
                 RAID_PARTICIPANTS if boss_pk8 or lairing else MAX_PARTICIPANTS),
             nickname=args.player_name, broadcast=args.lan_broadcast,
-            console_ip=args.lan_console_ip)
+            console_ip=args.lan_console_ip,
+            # A lobby's 0x168 game bytes, without the LDN advertisement's Pia header (`0x006b98c0`).
+            app_data=app_data[GAME_DATA_OFF:] if boss_pk8 or lairing else b"")
     else:
         transport = (IpHostTransport if args.ip_host else HostTransport)(
         app_data=app_data, password=PASSPHRASE, nickname=args.player_name,

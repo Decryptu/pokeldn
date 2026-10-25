@@ -241,7 +241,7 @@ async def find_lan(args):
     # The LDN scene id is the LAN game mode: 60001 is the trade search.
     scene = args.scene
     criteria = pia_lan.build_search_criteria(
-        scene or 0, max_players=args.lan_max_players,
+        scene or 0, max_players=args.lan_max_players or (4 if args.raid_join else 2),
         flags=pia_lan.SEARCH_MAX_PLAYERS | (0 if scene is None else pia_lan.SEARCH_GAME_MODE))
     where = (", ".join(pia_lan.local_addresses()) or "no address") if auto else args.lan
     print(f"[cx] lan: browsing {where} for scene {scene}")
@@ -2194,7 +2194,9 @@ def build_parser():
                     help="--lan: our station port")
     ap.add_argument("--lan-broadcast", default=None,
                     help="--lan: the console's broadcast address; default --lan's /24")
-    ap.add_argument("--lan-max-players", type=int, default=2)
+    ap.add_argument("--lan-max-players", type=int, default=None,
+                    help="--lan: the session maximum to browse for; default 4 for a raid or "
+                         "adventure, 2 for a trade")
     ap.add_argument("--lan-host-wait", type=float, default=5.0,
                     help="--lan: seconds to repeat the host request before the station handshake")
     ap.add_argument("--lan-quiet", type=float, default=3.0,

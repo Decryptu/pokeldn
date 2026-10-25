@@ -186,7 +186,7 @@ def test_two_consoles_start_together_and_both_must_mirror_the_barrier():
                and raid_battle.parse_framework(p)["station"] is None}
     assert records[0] == raid_battle.server_record(a, 0)
     assert records[1] == raid_battle.server_record(b, 1)
-    assert records[2] == raid_battle.server_record(ours, 2)
+    assert records[2] == raid_battle.server_record(ours, 2, raid_battle.CLIENT_VERSION)
     step = raid_battle.framework(raid_battle.BATTLE, a, 909, bytes.fromhex("00000100"))
     assert m.receive(1, step, a) == []
     out = m.receive(1, raid_battle.framework(raid_battle.BATTLE, b, 909, bytes.fromhex("00000100")), b)

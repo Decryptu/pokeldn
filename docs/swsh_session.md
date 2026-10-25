@@ -282,6 +282,27 @@ A Link Trade search in LAN mode sends two kinds of browse:
 The second joins the first matching session it hears or, with none, hosts its own 2-player session
 ([LAN mode](pia.md#lan-mode)). A 2-player session matches only the second.
 
+A lobby's application data is the same 0x168 game bytes over LAN as over LDN: the LDN advertisement
+is Pia's 0x18-byte header followed by them. The LAN matching object keeps them at +0x284, at most
+0x168 bytes (`0x006b98c0`, set from the den lobby through `0x006b5bcc`), and the browse results
+are read back as 0x168 bytes into the Y-Comm list by the same parser the LDN scan uses (`0x006c2360`,
+called from `0x006bb9c0` for LAN and `0x006ca0b0` for LDN). A den raid's record at advertisement
+offset `0xB0` therefore sits at application data `0x98`.
+
+| measured on an emulated Shield 1.3.2 in LAN mode | value |
+|---|---|
+| a den host's session ("Combat à plusieurs") | game mode 60006, maximum 4 |
+| Y-Comm's browse | game mode 0, flags 0x2, maximum participants 4..4, opened and vacant only, result size 1; it lists a den session by its application data |
+| joining a listed raid ("Participer", then "Commencer le combat") | a fresh browse with open ranges, a plaintext keep-alive, then the session request (type 5) sent to the subnet broadcast on ports 49152 to 49155, with no host request before it |
+
+`bin/swsh_host.py --lan` with `--raid-boss`, `--raid-event` or `--lair-legendary` hosts a 4-seat
+session carrying the lobby's bytes and listens on its station port at the subnet broadcast; the
+emulated Shield and a retail Sword on a Switch 2 over Wi-Fi listed it, joined and fought the raid,
+the console serving ([Which station serves](swsh_raid.md#which-station-serves)).
+`bin/swsh_connect.py --lan` with `--preset raid` or `--preset lair` browses for a 4-seat session of
+scene 60006 or 50000; it joined the den lobby of the emulated Shield and of the retail Sword, and the
+battle started.
+
 ### The Link Code over LAN
 
 `SetMode(comm, mode, code)` (`0x01096d10`) keeps the scene at comm+0x70 and the Link Code at

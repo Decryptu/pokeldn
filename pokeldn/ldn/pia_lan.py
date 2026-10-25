@@ -561,7 +561,9 @@ class LanHostTransport:
 
     def start(self):
         self._browse = self._binds(BROWSE_PORT)
-        self._station = [self._bind(self.our_ip if self.loopback else "", self.our_port)]
+        # A joining Sword broadcasts its session request to the station ports 49152..49155.
+        self._station = self._binds(self.our_port)
+        self._station_ports = set(self._station)
         self._station += self._binds(BROADCAST_PORT)
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
@@ -647,7 +649,7 @@ class LanHostTransport:
                 except OSError:
                     continue
                 ip = self._source(addr[0])
-                if s is self._station[0]:
+                if s in self._station_ports:
                     self.ports[ip] = addr[1]
                 with self._lock:
                     self.last_heard[ip] = time.time()

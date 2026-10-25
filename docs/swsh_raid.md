@@ -185,6 +185,12 @@ With `--raid-console-serves` the joined console serves the battle and the host a
 A retail Sword served a whole raid this way, won it and received the host's Rewards, then sent the
 mesh leave request.
 
+Our own record goes out at version `0x6d`, one below the console's `0x6e`, so the console's record is
+the only one of the highest version whatever slot each lands in. Over LAN mode a retail Sword files
+the session host's record in slot 0 (the host's Pia station index), so at equal versions it chose our
+host, published our record as object 0, sent EmptyCommand and waited on a black screen for a server
+that never started; at `0x6d` it served and the battle loaded.
+
 ### Several consoles
 
 Up to three consoles share one hosted lobby (`raid_host.RaidParty`). The host starts the battle once

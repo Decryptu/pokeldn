@@ -158,6 +158,9 @@ class Guest:
 
 
 SERVER_VERSION = 0x6E                 # every copy's ServerVersion version (main 0x8b1778)
+# A client's own record: the lowest slot of the highest version serves, and over LAN a console files
+# the session host's record in slot 0 (docs/swsh_raid.md, Which station serves).
+CLIENT_VERSION = SERVER_VERSION - 1
 
 
 def server_record(station, client_id, version=SERVER_VERSION):
@@ -205,8 +208,8 @@ class Master:
         for k, console in enumerate(self.consoles):
             out.append((1, framework(k, None, c, server_record(console, k)), None))
         out += [self._ours(bytes.fromhex("00000100")),
-                (1, framework(self.slot, None, c, server_record(self.station, self.slot)), None),
-                (0, seat(self.station, self.slot, SERVER_VERSION), None)]
+                (1, framework(self.slot, None, c, server_record(self.station, self.slot, CLIENT_VERSION)), None),
+                (0, seat(self.station, self.slot, CLIENT_VERSION), None)]
         self.log(f"[raid] -> framework objects 0..{self.slot - 1} (the consoles) and {self.slot} (us)")
         return out
 
