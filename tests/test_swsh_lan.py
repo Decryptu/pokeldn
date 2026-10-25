@@ -164,8 +164,8 @@ def _bindable(ip, port):
 @pytest.mark.parametrize("empty_offer", [False, True], ids=["offer-files", "empty-offer"])
 def test_the_apps_lan_trade_trades_twice_with_our_lan_host_on_loopback(tmp_path, monkeypatch,
                                                                         empty_offer):
-    """The app's Trade (LAN mode) arguments, pointed at our LAN host: two trades on one seat, keyed
-    by nothing but the browse, with no board and no keys. An empty offer trades the console's own
+    """The app's Trade (LAN Join) arguments, pointed at its Trade (LAN Host) on loopback: two trades
+    on one seat, keyed by nothing but the browse, with no board and no keys. An empty offer trades the console's own
     first party Pokemon back; PKHeX refuses that record under a new PID, as it refused a retail
     Gengar whose PID is tied to its encounter, so only PKHeX may renew it."""
     ports = (pia_lan.BROWSE_PORT, pia_lan.BROADCAST_PORT, pia_lan.STATION_PORTS[0])
@@ -199,12 +199,17 @@ def test_the_apps_lan_trade_trades_twice_with_our_lan_host_on_loopback(tmp_path,
             party[slot * gen8.SIZE_PARTY:(slot + 1) * gen8.SIZE_PARTY])
     lan = ["--lan-broadcast", "127.255.255.255"]
     result = {}
+    tools = {t.key: t for game in GAMES for t in game.tools}
+    host_tool = tools["swsh-lan-host"]
+    assert not host_tool.radio
+    host_args = build(host_tool, {"--offer-file": [{"file": str(tmp_path / "offer0.pk8")},
+                                                   {"file": str(tmp_path / "offer1.pk8")}]},
+                      {}, Settings())
+    host_args[host_args.index("--received") + 1] = str(tmp_path / "host.pk8")
     host = threading.Thread(target=lambda: result.setdefault("host", swsh_host.main(
-        ["--lan", "--our-ip", HOST_IP, *lan, "--seconds", "60", "--accept-first", "--lead", "3",
-         "--snapshot", str(tmp_path / "snapshot.bin"), "--received", str(tmp_path / "host.pk8"),
-         "--offer-file", str(tmp_path / "offer0.pk8"),
-         "--offer-file", str(tmp_path / "offer1.pk8")])), daemon=True)
-    tool = next(t for game in GAMES for t in game.tools if t.key == "swsh-lan")
+        host_args + ["--our-ip", HOST_IP, *lan, "--seconds", "60", "--accept-first", "--lead", "3",
+                     "--snapshot", str(tmp_path / "snapshot.bin")])), daemon=True)
+    tool = tools["swsh-lan"]
     assert not tool.radio
     offers = [] if empty_offer else [{"file": str(tmp_path / "offer2.pk8")},
                                      {"file": str(tmp_path / "offer3.pk8")}]

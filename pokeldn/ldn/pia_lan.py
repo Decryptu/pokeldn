@@ -400,6 +400,34 @@ def local_addresses():
     return [ip for i, ip in enumerate(out) if not ip.startswith("127.") and ip not in out[:i]]
 
 
+def host_address(addresses=None, timeout=None, log=print):
+    """This machine's address on the subnet a console browses from -> the address, or None at
+    `timeout`. With one local address it is that one; otherwise the console's first browse names
+    the subnet (a VPN takes the default route). A searching retail Sword sent its registry browses
+    before its trade browse, so the host was up before the browse it answers."""
+    addresses = addresses or local_addresses()
+    if len(addresses) == 1:
+        return addresses[0]
+    log(f"[lan] this computer has {', '.join(addresses)}; waiting for the console's first browse")
+    s = LanHostTransport._bind("", BROWSE_PORT)
+    deadline = None if timeout is None else time.time() + timeout
+    try:
+        while deadline is None or time.time() < deadline:
+            wait = 1.0 if deadline is None else max(0.0, min(1.0, deadline - time.time()))
+            if not select.select([s], [], [], wait)[0]:
+                continue
+            data, (ip, _port) = s.recvfrom(4096)
+            if not data or data[0] != BROWSE_REQUEST:
+                continue
+            ours = [a for a in addresses if a.rsplit(".", 1)[0] == ip.rsplit(".", 1)[0]]
+            if ours:
+                log(f"[lan] a browse from {ip}: hosting on {ours[0]}")
+                return ours[0]
+    finally:
+        s.close()
+    return None
+
+
 def browse_any(game_key, criteria, tries=10, wait=1.0, addresses=None):
     """`browse` on the /24 broadcast of every local address at once -> the first reply, with the
     address it came in on as `our_ip` and that subnet's broadcast as `broadcast`, or None."""
@@ -678,6 +706,13 @@ class LanHostTransport:
                 self.participants.remove(p)
                 self.log(f"[lan] {p[1]} silent for {self.quiet:.0f} s; it left")
         return out
+
+    def drop(self, ip):
+        """Unseat a station whose leave request the host answered. Its keep-alives (every 2 s,
+        after it leaves) would otherwise hold its seat past the quiet rule."""
+        for p in [p for p in self.participants if p[1] == ip]:
+            self.participants.remove(p)
+            self.log(f"[lan] {ip} left the session")
 
     def send(self, packet, dst_ip):
         port = self.ports.get(dst_ip, STATION_PORTS[0])

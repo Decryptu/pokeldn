@@ -264,11 +264,13 @@ console's IP network ([LAN mode](pia.md#lan-mode)) and Y-Comm's Link Trade searc
 | a hosting Sword leaving its joiner | MULTI_MIGRATION_START (0x49) on mesh port 1, then silence 5.2 s later |
 
 A Link Trade search's own session does not match the browse it sends when it starts.
-`bin/swsh_connect.py --lan auto` (the app's Trade (LAN mode)) browses every local /24 with
+`bin/swsh_connect.py --lan auto` (the app's Trade (LAN Join)) browses every local /24 with
 `--preset trade`'s flags and completed a trade with a retail Sword on a Switch 2 over Wi-Fi and with
 the emulated console; it takes the console's silence as its departure (`--lan-quiet`, default 3 s),
-which ended the retail run 3.1 s after the player backed out. `bin/swsh_host.py --lan` hosts a session a
-retail Sword joins from its Link Trade search and trades in, on a Switch 2 over Wi-Fi.
+which ended the retail run 3.1 s after the player backed out. `bin/swsh_host.py --lan` (the app's Trade (LAN Host)) hosts a
+session a retail Sword joins from its Link Trade search and trades in, on a Switch 2 over Wi-Fi.
+Without `--our-ip` on a computer with several addresses (a VPN takes the default route), it waits
+for the console's first browse and hosts on the address in that subnet.
 
 A Link Trade search in LAN mode sends two kinds of browse:
 

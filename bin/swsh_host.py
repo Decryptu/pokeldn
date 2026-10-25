@@ -164,7 +164,8 @@ def build_parser():
     ap.add_argument("--ip-host", action="store_true",
                     help="host over ldn_mitm on the LAN for an emulator; no radio and no root")
     ap.add_argument("--our-ip", default=None,
-                    help="with --ip-host or --lan, the address to advertise")
+                    help="with --ip-host or --lan, the address to advertise; --lan without it "
+                         "takes the address on the subnet the console browses from")
     ap.add_argument("--lan", action="store_true",
                     help="host a session for a console in Sword's LAN mode on this IP network "
                          "(docs/swsh_session.md, LAN mode); no radio, no root, no keys")
@@ -481,8 +482,12 @@ def main(argv=None):
 
     machine = config.load_project_host_file_config()
     if args.lan:
+        our_ip = args.our_ip or pia_lan.host_address(timeout=args.seconds)
+        if our_ip is None:
+            print("[sw] no console browsed on any of this computer's networks")
+            return 2
         transport = pia_lan.LanHostTransport(
-            GAME_KEY, args.scene_id, our_ip=args.our_ip, our_port=args.lan_port,
+            GAME_KEY, args.scene_id, our_ip=our_ip, our_port=args.lan_port,
             max_participants=args.lan_max_players or (
                 RAID_PARTICIPANTS if boss_pk8 or lairing else MAX_PARTICIPANTS),
             nickname=args.player_name, broadcast=args.lan_broadcast,
@@ -638,6 +643,9 @@ def main(argv=None):
             now = time.time()
             if args.lan and transport.session_key is not None:
                 host.session_key = transport.session_key    # keyed by the first browse
+            if args.lan:
+                for ip in [ip for ip, st in host.stations.items() if st.state == "left"]:
+                    transport.drop(ip)
             present = {p[1]: p for p in transport.participants}
             for ip, (index, _ip, mac, name) in present.items():
                 if ip not in host.stations:
