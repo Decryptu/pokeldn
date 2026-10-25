@@ -382,9 +382,35 @@ START_HOST_MIGRATION every 0.33 s for 10 s, as after a link trade ([Leaving](sws
 A guest that does not leave holds the host's player frozen in the overworld until the timeout;
 `--leave-with-host` leaves on the first one.
 
+### Leaving mid-battle
+
+A station that leaves during a local den raid does not end the battle for the others. The battle's
+departure service (built by `0x8b7830`, kept at btl-net `+0x3b8`) hears the Pia session's
+station-left event (`0x6b4850`, type 1) in handler `0x8c4570`. In a local den raid (setup `+4` = 2,
+`+0x3b8` = 1, set by `0x7e7c50` in `nn::pia::local` mode) it holds the seat as connected for 30 s
+(`0x7530`), then removes the station (`0x8c3f70`, `0x8b4140`) and reruns the server choice; the
+serving console puts the seat's standby client (`main+0x1c0 + 8 * i`, `0x8dfcb0`) in it
+(`0x7f8450`). A lost session (type 3) raises error (2,4) through `0x10f8e30`.
+
+Measured on an emulated Shield 1.3.2, the board's process killed mid-battle with nothing sent:
+
+| the board | what the console did |
+|---|---|
+| guest in the console's den lobby | its battle went on with no error; the next turn's menu came up |
+| host, the console serving (`--raid-console-serves`) | the battle paused about a minute, then went on with no error; the boss took damage on the next turn |
+
+On a retail Sword over the ESP32 board, the board's process killed 10 s into the battle gave the
+same result in both roles: no error, the battle went on.
+
+A clean handover instead (MIGRATION_START 5 s into the battle, then the network closed) made the
+console answer `48 01` on 0x18 port 0, leave the network 0.1 s later and show 2618-0006, after which
+its battle went on offline. A host that leaves before the battle starts leaves the console on
+"Connexion en cours" ([The guest's sequence](#the-guests-sequence)).
+
 ## Unresolved
 
 - Whether a console that is not the Pia host would publish framework objects 0 to 7.
+- What the standby client picks for a seat whose player left.
 - Several consoles in one hosted lobby on retail hardware; measured on emulated Shields only.
 - The meaning of PlayerInfo's u32 and final bytes.
 - The action's other ten entries, Dynamax, and the target codes beyond 8 and 2. Replayed unchanged, a
