@@ -1,16 +1,15 @@
-# pokeldn 0.42.0
+# pokeldn 0.43.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Sword/Shield: trade with no board over the game's hidden LAN mode (Options, then L, R and the
-  Left Stick together), with the console and the computer on the same network. Trade (LAN Join)
-  joins the console's Link Trade search; Trade (LAN Host) hosts one the console joins. Any Link Code,
-  or none, works in LAN mode.
-- Every trade tool: leave the Pokemon to offer empty and Start has PKHeX build a random legal
-  Pokemon for your trainer, new at each run.
+- Bank: import a PKSM bank (`.bnk`), see each Pokemon's IVs, effort values and stats, and copy it
+  as a Showdown set. A Pokedex box shows which species your bank's games hold, which you have and
+  which have no shiny yet; filters pick shiny, queued and not-legal Pokemon.
+- Sword/Shield Max Raids: once the battle has started, the raid goes on if the board disconnects,
+  in both roles; the console finishes it on its own.
 
 The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 
