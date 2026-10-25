@@ -1047,14 +1047,37 @@ result of 0 or less takes the time-up branch `0xf6d830`:
 The machine runs only while no job runs, so a timer that runs out during a round is seen once the
 job ends. A raid time-up sends no 0x25: the boss's last timed round, then 0x2b with body `00 00 00 00
 02 00`, 0x35 and 0x37 ([The battle's end](#the-battles-end)). A raid the boss wins ends the same way:
-each fainted player Pokemon takes 75 s off the timer (the i16 at `[[module+0x1b0]+8]`).
+each faint of the host's or the console's Pokemon (not an NPC partner's) takes n seconds off the timer
+(the i16 at `[[module+0x1b0]+8]`, `0x287f3d4`): n is the time limit times 0.125 times the mean level of
+the four players over the boss's level, in float32, truncated (339 of 339 oracle battles; 28 to 61 s
+on a 300 s timer), and the knockout's queue carries `0x81 (-n)`.
 
 A slot whose Pokemon fainted goes through its reader's sub-states:
 
 | message | to | what |
 |---|---|---|
-| 0x21 | the fainted slot, header only | once the slot has no able member; its answer 0x22 starts the reader's timer (reader+0x50, limit from `0x1ffe4e8`) |
+| 0x21 | the fainted slot, header only | once the slot has no able member; its answer 0x22 starts the reader's timer (reader+0x50) for 5, 10, 15, 20, 25 or 30 s by how many times the slot's Pokemon fainted (`0x1ffe4e8`, table `0x3c69d1c`) |
 | 0x23 | every slot, 20608 bytes | once that timer runs out (`0x2016bc8`, a kind 0x23 block of the slot's one action, kind 8), built by kind 35 (`0x1153350`): HP restored (`0x288cde8`), command 3 (battler, HP), the member sent back in (`0x2887044`, `0x11482a0`: command 0x98) |
+
+A revive's queue: `0x03 (b, HP)` with its full HP, `0xcb (0, 1, b)`, then the battle start's send-out
+with the client slot c (`0x3d (c)`, `0x16 (c, 0, 0, n)` with n the rounds so far, `0x5e (b, ability)`,
+`0x61`, `0x6b`, `0x4e`), `0x98 (c, 0, 0, 1)`, `0x20 (b, 18)` and its switch-in ability (Pressure's
+message 162). Its stat changes are gone. The next round's `0x23` list starts with the battlers revived
+since the round before, in revive order, then that round's actors not already listed.
+
+A player's Pokemon knocked out runs, after the hit's `0x42`, the boss's knockout commands with its own
+id ([A move in the round queue](#a-move-in-the-round-queue)): `0x49 (V, A, M)`, `0x09 (A, slot)`, `0x37
+(V, 1, 1)`, `0xcb (V, 0, V)`, `0x94 (V, 0)`, `0x37 (V, 8, 1)` (its faint count), `0x5f`, `0x62`, `0x6c`, `0x5d`,
+`0x41 (b, V)` for each battler still standing in id order, `0x33 (V, k)` for k 0 to 13 except 8, `0x29
+(V)`, the timer's `0x81 (-n)` for the host's or the console's Pokemon, and `0x38 (A)`; no `0x80`. Its
+actions in the round are marked run, the hit draws `chance(0)` like the boss's knockout, a stat-drop
+secondary draws nothing, a flinch or confusion secondary and a contact ability still draw.
+
+When the boss's shield ends with value 1, its record sets the five per-slot counters (u16 at record
+`+0x7c`) to -1 (`0x15661e0` event 2). At each round's start (`0x114d390`), a boss move aimed at a slot
+whose counter is negative is dropped with the boss's other actions, the counter reset (event 6) and `0x85
+(6, slot)` queued after the round start's `0x51` run: each player's next turn goes unanswered (271 such
+rounds in the oracle corpora).
 
 ### The server's flow
 
