@@ -605,10 +605,12 @@ Water Pulse, Strange Steam, Magical Torque), whatever the step's output. A confu
 no duration. A stat-lowering secondary of 100 percent (Spirit Break, Bulldoze) draws `chance(0)` in
 some rounds and nothing in others. Battlers of equal Speed draw `below(2)` in the speed sorts ([Speed
 ties](#speed-ties)). A flinch secondary draws
-nothing against the boss or a target with Inner Focus (ability 39); against a player that already
-moved in the round it draws its `chance(p)`, and a flinch that lands there adds nothing to the queue.
-A contact move into Static, Poison Point, Flame Body or Cute Charm (abilities 9, 38, 49, 56), or from a
-user with Poison Touch (143), draws `chance(30)` after the move's secondaries. Over the 156 oracle
+nothing against the boss or a target with Inner Focus (ability 39), unless the user has Mold Breaker,
+Turboblaze or Teravolt (104, 163, 164); against a player that already moved in the round it draws its
+`chance(p)`, and a flinch that lands there adds nothing to the queue. A contact move into Static, Poison
+Point, Flame Body or Cute Charm (abilities 9, 38, 49, 56), or from a user with Poison Touch (143), draws
+`chance(30)` after the move's secondaries; into Cute Charm only between a male and a female. A hit that
+knocks the boss out draws no secondary and no contact chance. Over the 156 oracle
 battles that log every draw, the draws of every round the plugin builds equal the logged ones.
 
 A battle draws `below(100)` once before its first round. The damage is Showdown's Gen 9 formula (data
@@ -656,7 +658,7 @@ move hits the boss and the boss's reply hits a player:
 
 | command | meaning |
 |---|---|
-| `0x05 (A, slot, pp)` | a player's move begins, spending pp (2 against a target with Pressure, else 1); the boss's has none; `slot` is the move's index in the moveset, as in `0x07 (A, slot)` and `0x08 (A, slot)`, 0 for the boss |
+| `0x05 (A, slot, pp)` | a player's move begins, spending pp (2 against a target with Pressure, else 1); the boss's has none; `slot` is the move's index in the user's moveset, as in `0x07 (A, slot)` and `0x08 (A, slot)`; a raid action's move outside the boss's moveset has no `0x07` and no `0x08` |
 | `0x07 (A, slot)` | the move is used |
 | `0xc9 (A, 0, M, T's position, 0)` | the move and its target |
 | `0x7b (M, n, A)` | n counts the rounds before this one |
@@ -670,7 +672,7 @@ move hits the boss and the boss's reply hits a player:
 | `0x42 (T, A, A's position, type, cat, M, damage)` | the hit's record |
 | `0x25 (T)`, `0xc7 (T, 0)`, `0x0c (T, 5, 1)`, `0x92 (T, 5, 1, 0)`, `0xcb (T, 15, T)`, `0xc8 (T)` | Rattled (ability 155) raising T's Speed after a Bug, Dark or Ghost hit |
 | `0xcb (T, 138, T)`, `0x1e (T, 15)`, `0x26 (T, 0)`, `0x4f (T, 0)`, `0x62 (T)` | T's Air Balloon (item 541) popping; it leaves T |
-| the drain, when the move drains and its user is below full HP | `0xa7 (T, 51)`, `0x03 (A, heal)`, `0x9a (A, heal)`, `0xcb (A, 290, T)`; heal is damage times the drain fraction, rounded half up, uncapped even when the user lacks less (2 of 2 such rounds); the HP it restores stops at full |
+| the drain, when the move drains and its user is below full HP | `0xa7 (A's position, 51)`, `0x03 (A, heal)`, `0x9a (A, heal)`, `0xcb (A, 290, T)`; heal is damage times the drain fraction, rounded half up, uncapped even when the user lacks less (2 of 2 such rounds); the HP it restores stops at full |
 | the secondary effect, if any | for example a paralysis: `0x13`, `0x90`, `0xa7`, `0xcb (2, 92, T)` |
 | `0xd1` with bytes `01 00`, `0x2e (2, A − 1)` | |
 | `0x85 (7, damage)` | only for damage to the boss |
@@ -708,7 +710,8 @@ command names, with the single-target damage and no spread modifier: every oracl
 builds equal as a one-target hit, with `class` 4 or 5. Moves run in priority bracket order, then by
 Speed at its stat stage: a boss's Aqua Jet or Shadow Sneak moves before a faster player.
 
-A hit that knocks the boss out wins the battle. After its `0x42` come `0x49 (2, A, M)`, `0x09 (A, 0)`,
+A hit that knocks the boss out wins the battle. After its `0x42` come `0x49 (2, A, M)`, `0x09 (A, slot)`
+with `slot` M's index in A's moveset (382 of 383 oracle knockouts),
 `0x37 (2, 1, 1)`, `0xcb (2, 0, 2)`, `0x94 (2, 0)`, `0x37 (2, 8, 1)`, `0x5f (2)`, `0x62 (2)`, `0x6c (2)`,
 `0x5d (2)`, `0x41 (b, 2)` for each player in id order, `0x33 (2, k)` for k 0 to 13 except 8, `0x80 (2)`,
 `0x29 (2)` and `0x38 (A)`, then the move's usual end. Nobody moves after it, and the round ends with
@@ -716,15 +719,18 @@ only the `0x43` of the battlers left standing, the `0x23` list and `0x2d (0)`. T
 and the damage commands carry the HP the boss had left.
 
 The prefix starts with `0xb5 (0)`, then runs `0x51 (b, 1)` once for the round's actors in id order and
-once in the order they move; in the second run a battler with Stall (ability 100) moves last and
-carries `0x51 (b, 0)`. A battler whose chosen move registers its own handler adds `0x5a (b, M, speed)`, speed at its stat stage,
-and `0x5b (b, M)` after each run, in that run's order, then twice more in move order. Before each
-battler after the first moves, every such battler repeats the pair once more, and a mover whose move
-registers a handler adds `0x5a (b, M, 0x72000 + speed)` just before its `0x05`. 347 of 631 moves register one (Facade and Body Slam among them, Night Slash not).
+once in the order of the first action sort; in the second run a battler with Stall (ability 100) moves
+last and carries `0x51 (b, 0)`. Every action sort ([Speed ties](#speed-ties)) first computes each move
+action's order key in the list's order, and a move that registers its own handler shows that as `0x5a
+(b, M, speed)`, speed at its stat stage, and `0x5b (b, M)`. The round's first move to run computes every
+move action's key once more, and a mover whose move registers a handler adds `0x5a (b, M, 0x72000 +
+speed)` just before its `0x05` (the oracle's command log interleaved with its sorts and action runs).
+347 of 631 moves register one (Facade and Body Slam among them, Night Slash not).
 
-The boss is Terastallized from the start: a damaging move of its Tera type under 60 base power, with
-no priority and a single hit, hits at 60, Gen 9's Tera rule (a Smoliv's Tera Normal Tackle did 4
-where 40 base power gives 2). A move's secondaries each draw `chance(n)` in Showdown's order, except
+The boss is Terastallized from the start: a damaging move of its Tera type hitting under 60 power after
+its base power modifiers, with no priority and a single hit, hits at 60, Gen 9's Tera rule (a Smoliv's
+Tera Normal Tackle did 4 where 40 base power gives 2; a Rivalry boss's Tera Dark Bite into a player of
+the other gender did 25, the unmodified 60-power damage, where Rivalry's 45 gives at most 21). A move's secondaries each draw `chance(n)` in Showdown's order, except
 a flinch against the boss, which draws nothing: a player's Ice Fang on the boss draws only its
 freeze chance (a freeze shows as `0x13 (2, 3, 0, 1, 4)` with messages 97 and 98, and the boss draws
 `chance(20)` to thaw before it moves), the boss's Ice Fang on a player draws both. A hit that knocks
@@ -923,6 +929,47 @@ rounds); a shield start has both equal to its value (95 with value 0, the rest t
 resets the players' stat changes ends its effect with `0xc2 (60, 2, 0)`, after `0x10 (b)` and `0x13 (b,
 16, 0, w, 2)` for each player it clears; one that resets the boss's ends with `0x0f (2)`, `0xc2 (3, 2,
 2)`.
+
+### Raid actions in the action list
+
+A queued raid action becomes an action entry of kind 11 (word kind 12; its kind at +0x28, its value at
++0x2c). Entries are ordered by the round's action sort ([Speed ties](#speed-ties)) on the key `0x113ecdc`
+builds: class in bits 22..24 (4 for kind 11, 2 for kind 13, 1 for a move), the move's priority plus 7 in
+bits 16..21, 1 (0 for Stall) in bits 13..15 and Speed in bits 0..12. The boss's raid entries all share
+one key, so every comparison between two of them draws `below(2)`. The oracle's sort and run log:
+
+| entry run | what the queue gets | what joins the list |
+|---|---|---|
+| shield (kind 1) | `0x85 (1, v)`, `0xc1 (1, v)`; `0x14 (2)` and `0x90 (2, 0)` when it cures the boss's status | |
+| shield end (kind 2) | `0x85 (2, 1)`, `0xc1 (2, 1)` | |
+| time left (kind 3) | `0x85 (3, 0)`, `0xc1 (3, 0)` | |
+| extra action i (kind 4) | `0x85 (4, i)`, `0xc1 (4, action)`; nothing at all when action i already ran | action 1 or 2: a kind-13 entry (class 2); action 3: a move entry (class 1) for the profile's move |
+| double action (kind 5) | `0x85 (5, 0)`, `0xc1 (5, 0)` | |
+| kind 13 after action 1 | `0x0f (2)`, `0xc2 (3, 2, 2)` | |
+| kind 13 after action 2 | `0x10 (b)` for each standing player in id order, `0x13 (b, 16, 0, b << 26 \| 12, 2)` for each of them whose ability can be suppressed, `0xc2 (60, 2, 0)` | |
+| the extra action's move | the boss's move run between `0xc1 (9, 0)` and `0xc1 (9, 1)` (before the move's `0x1e (2, 0)`) | |
+
+Action 2 clears the players' stat changes and gives condition 16 (ability suppressed): `0x13` skipped
+an Arceus with Multitype (Showdown flag `cantsuppress`). Action 4 (drain the Tera orb) adds `0x76 (2, k)`
+for some client slots and no entry. A Sandstorm or Snowscape extra move aims at position 10, Iron Defense
+at the boss (4); a move aimed at a player draws `below(n)` over n candidates in 3 of 5 raid rounds.
+
+After every action run (`0x11405a0`), while the battle goes on and the boss stands, `0x11425b0` fills an
+empty list of waiting raid actions from the HP triggers: without a shield among them they join the
+round's action list; with one they wait for a raid action round. The list empties at each round's start,
+and running a shield empties it too, so the next run refills it with every HP trigger still met, actions
+already in the list included: those run again later and show nothing. A move action skipped while the
+boss's status blocks it can come in after the shield cures that status. While the shield is up, a hit on
+the boss does damage times the shield's percent (`0x2a`, 20 in standard profiles; 80 or 40 for a
+Terastallized attacker's own-type or other move), over 100, rounded up from a remainder of 50
+(`0x1535c8c`). The shield ends once the boss has lost the profile's end percent (20) of its HP pool
+since it went up.
+
+The round end puts one `0x37 (b, 7, 1)` per entry of the list, run or not, in the list's last order: 7
+for a shield, an extra boss reset and an extra move whose three entries were queued again by the
+shield. `0x75 (3, n)` counts only rounds with a player's entry, and a raid action round still counts in
+`0x7b (M, n, A)`. A raid action round otherwise ends as a command round: three battler sorts, `0x43` in
+the second one's order and `0x23 (2)`.
 
 ### The battle timer
 
