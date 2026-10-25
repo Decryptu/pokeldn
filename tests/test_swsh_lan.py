@@ -27,13 +27,13 @@ def test_our_reply_to_a_challenge_is_the_consoles_byte_for_byte():
     plain = bytes.fromhex(v["challenge_plain"])
     assert pia_lan.open_challenge(GAME_KEY, BROADCAST, request["challenge"]) == plain
     assert reply["key_param"] == theirs["key"] + pia_lan.parse_challenge(request["challenge"])["key"]
-    assert pia_lan.check_response(GAME_KEY, BROADCAST, reply["challenge_reply"], plain,
-                                  reply["key_param"])
+    request_key = pia_lan.parse_challenge(request["challenge"])["key"]
+    assert pia_lan.check_response(GAME_KEY, BROADCAST, reply["challenge_reply"], plain, request_key)
     ours = pia_lan.build_response(GAME_KEY, BROADCAST, theirs["counter"], plain, reply["key_param"],
                                   challenge_key=theirs["key"])
     assert ours == reply["challenge_reply"]
     assert not pia_lan.check_response(GAME_KEY, "192.168.0.255", reply["challenge_reply"], plain,
-                                      reply["key_param"])
+                                      request_key)
 
 
 def test_our_session_info_is_the_consoles():
@@ -73,6 +73,32 @@ def test_the_session_key_and_the_iv_open_the_consoles_host_message():
     t = 2 + location[0] + location[1]
     assert struct.unpack_from(">QI", location, t + 6) == (reply["host_constant"],
                                                           reply["host_variable"])
+
+
+def test_our_host_answers_a_swords_trade_browse_as_a_console_host_does():
+    """A retail Sword browses for its Y-Comm registry (maximum 4) before its trade search's own
+    browse (game mode 60001, maximum 2). A 2-player host answers only the second, and keys each
+    reply to the request it answers: the Sword checks a reply under the reply's challenge key and
+    its own latest request's (0x0178ab2c), while the session info keeps the first key param."""
+    if not _bindable(HOST_IP, pia_lan.BROWSE_PORT):
+        pytest.skip("needs the lo0 alias 127.0.0.2 with port 30000 free")
+    host = pia_lan.LanHostTransport(GAME_KEY, 60001, our_ip=HOST_IP, broadcast=BROADCAST,
+                                    console_ip=CONSOLE_IP, log=lambda *a: None)
+    host.bind_host(pia_lan.constant_id(HOST_IP, 49152), 1, host.network_id, bytes(32))
+    host.start()
+    criteria = VECTORS["criteria"]
+    try:
+        def browse(name):
+            return pia_lan.browse(GAME_KEY, HOST_IP, bytes.fromhex(criteria[name]), our_ip=JOIN_IP,
+                                  broadcast=BROADCAST, tries=1, wait=0.5)
+        assert browse("registry") is None
+        first, second = browse("trade"), browse("trade")
+    finally:
+        host.stop()
+    assert first["challenge_ok"] and second["challenge_ok"]
+    assert first["key_param"] == second["key_param"] == host.key_param
+    assert (pia_lan.parse_challenge(first["challenge_reply"])["key"]
+            != pia_lan.parse_challenge(second["challenge_reply"])["key"])
 
 
 def _bindable(ip, port):

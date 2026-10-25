@@ -115,16 +115,20 @@ def open_challenge(game_key, broadcast, data):
 
 
 def build_response(game_key, broadcast, counter, challenge_plain, key_param, challenge_key=None):
-    """The 0x3A-byte challenge reply: HMAC(game key, challenge)[:16], under HMAC(game key, key param)."""
+    """The 0x3A-byte challenge reply: HMAC(game key, challenge)[:16], under HMAC(game key, key param).
+    The key param is this reply's challenge key followed by the request's (`0x0178b464`)."""
     challenge_key = challenge_key or os.urandom(16)
     ct, tag = _gcm(_hmac16(game_key, key_param), _nonce(broadcast, counter)).encrypt_and_digest(
         _hmac16(game_key, challenge_plain))
     return struct.pack(">BBQ16s16s", CHALLENGE_VERSION, 1, counter, challenge_key, tag) + ct
 
 
-def check_response(game_key, broadcast, data, challenge_plain, key_param):
-    """True when a browse reply's challenge reply answers the challenge we sent."""
+def check_response(game_key, broadcast, data, challenge_plain, request_key):
+    """True when a browse reply's challenge reply answers the challenge we sent under `request_key`.
+    A console checks it under the reply's challenge key and its own request's, never under the
+    session info's key param (`0x0178ab2c`)."""
     c = parse_challenge(data)
+    key_param = c["key"] + bytes(request_key)
     try:
         got = _gcm(_hmac16(game_key, key_param), _nonce(broadcast, c["counter"])).decrypt_and_verify(
             c["data"], c["tag"])
@@ -144,6 +148,24 @@ def build_search_criteria(game_mode, max_players, session_type=0, min_players=No
                      vacant_only, offset, size, game_mode, session_type)
     struct.pack_into(">I", out, 0x236, flags)
     return bytes(out)
+
+
+def criteria_match(criteria, game_mode, players, max_players, min_players=0, session_type=0,
+                   opened=True):
+    """True when a session matches a browse's criteria, as a console host judges it before it
+    answers (`0x0178e590`). Attribute criteria are not checked: Sword's trade search sets none."""
+    flags = struct.unpack_from(">I", criteria, 0x236)[0]
+    if flags & SEARCH_GAME_MODE and struct.unpack_from(">I", criteria, 0x12)[0] != game_mode:
+        return False
+    for flag, offset, value in ((SEARCH_MIN_PLAYERS, 0, min_players),
+                                (SEARCH_MAX_PLAYERS, 4, max_players)):
+        high, low = struct.unpack_from(">HH", criteria, offset)
+        if flags & flag and high != 0xFFFF and low != 0xFFFF and not low <= value <= high:
+            return False
+    if flags & SEARCH_SESSION_TYPE and struct.unpack_from(">I", criteria, 0x16)[0] != session_type:
+        return False
+    opened_only, vacant_only = criteria[8], criteria[9]
+    return not (opened_only and not opened) and not (vacant_only and players >= max_players)
 
 
 def build_browse_request(criteria, challenge):
@@ -288,9 +310,7 @@ class LanSocket(_Readable):
 def browse(game_key, console_ip, criteria, our_ip="", broadcast=None, tries=10, wait=1.0):
     """Browse requests to `console_ip` (an address or the subnet broadcast) until one is answered
     -> the parsed reply with `session_key`, or None. `broadcast` is the console's broadcast
-    address, which the challenge nonce opens with. A host answers every request with the reply it
-    built for the session's first valid one, so `challenge_ok` holds only for a session this browse
-    opened."""
+    address, which the challenge nonce opens with."""
     broadcast = broadcast or broadcast_address(console_ip)
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -300,7 +320,7 @@ def browse(game_key, console_ip, criteria, our_ip="", broadcast=None, tries=10, 
     try:
         for counter in range(1, tries + 1):
             challenge, plain = build_challenge(game_key, broadcast, counter)
-            sent[counter] = plain
+            sent[counter] = (plain, parse_challenge(challenge)["key"])
             s.sendto(build_browse_request(criteria, challenge), (console_ip, BROWSE_PORT))
             try:
                 while True:
@@ -310,7 +330,7 @@ def browse(game_key, console_ip, criteria, our_ip="", broadcast=None, tries=10, 
                     got = parse_browse_reply(data)
                     answered = sent.get(parse_challenge(got["challenge_reply"])["counter"])
                     got["challenge_ok"] = answered is not None and check_response(
-                        game_key, broadcast, got["challenge_reply"], answered, got["key_param"])
+                        game_key, broadcast, got["challenge_reply"], *answered)
                     got["session_key"] = session_key(game_key, got["key_param"])
                     got["source"] = src
                     return got
@@ -398,7 +418,7 @@ def browse_any(game_key, criteria, tries=10, wait=1.0, addresses=None):
             sent = {}
             for s, (ip, bcast) in socks.items():
                 challenge, plain = build_challenge(game_key, bcast, counter)
-                sent[s] = plain
+                sent[s] = (plain, parse_challenge(challenge)["key"])
                 try:
                     s.sendto(build_browse_request(criteria, challenge), (bcast, BROWSE_PORT))
                 except OSError:
@@ -413,7 +433,7 @@ def browse_any(game_key, criteria, tries=10, wait=1.0, addresses=None):
                     got = parse_browse_reply(data)
                     ip, bcast = socks[s]
                     got["challenge_ok"] = check_response(game_key, bcast, got["challenge_reply"],
-                                                         sent[s], got["key_param"])
+                                                         *sent[s])
                     got["session_key"] = session_key(game_key, got["key_param"])
                     got.update(source=src, our_ip=ip, broadcast=bcast)
                     return got
@@ -542,9 +562,9 @@ class LanHostTransport:
             req = parse_browse_request(data)
         except ValueError:
             return
-        if req["game_mode"] != self.game_mode and req["flags"] & SEARCH_GAME_MODE:
-            return
-        if len(self.participants) + 1 >= self.max_participants:
+        players = len(self.participants) + 1
+        if not criteria_match(req["criteria"], self.game_mode, players, self.max_participants,
+                              session_type=self.versions[2]):
             return
         plain = open_challenge(self.game_key, self.broadcast, req["challenge"])
         if plain is None:
@@ -562,8 +582,10 @@ class LanHostTransport:
             self.key_param = os.urandom(16) + c["key"]
             self.session_key = session_key(self.game_key, self.key_param)
             self.log(f"[lan] keyed by the first browse, session key {self.session_key.hex()}")
-        reply = build_response(self.game_key, self.broadcast, c["counter"], plain, self.key_param,
-                               challenge_key=self.key_param[:16])
+        # Only the session info keeps the first key param; each reply is keyed to its own request.
+        reply_key = os.urandom(16)
+        reply = build_response(self.game_key, self.broadcast, c["counter"], plain,
+                               reply_key + c["key"], challenge_key=reply_key)
         self._browse[0].sendto(build_browse_reply(self.session_info(), reply), addr)
         self._browses += 1
         if self._browses in (1, 2, 5, 20, 100):

@@ -268,8 +268,17 @@ A Link Trade search's own session does not match the browse it sends when it sta
 `--preset trade`'s flags and completed a trade with a retail Sword on a Switch 2 over Wi-Fi and with
 the emulated console; it takes the console's silence as its departure (`--lan-quiet`, default 3 s),
 which ended the retail run 3.1 s after the player backed out. `bin/swsh_host.py --lan` hosts a session that
-our joiner trades with; the emulated Shield took its replies for a 2- or 4-player session of game
-mode 60001 or 0 and sent nothing to its station port.
+our joiner trades with.
+
+A Link Trade search in LAN mode sends two kinds of browse:
+
+| browse | built at | criteria |
+|---|---|---|
+| the Y-Comm nearby-player registry | `0x006c46a0` | maximum participants 4..4, opened and vacant only, result size 1 |
+| the trade search's random matchmake (`Session::JoinRandomSession`, `0x0183f860`) | `0x006bb120` | game mode 60001, maximum participants 2..2, opened and vacant only, result size 8 |
+
+The second joins the first matching session it hears or, with none, hosts its own 2-player session
+([LAN mode](pia.md#lan-mode)). A 2-player session matches only the second.
 
 ## Operational notes
 

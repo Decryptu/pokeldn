@@ -222,15 +222,23 @@ the port, and the network id equals the host's service variable id.
     challenge  = version 2, enabled 1, u64 counter, 16-byte challenge key, 16-byte tag,
                  256 random bytes under AES-GCM(AES-ECB(game key, challenge key),
                                                  nonce = receiver's broadcast address || counter)
-    key param  = the reply's challenge key || the challenge key of the session's first valid request
     reply      = HMAC-SHA256(game key, the 256 bytes)[:16]
-                 under AES-GCM(HMAC-SHA256(game key, key param)[:16], the same nonce)
+                 under AES-GCM(HMAC-SHA256(game key, reply key || request key)[:16], the same nonce)
+    key param  = the first answered reply's challenge key || its request's challenge key
     session key = HMAC-SHA256(game key, key param with its last byte plus one)[:16]
 
-The nonce opens with the broadcast address of the receiver's subnet (`local | ~mask`). A host builds
-its reply once, for the first valid request it hears, and sends that same reply to every later
-request, so the reply verifies only against that first challenge. A searching console hears its own
-broadcast browse, which can key its session before any other station asks.
+The nonce opens with the broadcast address of the receiver's subnet (`local | ~mask`). A host draws a
+new 16-byte challenge key for every reply and encrypts the response under it and the challenge key of
+the request it answers; the key param, stored in the session info at 0x4F1, keeps the pair of the
+first request it answered (Sword 1.3.2 `0x0178b464`). A searching station checks a reply under the
+reply's challenge key and the challenge key of its own latest request, never under the key param
+(`0x0178ab2c`), and drops a reply that fails. A host answers only a request whose criteria its session
+matches (`0x0178e590`): game mode, session type, both participant ranges (a bound of 0xFFFF is
+open), opened only and vacant only.
+
+A station picks a session from the replies to its browse (`0x01778c80`): criteria matched, opened,
+not a session whose join already failed, the same system and application communication versions,
+and room for the joining stations. With none, it creates its own session.
 
 ### Host request and the AES-GCM IV
 
