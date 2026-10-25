@@ -408,6 +408,11 @@ leaves nothing else to read:
     +0x08  0xB0B00002   it returned, and zero until it does
     +0x0C  r0, r1, r2, r3 as the syscall left them
 
+The lower numbers run the embedded BIOS: `main` carries the 16,384-byte GBA BIOS image at file
+offset `0x177BAC`, its vector table at `+0` and the string `Coded by Kawasedo` at `+0x2D34`.
+`swi 0x00..0x2A` executes as guest ARM code in the emulated CPU. The dispatcher at `main+0x57014`
+takes `0x40..0x62` and leaves the numbers below 0x2B to that image.
+
 `swi 0x54`, `svc_CommsAllowedByParentalControls` [sloopsvc.c:182], returns non-zero on a console
 with no parental controls.
 
@@ -882,6 +887,28 @@ communication error, leaves LDN with `Session type 3`, files its network report 
 written pointer is inert in that state, not repaired: no code site restores the vtable. The reverted
 cartridge copy is process-lifetime state as well: the wireless menu then reports the adapter as
 not connected, and a full relaunch re-applies the wrapper's load-time patches.
+
+#### The candidate copy as a vtable write
+
+`swi 0x45` composes its stores through the candidate list rather than one placement. With one
+candidate in the list (`owner + 0x2770 == 0xB`, count 1) and `r0 = 0x08FFFFD7`, the candidate's
+8-byte display name lands at `component + 0` and the `bkpt #0x52` hook object at `+0x60` stays
+outside the write. That name is slot bytes `+0x10..+0x17` ([The wrapper's own scan
+pipeline](#the-wrappers-own-scan-pipeline)), so the component's vtable pointer comes from the
+peer's advertisement record.
+
+The next `bkpt #0x52` reads `[component]` and calls `[component + 0x98]`. A host that advertises
+the display name as a native address therefore chooses the call target. Measured on the emulated
+French FireRed, with the advertised name `08 01 df 1f 66 00 00 00` (`0x661FDF0108`, inside the
+ROM copy), a 4 KB block of `0xDEADBEEF` written through `swi 0x48` to fold `0xFA3F6`
+(`ROM + 0x3F6000`), one candidate, and the payload's `bkpt #0x52`:
+
+```
+Unhandled guest exception PcAlignmentFault at ELR 0xDEADBEEFDEADBEEF (ESR 0x8A000000)
+```
+
+`ESR 0x8A000000` carries exception class `0x22`, a PC alignment fault, and `ELR` holds the eight
+bytes at `[P + 0x98]` for `P` equal to the advertised name. The branch target was guest data.
 
 ### Coverage
 
