@@ -23,7 +23,10 @@ port._usb, port.is_open, port._port, port.name = Usb(), True, android.PORT, andr
 from esptool.loader import ESPLoader
 loader = ESPLoader.__new__(ESPLoader)
 loader._port, loader.cache, loader.CHIP_NAME = port, {"usb_vid": None, "usb_pid": None}, "ESP32"
+import os
+host, os.name = os.name, "posix"     # Android's; esptool picks the reset by the computer's os.name
 strategy = loader._construct_reset_strategy_sequence("default-reset")[0]
+os.name = host
 strategy()
 print(json.dumps([type(strategy).__name__, lines]))
 '''

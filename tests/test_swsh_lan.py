@@ -331,6 +331,8 @@ def test_a_host_on_an_alias_hears_a_session_request_broadcast_to_its_station_por
     ours = next((ip for ip in pia_lan.local_addresses() if not ip.startswith("127.")), None)
     if ours is None:
         pytest.skip("needs an address off loopback")
+    if not _bindable(pia_lan.broadcast_address(ours), 0):
+        pytest.skip("this system binds no socket to a broadcast address (Linux, Windows)")
     host = pia_lan.LanHostTransport(GAME_KEY, 60006, our_ip=HOST_IP, console_ip=ours,
                                     log=lambda *a: None)
     host.start()
