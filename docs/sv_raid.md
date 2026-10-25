@@ -663,11 +663,12 @@ move hits the boss and the boss's reply hits a player:
 | `0xc9 (A, 0, M, T's position, 0)` | the move and its target |
 | `0x7b (M, n, A)` | n counts the rounds before this one |
 | six `0xcf` groups of zeros | 20, 5, 5, 5, 19 and 20 bytes |
-| `0x7e (0, ...)`, `0x7e (1, 0, 0, 0, 0, 0)`, `0x7e (2, e, e, e, e, e)` | the first: 1 at T's position + 1; the third: an effectiveness code per position, 7 for none |
+| `0x7e (0, ...)`, `0x7e (1, ...)`, `0x7e (2, e, e, e, e, e)` | the first: 1 at T's position + 1; the second: 1 there for a critical hit; the third: an effectiveness code per position, 7 for none |
 | `0x8b (A's position, T's position, M, type, 0, 0, 1, tera, class, 0)` | the hit; `tera` is 1 when the boss uses a damaging move of its Tera type (448 of 448 such hits), else 0; `class` is the move's target class: 0 one target, 1 adjacent ally or self, 4 all adjacent, 5 all adjacent foes, 6 allies, 7 self, 9 a random foe, 10 the field, 11 the foe side, 12 the ally side, 13 scripted (Showdown's `target` names, over 19,245 oracle hits) |
 | `0x37 (T, 2, damage)`, `0x37 (T, 5, 1)`, `0x02 (T, A, damage, 3)` | the damage |
 | `0xd0` with bytes `T, e` | e is the effectiveness: 7 neutral, 6 not very effective, 8 super effective |
 | `0x8e (1, 1, M)`; `0x8e (1, 3, M)` and `0xca (A, 575, 0xffff0000)` when not very effective; `0x8e (1, 2, M)` and `0xca (A, 574, 0xffff0000)` when super effective | the effectiveness message |
+| `0xa7 (T's position, 131)`, `0x20 (A, 26)` | only for a critical hit, then `0x37 (A, 0, 1)` also comes just before the damage commands |
 | `0x20 (A, 24)` | only for a super-effective hit |
 | `0x42 (T, A, A's position, type, cat, M, damage)` | the hit's record |
 | `0x25 (T)`, `0xc7 (T, 0)`, `0x0c (T, 5, 1)`, `0x92 (T, 5, 1, 0)`, `0xcb (T, 15, T)`, `0xc8 (T)` | Rattled (ability 155) raising T's Speed after a Bug, Dark or Ghost hit |
@@ -687,8 +688,11 @@ have one or two raid-action rounds between, which do not count): its `0x75 (3, 0
 `0xc5 (0)`, `0x50 (0)`, `0x19 (b, k)` for each end-of-turn kind k in the order 36, 21, 18, 5, 4, 9, 10, 8,
 46, 43, 48, 11, 12, 23, 13, 31, 33, 15, 19, 29, 30, 38, 37, 39, 40, 41, 24, 45, 14, 20, 1, 2, 3, 7, 6,
 16, 17, 22, 25, 26, 27, 28, 32, 34, 35, each over the battlers in speed order, then `0x44 (k)` for k 1
-to 13, before the usual `0xc5 (1)`. Measured on turn ends with no held item, status or weather acting;
-what those add is unmeasured.
+to 13, before the usual `0xc5 (1)`. A sandstorm adds, after `0x50 (0)`, for each battler in speed
+order it damages (a sixteenth of its maximum HP): `0xcb (b, 133, b)`, `0xa7 (b's position, 14)`, `0x01
+(b, s, damage, 1)` with s the battler that raised the sandstorm (its Sand Stream or Sand Spit, or the
+boss's Sandstorm), and `0x9a (b, -damage)`. Moody (ability 141) acts at a turn's end. Other held items,
+statuses and weathers at a turn's end are unmeasured.
 
 A damaging move the target's types are immune to draws nothing, not even its accuracy, and runs
 `0x05`, `0x07`, `0xc9 (A, 0, M, P, 1)`, `0x7b`, five `0xcf` groups (20, 5, 5, 5 and 19 zero bytes), `0xcb
