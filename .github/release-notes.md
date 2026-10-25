@@ -1,14 +1,15 @@
-# pokeldn 0.44.0
+# pokeldn 0.45.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The Games list shows one row per activity: Trade, Mystery Gift, then each raid kind and the
-  Union Circle. Who hosts (Your console: Joins or Hosts), the connection (Board, Wi-Fi with no
-  board on Sword/Shield, or Online) and the Union Circle mode are buttons above the options.
-- Plugin API 1.12: a plugin tool can join one of these rows with its own buttons.
+- Sword/Shield Max Raids and Dynamax Adventures over the game's hidden LAN mode, with no board, in
+  both directions: pick Wi-Fi, no board in the Max Raid or Dynamax Adventure row.
+- A raid the console joins now always runs on the console, also when it joins over LAN mode.
+- Android: installing firmware on a classic ESP32 board with a CP210x USB chip no longer stops at
+  "fileno" (untried on a phone).
 
 The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 
