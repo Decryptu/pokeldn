@@ -42,6 +42,11 @@ def check(game, record):
     return "", reply
 
 
+def wanted(state) -> tuple:
+    """A listing state's wants: "wants" holds the first, "also" (absent before it existed) the rest."""
+    return tuple(gts.Wants(**w) for w in [state["wants"], *state.get("also", [])])
+
+
 class Service:
     """States: each one a dict saved as <folder>/<id>/state.json.
 
@@ -125,13 +130,16 @@ class Service:
             self.browsed = set()
         self.pool.subscribe("gts-browse", {"kinds": [gts.LISTING], "#t": [tag], "limit": LISTINGS_SHOWN})
 
-    def open_listings(self, has: int | None = None, wants: int | None = None) -> list[gts.Listing]:
+    def open_listings(self, has: int | None = None, wants: int | None = None,
+                      shiny: bool = False) -> list[gts.Listing]:
+        """`shiny` keeps listings whose offered Pokemon is shiny."""
         now = self.clock()
         with self.lock:
             own = {s["key"] for s in self.states.values() if s["role"] == "listing"}
             found = [x for x in self.listings.values() if x.open(now) and x.key not in own
                      and (not has or x.pokemon.get("species_id") == has)
-                     and (not wants or x.wants.species == wants)]
+                     and (not wants or any(w.species == wants for w in x.wanted))
+                     and (not shiny or x.pokemon.get("shiny"))]
         return sorted(found, key=lambda x: x.created, reverse=True)
 
     def loaded(self) -> int:
@@ -141,9 +149,11 @@ class Service:
 
     # The player's actions
 
-    def deposit(self, entry: bank.Entry, wants: gts.Wants) -> dict:
-        """Take a banked Pokemon out of the bank and list it until LIFETIME passes or a matching offer
-        arrives."""
+    def deposit(self, entry: bank.Entry, *wants: gts.Wants) -> dict:
+        """Take a banked Pokemon out of the bank and list it until LIFETIME passes or an offer matching
+        any of `wants` (1 to gts.MAX_WANTS) arrives."""
+        if not 1 <= len(wants) <= gts.MAX_WANTS:
+            raise GtsError(f"A listing asks for 1 to {gts.MAX_WANTS} Pokemon.")
         record = bank.data(entry)
         reason, info = self.validate(entry.game, record)
         if reason:
@@ -156,15 +166,17 @@ class Service:
                                   expires, created_at=int(now))
         state = {"role": "listing", "id": d, "secret": identity.secret.hex(), "key": identity.public,
                  "game": entry.game, "entry": entry.id, "info": {k: info.get(k) for k in gts.SHOWN},
-                 "wants": vars(wants), "expires": expires, "status": "active", "event": event,
+                 "wants": wants[0].wire(), "expires": expires, "status": "active", "event": event,
                  "answers": {}, "winner": "", "received": "", "partner": "", "created": now}
+        if len(wants) > 1:
+            state["also"] = [w.wire() for w in wants[1:]]
         with self.lock:
             self._take(state, entry)
             self.states[d] = state
             self._save(state)
         self.pool.publish(event)
         self._subscribe()
-        self.log(f"[gts] listed {info.get('species')} for {wants.text()}")
+        self.log(f"[gts] listed {info.get('species')} for {' or '.join(w.text() for w in wants)}")
         self._changed()
         return state
 
@@ -192,7 +204,8 @@ class Service:
         reason, info = self.validate(entry.game, record)
         if reason:
             raise GtsError(reason)
-        why = listing.wants.refusal(int(info.get("species_id") or 0), int(info.get("level") or 0))
+        why = gts.refusal(listing.wanted, int(info.get("species_id") or 0), int(info.get("level") or 0),
+                          bool(info.get("shiny")))
         if why:
             raise GtsError(why[0].upper() + why[1:] + ".")
         identity = relays.Identity()
@@ -265,7 +278,7 @@ class Service:
         state["expires"] = expires or state["expires"]
         state["event"] = gts.listing_event(
             identity, state["id"], state["game"], state["info"], self._record(state),
-            gts.Wants(**state["wants"]), self.trainer, self.app, state["expires"], status=status,
+            wanted(state), self.trainer, self.app, state["expires"], status=status,
             winner=winner, created_at=max(int(self.clock()), state["event"]["created_at"] + 1))
         return state["event"]
 
@@ -400,8 +413,8 @@ class Service:
             why = "the offer carries no Pokemon"
         else:
             why, info = self.validate(game, record)
-            why = why or gts.Wants(**state["wants"]).refusal(int(info.get("species_id") or 0),
-                                                             int(info.get("level") or 0))
+            why = why or gts.refusal(wanted(state), int(info.get("species_id") or 0),
+                                     int(info.get("level") or 0), bool(info.get("shiny")))
         expires = int(now + gts.LIFETIME)
         if why:
             reply = gts.wrap(identity, body["from"], gts.refusal_body(state["id"], offer_id, why), expires)

@@ -13,11 +13,14 @@ from gui.views.sprites import MINI, SIZE, Sprite
 from gui.localization import SERVICE, summary_text, translate
 from pokeldn import __version__, pokemon
 from pokeldn.app import bank
-from pokeldn.app.gts import GtsError, Service
+from pokeldn.app.gts import GtsError, Service, wanted
 from pokeldn.app.paths import GTS
 from pokeldn.online import gts
 
 ANY = "-"
+SORTS = {"newest": lambda x: -x.created, "ending": lambda x: x.expires,
+         "dex": lambda x: (x.pokemon.get("species_id") or 0, -x.created),
+         "level": lambda x: (-(x.pokemon.get("level") or 0), -x.created)}
 STATUS = {"active": (tr('gts.listed_78797a', 'Listed'), t.BLUE, "globe"), "traded": (tr('gts.traded_834b40', 'Traded'), t.GREEN, "checkbox-on"),
           "withdrawn": (tr('gts.taken_down_70e371', 'Taken down'), t.MUTED, "close"), "ended": (tr('gts.ended_7cdc80', 'Ended'), t.MUTED, "clock"),
           "waiting": (tr('gts.waiting_for_the_lister_bcc6f9', 'Waiting for the lister'), t.BLUE, "clock"), "returned": (tr('gts.back_in_the_bank_10c0de', 'Back in the bank'), t.AMBER, "repeat")}
@@ -42,6 +45,14 @@ def level_of(entry: bank.Entry) -> int:
     return int(found.group(1)) if found else 0
 
 
+def answers(entry: bank.Entry, asked) -> bool:
+    return not gts.refusal(asked, entry.species_id, level_of(entry), entry.shiny)
+
+
+def sparkles(size: int = 12) -> ft.Control:
+    return t.pixel_icon("sparkles", size=size, color=t.AMBER, tooltip=tr('gts.shiny_039a0a', 'Shiny'))
+
+
 def _when(seconds: float) -> str:
     return time.strftime(tr('gts.d_b_y_ede2cc', '%d %b %Y'), time.localtime(seconds))
 
@@ -54,6 +65,9 @@ class GtsView:
         self.canonical_species: dict[str, str] = {}  # English names for persisted/published Wants
         self.search = "has"
         self.chosen = ANY
+        self.shiny_only = False
+        self.answerable = False
+        self.sort = "newest"
         self.selected: tuple | str = ""                 # a listing's (key, d), or one of ours by id
         self.working = False
         self.pending = False
@@ -73,12 +87,23 @@ class GtsView:
                     t.segmented([("has", tr('gts.offered_95e700', 'Offered'), "package"), ("wants", tr('gts.wanted_c29683', 'Wanted'), "search")], self.search,
                                 self._mode),
                     self.picker,
+                    ft.Row([t.switch(self.shiny_only, self._shiny), t.text(tr('gts.shiny_only_6b3a0f', 'Shiny only'), 13, t.SOFT)],
+                           spacing=6, tight=True),
+                    ft.Row([t.switch(self.answerable, self._answerable),
+                            t.text(tr('gts.my_bank_can_answer_2d7c1e', 'My bank can answer'), 13, t.SOFT)], spacing=6, tight=True),
                     t.button(tr('gts.deposit_a_pokemon_69907e', 'Deposit a Pokemon'), lambda e: self._deposit_dialog(), "upload"),
                     t.section(tr('gts.yours_54b26f', 'Yours'), self.mine),
                 ], spacing=12, scroll=ft.ScrollMode.AUTO, expand=True), padding=ft.Padding(14, 4, 14, 14),
                     expand=True),
             ], spacing=0, expand=True), width=t.SIDEBAR_WIDTH)),
-            (tr('gts.pane_listings', 'Listings'), "search", t.fade(ft.ListView([ft.Container(self.heading, padding=ft.Padding(4, 14, 4, 0)), self.grid],
+            (tr('gts.pane_listings', 'Listings'), "search", t.fade(ft.ListView([ft.Container(ft.Row([
+                ft.Container(self.heading, expand=True),
+                ft.Container(t.dropdown([("newest", tr('gts.sort_newest', 'Newest first')),
+                                         ("ending", tr('gts.sort_ending', 'Ending soonest')),
+                                         ("dex", tr('gts.sort_dex', 'Pokedex number')),
+                                         ("level", tr('gts.sort_level', 'Highest level'))], self.sort,
+                                        on_select=lambda e: self._sorted(e.control.value)), width=200),
+            ], spacing=8), padding=ft.Padding(4, 14, 4, 0)), self.grid],
                                spacing=12, padding=ft.Padding(0, 0, 0, 24), expand=True))),
             (tr('gts.pane_listing', 'Listing'), "label", t.panel(ft.Column([
                 t.panel_header(tr('gts.listing_fc7f1a', 'Listing')),
@@ -155,12 +180,38 @@ class GtsView:
         self.chosen = e.control.value or ANY
         self._browse()
 
+    def _shiny(self, e) -> None:
+        self.shiny_only = bool(e.control.value)
+        self.render()
+        self.control.update()
+
+    def _answerable(self, e) -> None:
+        self.answerable = bool(e.control.value)
+        self.render()
+        self.control.update()
+
+    def _sorted(self, key: str) -> None:
+        self.sort = key
+        self.render()
+        self.control.update()
+
+    def _held(self) -> list[bank.Entry]:
+        """Banked Pokemon free to offer: legal and not queued for a trade."""
+        return [e for e in bank.entries() if e.legal and not bank.queued(self.app.settings, e.id)]
+
+    def _shown(self) -> list[gts.Listing]:
+        listings = self.client.open_listings(**self._filters(), shiny=self.shiny_only)
+        if self.answerable:
+            held = self._held()
+            listings = [x for x in listings if any(answers(e, x.wanted) for e in held)]
+        return sorted(listings, key=SORTS[self.sort])
+
     # Drawing
 
     def render(self) -> None:
         client = self.client
         relays = client.connected()
-        listings = client.open_listings(**self._filters())
+        listings = self._shown()
         self.status.value = (tr('gts.of_relays_connected_e3c2ac', '{value0} of {value1} relays connected', value0=relays, value1=len(gts.relay_urls())) if relays
                              else tr('gts.connecting_to_the_relays_ee096f', 'Connecting to the relays...'))
         if listings:
@@ -168,6 +219,8 @@ class GtsView:
                                   tr('gts.open_listings_count', '{count} open listings', count=len(listings)))
         elif client.loaded():
             self.heading.value = tr('gts.no_open_listing_matches_deposit_one_of_yours_from_the_l_cd97a2', 'No open listing matches. Deposit one of yours from the left.')
+            if self.shiny_only or self.answerable:
+                self.heading.value = tr('gts.no_open_listing_matches_these_filters_4f1c2b', 'No open listing matches these filters.')
         else:
             self.heading.value = tr('gts.reading_the_listings_from_the_relays_49620c', 'Reading the listings from the relays...')
         self.grid.controls = [self._tile(x) for x in listings]
@@ -178,13 +231,21 @@ class GtsView:
     def _tile(self, listing: gts.Listing) -> ft.Control:
         active = self.selected == (listing.key, listing.d)
         shown = listing.pokemon
+        first, more = listing.wants, len(listing.also)
+        name = translate(shown.get('species', ''))
+        if shown.get("shiny"):
+            name = tr('gts.shiny_name_8e2f7a', 'shiny {name}', name=name)
         return ft.Container(ft.Row([
             ft.Stack([Sprite(self.app, int(shown.get("species_id") or 0), bool(shown.get("shiny")), size=MINI).control,
-                      ft.Container(game_icon(listing.game, 16), right=0, bottom=0)]),
+                      ft.Container(game_icon(listing.game, 16), right=0, bottom=0),
+                      *([ft.Container(sparkles(), left=0, top=0)] if shown.get("shiny") else [])]),
             t.pixel_icon("arrows-horizontal", size=12, color=t.FAINT),
-            Sprite(self.app, listing.wants.species, size=MINI).control,
+            ft.Stack([Sprite(self.app, first.species, first.shiny, size=MINI).control,
+                      *([ft.Container(sparkles(), left=0, top=0)] if first.shiny else []),
+                      *([ft.Container(t.text(f"+{more}", 11, t.SOFT, weight=ft.FontWeight.W_600), right=0, bottom=0)]
+                        if more else [])]),
         ], spacing=4, tight=True), padding=4, border_radius=14,
-            tooltip=tr('gts.level_for_4ade2a', '{value0} level {value1} for {value2}', value0=translate(shown.get('species', '')), value1=shown.get('level'), value2=wanted_text(listing.wants)),
+            tooltip=tr('gts.level_for_4ade2a', '{value0} level {value1} for {value2}', value0=name, value1=shown.get('level'), value2=wanted_list_text(listing.wanted)),
             border=ft.Border.all(2, t.BLUE if active else ft.Colors.TRANSPARENT),
             on_click=lambda e, k=(listing.key, listing.d): self._select(k))
 
@@ -192,13 +253,14 @@ class GtsView:
         label, color, icon = STATUS[state["status"]]
         title = translate(state["info"].get("species", ""))
         if state["role"] == "listing":
-            title += tr('gts.for_76b8cb', ' for {value0}', value0=wanted_text(gts.Wants(**state['wants'])))
+            title += tr('gts.for_76b8cb', ' for {value0}', value0=wanted_list_text(wanted(state)))
         else:
             title += tr('gts.offered_for_a2a379', ' offered for {value0}', value0=translate(gts.parse_listing(state['listing']).pokemon.get('species', '')) if state['listing'] else '')
         active = self.selected == state["id"]
         return ft.Container(ft.Row([
-            Sprite(self.app, int(state["info"].get("species_id") or 0), bool(state["info"].get("shiny")),
-                   size=MINI).control,
+            ft.Stack([Sprite(self.app, int(state["info"].get("species_id") or 0), bool(state["info"].get("shiny")),
+                             size=MINI).control,
+                      *([ft.Container(sparkles(), left=0, top=0)] if state["info"].get("shiny") else [])]),
             ft.Column([t.text(title, 12, t.TEXT, weight=ft.FontWeight.W_600, max_lines=1,
                               overflow=ft.TextOverflow.ELLIPSIS),
                        t.badge(label, color, icon)], spacing=2, expand=True),
@@ -224,8 +286,8 @@ class GtsView:
                 tr('gts.pick_a_listing_to_see_the_pokemon_and_what_its_trainer__d09e48', "Pick a listing to see the Pokemon and what its trainer asks for. A trade happens the next time the lister's app is open; until then your offer waits outside your bank."), 13, t.MUTED)]
             return
         self.detail.controls = [self._about(listing.pokemon, listing.game),
-                                t.section(tr('gts.asks_for_f07bf1', 'Asks for'), ft.Row([Sprite(self.app, listing.wants.species, size=MINI).control,
-                                                              t.text(wanted_text(listing.wants), 13)], spacing=10)),
+                                t.section(tr('gts.asks_for_f07bf1', 'Asks for') if not listing.also else
+                                          tr('gts.asks_for_any_of_5b0d3e', 'Asks for any of'), self._asked(listing.wanted)),
                                 t.text(tr('gts.from_open_until_d81849', 'From {value0}, open until {value1}', value0=listing.trainer or tr('gts.a_trainer_bda66d', 'a trainer'), value1=_when(listing.expires)),
                                        12, t.FAINT),
                                 t.section(tr('gts.your_pokemon_that_answer_it_2c53fc', 'Your Pokemon that answer it'), self._answers(listing))]
@@ -248,12 +310,15 @@ class GtsView:
             ], spacing=4, expand=True),
         ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)
 
+    def _asked(self, asked) -> ft.Control:
+        return ft.Column([ft.Row([Sprite(self.app, w.species, w.shiny, size=MINI).control,
+                                  t.text(wanted_text(w), 13),
+                                  *([sparkles()] if w.shiny else [])], spacing=10) for w in asked], spacing=6)
+
     def _answers(self, listing: gts.Listing) -> ft.Control:
-        held = [e for e in bank.entries() if e.species_id == listing.wants.species and e.legal
-                and not listing.wants.refusal(e.species_id, level_of(e))
-                and not bank.queued(self.app.settings, e.id)]
+        held = [e for e in self._held() if answers(e, listing.wanted)]
         if not held:
-            return t.text(tr('gts.your_bank_holds_no_legal_that_is_not_queued_for_a_trade_66b4ef', 'Your bank holds no legal {value0} that is not queued for a trade.', value0=wanted_text(listing.wants)),
+            return t.text(tr('gts.your_bank_holds_no_legal_that_is_not_queued_for_a_trade_66b4ef', 'Your bank holds no legal {value0} that is not queued for a trade.', value0=wanted_list_text(listing.wanted)),
                           12, t.FAINT)
         return ft.Column([ft.Row([
             Sprite(self.app, e.species_id, e.shiny, size=MINI).control,
@@ -268,8 +333,8 @@ class GtsView:
         label, color, icon = STATUS[state["status"]]
         controls = [self._about(state["info"], state["game"]), t.badge(label, color, icon)]
         if state["role"] == "listing":
-            wants = gts.Wants(**state["wants"])
-            controls.append(t.text(tr('gts.asks_for_open_until_offer_answered_7137e1', 'Asks for {value0}. Open until {value1}; {value2} offer{value3} answered.', value0=wanted_text(wants), value1=_when(state['expires']), value2=len(state['answers']), value3='s' * (len(state['answers']) != 1)),
+            controls.append(self._asked(wanted(state)))
+            controls.append(t.text(tr('gts.open_until_offer_answered_3c9d1f', 'Open until {value0}; {value1} offer{value2} answered.', value0=_when(state['expires']), value1=len(state['answers']), value2='s' * (len(state['answers']) != 1)),
                                    12, t.MUTED))
             if state["status"] == "traded":
                 controls.append(t.text(tr('gts.traded_with_what_came_back_is_in_the_bank_d8f8bc', 'Traded with {value0}; what came back is in the bank.', value0=state['partner'] or tr('gts.a_trainer_bda66d', 'a trainer')),
@@ -333,32 +398,65 @@ class GtsView:
         self.control.update()
 
     def _deposit_dialog(self) -> None:
-        held = [e for e in bank.entries() if e.legal and not bank.queued(self.app.settings, e.id)]
+        held = self._held()
         if not held:
             self._say(tr('gts.the_bank_holds_no_legal_pokemon_that_is_not_queued_for__a9b617', 'The bank holds no legal Pokemon that is not queued for a trade.'), t.AMBER)
             return
         if not self.species:
             self._say(tr('gts.pkhex_is_still_reading_the_species_list_try_again_in_a__9f683f', 'PKHeX is still reading the species list; try again in a moment.'), t.AMBER)
             return
-        choice = t.dropdown([(e.id, tr('gts._99a2ff', '{value0}, {value1} ({value2})', value0=summary_text(e.summary).split(' · ')[0], value1=summary_text(e.summary).split(' · ')[1], value2=NAMES[e.game])) for e in held], held[0].id, enable_filter=True,
+        choice = t.dropdown([(e.id, own_text(e)) for e in held], held[0].id, enable_filter=True,
                             editable=True, menu_height=320)
-        wanted = t.dropdown(self.species, None, enable_filter=True, editable=True, menu_height=320)
+        for option, entry in zip(choice.options, held):
+            if entry.shiny:
+                option.trailing_icon = sparkles()
+        asked: list[tuple[ft.Dropdown, ft.Switch]] = []
+        rows = ft.Column(spacing=8, tight=True)
+        more = t.link_button(tr('gts.add_another_d41a6c', 'Add another'), lambda e: add())
         low = t.field(value="1", mono=True, width=80, digits=True, limit=3)
         high = t.field(value="100", mono=True, width=80, digits=True, limit=3)
         message = t.text("", 12, t.RED)
 
+        def draw():
+            rows.controls = [ft.Row([
+                pick, ft.Row([shiny, t.text(tr('gts.shiny_039a0a', 'Shiny'), 13, t.SOFT)], spacing=6, tight=True),
+                t.icon_button("close", lambda e, n=n: remove(n), tr('gts.remove_3bd8f2', 'Remove'),
+                              visible=len(asked) > 1),
+            ], spacing=10) for n, (pick, shiny) in enumerate(asked)]
+            more.visible = len(asked) < gts.MAX_WANTS
+
+        def add(update=True):
+            # A select handler makes t.dropdown take typed text plus Enter as the option it names.
+            asked.append((t.dropdown(self.species, None, lambda e: None, enable_filter=True, editable=True,
+                                     menu_height=320),
+                          t.switch(False, None)))
+            draw()
+            if update:
+                rows.update()
+                more.update()
+
+        def remove(n):
+            asked.pop(n)
+            draw()
+            rows.update()
+            more.update()
+
+        add(update=False)
+
         def go(e):
             entry = next((x for x in held if x.id == choice.value), None)
-            name = self.canonical_species.get(wanted.value or "")
+            names = [(pick.value, self.canonical_species.get(pick.value or ""), bool(shiny.value)) for pick, shiny in asked]
             levels = (low.value or "").strip(), (high.value or "").strip()
-            if entry is None or not name:
+            if entry is None or not all(name for _, name, _ in names):
                 message.value = tr('gts.pick_your_pokemon_and_the_one_you_ask_for_536386', 'Pick your Pokemon and the one you ask for.')
+            elif len({key for key, _, _ in names}) < len(names):
+                message.value = tr('gts.each_pokemon_you_ask_for_once_7a0e55', 'Ask for each Pokemon once.')
             elif not all(v.isdigit() for v in levels) or not 1 <= int(levels[0]) <= int(levels[1]) <= 100:
                 message.value = tr('gts.the_levels_go_from_1_to_100_the_first_no_higher_than_th_e48832', 'The levels go from 1 to 100, the first no higher than the second.')
             else:
                 self.app.page.pop_dialog()
-                wants = gts.Wants(int(wanted.value), name, int(levels[0]), int(levels[1]))
-                self._work(tr('gts.pkhex_is_checking_it_e51442', 'PKHeX is checking it...'), lambda: self.client.deposit(entry, wants),
+                wants = [gts.Wants(int(key), name, int(levels[0]), int(levels[1]), shiny) for key, name, shiny in names]
+                self._work(tr('gts.pkhex_is_checking_it_e51442', 'PKHeX is checking it...'), lambda: self.client.deposit(entry, *wants),
                            tr('gts.listed_for_30_days_your_app_trades_it_when_it_is_open_a_cd4947', 'Listed for 30 days. Your app trades it when it is open and a matching offer arrives.'))
                 return
             message.update()
@@ -367,7 +465,7 @@ class GtsView:
             title=t.text(tr('gts.deposit_a_pokemon_69907e', 'Deposit a Pokemon'), 18),
             content=ft.Column([
                 t.labeled_control(tr('gts.your_pokemon_232a04', 'Your Pokemon'), choice),
-                t.labeled_control(tr('gts.ask_for_2b1a7d', 'Ask for'), wanted),
+                t.labeled_control(tr('gts.ask_for_2b1a7d', 'Ask for'), ft.Column([rows, more], spacing=4, tight=True)),
                 ft.Row([t.labeled_control(tr('gts.lowest_level_44ad69', 'Lowest level'), low), t.labeled_control(tr('gts.highest_level_5cabfc', 'Highest level'), high)], spacing=10),
                 t.text(tr('gts.it_leaves_the_bank_while_listed_the_first_offer_that_an_d65652', 'It leaves the bank while listed. The first offer that answers it is traded, by this app, the next time it is open. Take it down from Yours to get it back.'), 12, t.FAINT),
                 message,
@@ -383,9 +481,31 @@ class GtsView:
             pass
 
 
-def wanted_text(wants: gts.Wants) -> str:
+def own_text(entry: bank.Entry) -> str:
+    name, level = summary_text(entry.summary).split(' · ')[:2]
+    if entry.shiny:
+        return tr('gts.own_shiny_7d21c4', '{value0}, {value1}, shiny ({value2})', value0=name, value1=level, value2=NAMES[entry.game])
+    return tr('gts._99a2ff', '{value0}, {value1} ({value2})', value0=name, value1=level, value2=NAMES[entry.game])
+
+
+def wanted_text(wants: gts.Wants, levels: bool = True) -> str:
     name = translate(wants.name)
-    if (wants.min_level, wants.max_level) == (1, 100):
+    if wants.shiny:
+        name = tr('gts.shiny_name_8e2f7a', 'shiny {name}', name=name)
+    if not levels or (wants.min_level, wants.max_level) == (1, 100):
         return name
     return tr("presentation.wanted_levels", "{name}, level {low} to {high}",
               name=name, low=wants.min_level, high=wants.max_level)
+
+
+def wanted_list_text(asked) -> str:
+    """Several wants read as one phrase; a level range they share is said once, at the end."""
+    joined = lambda texts: tr('gts.or_separator_2f61a4', ' or ').join(texts)   # noqa: E731
+    first = asked[0]
+    if not all((w.min_level, w.max_level) == (first.min_level, first.max_level) for w in asked):
+        return joined(wanted_text(w) for w in asked)
+    names = joined(wanted_text(w, levels=False) for w in asked)
+    if (first.min_level, first.max_level) == (1, 100):
+        return names
+    return tr("presentation.wanted_levels", "{name}, level {low} to {high}",
+              name=names, low=first.min_level, high=first.max_level)

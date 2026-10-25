@@ -1,0 +1,46 @@
+{
+ "id": "781592a600a558dcfeff3a2b0b711681a927169266c900c02d031de4677fcd67",
+ "pubkey": "84bf7562262bbd6940085748f3be6afa52ae317155181ece31b66351ccffa4b0",
+ "created_at": 1800000000,
+ "kind": 30402,
+ "tags": [
+  [
+   "d",
+   "0123456789abcdef"
+  ],
+  [
+   "t",
+   "pokeldn-gts"
+  ],
+  [
+   "t",
+   "pokeldn-gts-has-25"
+  ],
+  [
+   "t",
+   "pokeldn-gts-wants-133"
+  ],
+  [
+   "title",
+   "Pikachu for Eevee"
+  ],
+  [
+   "summary",
+   "pokeldn GTS: Pikachu for Eevee"
+  ],
+  [
+   "status",
+   "active"
+  ],
+  [
+   "published_at",
+   "1792915984"
+  ],
+  [
+   "expiration",
+   "1900000000"
+  ]
+ ],
+ "content": "{\"v\":1,\"game\":\"sv\",\"pokemon\":{\"species\":\"Pikachu\",\"species_id\":25,\"form\":\"\",\"level\":30,\"shiny\":true,\"nickname\":\"Pikachu\",\"nature\":\"Jolly\",\"ability\":\"Static\",\"ball\":\"Poke Ball\",\"held_item\":\"\",\"moves\":[\"Thunder Shock\"],\"ot\":\"POKELDN\",\"legal\":true},\"sha256\":\"70ce871f8a3d3fb449bc3c3ace6547cef02dfc74ffe48d912532a724bfdbe5b9\",\"wants\":{\"species\":133,\"name\":\"Eevee\",\"min_level\":10,\"max_level\":50},\"trainer\":\"POKELDN\",\"app\":\"pokeldn 0.40.0\",\"status\":\"active\",\"winner\":\"\"}",
+ "sig": "d19edd3267443319eea577002e3014afdc7bf7ef720b80df5f7c975b81c4b035fa8a76384d8a2eeb2566f7f91cc655ee6a02e7175b9fa66e653306fa3e9f57ff"
+}

@@ -254,9 +254,13 @@ changed records.
 
 ## The GTS
 
-The GTS page lists open listings filtered by species and the player's own under Yours. Deposit takes
-a legal, unqueued banked Pokemon, held in `Documents/pokeldn/GTS` while listed. The app answers offers
-whenever it runs ([The GTS](online.md#the-gts)).
+The GTS page lists open listings filtered by species and the player's own under Yours. Shiny only
+keeps listings offering a shiny; My bank can answer keeps those a legal, unqueued banked Pokemon
+answers. The listings sort newest first, by end date, by Pokedex number or by level. A shiny Pokemon,
+offered, asked for or picked to deposit, carries sparkles. Deposit takes a legal,
+unqueued banked Pokemon, held in `Documents/pokeldn/GTS` while listed, and asks for up to three
+species, each optionally shiny, under one level range. The app answers offers whenever it runs
+([The GTS](online.md#the-gts)).
 
 ## Boards and firmware
 

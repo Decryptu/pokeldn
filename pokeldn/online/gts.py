@@ -27,6 +27,7 @@ DEFAULT_RELAYS = ("wss://relay.primal.net", "wss://nostr.oxtr.dev", "wss://nos.l
 SHOWN = ("species", "species_id", "form", "level", "shiny", "nickname", "nature", "ability", "ball",
          "held_item", "moves", "ot", "legal")
 EVENT_LIMIT = 8192
+MAX_WANTS = 3          # "wants" plus up to two in "also"; an app before "also" reads only "wants"
 
 
 def _text(value, limit):
@@ -91,19 +92,45 @@ class Wants:
     name: str
     min_level: int = 1
     max_level: int = 100
+    shiny: bool = False
 
-    def refusal(self, species: int, level: int) -> str:
+    def refusal(self, species: int, level: int, shiny: bool = False) -> str:
         """Why a Pokemon does not answer the listing, or ""."""
         if species != self.species:
             return f"the lister asks for {self.name}"
         if not self.min_level <= level <= self.max_level:
             return f"the lister asks for level {self.min_level} to {self.max_level}"
+        if self.shiny and not shiny:
+            return f"the lister asks for a shiny {self.name}"
         return ""
 
     def text(self) -> str:
+        name = f"shiny {self.name}" if self.shiny else self.name
         if (self.min_level, self.max_level) == (1, 100):
-            return self.name
-        return f"{self.name}, level {self.min_level} to {self.max_level}"
+            return name
+        return f"{name}, level {self.min_level} to {self.max_level}"
+
+    def wire(self) -> dict:
+        """The listing's form: "shiny" only when asked, so a plain want reads as before it existed."""
+        body = {"species": self.species, "name": self.name, "min_level": self.min_level,
+                "max_level": self.max_level}
+        return {**body, "shiny": True} if self.shiny else body
+
+
+def refusal(wanted, species: int, level: int, shiny: bool = False) -> str:
+    """Why a Pokemon answers none of a listing's wants, or "": the first want's reason, or all names."""
+    reasons = [w.refusal(species, level, shiny) for w in wanted]
+    if all(reasons):
+        return reasons[0] if len(wanted) == 1 else "the lister asks for " + " or ".join(w.text() for w in wanted)
+    return ""
+
+
+def _wants(value) -> Wants:
+    low, high, shiny = value.get("min_level", 1), value.get("max_level", 100), value.get("shiny", False)
+    if (not _integer(value["species"], 1, 2048) or not _text(value["name"], 32)
+            or not _integer(low, 1, 100) or not _integer(high, low, 100) or type(shiny) is not bool):
+        raise ValueError("a want out of range")
+    return Wants(value["species"], value["name"], low, high, shiny)
 
 
 @dataclass(frozen=True)
@@ -116,10 +143,15 @@ class Listing:
     game: str              # the catalog key of the game the record is in
     pokemon: dict          # SHOWN fields
     sha256: str
-    wants: Wants
+    wants: Wants           # the first want: all an app before "also" reads
     trainer: str
     winner: str            # the offer event a traded listing took
     event: dict
+    also: tuple = ()       # further Wants, any of which answers too
+
+    @property
+    def wanted(self) -> tuple:
+        return (self.wants, *self.also)
 
     @property
     def address(self) -> str:
@@ -129,15 +161,22 @@ class Listing:
         return self.status == "active" and now < self.expires
 
 
-def listing_event(identity, d, game, info, record, wants: Wants, trainer, app, expires, status="active",
+def listing_event(identity, d, game, info, record, wants, trainer, app, expires, status="active",
                   winner="", created_at=None) -> dict:
+    """`wants` is one Wants or up to MAX_WANTS of them, the first read by every app."""
+    wanted = (wants,) if isinstance(wants, Wants) else tuple(wants)
+    if not 1 <= len(wanted) <= MAX_WANTS:
+        raise ValueError(f"a listing asks for 1 to {MAX_WANTS} Pokemon")
     pokemon = {k: info.get(k) for k in SHOWN}
-    title = f"{pokemon['species']} for {wants.name}"
+    title = f"{pokemon['species']} for {' or '.join(w.text() for w in wanted)}"
     content = {"v": PROTOCOL, "game": game, "pokemon": pokemon, "sha256": digest(record),
-               "wants": {"species": wants.species, "name": wants.name, "min_level": wants.min_level,
-                         "max_level": wants.max_level},
+               "wants": wanted[0].wire(),
                "trainer": trainer[:24], "app": app, "status": status, "winner": winner}
-    tags = [["d", d], ["t", TAG], ["t", has_tag(pokemon["species_id"])], ["t", wants_tag(wants.species)],
+    if len(wanted) > 1:
+        content["also"] = [w.wire() for w in wanted[1:]]
+    species = list(dict.fromkeys(w.species for w in wanted))
+    tags = [["d", d], ["t", TAG], ["t", has_tag(pokemon["species_id"])],
+            *(["t", wants_tag(s)] for s in species),
             ["title", title], ["summary", f"pokeldn GTS: {title}"], ["status", status],
             ["published_at", str(int(time.time()))], ["expiration", str(int(expires))]]
     return identity.event(LISTING, tags, json.dumps(content, separators=(",", ":"), ensure_ascii=False),
@@ -150,10 +189,9 @@ def parse_listing(event) -> Listing | None:
         return None
     try:
         body = json.loads(event["content"])
-        wants = body["wants"]
+        wanted = [_wants(w) for w in [body["wants"], *body.get("also", [])]]
         pokemon = body["pokemon"]
         d, expires = _tag(event, "d"), int(_tag(event, "expiration") or 0)
-        low, high = wants.get("min_level", 1), wants.get("max_level", 100)
         if (type(body.get("v")) is not int or body["v"] != PROTOCOL
                 or not _text(d, 64) or not d or not 0 < expires <= 4102444800
                 or not isinstance(body["game"], str) or body["game"] not in EXTENSIONS
@@ -166,16 +204,14 @@ def parse_listing(event) -> Listing | None:
                 or type(pokemon.get("shiny")) is not bool or type(pokemon.get("legal")) is not bool
                 or not isinstance(pokemon.get("moves"), list) or len(pokemon["moves"]) > 4
                 or not all(_text(move, 96) for move in pokemon["moves"])
-                or not _integer(wants["species"], 1, 2048) or not _text(wants["name"], 32)
-                or not _integer(low, 1, 100) or not _integer(high, low, 100)
+                or not isinstance(body.get("also", []), list) or len(wanted) > MAX_WANTS
                 or not _text(body.get("trainer", ""), 24)
                 or not _text(body.get("app", ""), 64)
                 or not (body.get("winner", "") == "" or _hash(body["winner"]))):
             return None
         return Listing(event["pubkey"], d, event["created_at"], expires, body.get("status", "active"),
                        body["game"], {k: pokemon[k] for k in SHOWN}, body["sha256"],
-                       Wants(wants["species"], wants["name"], low, high),
-                       body.get("trainer", ""), body.get("winner", ""), event)
+                       wanted[0], body.get("trainer", ""), body.get("winner", ""), event, tuple(wanted[1:]))
     except (ValueError, KeyError, TypeError, AttributeError, RecursionError):
         return None
 

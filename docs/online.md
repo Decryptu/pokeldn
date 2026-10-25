@@ -121,26 +121,32 @@ record is content 50's ([Sword trades](swsh_trade.md)).
 ## The GTS
 
 The GTS trades banked Pokemon between players never online together: a player lists a Pokemon from
-the [bank](gui.md#the-bank) against a wanted species and level range, another answers with one of
+the [bank](gui.md#the-bank) against up to three wanted species, a level range and optionally a shiny, another answers with one of
 theirs, and the lister's app trades when next open. Code: `pokeldn/online/gts.py`,
 `pokeldn/app/gts.py`, the app's GTS page.
 
 | event | kind | signed by | content |
 |---|---|---|---|
-| listing | 30402 (NIP-99), `d` a random id | a per-listing key | JSON: protocol 1, game, the Pokemon as PKHeX reads it, the record's SHA-256, wanted species and levels, trainer name, status, winning offer |
+| listing | 30402 (NIP-99), `d` a random id | a per-listing key | JSON: protocol 1, game, the Pokemon as PKHeX reads it, the record's SHA-256, `wants` and `also` (below), trainer name, status, winning offer |
 | offer | 1059, `p` the listing key | a per-offer key | sealed: the listing's `d`, game, record, trainer name |
 | answer | 1059, `p` the offer key | the listing key | sealed: offer id and the listed record, or a refusal and why |
 | deletion | 5 (NIP-09) | the named event's key | none |
 
-A listing is tagged `pokeldn-gts`, `pokeldn-gts-has-<species>` and `pokeldn-gts-wants-<species>`,
+A listing is tagged `pokeldn-gts`, `pokeldn-gts-has-<species>` and `pokeldn-gts-wants-<species>` for each wanted species,
 carries NIP-99's `title`, `summary`, `status`, `published_at`, and expires (NIP-40) after 30 days. A
 sealed body is AES-256-GCM under `sha256("pokeldn gts|" + x)`, x the ECDH x coordinate
 (`schnorr.shared_x`). Every stored event's id and signature are checked.
 
+A want is `{"species", "name", "min_level", "max_level"}`, plus `"shiny": true` when only a shiny
+answers. `wants` holds the first; `also`, present only with more than one, holds up to two more, and an
+offer matching any one of them answers. Both fields are additions to protocol 1: an app from 0.40.0 or
+earlier ignores them, shows a listing as asking for its first want alone, and an offer it sends that
+misses the shiny requirement is refused by the lister's app and returns.
+
 | step | what happens |
 |---|---|
 | deposit | the Pokemon must be legal; it leaves the bank and the listing is published |
-| offer | legal and matching the wanted species and levels; it leaves the bank, sealed to the listing key |
+| offer | legal and matching one want's species, levels and shiny requirement; it leaves the bank, sealed to the listing key |
 | the lister's app opens | stored offers are answered oldest first; the first valid one is traded, the rest refused |
 | a trade | the answer carries the listed record; the listing is republished as traded; the received record is banked |
 | the offering app opens | the record is checked against the listing's SHA-256 and banked; a refusal, a lost race or a withdrawn listing returns its own Pokemon; it deletes its offer |

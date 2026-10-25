@@ -146,7 +146,7 @@ def test_gts_localized_selection_publishes_canonical_wants(french_copy, monkeypa
 
     monkeypatch.setattr(view_gts.SERVICE, "species", lambda game: [{"id": 7, "name": "Carapuce"}])
     monkeypatch.setattr(view_gts.pokemon.SERVICE, "species", lambda game: [{"id": 7, "name": "Squirtle"}])
-    entry = SimpleNamespace(id="received", legal=True, game="sv", summary="Squirtle · level 50")
+    entry = SimpleNamespace(id="received", legal=True, game="sv", shiny=False, summary="Squirtle · level 50")
     monkeypatch.setattr(view_gts.bank, "entries", lambda: [entry])
     monkeypatch.setattr(view_gts.bank, "queued", lambda *args: False)
     dialogs, deposited = [], []

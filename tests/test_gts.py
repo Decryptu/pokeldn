@@ -2,6 +2,7 @@
 the measured relays did (docs/online.md, Stored events), with records PKHeX built and checks."""
 import base64
 import json
+from pathlib import Path
 
 import pytest
 
@@ -179,6 +180,37 @@ def test_a_listing_trades_while_each_app_is_closed_in_turn(world):
     (state,) = bob.mine()
     assert (state["status"], state["why"]) == ("traded", "")
     assert _browse(bob, relay) == []          # the listing now says traded
+
+
+def test_a_listing_takes_any_of_its_wants_and_a_shiny_want_only_a_shiny(world):
+    relay, receive, banked = world["relay"], world["receive"], world["banked"]
+    alice = world["app"]("alice")()
+    alice.deposit(receive("alice", "sv", 25, 30), gts.Wants(133, "Eevee", shiny=True), gts.Wants(37, "Vulpix", 10, 50))
+    bob, carol = world["app"]("bob")(), world["app"]("carol")()
+    bob.browse(wants=37)
+    relay.pump()
+    (listing,) = bob.open_listings(wants=37)
+    assert bob.open_listings(shiny=True) == []                  # the offered Pikachu is not shiny
+    plain = receive("bob", "sv", 133, 20)
+    with pytest.raises(GtsError, match="shiny Eevee or Vulpix, level 10 to 50"):
+        bob.offer(listing, plain)
+    honest = bob.validate                                        # a modified app sends it anyway
+    bob.validate = lambda game, record: ("", dict(honest(game, record)[1], shiny=True))
+    bob.offer(listing, plain)
+    relay.pump()
+    (state,) = bob.mine()
+    assert (state["status"], banked("bob")) == ("returned", {("sv", 133)})
+    carol.offer(listing, receive("carol", "swsh", 37, 20))
+    relay.pump()
+    assert banked("alice") == {("swsh", 37)} and banked("carol") == {("sv", 25)}
+
+
+def test_a_listing_an_earlier_app_published_still_shows(world):
+    # Signed by pokeldn 0.40.0's listing_event: one want, no "shiny", no "also".
+    event = json.loads((Path(__file__).parent / "data" / "gts_listing_0_40.json").read_text())
+    world["relay"].store(event)
+    (listing,) = _browse(world["app"]("bob")(), world["relay"])
+    assert listing.wanted == (gts.Wants(133, "Eevee", 10, 50),)
 
 
 def test_an_offer_the_listing_does_not_ask_for_comes_back(world):
