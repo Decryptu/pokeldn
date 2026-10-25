@@ -939,6 +939,14 @@ second).
 `pokeldn.za.host.HostSession.leave` runs the same departure with the same timings;
 `tests/test_za_host.py` pins the type 9 and both Net messages.
 
+## LAN mode
+
+Legends Z-A 2.0.2 has a LAN path its code never takes. The network start `0x1911540` builds the
+local service for mode 1, internet for 2 and the LAN service for 3 (`0x2523710`). The mode comes from
+the network task's `+0x50` (constructor `0xc5a5f4`), created only through `0xc5a3e4(.., mode)`,
+whose two callers pass 1 (`0xc57600`) and 2 (`0x2a0bcc4`). Scarlet's mode-3 caller has no
+counterpart here.
+
 ## Mystery Gift
 
 Mystery Gift in 2.0.2 offers Get via Internet, Get with Code/Password and Check Mystery Gifts; there

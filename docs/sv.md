@@ -264,6 +264,55 @@ at 1 against 2. Both launchers retry pending identity records ([Lowest pending a
 Both consoles pack several MSDUs into one A-MSDU frame. A passive capture must unpack the subframes
 or it loses most Pia packets (313 readable without, 3667 with, in one capture).
 
+## LAN mode
+
+Scarlet 4.0.0 starts LAN mode from its scripts. The selector `0x17fde60` takes mode 1 (local,
+`0x17fe5c0`), 2 (`0x26894f0`) or 3 (`0x2689600`, the LAN service); the mode is the global
+`0x475ea40`, set by `0x17fddc0` from the network task's `+0x50` (constructor `0x188f488`).
+`0x188e998(.., mode)` creates that task and is called with 1 (`0x18871a4`), 2 (`0x1de28a4`) and
+3 (`0x1de6650`). The mode-3 caller `0x1de653c` runs NetworkUse, InitializeSocket and InitializePia,
+and is the Lua binding `f6597D2A6` in the table at `0x4430500`.
+
+The game's Lua (six chunks in `arc/scriptluabinrelease*.blua.trpak`; `be21e654` is `main`) reaches
+it from the battle menu. The network battle reception menu (class `C6A68AA55EC501641`, state
+`SET_STATE_NETWORK_VS_RECEPTION`, update `0.25603`) clears its LAN flag when an entry is chosen, and
+sets it when the entry is 1 or 2 and the input test `fFCB9D967` (native `0xc60480`, input vfunc
+`+0x70`) is true for both `UI_ZL` and `UI_ZR`. It passes the flag as `LanMode` to the matching
+parameters (`0.25605`: MatchingType 2 for entry 2, else 1). The matching job `0.25585` then calls
+`f9C74F2CA` (MatchingType 1) or `f671B3A6A` (MatchingType 2) instead of the local `f40B78205` or
+`fA775C8D9`; both LAN bindings return callbacks whose work `0xa41c8c` calls `0x1de653c`.
+
+The trade menu (class `CCEC7DC2C9A179FC0`, `SET_STATE_NETWORK_TRADE`, `0.25609`) builds its matching
+parameters in `0.25611` with MatchingType 0 and `LanMode` false; no input sets it. The request
+runner `0.28742` with its StartLan method (`FDF107F292AE61465`) belongs to class
+`CD876458B95753AFF`, which no Lua constructs.
+
+| measured on a retail Scarlet 4.0.0 (Switch 2 on Wi-Fi) | result |
+|---|---|
+| Combats en réseau, Combat solo, ZL and ZR held through A and the yes/no | search starts; the console stays on Wi-Fi (ping 4 of 4, then 6 of 6 on a repeat) |
+| the same with no ZL or ZR | the console leaves Wi-Fi during the search (ping 0 of 6) |
+| frames the console sends during the ZL + ZR search, captured by IP and by MAC | none in about 4 minutes, IPv4, IPv6, broadcast and multicast included |
+
+In an emulated Scarlet 4.0.0 the same search makes a network connection request (nifm; with no
+network the game shows error 11), opens UDP sockets on 49152 and 35000, broadcasts one 317-byte
+browse request to the subnet broadcast on port 35000, then waits as a host. A browse request sent to
+it on 35000 draws a 620-byte reply naming the host's IPv4 address and Pia port 49152 (`c0a8011f`,
+`0xc000`). The single broadcast at the start explains the silent retail capture, which began after
+it.
+
+| message | first bytes, as captured; the layout past them is unread |
+|---|---|
+| browse request, 317 bytes | `00 00000000 0e000000 00000000 01000200 02000f03 01000000 00000000 01` |
+| browse reply, 620 bytes | `01 0000022d 00000000 1f01a8c0 007c0a00 15` |
+
+Stopping the search closes the three sockets and returns the game to Offline Mode; the network
+start `0x17fddc0` keeps a running mode, but the teardown `0x1813740` clears `0x475ea40` first, so
+the trade menu never inherits a LAN network.
+
+Pia 6 moves the browse port from Sword's 30000 to 35000 and changes both layouts
+([LAN mode](pia.md#lan-mode)). Whether two consoles searching with ZL + ZR find each other is
+unmeasured.
+
 ## The link code
 
 A Link Code rides the advertisement twice; the scene id stays 4. The user password is the code,

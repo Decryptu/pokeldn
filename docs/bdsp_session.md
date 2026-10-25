@@ -213,6 +213,15 @@ joiner, and `bin/bdsp_connect.py` answers a migration start and leaves the netwo
 (`--no-leave-on-host-migration` stays). Leaving the trade box sends no departure message, only
 `NetDataCurrentFlowCancelData{0}` (0x25) and `NetCharacterStateData{0}` in one packet.
 
+## LAN mode
+
+BDSP 1.3.0 never sets up LAN mode. Its Pia comes through Nintendo's Unity plugin, whose framework
+initialisation (around `0x16886d0`) builds the Lan factory (constructor `0x169fdcc`) for its LAN
+mode, which needs a registered LAN setting. `INL1.IlcaNetBase.PlatformInitialize` registers the internet setting
+(`0x1e13800`) and `PlatformInitialize2` the local one (`0x1e139dc`); nothing calls
+`PiaPlugin.RegisterInitializeLanSetting` (`0x227caf0`) or its native `0x227cac0`. No C# name in
+`global-metadata.dat` mentions LAN.
+
 ## Measurement methods
 
 - The console answers a connection request only when the protocol count matches its own; sweeping

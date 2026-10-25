@@ -87,6 +87,14 @@ The advertisement's application data opens with a 24-byte header:
     0x0C  4  session param, the key seed
     0x18     the game's application data
 
+## LAN mode
+
+Let's Go 1.0.2 has a LAN path its code never takes. The network setup `0x5dabb0` builds the local
+factory for mode 0, Nex for 1 and the Lan factory for 2 (`0x5ddaf0`, LanNetworkFactory constructor
+`0xd14a20`), and the matching start `0x4da710` accepts 1 or 2. Every writer of the mode passes 0 or 1:
+`0x115818` passes 1, the session object's constructor zeroes its mode at `+0xa4`, and its one setter
+`0x348eb0` stores 0 or 1. The English option, matching, menu and error messages carry no LAN text.
+
 ## The link code
 
 The link code is the NetworkInfo scene id, `1000a + 100b + 10c + 1`, each pick its index in the

@@ -184,6 +184,23 @@ was measured against an emulated Shield 1.3.2 (`tests/test_swsh_lan.py` pins the
 | 49152-49155 | a station's Pia packets; a console takes the first free one |
 | 40000 | broadcast reliable (0x80) messages a station sends to the subnet broadcast |
 
+Scarlet 4.0.0 (Pia 6) browses on UDP 35000 with a 317-byte request and a 620-byte reply, and its
+station port is 49152 ([LAN mode](sv.md#lan-mode)).
+
+### Which titles reach LAN mode
+
+Every Pokemon title links `nn::pia::lan` and builds its LAN network factory behind a mode value; the
+title reaches LAN mode only if some code passes that value. Read from each title's `main`:
+
+| title | LAN mode value | values its code passes | page |
+|---|---|---|---|
+| Sword / Shield 1.3.2 | 3 | 0, 2, 3 (L + R + Left Stick in Options) | [LAN mode](swsh_session.md#lan-mode) |
+| Let's Go 1.0.2 | 2 | 0, 1 | [LAN mode](lgpe_session.md#lan-mode) |
+| BDSP 1.3.0 | the Pia plugin's LAN setting | none; the LAN setting is never registered | [LAN mode](bdsp_session.md#lan-mode) |
+| Legends Arceus 1.1.1 | 3 | 1, 2 | [LAN mode](pla.md#lan-mode) |
+| Scarlet 4.0.0 | 3 | 1, 2, 3 (ZL + ZR held on Combats en réseau, measured; never from the trade menu) | [LAN mode](sv.md#lan-mode) |
+| Legends Z-A 2.0.2 | 3 | 1, 2 | [LAN mode](za.md#lan-mode) |
+
 ### Browse request and reply
 
 A browse request is `00`, a u32 size `0x23A`, the 0x23A-byte search criteria and a 0x12A-byte crypto

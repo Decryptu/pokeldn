@@ -648,6 +648,14 @@ A Clone Atomic (0x74) message is 14 bytes: kind (0 announce, 1 commit, 2 ack), g
 big-endian u32 element index (below 33), big-endian u64 value. Only the trade scene creates elements;
 a host kind-0 announce draws a kind-2 echo that fills no slot.
 
+## LAN mode
+
+Legends Arceus 1.1.1 has a LAN path its code never takes. The network start `0x2bb9a10` builds the
+local service for mode 1, internet for 2 and the LAN service for 3 (`0x711ab4`). The mode reaches it
+from the network task's `+0x78` (constructor `0x2bbe7f4`), whose only creator chain ends in
+`0x2629258(.., mode)`; its two callers pass 1 (`0x2628b74`) and 2 (`0x262a020`), and no pointer
+names any function on that chain.
+
 ## Hosting
 
 `bin/pla_host.py` advertises the title, passphrase, scene id and link code;

@@ -257,6 +257,9 @@ Options, then L, R and the Left Stick pressed together, turns Sword's LAN mode o
 "Mode réseau local activé" and warns that only Max Raid Battles are guaranteed. Pia then runs over the
 console's IP network ([LAN mode](pia.md#lan-mode)) and Y-Comm's Link Trade search works over it.
 
+The transport selector `0x6a8550` (Shield 1.3.2) builds the Ldn factory for mode 0 (`0x6a90b0`), the
+Nex factory for 2 (`0x6a8f80`) and the Lan factory for 3 (`0x6a9210`).
+
 | measured on an emulated Shield 1.3.2 | value |
 |---|---|
 | the session a Link Trade search hosts | game mode 60001, maximum 2, versions 7 and 7, no application data, no attributes |
