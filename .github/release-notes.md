@@ -1,12 +1,14 @@
-# pokeldn 0.43.1
+# pokeldn 0.44.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Android: Install on the Board page flashes ESP32-S3, C3 and C6 boards over the cable. The app
-  failed with "Failed to get VID/PID" and the board never entered flash mode.
+- The Games list shows one row per activity: Trade, Mystery Gift, then each raid kind and the
+  Union Circle. Who hosts (Your console: Joins or Hosts), the connection (Board, Wi-Fi with no
+  board on Sword/Shield, or Online) and the Union Circle mode are buttons above the options.
+- Plugin API 1.12: a plugin tool can join one of these rows with its own buttons.
 
 The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 
