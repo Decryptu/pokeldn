@@ -523,7 +523,10 @@ USB bridge ID.
 esptool picks its reset from the port's USB ids, which esp-pylib 1.1.5 refuses to look up for a URL
 port such as Android's `android://board`; with no ids it gives an ESP32-S3, C3 or C6 the classic
 DTR/RTS reset, the chip never enters its ROM loader, and the log reads `Failed to get VID/PID`. The
-Android app answers the lookup from the board's own USB ids (`pokeldn/app/android.py`).
+Android app answers the lookup from the board's own USB ids (`pokeldn/app/android.py`). With the ids
+known, a CP210x board on Linux or Android gets the reset that writes DTR and RTS together through
+`ioctl` on the port's `fileno()`; the Android port has no file descriptor and sends both lines in one
+CDC `SET_CONTROL_LINE_STATE` instead.
 [Desktop builds](gui.md) covers packaging all four images.
 
 ### Bluetooth

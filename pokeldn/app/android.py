@@ -60,6 +60,10 @@ class Serial(SerialBase):
 
     _update_rts_state = _update_dtr_state
 
+    def _set_lines(self, dtr, rts):
+        self._dtr_state, self._rts_state = bool(dtr), bool(rts)
+        self._update_dtr_state()
+
     def _update_break_state(self):
         pass
 
@@ -160,6 +164,11 @@ def install() -> None:
         (int(bridge().deviceVendorId()), int(bridge().deviceProductId())) if name == PORT else lookup(name))
     if "esptool.loader" in sys.modules:
         sys.modules["esptool.loader"].get_port_vid_pid = serial_ports.get_port_vid_pid
+    # A CP210x board's reset writes both lines with ioctl on fileno(), which this port has none of.
+    import esp_pylib.serial_reset as serial_reset
+    atomic = serial_reset.set_dtr_rts
+    serial_reset.set_dtr_rts = lambda port, dtr=False, rts=False: (
+        port._set_lines(dtr, rts) if isinstance(port, Serial) else atomic(port, dtr, rts))
 
 
 def usb_state() -> str:
