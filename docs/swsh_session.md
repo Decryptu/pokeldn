@@ -282,6 +282,17 @@ A Link Trade search in LAN mode sends two kinds of browse:
 The second joins the first matching session it hears or, with none, hosts its own 2-player session
 ([LAN mode](pia.md#lan-mode)). A 2-player session matches only the second.
 
+### The Link Code over LAN
+
+`SetMode(comm, mode, code)` (`0x01096d10`) keeps the scene at comm+0x70 and the Link Code at
+comm+0x74, an optional u32 (a present byte, then the value). `StartRandomMatching`'s parameters carry
+it at +0x88 into the matching object's +0x278 (`0x006b83ec` for LAN). The LDN join (`0x006ca1c0`)
+and the NEX random join (`0x006c6b7c`) format it with `%u` and pass it as the session password. No
+code in the LAN matching class (`0x006b6000`..`0x006bc000`, constructed at `0x006ba480`) reads
++0x278, and its create, browse and random-join settings carry no password. A coded Link Trade search
+in LAN mode therefore sends the same browses as an uncoded one and joins any session that matches
+them.
+
 ## Operational notes
 
 - Never pass `--verbose` live; use `--capture FILE`.

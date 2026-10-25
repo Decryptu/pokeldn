@@ -1,7 +1,9 @@
 """Sword/Shield in LAN mode: the browse exchange pinned to an emulated Shield's own bytes, then our
 LAN joiner trading with our LAN host on the loopback aliases (docs/swsh_session.md, LAN mode)."""
 import json
+import os
 import socket
+import tempfile
 import struct
 import threading
 import time
@@ -15,6 +17,28 @@ from pokeldn.swsh import GAME_KEY
 VECTORS = json.loads((Path(__file__).parent / "data" / "swsh_lan_console.json").read_text())
 CONSOLE_IP, BROADCAST = "192.168.1.31", "192.168.1.255"
 HOST_IP, JOIN_IP = "127.0.0.2", "127.0.0.3"
+
+
+@pytest.fixture
+def loopback_lan():
+    """One loopback LAN test at a time across xdist workers: every LAN socket sets SO_REUSEPORT, and
+    Linux spreads a port's datagrams over all its sockets, another test's host among them."""
+    fd = os.open(os.path.join(tempfile.gettempdir(), "pokeldn-swsh-lan.lock"), os.O_RDWR | os.O_CREAT)
+    try:
+        if os.name == "nt":
+            import msvcrt
+            while True:
+                try:
+                    msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:
+                    pass
+        else:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)        # closing releases either lock
 
 
 def test_our_reply_to_a_challenge_is_the_consoles_byte_for_byte():
@@ -75,7 +99,7 @@ def test_the_session_key_and_the_iv_open_the_consoles_host_message():
                                                           reply["host_variable"])
 
 
-def test_our_host_answers_a_swords_trade_browse_as_a_console_host_does():
+def test_our_host_answers_a_swords_trade_browse_as_a_console_host_does(loopback_lan):
     """A retail Sword browses for its Y-Comm registry (maximum 4) before its trade search's own
     browse (game mode 60001, maximum 2). A 2-player host answers only the second, and keys each
     reply to the request it answers: the Sword checks a reply under the reply's challenge key and
@@ -101,7 +125,7 @@ def test_our_host_answers_a_swords_trade_browse_as_a_console_host_does():
             != pia_lan.parse_challenge(second["challenge_reply"])["key"])
 
 
-def test_our_host_seats_a_retail_swords_host_request_and_answers_its_session_request():
+def test_our_host_seats_a_retail_swords_host_request_and_answers_its_session_request(loopback_lan):
     """A retail Sword's host request names source constant 0, and once in the mesh it asks for the
     session info (0x44 type 5) and leaves 5 s later without it. Its constant id is its address and
     station port; the answer is the session info in type 6 fragments, the Sword seated in it."""
@@ -116,7 +140,7 @@ def test_our_host_seats_a_retail_swords_host_request_and_answers_its_session_req
     sword.settimeout(2)
     try:
         assert pia_lan.browse(GAME_KEY, HOST_IP, bytes.fromhex(VECTORS["criteria"]["trade"]),
-                              our_ip=JOIN_IP, broadcast=BROADCAST, tries=1, wait=0.5)
+                              our_ip=JOIN_IP, broadcast=BROADCAST, tries=3, wait=1.0)
         msg = pia4.build_message(pia_lan.build_host_request(host.network_id),
                                  protocol=pia_lan.PROTOCOL, source=0)
         nonce8 = bytes(8)
@@ -163,7 +187,7 @@ def _bindable(ip, port):
 
 @pytest.mark.parametrize("empty_offer", [False, True], ids=["offer-files", "empty-offer"])
 def test_the_apps_lan_trade_trades_twice_with_our_lan_host_on_loopback(tmp_path, monkeypatch,
-                                                                        empty_offer):
+                                                                        empty_offer, loopback_lan):
     """The app's Trade (LAN Join) arguments, pointed at its Trade (LAN Host) on loopback: two trades
     on one seat, keyed by nothing but the browse, with no board and no keys. An empty offer trades the console's own
     first party Pokemon back; PKHeX refuses that record under a new PID, as it refused a retail
