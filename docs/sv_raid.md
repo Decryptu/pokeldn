@@ -848,7 +848,7 @@ A weather move (Sunny Day, Rain Dance, Snowscape, Sandstorm) runs as a stat-stag
 field class (10) and, in place of the stat changes, the weather's start: `0x6a (0)`, `0x69 (0, w)`,
 `0x79 (w, 5, 0, A, 0)` and `0x88 (w, A, 0)`, w 1 sun, 2 rain, 3 snow, 4 sand; a status move that inflicts a
 status (Thunder Wave, Will-O-Wisp, Toxic, Spore) runs the infliction there ([Statuses](#statuses)). Sand
-Spit (245) hit by a damaging move raises a sandstorm after the hit's `0x42`: `0x25 (b)`, `0xc7 (b, 0)`, the
+Spit (245) hit by a damaging move raises a sandstorm after the hit's `0x42` and its secondaries' commands: `0x25 (b)`, `0xc7 (b, 0)`, the
 weather's start with w 4, `0xc8 (b)`, and no message; under a sandstorm already up it shows nothing. A
 terrain move runs the same way with the terrain's start: `0x32 (t, 0, 42, A)`, `0x6a (8)`, `0xb2 (0)`,
 `0xaa (t)`, `0x69 (8, t)` and `0xca (A, text)`, the start text 704 Grassy, 706 Misty, 708 Electric, 828
