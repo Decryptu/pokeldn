@@ -613,8 +613,8 @@ Point, Flame Body or Cute Charm (abilities 9, 38, 49, 56), or from a user with P
 secondary raising its user (Flame Charge, Steel Wing) draws its chance and adds the raise after the hit's
 `0x42`, before a knockout's commands, also when the hit knocks its target out. A move that lowers its user's
 stats (Close Combat, Hammer Arm, Ice Hammer) draws `chance(100)` after its roll and adds `0x0d (A, stat,
-n)`, `0x93` and `0xcb (A, 31 + stat, A, stat)` per stat after the hit's `0x42` (2 of 2 with every draw
-logged). A landed
+n)`, `0x93` and `0xcb (A, 31 + stat, A, stat)` per stat after the hit's `0x42` (a battle with every draw
+logged shows the draw). A landed
 Static, Poison Point or Flame Body paralyses, poisons or burns the attacker inside the target's ability
 activation, after the secondaries' commands: `0x25 (T)`, `0xc7 (T, 0)`, the infliction from T ([Statuses](#statuses)),
 `0xc8 (T)`; an attacker already statused or immune shows nothing. A hit that
