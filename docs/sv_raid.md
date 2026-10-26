@@ -1125,8 +1125,11 @@ one key, so every comparison between two of them draws `below(2)`. The oracle's 
 | the extra action's move | the boss's move run between `0xc1 (9, 0)` and `0xc1 (9, 1)` (before the move's `0x1e (2, 0)`) | |
 
 Action 2 clears the players' stat changes and gives condition 16 (ability suppressed): `0x13` skipped
-an Arceus with Multitype (Showdown flag `cantsuppress`). Action 4 (drain the Tera orb) adds `0x76 (2, k)`
-for some client slots and no entry. A Sandstorm or Snowscape extra move aims at position 10, Iron Defense
+an Arceus with Multitype (Showdown flag `cantsuppress`). Action 4 (drain the Tera orb) adds, right after its `0xc1 (4, 4)`, `0x76 (2, k)` for each client slot k
+in order whose Pokemon is standing and has begun a move (`0xc9` with flag 0) since that slot's last drain,
+and no entry; a fainted Pokemon keeps its charge through a drain (25 of 25 drains in the oracle corpora;
+whether a drain empties the charge or lowers it by one, and whether failed moves count, the data do not
+separate). A Sandstorm or Snowscape extra move aims at position 10, Iron Defense
 at the boss (4); a move aimed at one player draws its target with `below(n)` over the standing players in
 position order when its entry joins the list (before the next sort's draws); one aimed at all of them
 (Snarl, Leer) carries position 10.
