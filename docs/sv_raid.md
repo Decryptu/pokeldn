@@ -655,6 +655,8 @@ least 1. A Fire hit on a frozen target thaws it after its `0xd1`: `0x14 (T)`, `0
 T)`. The shield going up and the boss's own stat reset (between its `0x0f (2)` and `0xc2 (3, 2, 2)`)
 cure the boss's status with `0x14 (2)` and `0x90 (2, 0)`.
 
+A faint clears the battler's status and confusion.
+
 At a turn's end a burn deals a sixteenth of the battler's record HP (the boss's record HP, not its pool)
 right after its `0x19 (b, 4)`, a poison an eighth after `0x19 (b, 5)`, a bad poison n sixteenths on its
 n-th turn end: `0xa7 (b's position, 44 or 43)`, `0x01 (b, the battler that inflicted it, damage, 39 or
@@ -675,8 +677,8 @@ over the five battlers in id order gives the logged number of draws at the battl
 | the battle start, before Trace's draw | the five battlers, id order | 1 | the switch-in events |
 | a round's start | the round's actions, command order; key priority, then not Stall, then Speed | 3, each of the previous one's result | the first: the second `0x51` pass; the third: the order of the moves |
 | after each move but the last | the actions | 1 | nothing in the queue |
-| a round's end | the five battlers, id order each time | 3 | the second: `0x43` |
-| a turn's end (every fourth round) | the five battlers, id order each time | 8 | the fourth and fifth agree with `0x19`; the seventh: `0x43` |
+| a round's end | the standing battlers, id order each time | 3 | the second: `0x43` |
+| a turn's end (every fourth round) | the standing battlers, id order each time | 8 | the fourth and fifth agree with `0x19`; the seventh, after the turn's end: `0x43` |
 
 The round-end `0x43` order matched the second sort in 109 of 123 battles; the 14 others had a battler's
 Speed changed by a move in that round. The chained action sorts matched the `0x51` and move orders in
@@ -737,17 +739,26 @@ A damaging move the target's types are immune to draws nothing, not even its acc
 twice and `0x1e (A, 0)`: 5,353 of the 5,550 message-72 runs in the oracle corpora (the rest open an ability activation).
 
 A damaging move that misses its accuracy draw runs as an immune one with message 73 and `0x52 (A, 1)` in
-place of message 72 and `0x52 (A, 3)`.
+place of message 72 and `0x52 (A, 3)`. A player's move with no PP left (the party record's PP, less 1 per
+use, 2 against Pressure) runs only `0xc9 (A, 0, M, 10, 1)`, `0xca (A, 578, A)`, `0x52 (A, 0)`, `0x5b (A,
+M)` twice and `0x1e (A, 0)`.
+
+A weather move (Sunny Day, Rain Dance, Snowscape, Sandstorm) runs as a stat-stage status move with the
+field class (10) and, in place of the stat changes, the weather's start: `0x6a (0)`, `0x69 (0, w)`,
+`0x79 (w, 5, 0, A, 0)` and `0x88 (w, A, 0)`, w 1 sun, 2 rain, 3 snow, 4 sand; a status move that inflicts a
+status (Thunder Wave, Will-O-Wisp, Toxic, Spore) runs the infliction there ([Statuses](#statuses)).
 
 A two-to-five-hit move rolls its hit count right after the accuracy draw (`0x19d4f2c`): one draw of the
 battle generator's low 7 bits, redrawn while 100 or more, gives 2 hits under 35, 3 under 70, 4 under 85,
 else 5; a fixed count (Double Kick's 2, Triple Dive's 3) draws nothing. Each hit draws its critical hit and
 its roll and runs, after a 20-byte zero group, its own `0x7e` triple, `0x8b` with the hit index as the
 sixth argument and the hit count as the tenth, the damage commands with `0x8e (1, e, M)` only, `0x42` and
-`0xd1`; a hit that knocks its target out ends the run. After the last hit come the effectiveness message
+`0xd1`; a hit that knocks its target out ends the run, and its knockout commands carry no fainted
+message. The tenth argument of every hit's `0x8b` is the number of hits that landed, so the hits are
+counted before their commands go out. After the last hit come the effectiveness message
 `0xca (A, 574 or 575)` when not neutral, `0xca (A, 516, hits)`, `0x20 (A, 24)` once per hit when super
-effective, `0xa6 (96)`, then the move's usual end with `0x85 (7, total damage)` on the boss. Every
-two-to-five-hit round of the corpora builds equal this way.
+effective, `0xa6 (96)`, then the move's usual end with `0x85 (7, total damage)` on the boss; Dragon
+Darts shows no message 516. Every two-to-five-hit round of the corpora builds equal this way.
 
 A status move whose only effect is stat stages runs `0x05` (a player's), `0x07 (A, 0)`, `0xc9 (A, 0,
 M, P, 0)` with P the commanded position, `0x7b (M, n, A)`, one `0xcf` group of 20 zero bytes, `0x7e (0,
@@ -1007,7 +1018,9 @@ one key, so every comparison between two of them draws `below(2)`. The oracle's 
 Action 2 clears the players' stat changes and gives condition 16 (ability suppressed): `0x13` skipped
 an Arceus with Multitype (Showdown flag `cantsuppress`). Action 4 (drain the Tera orb) adds `0x76 (2, k)`
 for some client slots and no entry. A Sandstorm or Snowscape extra move aims at position 10, Iron Defense
-at the boss (4); a move aimed at a player draws `below(n)` over n candidates in 3 of 5 raid rounds.
+at the boss (4); a move aimed at one player draws its target with `below(n)` over the standing players in
+position order when its entry joins the list (before the next sort's draws); one aimed at all of them
+(Snarl, Leer) carries position 10.
 
 After every action run (`0x11405a0`), while the battle goes on and the boss stands, `0x11425b0` fills an
 empty list of waiting raid actions from the HP triggers: without a shield among them they join the
@@ -1192,6 +1205,12 @@ first posts the raid action itself (`0x16e5ad0`); a raid action jumps the posted
 oracle battles of the corpora, a server built this way sends every message the oracle sends at the same
 server time up to the first round it refuses (31,581 messages; 25 battles through a faint, 8 through a
 revive, 5 through a shield's 0x47).
+
+The machine's clock is the 19.2 MHz system tick: each frame moves it to the frame's time if that is
+later, and every `nn::os::GetSystemTick` read adds 256 ticks. A frame run again at the same time (a host
+starts each run of frames at the time the last one ended) therefore reads slightly later, and a timer
+that ends on a whole second (a fainted slot's 5 s wait) can end on either instance; over the corpora
+that moves a revive by one frame in 10 battles.
 
 `Server`, a Python port of this flow, runs at 30 frames a second on the machine's clock; no frame
 can be skipped, since a reader waiting on a fainted slot's timer moves the machine every frame. The
