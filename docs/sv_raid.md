@@ -708,7 +708,10 @@ A faint clears the battler's status and confusion.
 At a turn's end a burn deals a sixteenth of the battler's record HP (the boss's record HP, not its pool)
 right after its `0x19 (b, 4)`, a poison an eighth after `0x19 (b, 5)`, a bad poison n sixteenths on its
 n-th turn end: `0xa7 (b's position, 44 or 43)`, `0x01 (b, the battler that inflicted it, damage, 39 or
-38)`, `0x9a (b, -damage)` and `0xcb (b, 88 or 82, b)`. Speed Boost (ability 3) raises Speed after the
+38)`, `0x9a (b, -damage)` and `0xcb (b, 88 or 82, b)`. Salt Cure (864) sets condition 46 on its target after the hit's `0x42`
+(`0x13 (T, 46, 0, 1, A)`, `0xcb (A, 1033, T, A)`, its 100 percent chance drawn); at each turn end, right
+after `0x19 (b, 46)`, it deals an eighth of the record HP, a quarter to a Water or Steel type: `0xa7 (b's
+position, 152)`, `0x01 (b, A, damage, 0)`, `0x9a (b, -damage)`, `0xcb (b, 125, b, 864)`. Speed Boost (ability 3) raises Speed after the
 `0x44` list (`0x25`, `0xc7`, `0x0c (b, 5, 1)`, `0x92`, message 15, `0xc8`), before the turn end's last
 three battler sorts, except in the turn the battler was revived (Showdown's `activeTurns`). Shed Skin
 (61) and Hydration (93) without a status, and Healer (131) on the boss, which has no ally, show and
