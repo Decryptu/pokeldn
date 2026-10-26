@@ -594,9 +594,9 @@ A move use draws, in this order:
 | `chance(25)` | the user is paralysed | a full paralysis |
 | `chance(33)` | the user is confused | hitting itself, whose roll is a `below(16)` that replaces the move's draws |
 | `chance(accuracy)` | the move has an accuracy; 100 still draws | a hit; the accuracy is the move's times (3 + n) / 3, or 3 / (3 − n) for n below 0, truncated, n the user's accuracy stage less the target's evasion stage within ±6, then the abilities' modifiers |
-| `below(24)`, `below(8)`, `below(2)` | a damaging move, by critical-hit stage 0, 1, 2 | a critical hit when 0 |
+| `below(24)`, `below(8)`, `below(2)` | a damaging move, by critical-hit stage 0, 1, 2; none for a move that always lands one (Frost Breath, Wicked Blow, Flower Trick, Surging Strikes) | a critical hit when 0 |
 | `below(16)` | a damaging move | the roll r: the damage times (100 − r) / 100 |
-| `chance(p)` | a secondary effect of chance p (Body Slam's 30) | the effect |
+| `chance(p)` | a secondary effect of chance p (Body Slam's 30) | the effect; Fire, Ice and Thunder Fang draw their flinch before their status, the reverse of Showdown's list |
 
 A flinch secondary against the boss draws nothing ([A move in the round queue](#a-move-in-the-round-queue)
 has the rule). A confusion secondary steps the generator once, through a call outside `below` and
@@ -648,7 +648,8 @@ critical hit (Showdown's `onWeatherModifyDamage`; 125 corpus rounds with such a 
 Swim, Chlorophyll, Sand Rush and Slush Rush (33, 34, 146, 202) double Speed in their weather, for the
 order keys, the sorts and `0x5a` alike; Sand Veil and Snow Cloak (8, 81) lower a move's accuracy against
 their holder to 3277/4096 in theirs (83 corpus rounds with one of the six in its weather build equal).
-Sand Veil, Overcoat, Sand Rush and Sand Force (8, 142, 146, 159) take no sandstorm damage.
+Sand Veil, Overcoat, Sand Rush and Sand Force (8, 142, 146, 159) take no sandstorm damage. Snow raises an
+Ice type's Defense 1.5 times against a physical hit, as sand raises a Rock type's Special Defense.
 
 Moves with their own power rule follow Showdown's `moves.ts`: Payback doubles when its target has moved
 earlier in the round (a boss reply the shield break dropped does not count), Hex on a statused target, Rising Voltage on a grounded target in Electric
@@ -721,7 +722,7 @@ after `0x19 (b, 46)`, it deals an eighth of the record HP, a quarter to a Water 
 position, 152)`, `0x01 (b, A, damage, 0)`, `0x9a (b, -damage)`, `0xcb (b, 125, b, 864)`. A Salt Cure on a
 salted target adds nothing.
 
-A player knocked out at a turn's end (by Salt Cure or the sandstorm) runs, right after that damage's
+A player knocked out at a turn's end (by Salt Cure, a burn, a poison or the sandstorm) runs, right after that damage's
 commands, the knockout commands with `0x49 (V, 0, 0)` and no `0x09`, ending with `0x38 (s)` only when s, the
 battler that salted it or raised the sandstorm, is its foe (a sandstorm raised by an ally's Sand Spit
 shows none). The damage shown is the whole fraction.
@@ -910,7 +911,9 @@ corpora builds equal this way.
 
 A recoil move adds, after the hit's `0xd1` and after any knockout's commands, `0x01 (A, A, r, 4)`, `0x9a
 (A, -r)`, `0xcb (A, 127, A)` and `0x37 (A, 4, r)`, r the damage dealt (at most the HP the target had)
-times the move's fraction, rounded half up, at least 1.
+times the move's fraction, rounded half up, at least 1. Chloroblast ends the same way with half its user's
+maximum HP. Steel Beam pays half its user's maximum HP right after its `0x8b`, before the damage
+commands: `0x01 (A, A, cost, 0)` and `0x9a (A, -cost)`, with no message.
 
 Focus Energy runs as a status move on its user (class 7) whose effect is `0x1e (A, 9)`, `0x7d (9, A, 0,
 0)` and `0xcb (0, 336, A)`; from then on the user's critical-hit stage is two higher (`below(2)` for a
