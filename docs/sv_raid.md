@@ -712,7 +712,8 @@ n-th turn end: `0xa7 (b's position, 44 or 43)`, `0x01 (b, the battler that infli
 `0x44` list (`0x25`, `0xc7`, `0x0c (b, 5, 1)`, `0x92`, message 15, `0xc8`), before the turn end's last
 three battler sorts, except in the turn the battler was revived (Showdown's `activeTurns`). Shed Skin
 (61) and Hydration (93) without a status, and Healer (131) on the boss, which has no ally, show and
-draw nothing at a turn's end.
+draw nothing at a turn's end; Shed Skin on a statused battler draws `chance(33)` there (no cure came in
+the corpora).
 
 ### Speed ties
 
@@ -1152,7 +1153,10 @@ one target took it super effectively else 1, M)`, `0xcb (2, 2, T)` or `0xcb (2, 
 super-effective targets, `0xcb (2, 6, T)` or `0xcb (2, 7, T1, T2)` for resisted ones, `0x20 (2, 24)` once,
 `0xa7 (T's position, 132)` and `0x20 (2, 26)` for the critical hit, the `0x42`s, then each target's
 secondaries and Sand Spit, `0xd1`, `0x2e (2, 1)`, `0x7c`, `0x1d (2, 10, type, 1, 0, M, M)`. 4 of 4 Snarls
-in the corpora build equal this way.
+in the corpora build equal this way. A stat-dropping status extra-action move aimed at all of them (Leer,
+Growl) draws each target's accuracy in position order and runs as a status move with `0x8b (4, 10, M,
+type, 0, 0, 0, 0, 5, 0)` and each standing player's drop in id order, ending `0x1d (2, 10, type, 1, 0, M,
+M)`.
 
 After every action run (`0x11405a0`), while the battle goes on and the boss stands, `0x11425b0` fills an
 empty list of waiting raid actions from the HP triggers: without a shield among them they join the
