@@ -146,7 +146,7 @@ misses the shiny requirement is refused by the lister's app and returns.
 | step | what happens |
 |---|---|
 | deposit | the Pokemon must be legal; it leaves the bank and the listing is published |
-| offer | legal and matching one want's species, levels and shiny requirement; it leaves the bank, sealed to the listing key |
+| offer | legal and matching one want's species, levels and shiny requirement; it leaves the bank, sealed to the listing key; one app holds one waiting offer per listing, which stays open to other players' offers until the lister's app answers; the page marks it with a clock |
 | the lister's app opens | stored offers are answered oldest first; the first valid one is traded, the rest refused |
 | a trade | the answer carries the listed record; the listing is republished as traded; the received record is banked |
 | the offering app opens | the record is checked against the listing's SHA-256 and banked; a refusal, a lost race or a withdrawn listing returns its own Pokemon; it deletes its offer |

@@ -230,11 +230,15 @@ class GtsView:
 
     def _tile(self, listing: gts.Listing) -> ft.Control:
         active = self.selected == (listing.key, listing.d)
+        offered = self.client.offered(listing) is not None
         shown = listing.pokemon
         first, more = listing.wants, len(listing.also)
         name = translate(shown.get('species', ''))
         if shown.get("shiny"):
             name = tr('gts.shiny_name_8e2f7a', 'shiny {name}', name=name)
+        tip = tr('gts.level_for_4ade2a', '{value0} level {value1} for {value2}', value0=name, value1=shown.get('level'), value2=wanted_list_text(listing.wanted))
+        if offered:
+            tip += "\n" + tr('gts.you_offered_waiting_for_the_lister_5e1b0c', 'You offered; waiting for the lister.')
         return ft.Container(ft.Row([
             ft.Stack([Sprite(self.app, int(shown.get("species_id") or 0), bool(shown.get("shiny")), size=MINI).control,
                       ft.Container(game_icon(listing.game, 16), right=0, bottom=0),
@@ -243,9 +247,10 @@ class GtsView:
             ft.Stack([Sprite(self.app, first.species, first.shiny, size=MINI).control,
                       *([ft.Container(sparkles(), left=0, top=0)] if first.shiny else []),
                       *([ft.Container(t.text(f"+{more}", 11, t.SOFT, weight=ft.FontWeight.W_600), right=0, bottom=0)]
-                        if more else [])]),
-        ], spacing=4, tight=True), padding=4, border_radius=14,
-            tooltip=tr('gts.level_for_4ade2a', '{value0} level {value1} for {value2}', value0=name, value1=shown.get('level'), value2=wanted_list_text(listing.wanted)),
+                        if more else []),
+                      *([ft.Container(t.pixel_icon("clock", size=12, color=t.BLUE), right=0, top=0)] if offered else [])]),
+        ], spacing=4, tight=True), padding=4, border_radius=14, tooltip=tip,
+            bgcolor=t.SELECTED if offered else None,
             border=ft.Border.all(2, t.BLUE if active else ft.Colors.TRANSPARENT),
             on_click=lambda e, k=(listing.key, listing.d): self._select(k))
 
@@ -290,7 +295,19 @@ class GtsView:
                                           tr('gts.asks_for_any_of_5b0d3e', 'Asks for any of'), self._asked(listing.wanted)),
                                 t.text(tr('gts.from_open_until_d81849', 'From {value0}, open until {value1}', value0=listing.trainer or tr('gts.a_trainer_bda66d', 'a trainer'), value1=_when(listing.expires)),
                                        12, t.FAINT),
-                                t.section(tr('gts.your_pokemon_that_answer_it_2c53fc', 'Your Pokemon that answer it'), self._answers(listing))]
+                                self._yours(listing)]
+
+    def _yours(self, listing: gts.Listing) -> ft.Control:
+        state = self.client.offered(listing)
+        if state is None:
+            return t.section(tr('gts.your_pokemon_that_answer_it_2c53fc', 'Your Pokemon that answer it'), self._answers(listing))
+        info = state["info"]
+        return t.section(tr('gts.your_offer_7b2e41', 'Your offer'), ft.Column([
+            ft.Row([Sprite(self.app, int(info.get("species_id") or 0), bool(info.get("shiny")), size=MINI).control,
+                    ft.Column([t.text(tr('gts.level_dcff87', '{value0} · level {value1}', value0=translate(info.get('species', '')), value1=info.get('level')), 13),
+                               t.badge(*STATUS["waiting"])], spacing=4, expand=True)], spacing=10),
+            t.text(tr('gts.other_players_can_still_offer_on_it_the_lister_s_app_tr_9c4d2a', "Other players can still offer on it. The lister's app trades the first offer that answers it, the next time it is open; if that is not yours, yours comes back to the bank."), 12, t.FAINT),
+        ], spacing=10))
 
     def _about(self, shown: dict, game: str) -> ft.Control:
         shown = {**shown, **{key: translate(shown.get(key, "")) for key in ("species", "nature", "ability", "ball", "held_item")},

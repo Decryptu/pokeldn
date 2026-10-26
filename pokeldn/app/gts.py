@@ -142,6 +142,13 @@ class Service:
                      and (not shiny or x.pokemon.get("shiny"))]
         return sorted(found, key=lambda x: x.created, reverse=True)
 
+    def offered(self, listing: gts.Listing) -> dict | None:
+        """Our offer waiting on this listing; the listing stays open to others until the lister's app answers."""
+        with self.lock:
+            return next((dict(s) for s in self.states.values()
+                         if s["role"] == "offer" and s["status"] == "waiting" and s["listing"]["pubkey"] == listing.key
+                         and gts._tag(s["listing"], "d") == listing.d), None)
+
     def loaded(self) -> int:
         """Relays that finished sending the stored listings asked for."""
         with self.lock:
@@ -200,6 +207,8 @@ class Service:
         now = self.clock()
         if not listing.open(now):
             raise GtsError("This listing is no longer open.")
+        if self.offered(listing):
+            raise GtsError("Your offer on this listing is already waiting for the lister.")
         record = bank.data(entry)
         reason, info = self.validate(entry.game, record)
         if reason:

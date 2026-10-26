@@ -241,12 +241,17 @@ def test_the_first_offer_wins_and_the_second_comes_back(world):
     bob, carol = world["app"]("bob")(), world["app"]("carol")()
     (listing,) = _browse(bob, relay)
     bob.offer(listing, receive("bob", "sv", 133, 20))
+    assert bob.offered(listing)["status"] == "waiting" and carol.offered(listing) is None
+    with pytest.raises(GtsError, match="already waiting"):
+        bob.offer(listing, receive("bob", "swsh", 133, 25))
+    assert banked("bob") == {("swsh", 133)}                         # the second never left the bank
     world["now"][0] += 60
     carol.offer(listing, receive("carol", "bdsp", 133, 30))
     world["app"]("alice")()
     relay.pump()
+    assert bob.offered(listing) is None
     assert banked("alice") == {("sv", 133)}
-    assert banked("bob") == {("sv", 25)}
+    assert banked("bob") == {("sv", 25), ("swsh", 133)}
     assert banked("carol") == {("bdsp", 133)}
     (state,) = carol.mine()
     assert state["why"] == "another offer was taken first"
