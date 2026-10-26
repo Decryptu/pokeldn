@@ -644,8 +644,8 @@ action left in the round, Hex on a statused target, Rising Voltage on a grounded
 Terrain; Facade doubles under a status other than sleep, Venoshock on a poisoned target, Electro Drift
 and Collision Course take 5461/4096 when super effective, Expanding Force 1.5 in Psychic Terrain from a
 grounded user. A doubled Rising Voltage carries 1 as the fifth argument of its `0x8b`; a doubled Payback
-carries 0. Each case with its power raised came once in the corpus rounds built equal, the others only
-unraised.
+carries 0. In the corpus rounds built equal Payback and Rising Voltage come raised once each; Hex, Facade,
+Venoshock and Electro Drift come only unraised.
 
 A terrain (Grassy 1, Misty 2, Electric 3, Psychic 4) changes the power of a move: 5325/4096 for a move of
 its type from a grounded user (Grass, Electric, Psychic; Misty Terrain boosts none), a half for a Dragon
