@@ -821,7 +821,9 @@ A damaging move the target's types are immune to draws nothing, not even its acc
 twice and `0x1e (A, 0)`: 5,353 of the 5,550 message-72 runs in the oracle corpora (the rest open an ability activation).
 A Ground move into a target with Levitate (26) that its types do not already make immune runs the same
 way with message 72 inside the target's ability activation: `0x25 (T)`, `0xc7 (T, 0)`, `0xcb (T, 72, T)`,
-`0xc8 (T)`, then `0x52 (A, 3)`.
+`0xc8 (T)`, then `0x52 (A, 3)`. A Grass move into Sap Sipper (157) or an Electric one into Motor Drive (78)
+runs as an immune move whose activation raises the target's Attack or Speed one stage (`0x25 (T)`, `0xc7
+(T, 0)`, `0x0c (T, stat, 1)`, `0x92`, `0xcb (T, 10 + stat, T)`, `0xc8 (T)`), then `0x52 (A, 2)`.
 
 A damaging move that misses its accuracy draw runs as an immune one with message 73 and `0x52 (A, 1)` in
 place of message 72 and `0x52 (A, 3)`. A player's move with no PP left (the party record's PP, less 1 per
