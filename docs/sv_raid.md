@@ -811,32 +811,34 @@ move hits the boss and the boss's reply hits a player:
 | `0x7c ()`, `0x08 (A, 0)`, `0x1d (A, T's position, type, 1, 0, M, M)`, `0x5b (A, M)` twice, `0x1e (A, 0)` | the move ends |
 
 A round ends with `0xb2 (0)`, `0x37 (b, 7, 1)` for each battler that moved, `0x75 (3, n)`, `0xc5 (1)`,
-`0x43 (b)` for each battler in speed order (party record speed at its stat stage, the boss among them), `0x23 (b)` for
-each of the round's actors in id order, or all five in the battle's first round, and `0x2d (0)`;
-`0x75 (3, n)` counts the command rounds of the current turn, this one included. A turn ends with every
-fourth command round, whichever slots sent them (3,606 of 4,090 turn ends in the oracle corpora; the rest
-have one or two raid-action rounds between, which do not count): its `0x75 (3, 0)` is followed by
-`0xc5 (0)`, `0x50 (0)`, `0x19 (b, k)` for each end-of-turn kind k in the order 36, 21, 18, 5, 4, 9, 10, 8,
-46, 43, 48, 11, 12, 23, 13, 31, 33, 15, 19, 29, 30, 38, 37, 39, 40, 41, 24, 45, 14, 20, 1, 2, 3, 7, 6,
-16, 17, 22, 25, 26, 27, 28, 32, 34, 35, each over the battlers in speed order, then `0x44 (k)` for k 1
-to 13, before the usual `0xc5 (1)`. A weather lasts five turn ends, the turn it rises in counting as
+`0x43 (b)` for each battler in speed order (party record speed at its stat stage, the boss among them),
+`0x23 (b)` for each of the round's actors in id order, or all five in the battle's first round, and `0x2d
+(0)`; `0x75 (3, n)` counts the command rounds of the current turn, this one included. A turn ends with
+every fourth command round, whichever slots sent them (3,606 of 4,090 turn ends in the oracle corpora;
+the rest have one or two raid-action rounds between, which do not count): its `0x75 (3, 0)` is followed
+by `0xc5 (0)`, `0x50 (0)`, `0x19 (b, k)` for each end-of-turn kind k in the order 36, 21, 18, 5, 4, 9,
+10, 8, 46, 43, 48, 11, 12, 23, 13, 31, 33, 15, 19, 29, 30, 38, 37, 39, 40, 41, 24, 45, 14, 20, 1, 2, 3,
+7, 6, 16, 17, 22, 25, 26, 27, 28, 32, 34, 35, each over the battlers in speed order, then `0x44 (k)` for
+k 1 to 13, before the usual `0xc5 (1)`. A weather lasts five turn ends, the turn it rises in counting as
 the first: at its fifth it ends right after `0x50 (0)` with `0x99 (w)`, `0x54 ()`, `0x6a (0)`, and a
-sandstorm ending does no damage that turn (7 of 7 weather ends in the oracle corpora). Sun, rain and
-snow add nothing at a turn's end. A terrain lasts five turn ends as well and ends between `0x44 (8)`
-and `0x44 (9)` with `0x34 (8)`, `0x6a (8)`, `0xca (0, text)`, `0x32 (0, 0, 1, 0)`, `0x6a (8)`, `0xb2 (0)`,
-`0xaa (0)`, `0x69 (8, 0)`; the end text is 705 Grassy, 709 Electric, 829 Psychic (Misty's is not in the
-corpora). A sandstorm adds, after `0x50 (0)`, for each battler in speed
-order it damages (a sixteenth of its maximum HP): `0xcb (b, 133, b)`, `0xa7 (b's position, 14)`, `0x01
-(b, s, damage, 1)` with s the battler that raised the sandstorm (its Sand Stream or Sand Spit, or the
-boss's Sandstorm), and `0x9a (b, -damage)`. Leftovers (item 234) then heals each holder below its
-maximum, in speed order and before the residual kinds, by a sixteenth of its record HP: a 5-byte zero
-`0xcf` group, `0x9b (b, 0)`, a 3-byte zero group, `0xa7 (b's position, 51)`, `0x03 (b, heal)`, `0x9a (b,
-heal)` and `0xcb (b, 295, b, 234)`; the heal shown is the whole sixteenth even when less HP was missing.
-Moody (ability 141) acts at a turn's end after the `0x44` list: one `below(20)`
-draw v picks the raised stat (Attack to Speed) v // 4 and the lowered one v % 4 among the four others;
-`0x25 (b)`, `0xc7 (b, 0)`, the raise by 2 (by 1 from +5), the drop by 1 (`0x0d`, `0x93`, `0xcb (b, 31 +
-stat, b, stat)`), `0xc8 (b)` (every Moody turn end in the corpora; stats at ±6 unmeasured). Other held items and Grassy Terrain's heal at a turn's end are
-unmeasured.
+sandstorm ending does no damage that turn (7 of 7 weather ends in the oracle corpora). Sun, rain and snow
+add nothing at a turn's end. A terrain lasts five turn ends as well and ends between `0x44 (8)` and `0x44
+(9)` with `0x34 (8)`, `0x6a (8)`, `0xca (0, text)`, `0x32 (0, 0, 1, 0)`, `0x6a (8)`, `0xb2 (0)`, `0xaa
+(0)`, `0x69 (8, 0)`; the end text is 705 Grassy, 709 Electric, 829 Psychic (Misty's is not in the
+corpora). A sandstorm adds, after `0x50 (0)`, for each battler in speed order it damages (a sixteenth of
+its maximum HP): `0xcb (b, 133, b)`, `0xa7 (b's position, 14)`, `0x01 (b, s, damage, 1)` with s the
+battler that raised the sandstorm (its Sand Stream or Sand Spit, or the boss's Sandstorm), and `0x9a (b,
+-damage)`. Leftovers (item 234) then heals each holder below its maximum, in speed order and before the
+residual kinds, by a sixteenth of its record HP: a 5-byte zero `0xcf` group, `0x9b (b, 0)`, a 3-byte zero
+group, `0xa7 (b's position, 51)`, `0x03 (b, heal)`, `0x9a (b, heal)` and `0xcb (b, 295, b, 234)`; the
+heal shown is the whole sixteenth even when less HP was missing. Grassy Terrain heals each grounded
+battler below its maximum by a sixteenth of its record HP right after the weather's commands and before
+Leftovers, in speed order: `0xa7 (b's position, 51)`, `0x03 (b, heal)`, `0x9a (b, heal)`, `0xcb (b, 130,
+b)`. Moody (ability 141) acts at a turn's end after the `0x44` list: one `below(20)` draw v picks the
+raised stat (Attack to Speed) v // 4 and the lowered one v % 4 among the four others; `0x25 (b)`, `0xc7
+(b, 0)`, the raise by 2 (by 1 from +5), the drop by 1 (`0x0d`, `0x93`, `0xcb (b, 31 + stat, b, stat)`),
+`0xc8 (b)` (every Moody turn end in the corpora; stats at ±6 unmeasured). Other held items at a turn's
+end are unmeasured.
 
 A damaging move the target's types are immune to draws nothing, not even its accuracy, and runs
 `0x05`, `0x07`, `0xc9 (A, 0, M, P, 1)`, `0x7b`, five `0xcf` groups (20, 5, 5, 5 and 19 zero bytes), `0xcb
