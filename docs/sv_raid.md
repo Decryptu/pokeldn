@@ -863,6 +863,10 @@ Darts shows no message 516. A multi-hit move that knocks the boss out adds its f
 0, 2)` after `0xa6 (96)`; one that knocks a player out does not. Every two-to-five-hit round of the
 corpora builds equal this way.
 
+A recoil move adds, after the hit's `0xd1` and after any knockout's commands, `0x01 (A, A, r, 4)`, `0x9a
+(A, -r)`, `0xcb (A, 127, A)` and `0x37 (A, 4, r)`, r the damage dealt (at most the HP the target had)
+times the move's fraction, rounded half up, at least 1.
+
 A status move whose only effect is stat stages runs `0x05` (a player's), `0x07 (A, 0)`, `0xc9 (A, 0,
 M, P, 0)` with P the commanded position, `0x7b (M, n, A)`, one `0xcf` group of 20 zero bytes, `0x7e (0,
 0, 0, 0, 0, 0)`, `0x7e (1, 0, 0, 0, 0, 0)`, `0x7e (2, 7, 7, 7, 7, 7)`, `0x8b (A's position, T's position,
