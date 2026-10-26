@@ -1,13 +1,13 @@
-# pokeldn 0.45.1
+# pokeldn 0.45.2
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- macOS: the app icon is the same size as other apps' in Launchpad, the Dock and Finder on macOS
-  15 and earlier, where it was drawn larger. On macOS 26 and later it is the layered Liquid Glass
-  icon.
+- GTS: a listing you offered on shows a clock in the list, and its panel shows your offer waiting
+  for the lister. The listing stays open to other players until the lister's app answers. A
+  second offer from you on the same listing is refused, and that Pokemon stays in your bank.
 
 The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 
