@@ -1338,7 +1338,8 @@ A slot whose Pokemon fainted goes through its reader's sub-states:
 A revive's queue: `0x03 (b, HP)` with its full HP, `0xcb (0, 1, b)`, then the battle start's send-out
 with the client slot c (`0x3d (c)`, `0x16 (c, 0, 0, n)` with n the rounds so far, `0x5e (b, ability)`,
 `0x61`, `0x6b`, `0x4e`), `0x98 (c, 0, 0, 1)`, `0x20 (b, 18)` and its switch-in ability (Pressure's
-message 162). Its stat changes are gone. The next round's `0x23` list starts with the battlers revived
+message 162). Its stat changes are gone, and an ability the players' reset suppressed is its own again
+(`0x5e` carries it). The next round's `0x23` list starts with the battlers revived
 since the round before, in revive order, then that round's actors not already listed.
 
 A player's Pokemon knocked out runs, after the hit's `0x42`, the boss's knockout commands with its own
