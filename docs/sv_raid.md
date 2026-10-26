@@ -724,12 +724,13 @@ over the five battlers in id order gives the logged number of draws at the battl
 | a round's start | the round's actions, command order; key priority, then not Stall, then Speed | 3, each of the previous one's result | the first: the second `0x51` pass; the third: the order of the moves |
 | after each move but the last | the actions | 1 | nothing in the queue |
 | a round's end | the standing battlers, id order each time | 3 | the second: `0x43` |
-| a turn's end (every fourth round) | the standing battlers, id order each time | 8 | the fourth and fifth agree with `0x19`; the seventh, after the turn's end: `0x43` |
+| a turn's end (every fourth round) | the standing battlers, id order each time | 8 | the fourth: the sandstorm, Leftovers and `0x19` order; the seventh, after the turn's end: `0x43` |
 
 The round-end `0x43` order matched the second sort in 109 of 123 battles; the 14 others had a battler's
 Speed changed by a move in that round. The chained action sorts matched the `0x51` and move orders in
 27 of 27 rounds whose two actors tied, and the draw after the first move came in 3 of 3 rounds that
-reached both moves. The turn-end orders matched in 8 of 8 turn ends whose sorts disagreed.
+reached both moves. The fourth sort gives the residual order in 12 of 12 corpus turn ends whose first five sorts disagreed;
+the first, second, third or fifth fails some of them.
 
 The boss's Trace draws `below(N)` over the players whose ability it can copy, in id order: `below(3)`
 with one player holding Embody Aspect. A move into Shell Armor (ability 75) draws no critical hit.
