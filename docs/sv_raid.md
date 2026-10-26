@@ -846,12 +846,16 @@ equal; its end did not come).
 
 Tailwind (366) raises side condition 4 on its user's side (0 the players', 1 the boss's) for four turn
 ends, the turn it rises in counting as the first. It runs as a weather move with the side class (12) and
-position 10 in its `0x8b` (the `0xc9` keeps the commanded position), then `0x4a (side, 4, 0, 34, A)`,
+position 10 in its `0x8b` (the `0xc9` keeps the commanded position), then `0x4a (side, 4, 0, 34, A)` (34
+is its four turns << 3 | 2),
 `0x65` with the same arguments and `0xca (A, 643, side)`. It doubles the Speed of its side's battlers in
 the order keys and the sorts but not in a handler's `0x5a`. Each turn end it is up adds `0x4c (side, 4)`
 after the last `0x19` and before `0x44 (1)`; at its fourth come `0x4b (side, 4)`, `0x66 (side, 4)` and
-`0xca (A, 645, side)` with A the battler that raised it. Side conditions 0, 1 and 2 end the same way with
-texts 625, 629 and 637. A battler with Wind Power (277) on the Tailwind's side is charged right after the
+`0xca (A, 645, side)` with A the battler that raised it. Reflect, Light Screen and Safeguard are side
+conditions 0, 1 and 2 for five turn ends, raised the same way with `0x4a (side, c, 0, 42, A)` and start
+texts 623, 627 and 635, ending with texts 625, 629 and 637. Reflect takes a physical hit, Light Screen a
+special one, on its side times 2732/4096 on the final damage unless it is a critical hit, on either side
+(Showdown's factor beside several battlers; the boss's own screens in the corpora fit it). A battler with Wind Power (277) on the Tailwind's side is charged right after the
 start text: `0x25 (b)`, `0xc7 (b, 0)`, `0xcb (b, 1024, b, 366)`, `0xc8 (b)`, `0x1e (b, 20)`, `0x7d (20, b,
 0, 0)`; Wind Rider (274) beside a Tailwind is unmeasured. 47 corpus
 rounds with a Tailwind up, three with its end, build equal.
