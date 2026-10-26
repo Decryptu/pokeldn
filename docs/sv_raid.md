@@ -835,8 +835,14 @@ Spit (245) hit by a damaging move raises a sandstorm after the hit's `0x42`: `0x
 weather's start with w 4, `0xc8 (b)`, and no message; under a sandstorm already up it shows nothing. A
 terrain move runs the same way with the terrain's start: `0x32 (t, 0, 42, A)`, `0x6a (8)`, `0xb2 (0)`,
 `0xaa (t)`, `0x69 (8, t)` and `0xca (A, text)`, the start text 704 Grassy, 706 Misty, 708 Electric, 828
-Psychic; a terrain already up fails it with text 567. Weather is field slot 0 and terrain field slot 8 in
+Psychic; a terrain already up fails it with text 567. A field move's `0x8b` carries position 10 whatever
+position was commanded. Weather is field slot 0 and terrain field slot 8 in
 `0x6a`, `0x69` and `0x44`.
+
+Trick Room (433) runs as a weather move with position 10 in its `0x8b` and, as its effect, `0x69 (1, 0)`,
+`0x30 (1, 0, 42, A)` and `0xcb (A, 275, A)` (field slot 1). While it is up every Speed the order keys and
+the sorts read is Showdown's 10000 − Speed, the run's handler key included (32 corpus rounds under it build
+equal; its end did not come).
 
 Tailwind (366) raises side condition 4 on its user's side (0 the players', 1 the boss's) for four turn
 ends, the turn it rises in counting as the first. It runs as a weather move with the side class (12) and
