@@ -768,6 +768,12 @@ the first, second, third or fifth fails some of them.
 The boss's Trace draws `below(N)` over the players whose ability it can copy, in id order: `below(3)`
 with one player holding Embody Aspect. A move into Shell Armor (ability 75) draws no critical hit.
 
+A boss with Imposter transforms into battler 1 at the battle start and fights with that battler's
+stats but HP, moves, types and stat stages (its Tera type unchanged). The station still commands it
+Transform, which then fails every time: `0xc9 (2, 0, 144, P, 1)`, `0x7b`, five zero groups, `0xca (2,
+567)`, `0x1d (2, P, 0, 1, 0, 144, 144)`, `0x5b (2, 144)` twice and `0x1e (2, 0)`, after its handler's
+`0x5a`. Actions tied on their key beside a handler move sort and draw as any tie (11 corpus battles).
+
 ### A move in the round queue
 
 In a round's queue a battler's move is one run of commands. A battler's client position is 0 to 3 for
