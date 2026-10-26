@@ -761,6 +761,9 @@ A damaging move the target's types are immune to draws nothing, not even its acc
 `0x05`, `0x07`, `0xc9 (A, 0, M, P, 1)`, `0x7b`, five `0xcf` groups (20, 5, 5, 5 and 19 zero bytes), `0xcb
 (A, 72, T)`, `0x52 (A, 3)`, `0x08 (A, slot)`, `0x52 (A, 0)`, `0x1d (A, P, type, 0, 0, M, M)`, `0x5b (A, M)`
 twice and `0x1e (A, 0)`: 5,353 of the 5,550 message-72 runs in the oracle corpora (the rest open an ability activation).
+A Ground move into a target with Levitate (26) that its types do not already make immune runs the same
+way with message 72 inside the target's ability activation: `0x25 (T)`, `0xc7 (T, 0)`, `0xcb (T, 72, T)`,
+`0xc8 (T)`, then `0x52 (A, 3)`.
 
 A damaging move that misses its accuracy draw runs as an immune one with message 73 and `0x52 (A, 1)` in
 place of message 72 and `0x52 (A, 3)`. A player's move with no PP left (the party record's PP, less 1 per
@@ -802,7 +805,8 @@ M, type, 0, 0, 0, 0, class, 0)` (T is A for a move on itself, class 7), the stat
 `0x08 (A, 0)`, `0x1d (A, P, type, 1, 0, M, M)`, `0x5b (A, M)` twice and `0x1e (A, 0)`. A raise is `0x0c
 (b, stat, n)`, `0x92 (b, stat, n, 0)` and `0xcb (b, text, b)`; a drop is `0x0d (b, stat, n)`, `0x93 (b,
 stat, n, 0)` and `0xcb (A, text, b, stat)`. The text is 10, 17 or 24 plus the stat for a raise of 1, 2 or
-3 stages and 31 or 38 plus the stat for a drop of 1 or 2 (stats 1 Attack to 7 evasion), over every
+3 stages and 31 or 38 plus the stat for a drop of 1 or 2 (stats 1 Attack to 7 evasion), in stat order
+(Coil raises Attack, Defense, then accuracy), over every
 stat change in the oracle corpora. A move that cannot miss (Showdown accuracy `true`) draws no accuracy.
 
 A spread move (Showdown target `allAdjacent` or `allAdjacentFoes`) hits only the position its
@@ -1063,7 +1067,9 @@ After every action run (`0x11405a0`), while the battle goes on and the boss stan
 empty list of waiting raid actions from the HP triggers: without a shield among them they join the
 round's action list; with one they wait for a raid action round. The list empties at each round's start,
 and running a shield empties it too, so the next run refills it with every HP trigger still met, actions
-already in the list included: those run again later and show nothing. While the boss is frozen its HP
+already in the list included: those run again later and show nothing. A raid action round leaves its
+list as it stands: a shield refilled there behind the one that ran waits for the next raid action round,
+where it shows nothing. While the boss is frozen its HP
 triggers leave out an extra action of kind 3 (a move) and keep the others: a boss reset fires and runs
 while it stays frozen, the move action comes in after the boss thaws. A move action skipped while the
 boss's status blocks it can come in after the shield cures that status. The extra action's move checks
