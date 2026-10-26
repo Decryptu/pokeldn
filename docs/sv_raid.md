@@ -1116,7 +1116,7 @@ one key, so every comparison between two of them draws `below(2)`. The oracle's 
 | shield end (kind 2) | `0x85 (2, 1)`, `0xc1 (2, 1)` | |
 | time left (kind 3) | `0x85 (3, 0)`, `0xc1 (3, 0)` | |
 | extra action i (kind 4) | `0x85 (4, i)`, `0xc1 (4, action)`; nothing at all when action i already ran | action 1 or 2: a kind-13 entry (class 2); action 3: a move entry (class 1) for the profile's move |
-| double action (kind 5) | `0x85 (5, 0)`, `0xc1 (5, 0)` | |
+| double action (kind 5) | `0x85 (5, 0)`, `0xc1 (5, 0)`; the rounds after it in the corpora (84) still carry one slot action and at most one boss reply each, and build as before | |
 | kind 13 after action 1 | `0x0f (2)`, `0xc2 (3, 2, 2)` | |
 | kind 13 after action 2 | `0x10 (b)` for each standing player in id order, `0x13 (b, 16, 0, b << 26 \| 12, 2)` for each of them whose ability can be suppressed, `0xc2 (60, 2, 0)` | |
 | the extra action's move | the boss's move run between `0xc1 (9, 0)` and `0xc1 (9, 1)` (before the move's `0x1e (2, 0)`) | |
