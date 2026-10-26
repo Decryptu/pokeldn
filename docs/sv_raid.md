@@ -609,7 +609,10 @@ nothing against the boss or a target with Inner Focus (ability 39), unless the u
 Turboblaze or Teravolt (104, 163, 164); against a player that already moved in the round it draws its
 `chance(p)`, and a flinch that lands there adds nothing to the queue. A contact move into Static, Poison
 Point, Flame Body or Cute Charm (abilities 9, 38, 49, 56), or from a user with Poison Touch (143), draws
-`chance(30)` after the move's secondaries; into Cute Charm only between a male and a female. A hit that
+`chance(30)` after the move's secondaries; into Cute Charm only between a male and a female. A landed
+Static, Poison Point or Flame Body paralyses, poisons or burns the attacker inside the target's ability
+activation, after the secondaries' commands: `0x25 (T)`, `0xc7 (T, 0)`, the infliction from T ([Statuses](#statuses)),
+`0xc8 (T)`; an attacker already statused or immune shows nothing. A hit that
 knocks the boss out draws no secondary and no contact chance. Over the 156 oracle
 battles that log every draw, the draws of every round the plugin builds equal the logged ones.
 
@@ -626,7 +629,8 @@ and lowers its accuracy to 3277/4096; Compound Eyes (14) raises accuracy 5325/40
 Thick Fat (47) halves the attacker's stat for Fire and Ice; Strong Jaw (173) raises a biting move's
 power 1.5 times, Reckless (120) a recoil move's 4915/4096; Tinted Lens (110) doubles a not very
 effective hit after the type multiplier; Ice Scales (246) halves a special hit after a burn's halving,
-unless the attacker has Mold Breaker, Turboblaze or Teravolt. Skill Link (92) gives five hits and still
+unless the attacker has Mold Breaker, Turboblaze or Teravolt; Filter and Solid Rock (111, 116, both
+broken by Mold Breaker) and Prism Armor (232) take a super-effective hit times 0.75 there. Skill Link (92) gives five hits and still
 draws the hit-count roll. Serene Grace (32) doubles every secondary chance; Stench (1) adds a 10 percent
 flinch drawn before the move's own secondaries; Shield Dust (19) on the target removes the secondaries
 and their draws. Rock Head (69) takes no recoil. Gluttony, Pickpocket, Symbiosis, Ripen and Cud Chew
@@ -642,7 +646,7 @@ Sand Veil, Overcoat, Sand Rush and Sand Force (8, 142, 146, 159) take no sandsto
 Moves with their own power rule follow Showdown's `moves.ts`: Payback doubles when its target has no
 action left in the round, Hex on a statused target, Rising Voltage on a grounded target in Electric
 Terrain; Facade doubles under a status other than sleep, Venoshock on a poisoned target, Electro Drift
-and Collision Course take 5461/4096 when super effective, Expanding Force 1.5 in Psychic Terrain from a
+and Collision Course take 5461/4096 on the damage after the type multiplier when super effective, Expanding Force 1.5 in Psychic Terrain from a
 grounded user. A doubled Rising Voltage carries 1 as the fifth argument of its `0x8b`; a doubled Payback
 carries 0. In the corpus rounds built equal Payback and Rising Voltage come raised once each; Hex, Facade,
 Venoshock and Electro Drift come only unraised.
@@ -803,6 +807,12 @@ place of message 72 and `0x52 (A, 3)`. A player's move with no PP left (the part
 use, 2 against Pressure) runs only `0xc9 (A, 0, M, 10, 1)`, `0xca (A, 578, A)`, `0x52 (A, 0)`, `0x5b (A,
 M)` twice and `0x1e (A, 0)`, before a paralysis draws its `chance(25)`.
 
+A player's move outside Scarlet and Violet (Showdown's `isNonstandard` Past or LGPE: Pursuit, Embargo,
+Sizzly Slide and the rest) fails before anything else, with no draw and no PP: `0xca (A, 567, A)`, `0x52
+(A, 0)`, `0x5b (A, M)` twice and `0x1e (A, 0)`, after its handler's `0x5a` if it registers one (Aromatherapy,
+Sappy Seed and Freezy Frost do). 2,622 of 2,622 such runs in the oracle corpora fit it, and no player's
+move outside the game reaches a `0xc9`.
+
 A status move aimed at the boss while its shield is up fails before it runs, with no draw: `0x05`,
 `0x07`, `0xc9 (A, 0, M, P, 1)`, `0xca (A, 567, A)`, `0x52 (A, 0)`, `0x1d (A, P, type, 0, 0, M, M)`, `0x5b
 (A, M)` twice and `0x1e (A, 0)` (120 of 120 stat-dropping and status-inflicting moves into the shield in
@@ -841,7 +851,9 @@ message. The tenth argument of every hit's `0x8b` is the number of hits that lan
 counted before their commands go out. After the last hit come the effectiveness message
 `0xca (A, 574 or 575)` when not neutral, `0xca (A, 516, hits)`, `0x20 (A, 24)` once per hit when super
 effective, `0xa6 (96)`, then the move's usual end with `0x85 (7, total damage)` on the boss; Dragon
-Darts shows no message 516. Every two-to-five-hit round of the corpora builds equal this way.
+Darts shows no message 516. A multi-hit move that knocks the boss out adds its fainted message `0xcb (A,
+0, 2)` after `0xa6 (96)`; one that knocks a player out does not. Every two-to-five-hit round of the
+corpora builds equal this way.
 
 A status move whose only effect is stat stages runs `0x05` (a player's), `0x07 (A, 0)`, `0xc9 (A, 0,
 M, P, 0)` with P the commanded position, `0x7b (M, n, A)`, one `0xcf` group of 20 zero bytes, `0x7e (0,
@@ -877,7 +889,8 @@ action's order key in the list's order, and a move that registers its own handle
 (b, M, speed)`, speed at its stat stage, and `0x5b (b, M)`. The round's first move to run computes every
 move action's key once more, and a mover whose move registers a handler adds `0x5a (b, M, key)` just
 before its `0x05`, the key (priority + 7) << 16, its `0x51` value << 13, plus its Speed (`0x72000 +
-speed` for a priority-0 move; Stall's `0x70000`) (the oracle's command log interleaved with its sorts and action runs).
+speed` for a priority-0 move; Stall's `0x70000`). A sort's `0x5a` carries the Speed stat at its stage
+only; the run's carries it with Tailwind and paralysis. (the oracle's command log interleaved with its sorts and action runs).
 347 of 631 moves register one (Facade and Body Slam among them, Night Slash not).
 
 The boss is Terastallized from the start: a damaging move of its Tera type hitting under 60 power after
