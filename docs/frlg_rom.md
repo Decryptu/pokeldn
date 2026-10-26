@@ -2027,18 +2027,37 @@ in `callback1`. `ReadKeys` runs first in the next main-loop pass [main.c:81]; th
 `CB1_Overworld` back, ORs A into `gMain.newKeys` and calls it. A waiting script returns at once [scrcmd.c:1313]; with no script, A talks to what the
 player faces. Held B is no new press at a wait and does nothing standing still.
 
-| Pokemon | the press that creates it | `offset` |
-|---|---|---|
-| Mewtwo | its `waitbuttonpress`; `setwildbattle` follows [CeruleanCave_B1F/scripts.inc:37] | 1 |
-| Articuno, Zapdos, Moltres | the talk: `lock`, `faceplayer`, `setwildbattle`, then the wait | 2 |
+| Pokemon | the press that creates it | `offset` mGBA | `offset` retail Switch |
+|---|---|---|---|
+| Mewtwo | its `waitbuttonpress`; `setwildbattle` follows [CeruleanCave_B1F/scripts.inc:37] | 1 | 3 |
+| Articuno, Zapdos, Moltres | the talk: `lock`, `faceplayer`, `setwildbattle`, then the wait | 2 | 5 |
+
+On retail English FireRed on a Switch 2, a press at Mewtwo's cry with `offset=1` gave personality
+`0x9C9D9DC5`, drawn two calls after the targeted shiny one; `offset=2` gave a non-shiny Mewtwo and
+`offset=3` a shiny one. Facing Zapdos, the talk press with `offset=4` gave `0xC2C9758B`, one call after
+the targeted shiny one, and `offset=5` a shiny Zapdos (`tests/test_shiny.py`). The app sends 3 and 5.
+
+The Switch's emulator calls `Random` twice per V-blank where mGBA calls it once: standing in Cerulean
+Cave B1F in Ryujinx, French FireRed, 1200 calls in 600 V-blanks with `intrCheck` bit 0 clear on every
+one. A countdown that is odd at two calls a frame goes from 1 to -1 and is never pressed; on the retail
+console that cost the Zapdos talk press two of three countdowns. The hook keeps `64 - calls` of the
+last frame at state `+32` and drops a held target whose countdown is odd while that is 62, so every
+countdown it shows reaches 0. With that hook and `offset=3`, Ryujinx gave a shiny Mewtwo
+(`0xA893924D`) at the first countdown at its cry.
+
+In mGBA the recap after CONTINUE leaves the player object
+facing south (`gObjectEvents[0]` `+0x18` = `0x11`, `0x02036E34` on French and English FireRed), and a
+direction pressed during the recap is not taken; the hook's A then reached `gMain.newKeys` and talked
+to nothing. One frame of Up after the recap set `0x22` (north) and the next press talked. The app has the player
+talk to Mewtwo; at the cry no button is needed. After a wild battle the hook kept its countdown but pressed nothing at the
+cry until it was sent again.
 
 `offset` counts calls from the hook's seed at the press frame to the one before the personality,
 measured in mGBA on French FireRed (A held for one frame, three presses each, `tests/test_shiny.py`)
 and run end to end with the app's payload while the player holds B: offsets 0 to 8 at Zapdos give
 one shiny, at 2. With the table's offsets the app's payload gave all four shiny on seven cartridges:
 French, English, Spanish and German FireRed, French, English and Italian LeafGreen. Japanese is
-untried. A target whose countdown is odd when the game advances two calls a frame is skipped; the
-next one is held.
+untried.
 
 `ivs` (`asm/resident/ivs.s`) shows the lead's IVs on two rows (`OVERLAY_TWO_ROWS`, the second in
 `gMain.oamBuffer[112..117]` at y 10): HP, Attack, Defense, Speed, then Sp. Atk, Sp. Def and

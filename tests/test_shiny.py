@@ -56,6 +56,17 @@ def first_shiny(seed, tid, sid, method=0, limit=100000):
     raise AssertionError("no shiny in range")
 
 
+def first_even_shiny(seed, tid, sid, method, offset):
+    """The first shiny whose index is an even number of calls past `offset`: at two calls a frame
+    the countdown of any other is never 0, and the hook drops it."""
+    start = 0
+    while True:
+        index, nature = first_shiny(lcg.advance(seed, start), tid, sid, method)
+        if (start + index - offset) % 2 == 0:
+            return start + index, nature
+        start += index + 1
+
+
 class Console:
     """One installed hook and the memory it reads; frame() enters it the way IntrMain does."""
 
@@ -120,7 +131,7 @@ def _bcd(nature, count):
 ])
 def test_the_target_and_countdown_match_the_model_while_the_game_advances_two_calls_a_frame(
         seed, tid, sid, method):
-    target, nature = first_shiny(seed, tid, sid, method)
+    target, nature = first_even_shiny(seed, tid, sid, method, 4)
     console = Console(seed, tid, sid, method=method, search=64)
     frames = target // 64 + 3
     rng = seed
@@ -238,8 +249,20 @@ def test_the_offset_is_where_the_legendarys_personality_was_drawn_in_mgba(legend
     """French FireRed in mGBA, A held for one frame at Mewtwo's last line or facing Zapdos: gRngValue
     at the frame boundary before it, and the personality setwildbattle gave gEnemyParty[0]. The hook's
     seed is one call later, VBlankIntr's [main.c:412]."""
-    start = lcg.advance(lcg.step(before), bs.SHINY_PRESS_OFFSETS[legendary])
+    start = lcg.advance(lcg.step(before), bs.MGBA_SHINY_PRESS_OFFSETS[legendary])
     assert wild(start, method=1)[0] == personality
+
+
+@pytest.mark.parametrize("legendary, sent, personality", [("mewtwo", 1, 0x9C9D9DC5), ("birds", 4, 0xC2C9758B)])
+def test_the_retail_offset_puts_the_press_on_the_shiny_personality(legendary, sent, personality):
+    """English FireRed on a Switch 2, TID 57189 SID 58811: a press at countdown 0 with offset `sent`
+    (at Mewtwo's cry, at the talk facing Zapdos) gave `personality`, drawn after the targeted shiny one."""
+    tid, sid = 57189, 58811
+    befores = [lcg.unstep(s) for lo in range(0x10000)
+               if lcg.step(s := (personality & 0xFFFF) << 16 | lo) >> 16 == personality >> 16]
+    late = bs.SHINY_PRESS_OFFSETS[legendary] - sent
+    shinies = [wild(lcg.advance(b, -late & 0xFFFFFFFF), method=1)[0] for b in befores]
+    assert any((tid ^ sid ^ p >> 16 ^ p & 0xFFFF) < 8 for p in shinies)
 
 
 @pytest.mark.parametrize("held, pressed", [(0x2, True), (0x2 | 0x100, True), (0x1, False), (0, False)])

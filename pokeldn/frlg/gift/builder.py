@@ -203,10 +203,17 @@ def _shiny(o):
 
 
 def _legendary(o):
+    if o["legendary"] == "mewtwo":
+        how = ("Stand facing it and press A yourself. At its cry, touch no button: the game presses A by "
+               "itself on a shiny frame and the battle starts. If the countdown passes 0, wait for the next "
+               "one. Do not walk or battle first: a wild battle stops the presses until you send it again")
+    else:
+        how = ("Stand in front of it. Once the map shows after the recap, tap Up once to face it, then "
+               "hold B. The game presses A by itself on a shiny frame; if the countdown passes 0 with "
+               "nothing, keep holding B for the next one")
     return {"offset": buffer_script.SHINY_PRESS_OFFSETS[o["legendary"]]}, [
         f"Counts down to the next shiny {dict(LEGENDARIES)[o['legendary']]}, top right of the screen",
-        "Stand facing it and hold B. The game presses A by itself on a shiny frame, at the talk and at its "
-        "cry; keep holding B until the battle starts. This can take a few minutes"]
+        how + ". This can take a few minutes"]
 
 
 def _noclip(o):

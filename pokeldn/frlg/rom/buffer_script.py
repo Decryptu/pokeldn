@@ -2107,9 +2107,11 @@ INSTALL_ENTRY_OFFSET = 0x10
 INSTALL_ORIGINAL_OFFSET = 0x14
 INSTALL_BLOB_OFFSET = 0x18
 # Entry symbol and tunable parameters per hook.
-# Calls from the press frame's seed to the one before the personality, measured in mGBA: Mewtwo's
-# press answers its button wait, the birds' is the talk press [docs/frlg_rom.md, shiny-press].
-SHINY_PRESS_OFFSETS = {"mewtwo": 1, "birds": 2}
+# Calls from the press frame's seed to the one before the personality: Mewtwo's press answers its
+# button wait, the birds' is the talk press. Measured on retail English FireRed on a Switch 2; mGBA's
+# are smaller [docs/frlg_rom.md, shiny-press].
+SHINY_PRESS_OFFSETS = {"mewtwo": 3, "birds": 5}
+MGBA_SHINY_PRESS_OFFSETS = {"mewtwo": 1, "birds": 2}
 RESIDENT_HOOKS = {
     "turbo": ("turbo_hook", {"extra": 4, "field": 0, "battle": 0, "overlay": 0, "hold": 0,
                              "help": 0, "budget": 0, "ring": 0,

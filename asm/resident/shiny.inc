@@ -30,7 +30,8 @@
 @ scratchpad/emu/rng_ring_read.py): this hook has no room for it.
 @
 @ State at p_state: +0 seed followed, +4 its index, +8 search seed, +12 its index, +16 target index,
-@ +20 target nature + 1 (0 none), +24 the word shown, +28 frames, +32 candidates tried.
+@ +20 target nature + 1 (0 none), +24 the word shown, +32 64 less the calls in the
+@ last frame (a target whose countdown is odd at two calls is dropped).
 
     .thumb
     .align 2
@@ -41,9 +42,6 @@ shiny_hook:
     ldrh    r0, [r0]
     push    {r0}                    @ bit 0 clear: the main loop is idle
     ldr     r7, p_state
-    ldr     r1, [r7, #28]
-    add     r1, #1
-    str     r1, [r7, #28]
 .ifndef SHINY_PRESS
     ldr     r0, p_help
     cmp     r0, #0
@@ -101,6 +99,7 @@ shiny_hook:
 .Ltr_found:
     str     r1, [r7]
     str     r2, [r7, #4]
+    str     r4, [r7, #32]           @ 64 less the calls since the last V-blank: 2 on the Switch
 .Ltr_done:
     pop     {r0}
     bx      r0
@@ -115,8 +114,14 @@ shiny_hook:
     ldr     r1, [r7, #4]
     sub     r0, r0, r1
     ldr     r1, p_offset
-    cmp     r0, r1
-    bge     .Ltg_done               @ still ahead
+    sub     r0, r0, r1
+    bmi     .Ltg_drop               @ passed
+    ldr     r1, [r7, #32]
+    cmp     r1, #62
+    bne     .Ltg_done               @ still ahead
+    lsr     r0, r0, #1              @ an odd countdown at two calls a frame never reaches 0
+    bcc     .Ltg_done
+.Ltg_drop:
     mov     r0, #0
     str     r0, [r7, #20]
     ldr     r1, [r7, #8]
@@ -167,9 +172,6 @@ shiny_hook:
     bl      .Lpair
     mov     r4, r0
 .Lse_check:
-    ldr     r0, [r7, #32]
-    add     r0, #1
-    str     r0, [r7, #32]
     eor     r2, r5
     cmp     r2, #8
     bhs     .Lse_next

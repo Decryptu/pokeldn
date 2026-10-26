@@ -52,8 +52,8 @@
   "BPRF": "176:8ee805f356c114bd37bd4d08bef045e0d3f6b9331bce416709849dd9581cc44b"
  },
  "buffer:install-resident:shiny": {
-  "BPGF": "1016:e0e44718d6f6045b82acd6a4c6df504e5d21fbc04ea1476c0e3aa5a959a675ed",
-  "BPRF": "1016:2fe230cdcfcab69f637a63e9e1174065eae5b004690753064ec9e033f3ce03f6"
+  "BPGF": "1016:18ae21cc0595e850a62d1ce7b62f95d04dffc85d678f923fd511e6f5f1c3ced9",
+  "BPRF": "1016:aad242b157385f75a21ee0ddc6acaa057097e7c5a102382963ffd9338f3d6b34"
  },
  "buffer:install-resident:turbo": {
   "BPGF": "844:2f07b3bf6f889782d74aaac7a400bab5a18a1ffc9784af545c9f7fdc90c941d3",
