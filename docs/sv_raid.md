@@ -655,6 +655,11 @@ their holder to 3277/4096 in theirs (83 corpus rounds with one of the six in its
 Sand Veil, Overcoat, Sand Rush and Sand Force (8, 142, 146, 159) take no sandstorm damage. Snow raises an
 Ice type's Defense 1.5 times against a physical hit, as sand raises a Rock type's Special Defense.
 
+Reversal and Flail take their power from the user's HP in 48ths (Showdown's table: 200 under 2, 150
+under 5, 100 under 10, 80 under 17, 40 under 33, else 20). A boss with Adaptability (91) takes 2.25 STAB
+on a move of its Tera type that is also one of its own types, 2.0 on another Tera-type move, and the
+plain 1.5 on its own types' other moves.
+
 Moves with their own power rule follow Showdown's `moves.ts`: Payback doubles when its target has moved
 earlier in the round (a boss reply the shield break dropped does not count), Hex on a statused target, Rising Voltage on a grounded target in Electric
 Terrain; Facade doubles under a status other than sleep, Venoshock on a poisoned target, Electro Drift
