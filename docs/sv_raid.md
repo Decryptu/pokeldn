@@ -668,7 +668,8 @@ A secondary that lands a major status runs, after the hit's record: `0x13 (T, co
 A sleep secondary draws its turns as 2 + `below(3)` and a confusion secondary 2 + `below(4)` before its
 `chance(p)`, through a call the draw log does not show (the call counter at `rand+0x20` still counts it).
 A target already statused, or immune by its types (Electric to paralysis, Fire to burn, Ice to freeze,
-Poison and Steel to poison), takes nothing.
+Poison and Steel to poison), takes nothing. A confusion secondary into Own Tempo (20) still draws and
+shows nothing.
 
 Before a move, a flinched battler shows `0xcb (A, 122, A)` and `0x52 (A, 0)`; a frozen one draws
 `chance(20)` to thaw and, staying frozen, shows `0xcb (A, 98, A)`, `0xa7 (A's position, 45)`, `0x52 (A,
@@ -678,7 +679,17 @@ and `0x1e (A, 0)`, after the move's handler `0x5a (A, M, 0x72000 + speed)`. A pa
 is halved after its stage. A burned user's physical damage is halved after the type effectiveness, at
 least 1. A Fire hit on a frozen target thaws it after its `0xd1`: `0x14 (T)`, `0x90 (T, 0)`, `0xcb (T, 99,
 T)`. The shield going up and the boss's own stat reset (between its `0x0f (2)` and `0xc2 (3, 2, 2)`)
-cure the boss's status with `0x14 (2)` and `0x90 (2, 0)`.
+cure the boss's status with `0x14 (2)` and `0x90 (2, 0)`; the shield also ends its confusion with `0x15
+(2, 6)`.
+
+Confusion acts before a move, after a freeze or sleep check and before paralysis (Showdown's order).
+Its turns run down by one; at 0 it ends with `0x15 (A, 6)` and `0xcb (A, 118, A)` and the move goes on.
+Otherwise it shows `0xa7 (A's position, 47)` and `0xcb (A, 117, A)` and draws `chance(33)`; a hit on
+itself draws its roll `below(16)` and nothing else: Showdown's 40-power typeless physical damage at the
+battler's own Attack and Defense stages, shown as `0x91 (A)`, `0x01 (A, the battler that confused it,
+damage, 2)`, `0x9a (A, -damage)`, `0xca (A, 576, A)`, `0x52 (A, 0)`, then the stopped move's end (the
+boss's with its `0x1d`). The boss's extra-action move checks its confusion the same way inside its
+`0xc1 (9, 0)` and `0xc1 (9, 1)`.
 
 A faint clears the battler's status and confusion.
 
