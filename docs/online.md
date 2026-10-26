@@ -46,6 +46,9 @@ nostr-pub.wellorder.net:
 | 30402 with a NIP-40 `expiration` | served until expiry, not after |
 | 30402 republished with the same `d` | only the newer one served within a minute |
 | kind 5 naming a 30402 | only the kind 5 served within a minute |
+| kind 5 naming a replaced 30402 only by its `a` address | dropped by five; nostr.oxtr.dev and nostr-pub.wellorder.net keep it until a kind 5 names its own id |
+| 30402, kind 5 and kind 1059 with no `expiration` | all still served after 17 days |
+| kind 5 naming a kind 1059 | dropped by all six that serve 1059 |
 | kind 1059 read by its `p` key | served by six; relay.nostr.net demands AUTH and refuses it |
 
 ## Meeting
