@@ -625,6 +625,43 @@ bootstrap](#the-battle-bootstrap)): of the oracle battles won, 78 at one star, 8
 four ended after exactly 5, 5, 8 and 12 times the record's HP in `0x37 (2, 2, damage)`; the others took
 less, through the shield and moves with their own rules.
 
+### Statuses
+
+A secondary that lands a major status runs, after the hit's record: `0x13 (T, condition, 0, value, A)`,
+`0x90 (T, condition)`, `0xa7 (T's position, code)` and `0xcb (A, text, T)`:
+
+| status | condition | value | code | text |
+|---|---|---|---|---|
+| paralysis | 1 | 1 | 46 | 92 |
+| sleep | 2 | turns << 3 \| 2 | 42 | 103 |
+| freeze | 3 | 1 | 45 | 97 |
+| burn | 4 | 1 | 44 | 86 |
+| poison | 5 | 1 | 43 | 79 |
+| bad poison | 5 | 7801 | 43 | 80 |
+| confusion | 6 (no `0x90`) | turns << 3 \| 2 | 47 | 116 |
+
+A sleep secondary draws its turns as 2 + `below(3)` and a confusion secondary 2 + `below(4)` before its
+`chance(p)`, through a call the draw log does not show (the call counter at `rand+0x20` still counts it).
+A target already statused, or immune by its types (Electric to paralysis, Fire to burn, Ice to freeze,
+Poison and Steel to poison), takes nothing.
+
+Before a move, a flinched battler shows `0xcb (A, 122, A)` and `0x52 (A, 0)`; a frozen one draws
+`chance(20)` to thaw and, staying frozen, shows `0xcb (A, 98, A)`, `0xa7 (A's position, 45)`, `0x52 (A,
+0)` and `0x1d (A, P, type, 0, 0, M, M)`; a paralysed one draws `chance(25)` and, fully paralysed, shows
+message 93 and code 46 the same way; asleep, message 104 and code 42. Each ends with `0x5b (A, M)` twice
+and `0x1e (A, 0)`, after the move's handler `0x5a (A, M, 0x72000 + speed)`. A paralysed battler's Speed
+is halved after its stage. A burned user's physical damage is halved after the type effectiveness, at
+least 1. A Fire hit on a frozen target thaws it after its `0xd1`: `0x14 (T)`, `0x90 (T, 0)`, `0xcb (T, 99,
+T)`. The shield going up and the boss's own stat reset (between its `0x0f (2)` and `0xc2 (3, 2, 2)`)
+cure the boss's status with `0x14 (2)` and `0x90 (2, 0)`.
+
+At a turn's end a burn deals a sixteenth of the battler's record HP (the boss's record HP, not its pool)
+right after its `0x19 (b, 4)`, a poison an eighth after `0x19 (b, 5)`, a bad poison n sixteenths on its
+n-th turn end: `0xa7 (b's position, 44 or 43)`, `0x01 (b, the battler that inflicted it, damage, 39 or
+38)`, `0x9a (b, -damage)` and `0xcb (b, 88 or 82, b)`. Speed Boost (ability 3) raises Speed after the
+`0x44` list (`0x25`, `0xc7`, `0x0c (b, 5, 1)`, `0x92`, message 15, `0xc8`), before the turn end's last
+three battler sorts.
+
 ### Speed ties
 
 The battle orders battlers and actions by Speed with an exchange sort: each entry is compared with
@@ -736,8 +773,9 @@ only the `0x43` of the battlers left standing, the `0x23` list and `0x2d (0)`. T
 and the damage commands carry the HP the boss had left.
 
 The prefix starts with `0xb5 (0)`, then runs `0x51 (b, 1)` once for the round's actors in id order and
-once in the order of the first action sort; in the second run a battler with Stall (ability 100) moves
-last and carries `0x51 (b, 0)`. Every action sort ([Speed ties](#speed-ties)) first computes each move
+once in the order of the first action sort; in the second run a battler with Stall (ability 100) carries
+`0x51 (b, 0)`, and from then on its actions sort last in their bracket; the round's first sort still
+counts it as 1. Every action sort ([Speed ties](#speed-ties)) first computes each move
 action's order key in the list's order, and a move that registers its own handler shows that as `0x5a
 (b, M, speed)`, speed at its stat stage, and `0x5b (b, M)`. The round's first move to run computes every
 move action's key once more, and a mover whose move registers a handler adds `0x5a (b, M, 0x72000 +
