@@ -608,3 +608,12 @@ Packaging traps:
   ([unicorn#2281](https://github.com/unicorn-engine/unicorn/issues/2281)); the packer clears
   `GUARD_CF` in `pokeldn.exe` (`0xC160` to `0x8160`). Never enable `faulthandler` in the frozen
   check.
+
+### The app icon
+
+`gui/AppIcon.icon` is an Icon Composer document, the one source of the macOS and iOS icons.
+`actool` (Xcode 26) compiles it into `Assets.car` and `AppIcon.icns`; `scripts/pack_app.py` puts both
+in `pokeldn.app` and in the Flet viewer, with `CFBundleIconName` set. macOS 26 draws the layered icon
+from the catalog; macOS 12 to 15 draw its flat renditions, which sit on Apple's icon grid (the
+tile spans 102 of 128 pixels). Windows takes `gui/assets/icon.ico` and Linux `gui/assets/icon.png`,
+both full-bleed: neither platform insets an icon.

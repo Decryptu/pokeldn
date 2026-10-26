@@ -313,7 +313,7 @@ jobs:
 
   # The iOS app (examples/ios/README.md): unsigned, for AltStore or SideStore to sign on the phone.
   ios:
-    # Xcode 26 or later: actool compiles the Icon Composer icon (examples/ios/AppIcon.icon).
+    # Xcode 26 or later: actool compiles the Icon Composer icon (gui/AppIcon.icon).
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v7

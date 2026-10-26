@@ -287,10 +287,10 @@ def main() -> int:
                  '-Xlinker', '-rpath', '-Xlinker', '@executable_path/Frameworks',
                  '-o', bundle / 'pokeldn', HERE / 'src' / 'main.m')
     info = info_plist(target)
-    # An Icon Composer document (HERE/AppIcon.icon) compiled into Assets.car: iOS draws it as its own
+    # An Icon Composer document (gui/AppIcon.icon) compiled into Assets.car: iOS draws it as its own
     # layered icon instead of masking a flat PNG. Replace the folder with an export to change the icon.
     partial = work / 'icon-partial.plist'
-    run('xcrun', 'actool', HERE / 'AppIcon.icon', '--compile', bundle, '--app-icon', 'AppIcon',
+    run('xcrun', 'actool', ROOT / 'gui' / 'AppIcon.icon', '--compile', bundle, '--app-icon', 'AppIcon',
         '--platform', target.sdk, '--minimum-deployment-target', MIN_IOS, '--target-device', 'iphone',
         '--target-device', 'ipad', '--output-partial-info-plist', partial, stdout=subprocess.DEVNULL)
     info.update(plistlib.loads(partial.read_bytes()))

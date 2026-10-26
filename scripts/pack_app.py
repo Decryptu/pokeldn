@@ -27,11 +27,21 @@ FIRMWARE_BLE_C6 = ROOT / "gui" / "firmware" / "pokeldn-radio-ble-c6.bin"
 APP_ID = "io.github.decryptu.pokeldn"
 UNICORN = ROOT / "gui" / "unicorn"
 MARKER_UNICORN = "pokeldn-unicorn"
+MAC_ICON = ROOT / "gui" / "AppIcon.icon"
 
 
 def runtime_id() -> str:
     arch = "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "x64"
     return {"darwin": f"osx-{arch}", "win32": f"win-{arch}"}.get(sys.platform, f"linux-{arch}")
+
+
+def compile_mac_icon(folder: Path) -> Path:
+    # Needs Xcode 26. Assets.car holds the layered icon for macOS 26 and Apple's grid for 12-15; the
+    # .icns is the same grid for whatever reads only CFBundleIconFile (docs/gui.md, The app icon).
+    subprocess.run(["xcrun", "actool", str(MAC_ICON), "--compile", str(folder), "--app-icon", "AppIcon",
+                    "--platform", "macosx", "--minimum-deployment-target", "12.0",
+                    "--output-partial-info-plist", str(folder / "icon.plist")], check=True, stdout=subprocess.DEVNULL)
+    return folder
 
 
 def runtime_files() -> list[str]:
@@ -136,9 +146,11 @@ def main() -> int:
     subprocess.run(["dotnet", "publish", str(service), "-c", "Release", "-r", runtime_id(),
                     "-o", str(service / "dist"), "-warnaserror"], check=True)
     executable = service / "dist" / ("pokeldn-pkhex.exe" if sys.platform == "win32" else "pokeldn-pkhex")
-    icon = {"darwin": "icon.icns", "win32": "icon.ico"}.get(sys.platform, "icon.png")
     with tempfile.TemporaryDirectory(prefix="pokeldn-pack-") as folder:
         stage = Path(folder)
+        mac_icon = compile_mac_icon(Path(tempfile.mkdtemp(dir=folder))) if sys.platform == "darwin" else None
+        icon = mac_icon / "AppIcon.icns" if mac_icon else ROOT / "gui" / "assets" / (
+            "icon.ico" if sys.platform == "win32" else "icon.png")
         for name in runtime_files():
             dest = stage / name
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -168,7 +180,7 @@ def main() -> int:
                 "--bundle-id", APP_ID, "--add-data",
                 *[f"{src}{os.pathsep}{dest}" for src, dest in data]]
         if sys.platform in ("darwin", "win32"):
-            args += ["--icon", str(ROOT / "gui" / "assets" / icon)]
+            args += ["--icon", str(icon)]
         scripts = sorted(p.stem for p in (stage / "bin").glob("*.py"))
         console = ["--console", "--hide-console=hide-early"] if sys.platform == "win32" else []
         # A single file unpacks all of itself at every launch and every run (docs/gui.md). Flet's own
@@ -183,7 +195,10 @@ def main() -> int:
                        "--collect-all=esp_pylib", "--collect-submodules=pokeldn", "--collect-submodules=bleak",
                        "--collect-submodules=ldn"):
             args.append(f"--pyinstaller-build-args={option}")
-        result = subprocess.run(args, cwd=stage, env=dict(os.environ, FLET_VIEW_PATH=str(client))).returncode
+        env = dict(os.environ, FLET_VIEW_PATH=str(client))
+        if mac_icon:
+            env["POKELDN_ICON_CAR"] = str(mac_icon / "Assets.car")
+        result = subprocess.run(args, cwd=stage, env=env).returncode
         expected = ROOT / "dist" / (("pokeldn.app" if sys.platform == "darwin" else "pokeldn"))
         if result == 0 and not expected.exists():
             raise SystemExit("The packer produced no desktop application.")
@@ -197,6 +212,8 @@ def main() -> int:
             # macOS kills a process that opens Bluetooth without this key: the controller service
             # (pokeldn.pad.service) runs as this app's child.
             info["NSBluetoothAlwaysUsageDescription"] = "pokeldn presses buttons on your Switch through the controller board."
+            shutil.copy2(mac_icon / "Assets.car", expected / "Contents/Resources/Assets.car")
+            info["CFBundleIconName"] = "AppIcon"
             with info_path.open("wb") as dest:
                 plistlib.dump(info, dest)
             strip_local_symbols(expected, {expected / "Contents/MacOS/pokeldn",

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run Flet's packer while preserving the macOS viewer's file-picker permissions."""
+import os
 import plistlib
 import shutil
 import subprocess
@@ -12,6 +13,12 @@ from pathlib import Path
 def assemble_macos_view(app_path, tar_path):
     from flet_cli.__pyinstaller.utils import normalize_tar_entry
 
+    # Flet's update_flet_view_icon leaves only our .icns; the window's Dock icon reads the catalog first.
+    car = os.environ.get("POKELDN_ICON_CAR")
+    if car:
+        shutil.copy2(car, Path(app_path) / "Contents/Resources/Assets.car")
+        info_path = Path(app_path) / "Contents/Info.plist"
+        info_path.write_bytes(plistlib.dumps({**plistlib.loads(info_path.read_bytes()), "CFBundleIconName": "AppIcon"}))
     # Flet 1.0.2 macos_utils.assemble_app_bundle drops sealed entitlements.
     # The file picker requires user-selected.read-write; see docs/gui.md.
     result = subprocess.run(["codesign", "--display", "--entitlements", "-", "--xml", app_path],
