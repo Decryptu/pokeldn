@@ -609,7 +609,9 @@ nothing against the boss or a target with Inner Focus (ability 39), unless the u
 Turboblaze or Teravolt (104, 163, 164); against a player that already moved in the round it draws its
 `chance(p)`, and a flinch that lands there adds nothing to the queue. A contact move into Static, Poison
 Point, Flame Body or Cute Charm (abilities 9, 38, 49, 56), or from a user with Poison Touch (143), draws
-`chance(30)` after the move's secondaries; into Cute Charm only between a male and a female. A landed
+`chance(30)` after the move's secondaries; into Cute Charm only between a male and a female. A
+secondary raising its user (Flame Charge, Steel Wing) draws its chance and adds the raise after the hit's
+`0x42`, before a knockout's commands, also when the hit knocks its target out. A landed
 Static, Poison Point or Flame Body paralyses, poisons or burns the attacker inside the target's ability
 activation, after the secondaries' commands: `0x25 (T)`, `0xc7 (T, 0)`, the infliction from T ([Statuses](#statuses)),
 `0xc8 (T)`; an attacker already statused or immune shows nothing. A hit that
