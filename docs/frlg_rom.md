@@ -1004,8 +1004,12 @@ The game-data object (vtable `main + 0x1C3B30`) is a sibling of the CPU/bus obje
 table resolves (vtable `main + 0x1C3878`, region table, syscalls 0x45, 0x48, 0x52, 0x55, 0x62); the
 live addresses differ by `0x100000000`.
 
-The per-candidate layout 0x45 writes is unsettled: the copy loop's byte count does not match
-`sizeof(struct RfuTgtData)`; read it live before depending on it.
+`swi 0x45` writes one fixed record per candidate rather than copying `sizeof(struct RfuTgtData)`:
+at `dest + 0x14 + n*0x20`, the id, slot, serial number, a 15-byte game name at `+6` and an 8-byte
+user name at `+0x15`, with `mbootFlag` at `+3` and the slot's last three bytes left as they were.
+The number of remaining candidates goes to `dest + 8`. One call writes at most four records and
+then advances its cursor, so a longer list needs a second call. The `0x18` gate therefore overruns
+by `0x19` bytes with one candidate and by `0x79` with four; the count never widens a single call.
 
 `component + 0x6050D8`, the 24 bytes `swi 0x47` copies ([main + 0x058694], a pre-indexed
 store from the guest's `r0` buffer), is read back by the same handler, which re-packs it into the
