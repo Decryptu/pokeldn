@@ -682,8 +682,8 @@ T)`. The shield going up and the boss's own stat reset (between its `0x0f (2)` a
 cure the boss's status with `0x14 (2)` and `0x90 (2, 0)`; the shield also ends its confusion with `0x15
 (2, 6)`.
 
-Confusion acts before a move, after a freeze or sleep check and before paralysis (Showdown's order).
-Its turns run down by one; at 0 it ends with `0x15 (A, 6)` and `0xcb (A, 118, A)` and the move goes on.
+Confusion acts before a move, after a freeze or sleep check; a battler both confused and paralysed is
+unmeasured. Its turns run down by one; at 0 it ends with `0x15 (A, 6)` and `0xcb (A, 118, A)` and the move goes on.
 Otherwise it shows `0xa7 (A's position, 47)` and `0xcb (A, 117, A)` and draws `chance(33)`; a hit on
 itself draws its roll `below(16)` and nothing else: Showdown's 40-power typeless physical damage at the
 battler's own Attack and Defense stages, shown as `0x91 (A)`, `0x01 (A, the battler that confused it,
