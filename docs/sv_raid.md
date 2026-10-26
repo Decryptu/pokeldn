@@ -748,7 +748,7 @@ move hits the boss and the boss's reply hits a player:
 
 | command | meaning |
 |---|---|
-| `0x05 (A, slot, pp)` | a player's move begins, spending pp (2 against a target with Pressure, else 1); the boss's has none; `slot` is the move's index in the user's moveset, as in `0x07 (A, slot)` and `0x08 (A, slot)`; a raid action's move outside the boss's moveset has no `0x07` and no `0x08` |
+| `0x05 (A, slot, pp)` | a player's move begins, spending pp (2 against a target with Pressure, else 1, and never more than it had left); the boss's has none; `slot` is the move's index in the user's moveset, as in `0x07 (A, slot)` and `0x08 (A, slot)`; a raid action's move outside the boss's moveset has no `0x07` and no `0x08` |
 | `0x07 (A, slot)` | the move is used |
 | `0xc9 (A, 0, M, T's position, 0)` | the move and its target |
 | `0x7b (M, n, A)` | n counts the rounds before this one |
@@ -811,7 +811,12 @@ A player's move outside Scarlet and Violet (Showdown's `isNonstandard` Past or L
 Sizzly Slide and the rest) fails before anything else, with no draw and no PP: `0xca (A, 567, A)`, `0x52
 (A, 0)`, `0x5b (A, M)` twice and `0x1e (A, 0)`, after its handler's `0x5a` if it registers one (Aromatherapy,
 Sappy Seed and Freezy Frost do). 2,622 of 2,622 such runs in the oracle corpora fit it, and no player's
-move outside the game reaches a `0xc9`.
+move outside the game reaches a `0xc9`. The Unobtainable ones (Cut and the Torques) run as ordinary
+moves (183 runs in the corpora).
+
+A damaging move whose target fainted after it was aimed (the boss's extra-action move aimed when its entry
+joined the list) runs as an immune move with `0xc9 (A, 0, M, P, 1)` and `0xca (A, 567)` in place of the
+message and its `0x52 (A, 3)`.
 
 A status move aimed at the boss while its shield is up fails before it runs, with no draw: `0x05`,
 `0x07`, `0xc9 (A, 0, M, P, 1)`, `0xca (A, 567, A)`, `0x52 (A, 0)`, `0x1d (A, P, type, 0, 0, M, M)`, `0x5b
