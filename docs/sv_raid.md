@@ -933,7 +933,10 @@ A recoil move adds, after the hit's `0xd1` and after any knockout's commands, `0
 (A, -r)`, `0xcb (A, 127, A)` and `0x37 (A, 4, r)`, r the damage dealt (at most the HP the target had)
 times the move's fraction, rounded half up, at least 1. Chloroblast ends the same way with half its user's
 maximum HP. Steel Beam pays half its user's maximum HP right after its `0x8b`, before the damage
-commands: `0x01 (A, A, cost, 0)` and `0x9a (A, -cost)`, with no message.
+commands: `0x01 (A, A, cost, 0)` and `0x9a (A, -cost)`, with no message. A player holding a Life Orb (item
+270) loses a tenth of its maximum HP after a move that dealt damage, after the hit's `0xd1`: `0x01 (A, A,
+cost, 29)`, `0x9a (A, -cost)`, `0xcb (A, 328, A)`; its hits on the boss carry no 1.3 damage boost (9 hits
+built equal, and 7 battles that diverged at the first such hit with the boost).
 
 Focus Energy runs as a status move on its user (class 7) whose effect is `0x1e (A, 9)`, `0x7d (9, A, 0,
 0)` and `0xcb (0, 336, A)`; from then on the user's critical-hit stage is two higher (`below(2)` for a
@@ -950,7 +953,7 @@ M, type, 0, 0, 0, 0, class, 0)` (T is A for a move on itself, class 7), the stat
 stat, n, 0)` and `0xcb (A, text, b, stat)`. The text is 10, 17 or 24 plus the stat for a raise of 1, 2 or
 3 stages and 31 or 38 plus the stat for a drop of 1 or 2 (stats 1 Attack to 7 evasion), in Showdown's source
 order, which is the stat order (Coil raises Attack, Defense, then accuracy) but for Shift Gear (Speed,
-then Attack), over every
+then Attack) and V-create (Speed, Defense, Special Defense), over every
 stat change in the oracle corpora. A move that cannot miss (Showdown accuracy `true`) draws no accuracy. Clear Body, White Smoke and Full Metal Body (29, 73, 230) block a damaging
 move's secondary drop with no command and no message, as a secondary drop of a stat at -6 does (its
 chance still drawn). Defiant and Competitive (128, 172) answer a foe's
