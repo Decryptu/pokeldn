@@ -867,7 +867,10 @@ of message 72 and `0x52 (A, 3)`, with no draw; a raising move whose stats are al
 the same way with `0xcb (A, 52 + stat, A)` per stat. A damaging move's secondary raise of a stat at +6
 shows nothing.
 
-A status move that misses its accuracy draw runs as a damaging miss (message 73 and `0x52 (A, 1)`). A
+A status move that misses its accuracy draw runs as a damaging miss (message 73 and `0x52 (A, 1)`). One
+whose status the target's types are immune to (Thunder Wave into Electric) runs as an immune move with
+`0xcb (A, 72, T)` and no `0x52 (A, 3)`, with no draw; a poisoning move into a poisoned target the same
+way with `0xcb (A, 84, T)`. A
 sleep move draws its turns, through the call the draw log does not show, before its accuracy.
 
 A weather move (Sunny Day, Rain Dance, Snowscape, Sandstorm) runs as a stat-stage status move with the
