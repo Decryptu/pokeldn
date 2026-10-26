@@ -699,6 +699,19 @@ A damaging move the target's types are immune to draws nothing, not even its acc
 (A, 72, T)`, `0x52 (A, 3)`, `0x08 (A, slot)`, `0x52 (A, 0)`, `0x1d (A, P, type, 0, 0, M, M)`, `0x5b (A, M)`
 twice and `0x1e (A, 0)`: 5,353 of the 5,550 message-72 runs in the oracle corpora (the rest open an ability activation).
 
+A damaging move that misses its accuracy draw runs as an immune one with message 73 and `0x52 (A, 1)` in
+place of message 72 and `0x52 (A, 3)`.
+
+A two-to-five-hit move rolls its hit count right after the accuracy draw (`0x19d4f2c`): one draw of the
+battle generator's low 7 bits, redrawn while 100 or more, gives 2 hits under 35, 3 under 70, 4 under 85,
+else 5; a fixed count (Double Kick's 2, Triple Dive's 3) draws nothing. Each hit draws its critical hit and
+its roll and runs, after a 20-byte zero group, its own `0x7e` triple, `0x8b` with the hit index as the
+sixth argument and the hit count as the tenth, the damage commands with `0x8e (1, e, M)` only, `0x42` and
+`0xd1`; a hit that knocks its target out ends the run. After the last hit come the effectiveness message
+`0xca (A, 574 or 575)` when not neutral, `0xca (A, 516, hits)`, `0x20 (A, 24)` once per hit when super
+effective, `0xa6 (96)`, then the move's usual end with `0x85 (7, total damage)` on the boss. Every
+two-to-five-hit round of the corpora builds equal this way.
+
 A status move whose only effect is stat stages runs `0x05` (a player's), `0x07 (A, 0)`, `0xc9 (A, 0,
 M, P, 0)` with P the commanded position, `0x7b (M, n, A)`, one `0xcf` group of 20 zero bytes, `0x7e (0,
 0, 0, 0, 0, 0)`, `0x7e (1, 0, 0, 0, 0, 0)`, `0x7e (2, 7, 7, 7, 7, 7)`, `0x8b (A's position, T's position,
