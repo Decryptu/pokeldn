@@ -811,7 +811,9 @@ position 10 in its `0x8b` (the `0xc9` keeps the commanded position), then `0x4a 
 the order keys and the sorts but not in a handler's `0x5a`. Each turn end it is up adds `0x4c (side, 4)`
 after the last `0x19` and before `0x44 (1)`; at its fourth come `0x4b (side, 4)`, `0x66 (side, 4)` and
 `0xca (A, 645, side)` with A the battler that raised it. Side conditions 0, 1 and 2 end the same way with
-texts 625, 629 and 637. Wind Rider and Wind Power (274, 277) beside a Tailwind are unmeasured. 47 corpus
+texts 625, 629 and 637. A battler with Wind Power (277) on the Tailwind's side is charged right after the
+start text: `0x25 (b)`, `0xc7 (b, 0)`, `0xcb (b, 1024, b, 366)`, `0xc8 (b)`, `0x1e (b, 20)`, `0x7d (20, b,
+0, 0)`; Wind Rider (274) beside a Tailwind is unmeasured. 47 corpus
 rounds with a Tailwind up, three with its end, build equal.
 
 A two-to-five-hit move rolls its hit count right after the accuracy draw (`0x19d4f2c`): one draw of the
