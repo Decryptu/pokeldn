@@ -109,7 +109,7 @@ jobs:
             gui/requirements.txt
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.402"  # 10.0.x resolved to 10.0.403, whose files answered 409 on 2026-10-25
+          dotnet-version: "10.0.x"
       - uses: actions/download-artifact@v8
         with:
           name: firmware-esp32
@@ -270,7 +270,7 @@ jobs:
             gui/requirements.txt
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.402"  # 10.0.x resolved to 10.0.403, whose files answered 409 on 2026-10-25
+          dotnet-version: "10.0.x"
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -323,7 +323,7 @@ jobs:
       # PKHeX compiled ahead of time for iOS (services/pkhex/Library.cs).
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.402"  # 10.0.x resolved to 10.0.403, whose files answered 409 on 2026-10-25
+          dotnet-version: "10.0.x"
       - name: Build
         env:
           GH_TOKEN: ${{ github.token }}
