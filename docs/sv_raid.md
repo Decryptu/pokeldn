@@ -868,6 +868,10 @@ A recoil move adds, after the hit's `0xd1` and after any knockout's commands, `0
 (A, -r)`, `0xcb (A, 127, A)` and `0x37 (A, 4, r)`, r the damage dealt (at most the HP the target had)
 times the move's fraction, rounded half up, at least 1.
 
+Focus Energy runs as a status move on its user (class 7) whose effect is `0x1e (A, 9)`, `0x7d (9, A, 0,
+0)` and `0xcb (0, 336, A)`; from then on the user's critical-hit stage is two higher (`below(2)` for a
+stage-0 move).
+
 A status move whose only effect is stat stages runs `0x05` (a player's), `0x07 (A, 0)`, `0xc9 (A, 0,
 M, P, 0)` with P the commanded position, `0x7b (M, n, A)`, one `0xcf` group of 20 zero bytes, `0x7e (0,
 0, 0, 0, 0, 0)`, `0x7e (1, 0, 0, 0, 0, 0)`, `0x7e (2, 7, 7, 7, 7, 7)`, `0x8b (A's position, T's position,
@@ -1129,7 +1133,7 @@ one key, so every comparison between two of them draws `below(2)`. The oracle's 
 | time left (kind 3) | `0x85 (3, 0)`, `0xc1 (3, 0)` | |
 | extra action i (kind 4) | `0x85 (4, i)`, `0xc1 (4, action)`; nothing at all when action i already ran | action 1 or 2: a kind-13 entry (class 2); action 3: a move entry (class 1) for the profile's move |
 | double action (kind 5) | `0x85 (5, 0)`, `0xc1 (5, 0)`; the rounds after it in the corpora (84) still carry one slot action and at most one boss reply each, and build as before | |
-| kind 13 after action 1 | `0x0f (2)`, `0xc2 (3, 2, 2)` | |
+| kind 13 after action 1 | `0x0f (2)`, `0xc2 (3, 2, 2)`: the boss's lowered stats return to 0, its raised ones stay (a later hit, Speed order and damage in 4 corpus battles) | |
 | kind 13 after action 2 | `0x10 (b)` for each standing player in id order, `0x13 (b, 16, 0, b << 26 \| 12, 2)` for each of them whose ability can be suppressed, `0xc2 (60, 2, 0)` | |
 | the extra action's move | the boss's move run between `0xc1 (9, 0)` and `0xc1 (9, 1)` (before the move's `0x1e (2, 0)`) | |
 
