@@ -870,7 +870,9 @@ times the move's fraction, rounded half up, at least 1.
 
 Focus Energy runs as a status move on its user (class 7) whose effect is `0x1e (A, 9)`, `0x7d (9, A, 0,
 0)` and `0xcb (0, 336, A)`; from then on the user's critical-hit stage is two higher (`below(2)` for a
-stage-0 move).
+stage-0 move). Stockpile's first layer runs the same way with `0x35 (A, 0, 1)`, `0xcb (0, 236, A, 1)`, the
+Defense raise, `0x35 (A, 1, 1)`, the Special Defense raise and `0x35 (A, 2, 1)` (18 of 18 in the corpora;
+no second layer came).
 
 A status move whose only effect is stat stages runs `0x05` (a player's), `0x07 (A, 0)`, `0xc9 (A, 0,
 M, P, 0)` with P the commanded position, `0x7b (M, n, A)`, one `0xcf` group of 20 zero bytes, `0x7e (0,
