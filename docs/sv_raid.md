@@ -841,8 +841,13 @@ A status move aimed at the boss while its shield is up fails before it runs, wit
 `0x07`, `0xc9 (A, 0, M, P, 1)`, `0xca (A, 567, A)`, `0x52 (A, 0)`, `0x1d (A, P, type, 0, 0, M, M)`, `0x5b
 (A, M)` twice and `0x1e (A, 0)` (120 of 120 stat-dropping and status-inflicting moves into the shield in
 the oracle corpora; a move on its user still runs). A stat-dropping move into a target whose dropped
-stats are all at -6 runs as an immune move with `0xcb (A, 60, T)` alone in place of message 72 and
-`0x52 (A, 3)`, with no draw.
+stats are all at -6 runs as an immune move with `0xcb (A, 59 + stat, T)` per stat (60 for Attack) in place
+of message 72 and `0x52 (A, 3)`, with no draw; a raising move whose stats are all at +6 on its user runs
+the same way with `0xcb (A, 52 + stat, A)` per stat. A damaging move's secondary raise of a stat at +6
+shows nothing.
+
+A status move that misses its accuracy draw runs as a damaging miss (message 73 and `0x52 (A, 1)`). A
+sleep move draws its turns, through the call the draw log does not show, before its accuracy.
 
 A weather move (Sunny Day, Rain Dance, Snowscape, Sandstorm) runs as a stat-stage status move with the
 field class (10) and, in place of the stat changes, the weather's start: `0x6a (0)`, `0x69 (0, w)`,
