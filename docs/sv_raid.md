@@ -774,8 +774,12 @@ and `0x44 (9)` with `0x34 (8)`, `0x6a (8)`, `0xca (0, text)`, `0x32 (0, 0, 1, 0)
 corpora). A sandstorm adds, after `0x50 (0)`, for each battler in speed
 order it damages (a sixteenth of its maximum HP): `0xcb (b, 133, b)`, `0xa7 (b's position, 14)`, `0x01
 (b, s, damage, 1)` with s the battler that raised the sandstorm (its Sand Stream or Sand Spit, or the
-boss's Sandstorm), and `0x9a (b, -damage)`. Moody (ability 141) acts at a turn's end. Other held items
-and Grassy Terrain's heal at a turn's end are unmeasured.
+boss's Sandstorm), and `0x9a (b, -damage)`. Leftovers (item 234) then heals each holder below its
+maximum, in speed order and before the residual kinds, by a sixteenth of its record HP: a 5-byte zero
+`0xcf` group, `0x9b (b, 0)`, a 3-byte zero group, `0xa7 (b's position, 51)`, `0x03 (b, heal)`, `0x9a (b,
+heal)` and `0xcb (b, 295, b, 234)`; the heal shown is the whole sixteenth even when less HP was missing.
+Moody (ability 141) acts at a turn's end. Other held items and Grassy Terrain's heal at a turn's end are
+unmeasured.
 
 A damaging move the target's types are immune to draws nothing, not even its accuracy, and runs
 `0x05`, `0x07`, `0xc9 (A, 0, M, P, 1)`, `0x7b`, five `0xcf` groups (20, 5, 5, 5 and 19 zero bytes), `0xcb
