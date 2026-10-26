@@ -700,8 +700,8 @@ Otherwise it shows `0xa7 (A's position, 47)` and `0xcb (A, 117, A)` and draws `c
 itself draws its roll `below(16)` and nothing else: Showdown's 40-power typeless physical damage at the
 battler's own Attack and Defense stages, shown as `0x91 (A)`, `0x01 (A, the battler that confused it,
 damage, 2)`, `0x9a (A, -damage)`, `0xca (A, 576, A)`, `0x52 (A, 0)`, then the stopped move's end (the
-boss's with its `0x1d`). The boss's extra-action move checks its confusion the same way inside its
-`0xc1 (9, 0)` and `0xc1 (9, 1)`.
+boss's with its `0x1d`). The boss's extra-action move checks its confusion and paralysis the same way
+inside its `0xc1 (9, 0)` and `0xc1 (9, 1)`, a stopped one ending with `0x1d (2, P, type, 0, 0, M, M)`.
 
 A faint clears the battler's status and confusion.
 
