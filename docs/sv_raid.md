@@ -873,7 +873,10 @@ stat, n, 0)` and `0xcb (A, text, b, stat)`. The text is 10, 17 or 24 plus the st
 3 stages and 31 or 38 plus the stat for a drop of 1 or 2 (stats 1 Attack to 7 evasion), in Showdown's source
 order, which is the stat order (Coil raises Attack, Defense, then accuracy) but for Shift Gear (Speed,
 then Attack), over every
-stat change in the oracle corpora. A move that cannot miss (Showdown accuracy `true`) draws no accuracy.
+stat change in the oracle corpora. A move that cannot miss (Showdown accuracy `true`) draws no accuracy. Clear Body, White Smoke and Full Metal Body (29, 73, 230) block a damaging
+move's secondary drop with no command and no message. Defiant and Competitive (128, 172) answer a foe's
+drop of one stat, after its message: `0x25 (b)`, `0xc7 (b, 0)`, `0x0c (b, 1 or 3, 2)`, `0x92`, `0xcb (b,
+18 or 20, b)`, `0xc8 (b)`.
 
 A spread move (Showdown target `allAdjacent` or `allAdjacentFoes`) hits only the position its
 command names, with the single-target damage and no spread modifier: every oracle round holding one
