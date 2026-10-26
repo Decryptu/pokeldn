@@ -639,6 +639,14 @@ order keys, the sorts and `0x5a` alike; Sand Veil and Snow Cloak (8, 81) lower a
 their holder to 3277/4096 in theirs (83 corpus rounds with one of the six in its weather build equal).
 Sand Veil, Overcoat, Sand Rush and Sand Force (8, 142, 146, 159) take no sandstorm damage.
 
+Moves with their own power rule follow Showdown's `moves.ts`: Payback doubles when its target has no
+action left in the round, Hex on a statused target, Rising Voltage on a grounded target in Electric
+Terrain; Facade doubles under a status other than sleep, Venoshock on a poisoned target, Electro Drift
+and Collision Course take 5461/4096 when super effective, Expanding Force 1.5 in Psychic Terrain from a
+grounded user. A doubled Rising Voltage carries 1 as the fifth argument of its `0x8b`; a doubled Payback
+carries 0. Each case with its power raised came once in the corpus rounds built equal, the others only
+unraised.
+
 A terrain (Grassy 1, Misty 2, Electric 3, Psychic 4) changes the power of a move: 5325/4096 for a move of
 its type from a grounded user (Grass, Electric, Psychic; Misty Terrain boosts none), a half for a Dragon
 move into a grounded target in Misty Terrain and for Earthquake or Bulldoze into one in Grassy Terrain.
@@ -866,8 +874,9 @@ counts it as 1. Mycelium Might (298) carries `0x51 (b, 0)` the same way for a st
 Prankster (158) raises a status move's priority by 1. Every action sort ([Speed ties](#speed-ties)) first computes each move
 action's order key in the list's order, and a move that registers its own handler shows that as `0x5a
 (b, M, speed)`, speed at its stat stage, and `0x5b (b, M)`. The round's first move to run computes every
-move action's key once more, and a mover whose move registers a handler adds `0x5a (b, M, 0x72000 +
-speed)` just before its `0x05` (the oracle's command log interleaved with its sorts and action runs).
+move action's key once more, and a mover whose move registers a handler adds `0x5a (b, M, key)` just
+before its `0x05`, the key (priority + 7) << 16, its `0x51` value << 13, plus its Speed (`0x72000 +
+speed` for a priority-0 move; Stall's `0x70000`) (the oracle's command log interleaved with its sorts and action runs).
 347 of 631 moves register one (Facade and Body Slam among them, Night Slash not).
 
 The boss is Terastallized from the start: a damaging move of its Tera type hitting under 60 power after
