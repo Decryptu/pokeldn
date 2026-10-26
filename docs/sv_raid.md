@@ -1096,6 +1096,13 @@ raid's setup +0x30 is kind 0. The per-frame machine (`0xf6d538`) steps five per-
 | 1 | the slot was sent 5 and sent 6 | a block with the slot's command (`0xf6e6a8`, `0xf702ec`) posted as a ServerCommand, state 2 |
 | 2 | the slot answered a round (0x15 / 0x16) | state 0 |
 
+The server keeps, per slot, the messages it sent and the messages the slot sent in arrival order;
+`0xf6edf4` erases the first sent message of a type and the first received answer, one pair per call, and
+state 0 calls it once for each of the pairs (0x15, 0x16), (0x23, 0x24), (0x11, 0x12), (0x13, 0x14), (0x17,
+0x18), (0x19, 0x1a), (0x1b, 0x1c), (0x1d, 0x1e), (0x25, 0x26) and (0x1f, 0x20) a frame. A slot whose
+reader was held while rounds went out (a fainted slot) therefore erases its backlog one round a frame
+before it is asked again: 12 frames after a revive for 12 rounds. Wild::Setup's end clears both lists.
+
 The boss's slot (table `0x3c6a45a` against N+0x95) only erases answered pairs. Other reader paths: a
 slot that sent 4 gets a kind 0x13 block; on N's side in a raid the sub-states at reader+9 handle a
 fainted slot ([The battle timer running out](#the-battle-timer-running-out)); 0xd/0xe posts kind
@@ -1124,6 +1131,16 @@ incoming link (`0xe0f440(server, N+0x95)`); next frame `0x2016290` copies its 0x
 machine's boss list, which posts the raid action. Without that step the timed action never fires.
 The machine's vf 0x70 `0x20162bc` also takes `0x0ab4bce035f3012b` (posted to `0x201665c`) and
 `0xde3856ecc4fe200c` (one kind-14 action, posted as a ServerCommand).
+
+On a frame with no job the machine (`0xf6d538`) reads the battle timer first, and a time left of 0 or
+less posts the time-up; then, while armed (`+0x118`, cleared when a 0x51 goes out and set again when a raid
+action is posted), it ends the frame if its boss list holds actions, or evaluates the time triggers on a
+copy and, when one fires, sends the 0x51 and ends the frame; a boss list holding actions is posted as a
+raid action and the frame ends; only then are the readers stepped. A round whose boss list holds a shield
+first posts the raid action itself (`0x16e5ad0`); a raid action jumps the posted queue. Over the 794
+oracle battles of the corpora, a server built this way sends every message the oracle sends at the same
+server time up to the first round it refuses (31,581 messages; 25 battles through a faint, 8 through a
+revive, 5 through a shield's 0x47).
 
 `Server`, a Python port of this flow, runs at 30 frames a second on the machine's clock; no frame
 can be skipped, since a reader waiting on a fainted slot's timer moves the machine every frame. The
