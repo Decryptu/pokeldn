@@ -502,8 +502,6 @@ The rest of the field:
 | the host's own state | 0x0024 kind 1 and 0x002A kinds 3 to 5, a few small integers |
 | a member's id queries | 0x0025, member to host only |
 
-
-
 Both games ship one encounter table per map (`world/data/encount/pokedata/pokedata*_array.bin`)
 holding both versions' rows; field 28 names the versions a row is drawn in.
 

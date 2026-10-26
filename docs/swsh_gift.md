@@ -710,8 +710,6 @@ A slot is the `0x68`-byte header the importer fills from the record:
 Zeroing a slot's `+0x0C..+0x62` removes the card from the album; items it delivered stay in `MyItem`
 (`0x1177C2C4`).
 
-
-
 ## The per-frame update that drains the store
 
 `0x010f65a0` is the gfl net manager's per-frame update (manager from `0x0261cba8`): it drains the
