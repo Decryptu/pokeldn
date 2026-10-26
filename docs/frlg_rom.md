@@ -946,7 +946,7 @@ column is what one issue from the Mystery Gift client with `sloop-svc` showed.
 | 0x42 | mode switch `main + 0x0588A0` | `rfu_REQ_startSearchChild` [sloopsvc.c:49]; sets the network manager to mode 2 | ends the session with the link error; no access point opens |
 | 0x43 | `main + 0x0570EC` -> `main + 0x058AD0` | `rfu_REQ_startConnectParent`, 16-bit PID in `r0` [sloopsvc.c:91]; the same mode switch | the buffer script answered, then "Erreur de connexion" at close |
 | 0x44 | `main + 0x057100` -> `main + 0x058B0C` | `rfu_REQ_stopMode`, no arguments [sloopsvc.c:102] | after 0x43, no visible change |
-| 0x45 | `main + 0x057110` -> `main + 0x058900` | `rfu_REQ_startSearchParent`, `rfu_STC_readParentCandidateList` with `&gRfuLinkStatus` [sloopsvc.c:67-75]; copies the wrapper's scan result through the region table into `struct RfuLinkStatus`, `findParentCount` [include/librfu.h] at offset 8 first | 220 zeroed bytes stayed zero (no parent search in a gift session) |
+| 0x45 | `main + 0x057110` -> `main + 0x058900` | `rfu_REQ_startSearchParent`, `rfu_STC_readParentCandidateList` with `gRfuLinkStatus` [sloopsvc.c:67-75]; the game loads the pointer variable at IWRAM `0x03003110` (`0x0800C6EA`, three instructions in the Switch ROM), which `rfu_initializeAPI` sets to `sRfuAPIBuffer` at `0x03004710`; copies the wrapper's scan result through the region table into `struct RfuLinkStatus`, `findParentCount` [include/librfu.h] at offset 8 first | 220 zeroed bytes stayed zero (no parent search in a gift session) |
 | 0x46 | jump-table entry `0x147` | falls through to the dispatcher's exit: the syscall does nothing | |
 | 0x47 | `main + 0x05715C` -> `main + 0x058680` | `rfu_REQ_configGameData`, `r0` points to `struct RfuGameData` (16 bytes) and the username (8, `RFU_USER_NAME_LENGTH`) [sloopsvc.c:34-46; include/link_rfu.h:103-115,232]; copies all 24 to `component + 0x6050D8` and `activity` (bits 16-22 of the second 64-bit word) to `component + 0x605360` if changed | `activity` 0x30 landed byte for byte at both |
 | 0x48, 0x56 | `main + 0x057084` | the flash-sector copy: the destination sector is guest `r0`, the source is `fold(guest r1)` through the same region table and bounds-checked against the region's size, up to 4 KB | [The flash sector path](#the-flash-sector-path) |
@@ -1282,7 +1282,14 @@ the whole `0x480` to `record + 0xB8`, then bit-precise field reads: source `+0xA
 (a 15-byte integer parse, `main + 0xA9830`, hex/oct/dec/bin with `b`/`x` prefixes,
 bound-checked at every advance), `+0x26A` (the advertise data size), `+0x281`/`+0x282`,
 `+0x11A..0x11F`; stores to record `+0x90`, `+0xA0`, `+0xA2`, `+0xA4`, `+0xA6`, `+0xB0`), then
-passes the record through a filter virtual and an accept virtual (`main + 0x80A88..0x80A94`).
+passes the record through a filter virtual (`main + 0x80A70`, `LocalSearchNetworkSetting::vfunc2`
+at `main + 0xA0F48`; the setting is the `LdnBackgroundProcessJob` subobject at `+0x300`, vtable
+`0x1CB408`) and an accept virtual (`main + 0x80A94`, the station list's
+`LocalSessionProperty::vfunc11` at `main + 0x87420`, which copies the record and calls `vfunc17`
+at `main + 0xA1BAC`). The filter tests the setting's flag byte at `+0x14` against the property's
+session id (`+0x98`), the u16 `+0xa2` against `[setting + 0x12, setting + 0x10]`, and the boolean
+at `+0xa6`; the accept copies the record, hashes the 15 bytes at record `+0x11` into `+0x90` and
+stores the flag at `+0xa7`. Neither reads the display name.
 
 The accepted networks land in the parent-candidate list: 16 slots x `0x1A` bytes at
 `owner + 0x6050F2`, the write index at `owner + 0x605294` capped at 15 (`cmp w8, #0xf; b.le`
