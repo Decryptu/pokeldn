@@ -1,15 +1,13 @@
-# pokeldn 0.45.0
+# pokeldn 0.45.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Sword/Shield Max Raids and Dynamax Adventures over the game's hidden LAN mode, with no board, in
-  both directions: pick Wi-Fi, no board in the Max Raid or Dynamax Adventure row.
-- A raid the console joins now always runs on the console, also when it joins over LAN mode.
-- Android: installing firmware on a classic ESP32 board with a CP210x USB chip no longer stops at
-  "fileno" (untried on a phone).
+- macOS: the app icon is the same size as other apps' in Launchpad, the Dock and Finder on macOS
+  15 and earlier, where it was drawn larger. On macOS 26 and later it is the layered Liquid Glass
+  icon.
 
 The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 
