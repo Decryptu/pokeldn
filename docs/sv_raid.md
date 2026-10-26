@@ -977,7 +977,7 @@ table `0x3c6a90c`):
 |---|---|
 | 0xce | none: the end of the queue |
 | 0xcf, 0xd2 | a group: a u8 byte count, then that many bytes |
-| 0xd0 | a u8 count, at most 4, then that many bytes |
+| 0xd0 | a u8 count, then that many bytes: a (battler, effectiveness) pair per target hit, 8 bytes on four targets |
 | 0xd1 | two bytes |
 | 0xd3 | one byte |
 | 0xd4 | none |
@@ -1136,6 +1136,18 @@ separate). A Sandstorm or Snowscape extra move aims at position 10, Iron Defense
 at the boss (4); a move aimed at one player draws its target with `below(n)` over the standing players in
 position order when its entry joins the list (before the next sort's draws); one aimed at all of them
 (Snarl, Leer) carries position 10.
+
+A damaging extra-action move aimed at all of them (Snarl) hits every standing player at once. It draws
+each target's accuracy in position order, then each target's critical hit and roll, the damage times
+0.75 after the base formula (Showdown's spread modifier). Its run: `0xc9 (2, 0, M, 10, 0)`, `0x7b`, six zero
+groups (20, 5, 5, 5, 19, 20 bytes), the `0x7e` triple over the targets, `0x8b (4, 10, M, type, 0, 0, 1, tera,
+5, 0)`, `0x37 (2, 0, 1)` once when one target took a critical hit, `0x37 (T, 2, damage)` and `0x37 (T, 5,
+1)` per target, `0x02 (T, 2, damage, 3)` per target, one `0xd0` with every target's pair, `0x8e (n, 2 when
+one target took it super effectively else 1, M)`, `0xcb (2, 2, T)` or `0xcb (2, 3, T1, T2)` for one or two
+super-effective targets, `0xcb (2, 6, T)` or `0xcb (2, 7, T1, T2)` for resisted ones, `0x20 (2, 24)` once,
+`0xa7 (T's position, 132)` and `0x20 (2, 26)` for the critical hit, the `0x42`s, then each target's
+secondaries and Sand Spit, `0xd1`, `0x2e (2, 1)`, `0x7c`, `0x1d (2, 10, type, 1, 0, M, M)`. 4 of 4 Snarls
+in the corpora build equal this way.
 
 After every action run (`0x11405a0`), while the battle goes on and the boss stands, `0x11425b0` fills an
 empty list of waiting raid actions from the HP triggers: without a shield among them they join the
