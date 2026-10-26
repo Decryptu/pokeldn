@@ -620,6 +620,24 @@ for 137 of 140 hits with every draw logged the logged roll and critical draw giv
 Hits that do not fit come during the boss's shield (about 0.45 of the formula), from moves with their
 own rules (Body Press, Rising Voltage, multi-hit moves) or are capped at the HP left.
 
+Abilities change the formula as Showdown's do, each applied alone with its own 4096ths modifier
+(a pair chained into one modifier is unmeasured): Hustle (55) raises a physical move's Attack 1.5 times
+and lowers its accuracy to 3277/4096; Compound Eyes (14) raises accuracy 5325/4096, capped at 100;
+Thick Fat (47) halves the attacker's stat for Fire and Ice; Strong Jaw (173) raises a biting move's
+power 1.5 times, Reckless (120) a recoil move's 4915/4096; Tinted Lens (110) doubles a not very
+effective hit after the type multiplier; Ice Scales (246) halves a special hit after a burn's halving,
+unless the attacker has Mold Breaker, Turboblaze or Teravolt. Skill Link (92) gives five hits and still
+draws the hit-count roll. Serene Grace (32) doubles every secondary chance; Stench (1) adds a 10 percent
+flinch drawn before the move's own secondaries; Shield Dust (19) on the target removes the secondaries
+and their draws. Rock Head (69) takes no recoil. Gluttony, Pickpocket, Symbiosis, Ripen and Cud Chew
+(82, 124, 180, 247, 291) do nothing while no battler holds an item.
+
+A terrain (Grassy 1, Misty 2, Electric 3, Psychic 4) changes the power of a move: 5325/4096 for a move of
+its type from a grounded user (Grass, Electric, Psychic; Misty Terrain boosts none), a half for a Dragon
+move into a grounded target in Misty Terrain and for Earthquake or Bulldoze into one in Grassy Terrain.
+A battler is grounded unless it is Flying, has Levitate or holds an Air Balloon. 151 corpus rounds under
+Electric, Psychic or Misty Terrain (42, 57, 52) build equal with these rules.
+
 A boss's HP pool is its record's HP times the RaidPoint's HP coefficient over 100 ([The battle
 bootstrap](#the-battle-bootstrap)): of the oracle battles won, 78 at one star, 84 at two, 125 at three and 35 at
 four ended after exactly 5, 5, 8 and 12 times the record's HP in `0x37 (2, 2, damage)`; the others took
@@ -727,11 +745,17 @@ have one or two raid-action rounds between, which do not count): its `0x75 (3, 0
 `0xc5 (0)`, `0x50 (0)`, `0x19 (b, k)` for each end-of-turn kind k in the order 36, 21, 18, 5, 4, 9, 10, 8,
 46, 43, 48, 11, 12, 23, 13, 31, 33, 15, 19, 29, 30, 38, 37, 39, 40, 41, 24, 45, 14, 20, 1, 2, 3, 7, 6,
 16, 17, 22, 25, 26, 27, 28, 32, 34, 35, each over the battlers in speed order, then `0x44 (k)` for k 1
-to 13, before the usual `0xc5 (1)`. A sandstorm adds, after `0x50 (0)`, for each battler in speed
+to 13, before the usual `0xc5 (1)`. A weather lasts five turn ends, the turn it rises in counting as
+the first: at its fifth it ends right after `0x50 (0)` with `0x99 (w)`, `0x54 ()`, `0x6a (0)`, and a
+sandstorm ending does no damage that turn (7 of 7 weather ends in the oracle corpora). Sun, rain and
+snow add nothing at a turn's end. A terrain lasts five turn ends as well and ends between `0x44 (8)`
+and `0x44 (9)` with `0x34 (8)`, `0x6a (8)`, `0xca (0, text)`, `0x32 (0, 0, 1, 0)`, `0x6a (8)`, `0xb2 (0)`,
+`0xaa (0)`, `0x69 (8, 0)`; the end text is 705 Grassy, 709 Electric, 829 Psychic (Misty's is not in the
+corpora). A sandstorm adds, after `0x50 (0)`, for each battler in speed
 order it damages (a sixteenth of its maximum HP): `0xcb (b, 133, b)`, `0xa7 (b's position, 14)`, `0x01
 (b, s, damage, 1)` with s the battler that raised the sandstorm (its Sand Stream or Sand Spit, or the
-boss's Sandstorm), and `0x9a (b, -damage)`. Moody (ability 141) acts at a turn's end. Other held items,
-statuses and weathers at a turn's end are unmeasured.
+boss's Sandstorm), and `0x9a (b, -damage)`. Moody (ability 141) acts at a turn's end. Other held items
+and Grassy Terrain's heal at a turn's end are unmeasured.
 
 A damaging move the target's types are immune to draws nothing, not even its accuracy, and runs
 `0x05`, `0x07`, `0xc9 (A, 0, M, P, 1)`, `0x7b`, five `0xcf` groups (20, 5, 5, 5 and 19 zero bytes), `0xcb
@@ -746,7 +770,11 @@ M)` twice and `0x1e (A, 0)`.
 A weather move (Sunny Day, Rain Dance, Snowscape, Sandstorm) runs as a stat-stage status move with the
 field class (10) and, in place of the stat changes, the weather's start: `0x6a (0)`, `0x69 (0, w)`,
 `0x79 (w, 5, 0, A, 0)` and `0x88 (w, A, 0)`, w 1 sun, 2 rain, 3 snow, 4 sand; a status move that inflicts a
-status (Thunder Wave, Will-O-Wisp, Toxic, Spore) runs the infliction there ([Statuses](#statuses)).
+status (Thunder Wave, Will-O-Wisp, Toxic, Spore) runs the infliction there ([Statuses](#statuses)). A
+terrain move runs the same way with the terrain's start: `0x32 (t, 0, 42, A)`, `0x6a (8)`, `0xb2 (0)`,
+`0xaa (t)`, `0x69 (8, t)` and `0xca (A, text)`, the start text 704 Grassy, 706 Misty, 708 Electric, 828
+Psychic; a terrain already up fails it with text 567. Weather is field slot 0 and terrain field slot 8 in
+`0x6a`, `0x69` and `0x44`.
 
 A two-to-five-hit move rolls its hit count right after the accuracy draw (`0x19d4f2c`): one draw of the
 battle generator's low 7 bits, redrawn while 100 or more, gives 2 hits under 35, 3 under 70, 4 under 85,
@@ -778,7 +806,8 @@ Speed at its stat stage: a boss's Aqua Jet or Shadow Sneak moves before a faster
 A hit that knocks the boss out wins the battle. After its `0x42` come `0x49 (2, A, M)`, `0x09 (A, slot)`
 with `slot` M's index in A's moveset (382 of 383 oracle knockouts),
 `0x37 (2, 1, 1)`, `0xcb (2, 0, 2)`, `0x94 (2, 0)`, `0x37 (2, 8, 1)`, `0x5f (2)`, `0x62 (2)`, `0x6c (2)`,
-`0x5d (2)`, `0x41 (b, 2)` for each player in id order, `0x33 (2, k)` for k 0 to 13 except 8, `0x80 (2)`,
+`0x5d (2)`, `0x41 (b, 2)` for each player in id order, `0x33 (2, k)` for k 0 to 13 (8 only while a
+terrain is up), `0x80 (2)`,
 `0x29 (2)` and `0x38 (A)`, then the move's usual end. Nobody moves after it, and the round ends with
 only the `0x43` of the battlers left standing, the `0x23` list and `0x2d (0)`. The `0x85 (7, damage)`
 and the damage commands carry the HP the boss had left.
@@ -786,7 +815,8 @@ and the damage commands carry the HP the boss had left.
 The prefix starts with `0xb5 (0)`, then runs `0x51 (b, 1)` once for the round's actors in id order and
 once in the order of the first action sort; in the second run a battler with Stall (ability 100) carries
 `0x51 (b, 0)`, and from then on its actions sort last in their bracket; the round's first sort still
-counts it as 1. Every action sort ([Speed ties](#speed-ties)) first computes each move
+counts it as 1. Mycelium Might (298) carries `0x51 (b, 0)` the same way for a status move only, and
+Prankster (158) raises a status move's priority by 1. Every action sort ([Speed ties](#speed-ties)) first computes each move
 action's order key in the list's order, and a move that registers its own handler shows that as `0x5a
 (b, M, speed)`, speed at its stat stage, and `0x5b (b, M)`. The round's first move to run computes every
 move action's key once more, and a mover whose move registers a handler adds `0x5a (b, M, 0x72000 +
@@ -1026,8 +1056,11 @@ After every action run (`0x11405a0`), while the battle goes on and the boss stan
 empty list of waiting raid actions from the HP triggers: without a shield among them they join the
 round's action list; with one they wait for a raid action round. The list empties at each round's start,
 and running a shield empties it too, so the next run refills it with every HP trigger still met, actions
-already in the list included: those run again later and show nothing. A move action skipped while the
-boss's status blocks it can come in after the shield cures that status. While the shield is up, a hit on
+already in the list included: those run again later and show nothing. While the boss is frozen its HP
+triggers leave out an extra action of kind 3 (a move) and keep the others: a boss reset fires and runs
+while it stays frozen, the move action comes in after the boss thaws. A move action skipped while the
+boss's status blocks it can come in after the shield cures that status. The extra action's move checks
+the boss's confusion before it runs, as a commanded move does. While the shield is up, a hit on
 the boss does damage times the shield's percent (`0x2a`, 20 in standard profiles; 80 or 40 for a
 Terastallized attacker's own-type or other move), over 100, rounded up from a remainder of 50
 (`0x1535c8c`). The shield ends once the boss has lost the profile's end percent (20) of its HP pool
@@ -1132,7 +1165,8 @@ since the round before, in revive order, then that round's actors not already li
 A player's Pokemon knocked out runs, after the hit's `0x42`, the boss's knockout commands with its own
 id ([A move in the round queue](#a-move-in-the-round-queue)): `0x49 (V, A, M)`, `0x09 (A, slot)`, `0x37
 (V, 1, 1)`, `0xcb (V, 0, V)`, `0x94 (V, 0)`, `0x37 (V, 8, 1)` (its faint count), `0x5f`, `0x62`, `0x6c`, `0x5d`,
-`0x41 (b, V)` for each battler still standing in id order, `0x33 (V, k)` for k 0 to 13 except 8, `0x29
+`0x41 (b, V)` for each battler still standing in id order, `0x33 (V, k)` for k 0 to 13 (8 only while a
+terrain is up), `0x29
 (V)`, the timer's `0x81 (-n)` for the host's or the console's Pokemon, and `0x38 (A)`; no `0x80`. Its
 actions in the round are marked run, the hit draws `chance(0)` like the boss's knockout, a stat-drop
 secondary draws nothing, a flinch or confusion secondary and a contact ability still draw.
