@@ -883,7 +883,8 @@ field class (10) and, in place of the stat changes, the weather's start: `0x6a (
 `0x79 (w, 5, 0, A, 0)` and `0x88 (w, A, 0)`, w 1 sun, 2 rain, 3 snow, 4 sand; a status move that inflicts a
 status (Thunder Wave, Will-O-Wisp, Toxic, Spore) runs the infliction there ([Statuses](#statuses)). Sand
 Spit (245) hit by a damaging move raises a sandstorm after the hit's `0x42` and its secondaries' commands: `0x25 (b)`, `0xc7 (b, 0)`, the
-weather's start with w 4, `0xc8 (b)`, and no message; under a sandstorm already up it shows nothing. A
+weather's start with w 4, `0xc8 (b)`, and no message, before the knockout commands when the hit knocks
+its holder out; under a sandstorm already up it shows nothing. A
 weather raised over another (a weather move or Sand Spit) shows only its own start and replaces the old
 one, whose end shows nothing. A
 terrain move runs the same way with the terrain's start: `0x32 (t, 0, 42, A)`, `0x6a (8)`, `0xb2 (0)`,
