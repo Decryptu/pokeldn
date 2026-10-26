@@ -627,7 +627,8 @@ Abilities change the formula as Showdown's do, each applied alone with its own 4
 (a pair chained into one modifier is unmeasured): Hustle (55) raises a physical move's Attack 1.5 times
 and lowers its accuracy to 3277/4096; Compound Eyes (14) raises accuracy 5325/4096, capped at 100;
 Thick Fat (47) halves the attacker's stat for Fire and Ice, Purifying Salt (272) for Ghost, and a
-Purifying Salt holder takes no status from a secondary; Strong Jaw (173) raises a biting move's
+Purifying Salt holder takes no status from a secondary; Secret Sword hits the Defense stat, and Chip
+Away, Sacred Sword and Darkest Lariat ignore the target's defensive and evasion stages; Strong Jaw (173) raises a biting move's
 power 1.5 times, Reckless (120) a recoil move's 4915/4096; Tinted Lens (110) doubles a not very
 effective hit after the type multiplier; Ice Scales (246) halves a special hit after a burn's halving,
 unless the attacker has Mold Breaker, Turboblaze or Teravolt; Filter and Solid Rock (111, 116, both
@@ -644,8 +645,8 @@ order keys, the sorts and `0x5a` alike; Sand Veil and Snow Cloak (8, 81) lower a
 their holder to 3277/4096 in theirs (83 corpus rounds with one of the six in its weather build equal).
 Sand Veil, Overcoat, Sand Rush and Sand Force (8, 142, 146, 159) take no sandstorm damage.
 
-Moves with their own power rule follow Showdown's `moves.ts`: Payback doubles when its target has no
-action left in the round, Hex on a statused target, Rising Voltage on a grounded target in Electric
+Moves with their own power rule follow Showdown's `moves.ts`: Payback doubles when its target has moved
+earlier in the round (a boss reply the shield break dropped does not count), Hex on a statused target, Rising Voltage on a grounded target in Electric
 Terrain; Facade doubles under a status other than sleep, Venoshock on a poisoned target, Electro Drift
 and Collision Course take 5461/4096 on the damage after the type multiplier when super effective, Expanding Force 1.5 in Psychic Terrain from a
 grounded user. A doubled Rising Voltage carries 1 as the fifth argument of its `0x8b`; a doubled Payback
@@ -718,9 +719,15 @@ salted target adds nothing.
 A player knocked out at a turn's end (by Salt Cure or the sandstorm) runs, right after that damage's
 commands, the knockout commands with `0x49 (V, 0, 0)` and no `0x09`, ending with `0x38 (s)` only when s, the
 battler that salted it or raised the sandstorm, is its foe (a sandstorm raised by an ally's Sand Spit
-shows none). The damage shown is the whole fraction. Speed Boost (ability 3) raises Speed after the
+shows none). The damage shown is the whole fraction.
+
+Moxie (153) on the boss raises its Attack after its hit knocks a player out, after the hit's `0xd1`:
+`0x25 (2)`, `0xc7 (2, 153)`, `0x0c (2, 1, 1)`, `0x92`, `0xcb (2, 11, 2)`, `0xc8 (2)`. At what the corpus
+counts as +5 (three knockouts in one battle) it showed nothing; whether the boss was already at +6 then is
+unknown. Speed Boost (ability 3) raises Speed after the
 `0x44` list (`0x25`, `0xc7`, `0x0c (b, 5, 1)`, `0x92`, message 15, `0xc8`), before the turn end's last
-three battler sorts, except in the turn the battler was revived (Showdown's `activeTurns`). Shed Skin
+three battler sorts, except for a revived battler that has not yet commanded a round since (2 of 2
+corpus cases each way; Showdown's `activeTurns`). Shed Skin
 (61) and Hydration (93) without a status, and Healer (131) on the boss, which has no ally, show and
 draw nothing at a turn's end; Shed Skin on a statused battler draws `chance(33)` there (no cure came in
 the corpora).
