@@ -728,6 +728,7 @@ over the five battlers in id order gives the logged number of draws at the battl
 | a round's start | the round's actions, command order; key priority, then not Stall, then Speed | 3, each of the previous one's result | the first: the second `0x51` pass; the third: the order of the moves |
 | after each move but the last | the actions | 1 | nothing in the queue |
 | a round's end | the standing battlers, id order each time | 3 | the second: `0x43` |
+| the end of the round the boss falls in | the standing battlers | none: no draw | `0x43` in Speed order, ties in id order (4 of 4 corpus wins with a tie) |
 | a turn's end (every fourth round) | the standing battlers, id order each time | 8 | the fourth: the sandstorm, Leftovers and `0x19` order; the seventh, after the turn's end: `0x43` |
 
 The round-end `0x43` order matched the second sort in 109 of 123 battles; the 14 others had a battler's
