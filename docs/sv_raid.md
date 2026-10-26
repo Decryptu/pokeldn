@@ -593,7 +593,7 @@ A move use draws, in this order:
 |---|---|---|
 | `chance(25)` | the user is paralysed | a full paralysis |
 | `chance(33)` | the user is confused | hitting itself, whose roll is a `below(16)` that replaces the move's draws |
-| `chance(accuracy)` | the move has an accuracy; 100 still draws | a hit |
+| `chance(accuracy)` | the move has an accuracy; 100 still draws | a hit; the accuracy is the move's times (3 + n) / 3, or 3 / (3 − n) for n below 0, truncated, n the user's accuracy stage less the target's evasion stage within ±6, then the abilities' modifiers |
 | `below(24)`, `below(8)`, `below(2)` | a damaging move, by critical-hit stage 0, 1, 2 | a critical hit when 0 |
 | `below(16)` | a damaging move | the roll r: the damage times (100 − r) / 100 |
 | `chance(p)` | a secondary effect of chance p (Body Slam's 30) | the effect |
@@ -867,8 +867,9 @@ M, type, 0, 0, 0, 0, class, 0)` (T is A for a move on itself, class 7), the stat
 `0x08 (A, 0)`, `0x1d (A, P, type, 1, 0, M, M)`, `0x5b (A, M)` twice and `0x1e (A, 0)`. A raise is `0x0c
 (b, stat, n)`, `0x92 (b, stat, n, 0)` and `0xcb (b, text, b)`; a drop is `0x0d (b, stat, n)`, `0x93 (b,
 stat, n, 0)` and `0xcb (A, text, b, stat)`. The text is 10, 17 or 24 plus the stat for a raise of 1, 2 or
-3 stages and 31 or 38 plus the stat for a drop of 1 or 2 (stats 1 Attack to 7 evasion), in stat order
-(Coil raises Attack, Defense, then accuracy), over every
+3 stages and 31 or 38 plus the stat for a drop of 1 or 2 (stats 1 Attack to 7 evasion), in Showdown's source
+order, which is the stat order (Coil raises Attack, Defense, then accuracy) but for Shift Gear (Speed,
+then Attack), over every
 stat change in the oracle corpora. A move that cannot miss (Showdown accuracy `true`) draws no accuracy.
 
 A spread move (Showdown target `allAdjacent` or `allAdjacentFoes`) hits only the position its
