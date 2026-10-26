@@ -617,7 +617,11 @@ n)`, `0x93` and `0xcb (A, 31 + stat, A, stat)` per stat after the hit's `0x42` (
 logged shows the draw). A landed
 Static, Poison Point or Flame Body paralyses, poisons or burns the attacker inside the target's ability
 activation, after the secondaries' commands: `0x25 (T)`, `0xc7 (T, 0)`, the infliction from T ([Statuses](#statuses)),
-`0xc8 (T)`; an attacker already statused or immune shows nothing. A hit that
+`0xc8 (T)`; an attacker already statused or immune shows nothing. Rough Skin and Iron Barbs (24, 160)
+answer a contact, also one that knocks their holder out, inside the activation with `0x01 (A, T, an
+eighth of A's maximum HP, 20)`, `0x9a (A, -damage)` and `0xcb (A, 143, A)`; Gooey and Tangling Hair (183,
+221) with the attacker's Speed down one. A drain move's heal comes right after the hit's `0x42`, before
+the secondaries and the contact answers, and reads the HP before them. A hit that
 knocks the boss out draws no secondary and no contact chance. Over the 156 oracle
 battles that log every draw, the draws of every round the plugin builds equal the logged ones.
 
