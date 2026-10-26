@@ -804,6 +804,16 @@ terrain move runs the same way with the terrain's start: `0x32 (t, 0, 42, A)`, `
 Psychic; a terrain already up fails it with text 567. Weather is field slot 0 and terrain field slot 8 in
 `0x6a`, `0x69` and `0x44`.
 
+Tailwind (366) raises side condition 4 on its user's side (0 the players', 1 the boss's) for four turn
+ends, the turn it rises in counting as the first. It runs as a weather move with the side class (12) and
+position 10 in its `0x8b` (the `0xc9` keeps the commanded position), then `0x4a (side, 4, 0, 34, A)`,
+`0x65` with the same arguments and `0xca (A, 643, side)`. It doubles the Speed of its side's battlers in
+the order keys and the sorts but not in a handler's `0x5a`. Each turn end it is up adds `0x4c (side, 4)`
+after the last `0x19` and before `0x44 (1)`; at its fourth come `0x4b (side, 4)`, `0x66 (side, 4)` and
+`0xca (A, 645, side)` with A the battler that raised it. Side conditions 0, 1 and 2 end the same way with
+texts 625, 629 and 637. Wind Rider and Wind Power (274, 277) beside a Tailwind are unmeasured. 47 corpus
+rounds with a Tailwind up, three with its end, build equal.
+
 A two-to-five-hit move rolls its hit count right after the accuracy draw (`0x19d4f2c`): one draw of the
 battle generator's low 7 bits, redrawn while 100 or more, gives 2 hits under 35, 3 under 70, 4 under 85,
 else 5; a fixed count (Double Kick's 2, Triple Dive's 3) draws nothing. Each hit draws its critical hit and
