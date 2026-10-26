@@ -1250,7 +1250,8 @@ id ([A move in the round queue](#a-move-in-the-round-queue)): `0x49 (V, A, M)`, 
 terrain is up), `0x29
 (V)`, the timer's `0x81 (-n)` for the host's or the console's Pokemon, and `0x38 (A)`; no `0x80`. Its
 actions in the round are marked run, the hit draws `chance(0)` like the boss's knockout, a stat-drop
-secondary draws nothing, a flinch or confusion secondary and a contact ability still draw.
+secondary draws nothing, a flinch or confusion secondary and a contact ability still draw. A player holding an Air Balloon pops it (message 138, `0x1e (T, 15)`, `0x26 (T, 0)`, `0x4f (T, 0)`, `0x62
+(T)`) after the hit's `0x42` and before these commands.
 
 When the boss's shield ends with value 1, its record sets the five per-slot counters (u16 at record
 `+0x7c`) to -1 (`0x15661e0` event 2). At each round's start (`0x114d390`), a boss move aimed at a slot
