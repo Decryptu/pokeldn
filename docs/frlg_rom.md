@@ -874,6 +874,13 @@ So the record-resolver store reaches a live wrapper object on retail when the fo
 buffer's end, and the app aborts there; the same store kept in guest-visible memory does not. A
 payload that pushes the body's frame returns from the site on retail as well.
 
+The advertisement alone can end the title as well. A host beacon whose 8-byte display-name field
+holds no `0xFF`, the Gen III string terminator, closes the title with the same message as the
+friend list opens, before the console sends a datagram or joins; the host's scan capture records no
+`udp_in`. A `0xFF` anywhere inside the eight bytes prevents it, and one placed a few bytes past the
+field does not, so the search stays inside the field. A normally encoded name always ends in `0xFF`,
+so this needs a crafted advertisement; it is an abort on the wrapper side, not the component write.
+
 The dispatch after the write is the app's next `bkpt #0x52`. The game produces them from two
 places: the STWI driver's IWRAM copy, about 60 a second while the link is up (a live read of its
 hit count), and its own calls into `Sio32IDMain` at the site (12 hits in a live read of record 1).
@@ -897,8 +904,11 @@ outside the write. That name is slot bytes `+0x10..+0x17` ([The wrapper's own sc
 pipeline](#the-wrappers-own-scan-pipeline)), so the component's vtable pointer comes from the
 peer's advertisement record.
 
-The next `bkpt #0x52` reads `[component]` and calls `[component + 0x98]`. A host that advertises
-the display name as a native address therefore chooses the call target. Measured on the emulated
+The next `bkpt #0x52` reads `[component]` and calls `[component + 0x98]`, so in that state the
+advertised name is the call target. That state needs the guest-chosen fold: the game's own
+`swi 0x45` hands over `gRfuLinkStatus` in IWRAM ([the `swi 0x45`
+argument](#the-remaining-syscalls)), which keeps the write inside the RFU API buffer, so an
+advertisement on its own reaches no vtable. Measured on the emulated
 French FireRed, with the advertised name `08 01 df 1f 66 00 00 00` (`0x661FDF0108`, inside the
 ROM copy), a 4 KB block of `0xDEADBEEF` written through `swi 0x48` to fold `0xFA3F6`
 (`ROM + 0x3F6000`), one candidate, and the payload's `bkpt #0x52`:
