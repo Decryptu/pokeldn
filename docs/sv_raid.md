@@ -626,7 +626,8 @@ own rules (Body Press, Rising Voltage, multi-hit moves) or are capped at the HP 
 Abilities change the formula as Showdown's do, each applied alone with its own 4096ths modifier
 (a pair chained into one modifier is unmeasured): Hustle (55) raises a physical move's Attack 1.5 times
 and lowers its accuracy to 3277/4096; Compound Eyes (14) raises accuracy 5325/4096, capped at 100;
-Thick Fat (47) halves the attacker's stat for Fire and Ice; Strong Jaw (173) raises a biting move's
+Thick Fat (47) halves the attacker's stat for Fire and Ice, Purifying Salt (272) for Ghost, and a
+Purifying Salt holder takes no status from a secondary; Strong Jaw (173) raises a biting move's
 power 1.5 times, Reckless (120) a recoil move's 4915/4096; Tinted Lens (110) doubles a not very
 effective hit after the type multiplier; Ice Scales (246) halves a special hit after a burn's halving,
 unless the attacker has Mold Breaker, Turboblaze or Teravolt; Filter and Solid Rock (111, 116, both
@@ -711,7 +712,13 @@ n-th turn end: `0xa7 (b's position, 44 or 43)`, `0x01 (b, the battler that infli
 38)`, `0x9a (b, -damage)` and `0xcb (b, 88 or 82, b)`. Salt Cure (864) sets condition 46 on its target after the hit's `0x42`
 (`0x13 (T, 46, 0, 1, A)`, `0xcb (A, 1033, T, A)`, its 100 percent chance drawn); at each turn end, right
 after `0x19 (b, 46)`, it deals an eighth of the record HP, a quarter to a Water or Steel type: `0xa7 (b's
-position, 152)`, `0x01 (b, A, damage, 0)`, `0x9a (b, -damage)`, `0xcb (b, 125, b, 864)`. Speed Boost (ability 3) raises Speed after the
+position, 152)`, `0x01 (b, A, damage, 0)`, `0x9a (b, -damage)`, `0xcb (b, 125, b, 864)`. A Salt Cure on a
+salted target adds nothing.
+
+A player knocked out at a turn's end (by Salt Cure or the sandstorm) runs, right after that damage's
+commands, the knockout commands with `0x49 (V, 0, 0)` and no `0x09`, ending with `0x38 (s)` only when s, the
+battler that salted it or raised the sandstorm, is its foe (a sandstorm raised by an ally's Sand Spit
+shows none). The damage shown is the whole fraction. Speed Boost (ability 3) raises Speed after the
 `0x44` list (`0x25`, `0xc7`, `0x0c (b, 5, 1)`, `0x92`, message 15, `0xc8`), before the turn end's last
 three battler sorts, except in the turn the battler was revived (Showdown's `activeTurns`). Shed Skin
 (61) and Hydration (93) without a status, and Healer (131) on the boss, which has no ally, show and
