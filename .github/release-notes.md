@@ -1,13 +1,14 @@
-# pokeldn 0.45.2
+# pokeldn 0.45.3
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- GTS: a listing you offered on shows a clock in the list, and its panel shows your offer waiting
-  for the lister. The listing stays open to other players until the lister's app answers. A
-  second offer from you on the same listing is refused, and that Pokemon stays in your bank.
+- FireRed and LeafGreen Shiny legendary: Mewtwo, Articuno, Zapdos and Moltres now come out shiny on
+  a Switch. The game's automatic press lands on every countdown instead of about one in two. For
+  Mewtwo, talk to it yourself and press nothing at its cry; for a bird, tap Up once after the recap,
+  then hold B.
 
 The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 
