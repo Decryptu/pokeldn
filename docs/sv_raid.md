@@ -1430,9 +1430,23 @@ revive, 5 through a shield's 0x47).
 
 The machine's clock is the 19.2 MHz system tick: each frame moves it to the frame's time if that is
 later, and every `nn::os::GetSystemTick` read adds 256 ticks. A frame run again at the same time (a host
-starts each run of frames at the time the last one ended) therefore reads slightly later, and a timer
-that ends on a whole second (a fainted slot's 5 s wait) can end on either instance; over the corpora
-that moves a revive by one frame in 10 battles.
+starts each run of frames at the time the last one ended) therefore reads slightly later. A timer whose
+whole seconds end exactly on a frame's time ends on that frame only when its check reads the clock no
+earlier within the frame's time than its start did; otherwise it ends a frame later.
+
+The reads, in order:
+
+| when | reads | code |
+|---|---|---|
+| a timer made | two, the second pausing it | `0xf70a58` |
+| a paused timer resumed | one, its start | `0xe63ac4` |
+| Wild::Setup ending, the frame after every slot answered 0x11 | one, the battle timer's start | `0xe63ac4` |
+| each machine frame, the battle timer running | one for time-up | `0xf91070` from `0xf6d538` |
+| the time triggers, armed with an empty list | one for the shield while it is not up and the low-time action has not run; one for the low-time action while it has not run; one for each time-based extra action not yet fired | `0xf6f87c`, `0xf6dd84`, `0xf6fa5c` |
+| each machine frame | one for each fainted slot waiting on its revive timer, in slot order | `0xf71020` |
+
+A fainted slot's timer is made and resumed when its 0x22 is erased, so its start is the third of those
+reads.
 
 `Server`, a Python port of this flow, runs at 30 frames a second on the machine's clock; no frame
 can be skipped, since a reader waiting on a fainted slot's timer moves the machine every frame. The
