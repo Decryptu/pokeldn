@@ -632,6 +632,13 @@ flinch drawn before the move's own secondaries; Shield Dust (19) on the target r
 and their draws. Rock Head (69) takes no recoil. Gluttony, Pickpocket, Symbiosis, Ripen and Cud Chew
 (82, 124, 180, 247, 291) do nothing while no battler holds an item.
 
+Sun raises a Fire hit's base damage 1.5 times and halves a Water hit's, rain the reverse, before the
+critical hit (Showdown's `onWeatherModifyDamage`; 125 corpus rounds with such a hit build equal). Swift
+Swim, Chlorophyll, Sand Rush and Slush Rush (33, 34, 146, 202) double Speed in their weather, for the
+order keys, the sorts and `0x5a` alike; Sand Veil and Snow Cloak (8, 81) lower a move's accuracy against
+their holder to 3277/4096 in theirs (83 corpus rounds with one of the six in its weather build equal).
+Sand Veil, Overcoat, Sand Rush and Sand Force (8, 142, 146, 159) take no sandstorm damage.
+
 A terrain (Grassy 1, Misty 2, Electric 3, Psychic 4) changes the power of a move: 5325/4096 for a move of
 its type from a grounded user (Grass, Electric, Psychic; Misty Terrain boosts none), a half for a Dragon
 move into a grounded target in Misty Terrain and for Earthquake or Bulldoze into one in Grassy Terrain.
