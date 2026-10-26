@@ -815,7 +815,7 @@ boss's Sandstorm), and `0x9a (b, -damage)`. Leftovers (item 234) then heals each
 maximum, in speed order and before the residual kinds, by a sixteenth of its record HP: a 5-byte zero
 `0xcf` group, `0x9b (b, 0)`, a 3-byte zero group, `0xa7 (b's position, 51)`, `0x03 (b, heal)`, `0x9a (b,
 heal)` and `0xcb (b, 295, b, 234)`; the heal shown is the whole sixteenth even when less HP was missing.
-Moody (ability 141) acts at a turn's end after the `0x44` list, before Speed Boost's place: one `below(20)`
+Moody (ability 141) acts at a turn's end after the `0x44` list: one `below(20)`
 draw v picks the raised stat (Attack to Speed) v // 4 and the lowered one v % 4 among the four others;
 `0x25 (b)`, `0xc7 (b, 0)`, the raise by 2 (by 1 from +5), the drop by 1 (`0x0d`, `0x93`, `0xcb (b, 31 +
 stat, b, stat)`), `0xc8 (b)` (every Moody turn end in the corpora; stats at ±6 unmeasured). Other held items and Grassy Terrain's heal at a turn's end are
