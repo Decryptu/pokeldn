@@ -765,7 +765,14 @@ twice and `0x1e (A, 0)`: 5,353 of the 5,550 message-72 runs in the oracle corpor
 A damaging move that misses its accuracy draw runs as an immune one with message 73 and `0x52 (A, 1)` in
 place of message 72 and `0x52 (A, 3)`. A player's move with no PP left (the party record's PP, less 1 per
 use, 2 against Pressure) runs only `0xc9 (A, 0, M, 10, 1)`, `0xca (A, 578, A)`, `0x52 (A, 0)`, `0x5b (A,
-M)` twice and `0x1e (A, 0)`.
+M)` twice and `0x1e (A, 0)`, before a paralysis draws its `chance(25)`.
+
+A status move aimed at the boss while its shield is up fails before it runs, with no draw: `0x05`,
+`0x07`, `0xc9 (A, 0, M, P, 1)`, `0xca (A, 567, A)`, `0x52 (A, 0)`, `0x1d (A, P, type, 0, 0, M, M)`, `0x5b
+(A, M)` twice and `0x1e (A, 0)` (120 of 120 stat-dropping and status-inflicting moves into the shield in
+the oracle corpora; a move on its user still runs). A stat-dropping move into a target whose dropped
+stats are all at -6 runs as an immune move with `0xcb (A, 60, T)` alone in place of message 72 and
+`0x52 (A, 3)`, with no draw.
 
 A weather move (Sunny Day, Rain Dance, Snowscape, Sandstorm) runs as a stat-stage status move with the
 field class (10) and, in place of the stat changes, the weather's start: `0x6a (0)`, `0x69 (0, w)`,
