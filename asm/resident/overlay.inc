@@ -3,27 +3,23 @@
 @ p_overlay_tiles, p_overlay_pal and p_overlay_oam [docs/frlg_rom.md, install-resident].
 
 @ The overlay. Both halves return at once unless p_overlay is set and callback2 is CB2_Overworld.
-.Loverlay_on:                       @ -> Z set when the overlay should not draw
+.Loverlay_on:                       @ -> Z clear when the overlay should not draw
     ldr     r0, p_overlay
     cmp     r0, #0
-    beq     .Lov_on_done
+    beq     .Lov_off
     ldr     r1, p_gmain
     ldr     r1, [r1, #4]
     ldr     r2, p_cb2_overworld
-    cmp     r1, r2
-    bne     .Lov_off                @ the overworld only: battle sprites fill OBJ VRAM
-    cmp     r0, #0                  @ Z clear: draw
+    cmp     r1, r2                  @ the overworld only: battle sprites fill OBJ VRAM
     bx      lr
 .Lov_off:
-    mov     r0, #0
-    cmp     r0, #0                  @ Z set
-.Lov_on_done:
+    cmp     r0, #1                  @ Z clear
     bx      lr
 
 .Loverlay_oam:
     push    {r4, r5, r6, r7, lr}      @ the same frame as .Loverlay_tiles: both leave by .Lov_done
     bl      .Loverlay_on
-    beq     .Lov_done
+    bne     .Lov_done
     ldr     r0, p_overlay_pal
     ldr     r1, .Lwhite
     mov     r2, #0
@@ -79,7 +75,7 @@
 .Loverlay_tiles:
     push    {r4, r5, r6, r7, lr}
     bl      .Loverlay_on
-    beq     .Lov_done
+    bne     .Lov_done
     ldr     r5, p_overlay_tiles     @ already there, as far as two words can tell: skip the upload.
     ldr     r0, [r5, #4]            @ '0' row 1 and 'F' row 5, as expanded below.
     ldr     r1, .Lsentinel0

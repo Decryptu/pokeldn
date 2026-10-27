@@ -31,7 +31,7 @@
 @
 @ State at p_state: +0 seed followed, +4 its index, +8 search seed, +12 its index, +16 target index,
 @ +20 target nature + 1 (0 none), +24 the word shown, +32 64 less the calls in the
-@ last frame (a target whose countdown is odd at two calls is dropped).
+@ last frame (at two calls, an odd countdown spends one Random call to become even).
 
     .thumb
     .align 2
@@ -89,13 +89,11 @@ shiny_hook:
     add     r2, #1
     sub     r4, #1
     bne     .Ltr_loop
-    str     r0, [r7]                @ lost it (a battle, a reseed): count from here
+    mov     r1, r0                  @ lost it (a battle, a reseed): count from here
     mov     r2, #0
-    str     r2, [r7, #4]
     str     r0, [r7, #8]
     str     r2, [r7, #12]
     str     r2, [r7, #20]
-    b       .Ltr_done
 .Ltr_found:
     str     r1, [r7]
     str     r2, [r7, #4]
@@ -121,6 +119,15 @@ shiny_hook:
     bne     .Ltg_done               @ still ahead
     lsr     r0, r0, #1              @ an odd countdown at two calls a frame never reaches 0
     bcc     .Ltg_done
+    ldr     r1, [r7]                @ so spend one call (an ambient cry spends 1 or 3 [overworld.c:1141]),
+    bl      .Ladv                   @ followed too, or the next frame counts it as the game's
+    str     r1, [r7]
+    ldr     r2, p_rng
+    str     r1, [r2]
+    ldr     r0, [r7, #4]
+    add     r0, #1
+    str     r0, [r7, #4]
+    b       .Ltg_done
 .Ltg_drop:
     mov     r0, #0
     str     r0, [r7, #20]
@@ -220,11 +227,9 @@ shiny_hook:
     mul     r3, r2
     sub     r0, r0, r3
 .Lmod_loop:
-    cmp     r0, #25
-    blo     .Lmod_done
     sub     r0, #25
-    b       .Lmod_loop
-.Lmod_done:
+    bge     .Lmod_loop
+    add     r0, #25
     bx      lr
 
 @ r1 = the next seed. Clobbers r3.
@@ -241,7 +246,13 @@ shiny_hook:
     mov     r2, #0
     ldr     r0, [r7, #20]
     cmp     r0, #0
-    beq     .Lsh_search
+    bne     .Lsh_target
+    mov     r2, #0xFF
+    ldr     r0, [r7, #12]
+    ldr     r1, [r7, #4]
+    sub     r0, r0, r1
+    b       .Lsh_count
+.Lsh_target:
     sub     r0, #1
     adr     r3, .Lpow10 + 16
     mov     r6, #2
@@ -253,12 +264,6 @@ shiny_hook:
     sub     r0, r0, r1
     bpl     .Lsh_count
     mov     r0, #0                  @ found inside the offset after a restart: dropped next frame
-    b       .Lsh_count
-.Lsh_search:
-    mov     r2, #0xFF
-    ldr     r0, [r7, #12]
-    ldr     r1, [r7, #4]
-    sub     r0, r0, r1
 .Lsh_count:
     adr     r3, .Lpow10
     mov     r6, #6

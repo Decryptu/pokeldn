@@ -56,17 +56,6 @@ def first_shiny(seed, tid, sid, method=0, limit=100000):
     raise AssertionError("no shiny in range")
 
 
-def first_even_shiny(seed, tid, sid, method, offset):
-    """The first shiny whose index is an even number of calls past `offset`: at two calls a frame
-    the countdown of any other is never 0, and the hook drops it."""
-    start = 0
-    while True:
-        index, nature = first_shiny(lcg.advance(seed, start), tid, sid, method)
-        if (start + index - offset) % 2 == 0:
-            return start + index, nature
-        start += index + 1
-
-
 class Console:
     """One installed hook and the memory it reads; frame() enters it the way IntrMain does."""
 
@@ -131,17 +120,15 @@ def _bcd(nature, count):
 ])
 def test_the_target_and_countdown_match_the_model_while_the_game_advances_two_calls_a_frame(
         seed, tid, sid, method):
-    target, nature = first_even_shiny(seed, tid, sid, method, 4)
+    target, nature = first_shiny(seed, tid, sid, method)
     console = Console(seed, tid, sid, method=method, search=64)
     frames = target // 64 + 3
-    rng = seed
     for f in range(frames):
         console.frame()
-        rng = lcg.step(lcg.step(rng))                  # VBlankIntr's call and one more, as walking
-        console.write(RNG, rng)
+        console.write(RNG, lcg.advance(console.read(RNG), 2))   # VBlankIntr's call and one more
     console.frame()
-    followed = 2 * frames
-    assert console.read(STATE + 4) == followed
+    followed = console.read(STATE + 4)
+    assert followed >= 2 * frames
     if target - followed >= 4:
         assert console.read(STATE + 20) == nature + 1
         assert console.read(STATE + 16) == target
@@ -212,15 +199,15 @@ def test_r_is_kept_off_the_help_system():
     assert console.read(0x0203F171, 1) == 1
 
 
-def _press_run(seed, tid, sid, frames, lag_at=None, held=0, **params):
-    """-> [(index followed, newKeys after callback1)] a frame, the game advancing two calls a frame."""
+def _press_run(seed, tid, sid, frames, lag_at=None, held=0, extra=None, **params):
+    """-> [(index followed, newKeys after callback1)] a frame, the game advancing two calls a frame,
+    plus extra[f] more on frame f (an ambient cry spends 1 or 3 [overworld.c:1141, 1168])."""
     console = Console(seed, tid, sid, name="shiny-press", search=64, **params)
-    out, rng = [], seed
+    out = []
     for f in range(frames):
         console.frame(lag=f == lag_at, held=held)
         out.append((console.read(STATE + 4), console.main_loop()))
-        rng = lcg.step(lcg.step(rng))
-        console.write(RNG, rng)
+        console.write(RNG, lcg.advance(console.read(RNG), 2 + (extra or {}).get(f, 0)))
     return console, out
 
 
@@ -231,6 +218,13 @@ def _reachable(seed, tid, sid):
         if target > 64 and (target - OFFSET) % 2 == 0:
             return seed, target
         seed = lcg.step(seed)
+
+
+@pytest.mark.parametrize("cry_calls", [1, 3])
+def test_an_ambient_cry_during_the_countdown_keeps_the_target(cry_calls):
+    seed, target = _reachable(0x00C0FFEE, 50425, 50923)
+    _, frames = _press_run(seed, 50425, 50923, target // 2 + 8, extra={target // 4: cry_calls})
+    assert [index for index, keys in frames if keys & 1] == [target - OFFSET]
 
 
 def test_the_press_is_one_a_at_the_waiting_script_on_the_frame_the_countdown_reaches_zero():

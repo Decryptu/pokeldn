@@ -65,7 +65,7 @@ def test_mom_installs_a_chain_and_a_frame_runs_both():
 @pytest.mark.parametrize("name,refusal", [
     ("shiny+ivs", "both draw"),
     ("follower+turbo", "runs alone"),
-    ("turbo+noclip+noencounter", "resident area holds 1024"),
+    ("turbo+noclip+ivs", "resident area holds 1024"),
     ("noclip+noclip", "twice"),
 ])
 def test_a_chain_that_cannot_run_together_is_refused(name, refusal):

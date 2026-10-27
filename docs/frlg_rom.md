@@ -2039,9 +2039,17 @@ The Switch's emulator calls `Random` twice per V-blank where mGBA calls it once:
 Cave B1F on an emulated console, French FireRed, 1200 calls in 600 V-blanks with `intrCheck` bit 0 clear on every
 one. A countdown that is odd at two calls a frame goes from 1 to -1 and is never pressed; on the retail
 console that cost the Zapdos talk press two of three countdowns. The hook keeps `64 - calls` of the
-last frame at state `+32` and drops a held target whose countdown is odd while that is 62, so every
-countdown it shows reaches 0. With that hook and `offset=3`, the emulated console gave a shiny Mewtwo
-(`0xA893924D`) at the first countdown at its cry.
+last frame at state `+32`. While that is 62 and a held target's countdown is odd, the hook spends one
+`Random` call itself (`gRngValue` and the seed followed both step once), so every countdown it shows
+reaches 0. With that hook and `offset=3`, the emulated console gave a shiny Mewtwo (`0xA893924D`) at
+the first countdown at its cry.
+
+A map with wild Pokemon plays an ambient cry every 1200 to 3600 frames; the cry spends 2 calls unless
+the cry is a water Pokemon and the player is off water, and the next frame spends 1 for the next
+delay [overworld.c:1131-1172]. Standing before Articuno in Seafoam Islands on French FireRed in mGBA,
+3599 frames held one frame of 2 calls and the rest 1. The odd extra call makes the countdown odd at two
+calls a frame; the spent call puts it back, and mGBA then pressed a shiny Articuno (`0xFF0AFD1B`,
+offset 2) across a cry during the countdown.
 
 In mGBA the recap after CONTINUE leaves the player object
 facing south (`gObjectEvents[0]` `+0x18` = `0x11`, `0x02036E34` on French and English FireRed), and a
