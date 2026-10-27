@@ -440,14 +440,6 @@ class GamesView:
                 fields = groups[item]
                 sprite = self.species_sprite(fields)
                 rows = [t.field_grid([t.labeled_control(f.label, self.input(f, grouped=True)) for f in fields], 200)]
-                if item == tr('catalog.console_29a408', 'Console') and self.tool.key == "frlg-gift":
-                    rows.append(ft.Column([
-                        t.text(tr('games.game_language_233497', 'Game language'), 12, t.MUTED),
-                        t.text(tr('games.detected_automatically_ff4f09', 'Detected automatically'), 13, t.TEXT),
-                        t.text(tr('games.english_french_german_italian_spanish_japanese_54bc86', 'English · French · German · Italian · Spanish · Japanese'), 12, t.MUTED),
-                        t.text(tr('games.after_you_choose_pokeldn_in_the_friend_list_your_game_r_1fb839', 'After you choose pokeldn in the Friend list, your game reports its language.'),
-                               12, t.MUTED),
-                    ], spacing=4))
                 out.append(t.card(item, ft.Column(rows, spacing=10),
                                   " ".join(f.help for f in fields if f.help), trailing=sprite))
         if not self.tool.fields:

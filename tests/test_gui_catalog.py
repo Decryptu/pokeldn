@@ -64,6 +64,18 @@ def test_bdsp_reports_the_apps_trainer_language_in_both_roles(key):
     assert parser_of(tool.script).parse_args(args).language == 5
 
 
+@pytest.mark.parametrize("key", ["frlg-gift", "frlg-trade-host", "frlg-trade-join",
+                                 "rse-gift", "rse-trade-host", "rse-trade-join"])
+@pytest.mark.parametrize("language, expected", [(1, "japanese"), (3, "french"), (8, "english")])
+def test_frlg_reports_the_apps_trainer_language(key, language, expected):
+    """A Japanese cartridge lists a Mystery Gift host only under the Japanese activity numbers,
+    chosen from this language when every build is served (docs/frlg_rom_map.md, Japanese layout)."""
+    tool = next(t for game in GAMES for t in game.tools if t.key == key)
+    args = build(tool, {f.key: {"file": "/tmp/offer.pk3"} for f in tool.fields if f.kind == "pokemon"},
+                 {}, Settings(language=language))
+    assert parser_of(tool.script).parse_args(args).language == expected
+
+
 @pytest.mark.parametrize("key", ["pla-host", "pla-join", "pla-gift-host"])
 def test_pla_sends_the_apps_trainer_gender_in_its_data_exchange_record(key):
     """The record's gender and look show the console that player (docs/pla.md)."""

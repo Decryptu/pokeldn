@@ -69,7 +69,7 @@ def _log_advertised_activity(app):
              f"On the Switch choose Mystery Gift -> {menu} -> Friend.")
     if not japanese:
         app.info("A Japanese cartridge lists this host only with --console-build BPRJ or BPGJ, "
-                 "or --language japanese.")
+                 "or --language japanese (in the app: Language, Japanese).")
 
 
 class MysteryGiftHostApplication(HostApplication):

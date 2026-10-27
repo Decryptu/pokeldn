@@ -174,6 +174,10 @@ def encounter_error(value) -> str:
     return ""
 
 
+# Settings' PKHeX language id -> a Gen 3 launcher's --language; Korean and Chinese have no Gen 3 build.
+GBA_LANGUAGES = {1: "japanese", 2: "english", 3: "french", 4: "italian", 5: "german", 7: "spanish"}
+
+
 def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = None) -> list[str]:
     """The entry point's argument list: tested flags, the tool's fields, then the All tab's."""
     stamp = stamp or time.strftime("%Y%m%d-%H%M%S")
@@ -183,6 +187,7 @@ def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = N
               "{src_var}": f"0x{random.getrandbits(32):08x}",
               "{ot}": settings.name(game), "{tid}": str(tid), "{sid}": str(sid),
               "{language}": str(settings.language), "{gender}": str(settings.gender),
+              "{gba_language}": GBA_LANGUAGES.get(settings.language, "english"),
               "{keys}": os.path.expanduser(settings.keys)}
     # A banked Pokemon keeps its PID and encryption constant: they are who it is [docs/gui.md, The bank].
     banked = any(entry.get("bank") for field in tool.fields if field.kind == "pokemon"
@@ -199,7 +204,7 @@ def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = N
             items = _args(field, False if locked(field, tool, values) else value_of(field, values), tool)
             if field.kind == "builder":     # a backup's file is named after the run
                 items = [item.replace("{stamp}", stamp) for item in items]
-            args += items
+            args += [tokens.get(item, item) for item in items]
     known = accepted(tool.script)
     if "--keys" in known and "--keys" not in args:
         args += ["--keys", os.path.expanduser(settings.keys)]

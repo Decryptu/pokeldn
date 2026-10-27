@@ -133,7 +133,10 @@ leader's first Cancel; `bin/frlg_trade_join.py` then cancels at the menu.
 FireRed nor LeafGreen. `ConvertInternationalString` special-cases Japanese names; a French FireRed
 accepts an English Wonder Card. The Union Room search skips Japanese candidates [union_room.c:3726];
 Mystery Gift's `Task_ListenForCompatiblePartners` does not. A Japanese cartridge uses other Wonder
-Card and News activity numbers ([Japanese layout](frlg_rom_map.md#japanese-layout)). In the Mystery
+Card and News activity numbers ([Japanese layout](frlg_rom_map.md#japanese-layout)) and leaves a host
+advertising the international ones out of its Friend list. A host serving every cartridge advertises
+the Japanese numbers only under `--language japanese`; the app passes the Mystery Gift tool's Language,
+by default the trainer language in Settings. In the Mystery
 Gift Friend list the console sends its ROM game code in GameData, and the host picks that
 cartridge's addresses before delivery.
 

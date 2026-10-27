@@ -166,6 +166,9 @@ def check_variant(tool: Tool, siblings: tuple[Tool, ...] = ()) -> None:
 VERSIONS = (("firered", tr('catalog.firered_7d9d1b', 'FireRed')), ("leafgreen", tr('catalog.leafgreen_578f94', 'LeafGreen')))
 LANGUAGES = (("english", tr('catalog.english_ba118b', 'English')), ("french", tr('catalog.french_745819', 'French')), ("german", tr('catalog.german_a659b6', 'German')),
              ("italian", tr('catalog.italian_fe1d9c', 'Italian')), ("spanish", tr('catalog.spanish_341105', 'Spanish')), ("japanese", tr('catalog.japanese_be4ee9', 'Japanese')))
+# The trainer language in Settings, filled in by command.build.
+SETTINGS_LANGUAGE = ("{gba_language}", tr('catalog.same_as_settings', 'Same as Settings'))
+GBA_LANGUAGES = (SETTINGS_LANGUAGE,) + LANGUAGES
 CHANNELS = (("1", "1"), ("6", "6"), ("11", "11"))
 
 
@@ -265,7 +268,7 @@ FRLG = Game("frlg", tr('catalog.firered_leafgreen_2b757f', 'FireRed & LeafGreen'
          (queued(count="--trades"), TRADE_BACK,
           Field("--version", tr('catalog.version_dd1679', 'Version'), "choice", default="firered", choices=VERSIONS, group=tr('catalog.console_29a408', 'Console'),
                 help=tr('catalog.the_game_pokeldn_s_own_trainer_reports_on_the_link_and__ced820', "The game pokeldn's own trainer reports on the link, and the one the Pokemon is built for.")),
-          Field("--language", tr('catalog.trainer_language_bca3f4', 'Trainer language'), "choice", default="english", choices=LANGUAGES, hidden=True,
+          Field("--language", tr('catalog.trainer_language_bca3f4', 'Trainer language'), "choice", default=SETTINGS_LANGUAGE[0], choices=GBA_LANGUAGES, hidden=True,
                 help=tr('catalog.the_language_pokeldn_s_own_trainer_reports_on_the_link_5ac75b', "The language pokeldn's own trainer reports on the link.")),
           Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="11", choices=CHANNELS, help=CHANNEL_HELP, hidden=True)),
          fixed=("--live", "--phy", "auto", "--slot", "0", "--ot", "{ot}", "--id", "{tid}:{sid}",
@@ -278,7 +281,9 @@ FRLG = Game("frlg", tr('catalog.firered_leafgreen_2b757f', 'FireRed & LeafGreen'
           tr('catalog.become_leader_6fc7ff', '{value0}, Become Leader.', value0=FRLG_PATH),
           tr('catalog.accept_pokeldn_when_it_appears_then_choose_and_confirm_785998', 'Accept POKELDN when it appears, then choose and confirm.'),
           tr('catalog.with_several_queued_trade_again_after_each_save_the_joi_54215e', 'With several queued, trade again after each save; the joiner offers the next one.')),
-         (queued(count="--trades"), TRADE_BACK),
+         (queued(count="--trades"), TRADE_BACK,
+          Field("--language", tr('catalog.trainer_language_bca3f4', 'Trainer language'), "choice", default=SETTINGS_LANGUAGE[0], choices=GBA_LANGUAGES, hidden=True,
+                help=tr('catalog.the_language_pokeldn_s_own_trainer_reports_on_the_link_5ac75b', "The language pokeldn's own trainer reports on the link."))),
          fixed=("--live", "--phy", "auto", "--slot", "0", "--ot", "{ot}", "--id", "{tid}:{sid}",
                 "--out", "{received}/frlg-{stamp}.pk3"),
          doc="frlg_link.md",
@@ -294,8 +299,9 @@ FRLG = Game("frlg", tr('catalog.firered_leafgreen_2b757f', 'FireRed & LeafGreen'
                 choices=VERSIONS, group=tr('catalog.console_29a408', 'Console'),
                 help=tr('catalog.the_console_s_cartridge_another_one_is_refused_before_a_7a71c8', "The console's cartridge: another one is refused before anything is sent.")),
           Field("--gift-file", tr('catalog.gift_1a596a', 'Gift'), "builder"),
-          Field("--language", tr('catalog.trainer_language_bca3f4', 'Trainer language'), "choice", default="english", choices=LANGUAGES, hidden=True,
-                help=tr('catalog.the_language_pokeldn_s_own_trainer_reports_on_the_link_5ac75b', "The language pokeldn's own trainer reports on the link.")),
+          Field("--language", tr('catalog.cartridge_language', 'Language'), "choice", default=SETTINGS_LANGUAGE[0], choices=GBA_LANGUAGES,
+                group=tr('catalog.console_29a408', 'Console'),
+                help=tr('catalog.cartridge_language_help', "The cartridge's language: a Japanese cartridge lists POKELDN only when Japanese is chosen. The game's own addresses are read from the cartridge once it joins.")),
           Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="11", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
           Field("--save-to-board", tr('catalog.keep_it_on_the_board_a36969', 'Keep it on the board'), "switch",
                 help=tr('catalog.start_saves_the_gift_on_the_board_and_stops_unplugged_a_1d7482', 'Start saves the gift on the board and stops. Unplugged and powered from any USB charger, the board then hosts it for every FireRed and LeafGreen that joins, with no computer. It stops when the app opens it again.'))),
