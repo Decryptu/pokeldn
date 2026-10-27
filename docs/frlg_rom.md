@@ -863,12 +863,10 @@ two seconds after the script, so the message is generic; the graceful Pia leave
 (`Session type 3`) is not:
 
 - with the fold one past the cartridge buffer (component, `r0 = 0x08FFFFF6`), the console left LDN
-  with no `Session type 3` (tags `pl01`, `pl04`) - the abrupt abort the emulator's dispatch shows,
-  now on hardware;
-- with the fold in range (`r0 = 0x08FFFFF0`, tag `pl03`, write at buffer `+0xFFFFFA`) and with the
-  EWRAM end-overrun that lands on VRAM (`r0 = 0x0203FFF6`, tag `pl02`), the console sent
-  `Session type 3` and left gracefully; ordinary card sessions (`scratchpad/re1_host.log`,
-  `rt02`..`rt04`) do the same.
+  with no `Session type 3`, the abrupt abort the emulator's dispatch shows, now on hardware;
+- with the fold in range (`r0 = 0x08FFFFF0`, write at buffer `+0xFFFFFA`) and with the
+  EWRAM end-overrun that lands on VRAM (`r0 = 0x0203FFF6`), the console sent
+  `Session type 3` and left gracefully; ordinary card sessions do the same.
 
 So the record-resolver store reaches a live wrapper object on retail when the fold crosses the ROM
 buffer's end, and the app aborts there; the same store kept in guest-visible memory does not. A
@@ -2469,6 +2467,15 @@ Measured on the emulated console: a buffer script composes a sector from the liv
 writes it, the game's next save commits the image, and the next load adopts the band with
 `gDamagedSaveSectors` clean. The delivered pattern (distinct from the loader's pre-test pattern, which
 appears nowhere) reads back in EWRAM, 500 consecutive words at each of two sites.
+
+### The save container
+
+The Switch release's save data holds one file, `save:/FireRed_f.sav` (English `FireRed_e.sav`, and
+the same pattern for the other languages), a raw 128 KiB GBA flash image. The wrapper creates no
+script, config or state file in that storage; the save directory in Ryujinx contains only the image.
+The save path and the `.sav` suffix appear in the wrapper's `main`, which carries no Lua or script
+interpreter. A save import or export therefore carries the guest's flash image and nothing the
+wrapper reads as code or configuration.
 
 # Reading the save
 

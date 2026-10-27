@@ -96,6 +96,11 @@ The next Wonder Card rebinds the slot and the card comes back; a buffer script l
 alone. A card rewrites SaveBlock1 +0x32E0 (card) and +0x361C (RAM script), one sector, nothing in
 SaveBlock2.
 
+The save itself can carry the same pair: `pokeldn/frlg/save/save_inject.py` writes a valid card and
+a RamScript into a raw save (`inject_gift`, `build_ram_script_struct`), so a save imported over a
+Wonder Card runs the script at its NPC with no live host. The script's `callnative` opcode reaches
+guest ARM, and the `resident-save` gift uses it to bind MOM's loader.
+
 `ramScript.checksum` is `CalcCRC16WithTable` over 1000 bytes, the 999 declared and one zeroed
 padding byte [script.c:500] (`CalculateRamScriptChecksum` `0x0806D43C` BPRE, `0x0806D5A0` BPRF). A
 slot whose CRC covers 999 bytes is wiped the first time its object is talked to [script.c:526].
