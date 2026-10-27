@@ -196,9 +196,10 @@ def rewrite(payload, *, trainer_name=None, trainer_id=None, secret_id=None, old_
         out[at:at + TAIL_NAME_LENGTH] = encoded[:TAIL_NAME_LENGTH]
         ms_lang = MY_STATUS_OFFSET + MY_STATUS_LANGUAGE
         language = trainer_language.for_name(trainer_name, out[ms_lang])
-        out[ms_lang] = out[TRAINER_CARD_OFFSET + TRAINER_CARD_LANGUAGE] = language
-        at = TAIL_OFFSET + TAIL_APPEARANCE                       # bits 2-5, the language
-        out[at] = out[at] & ~0x3C | (language & 0xF) << 2
+        if language != out[ms_lang]:
+            out[ms_lang] = out[TRAINER_CARD_OFFSET + TRAINER_CARD_LANGUAGE] = language
+            at = TAIL_OFFSET + TAIL_APPEARANCE                   # bits 2-5, the language
+            out[at] = out[at] & ~0x3C | (language & 0xF) << 2
 
     for value, at, length, what in ((device_id, TAIL_DEVICE_ID, DEVICE_ID_LENGTH, "device id"),
                                     (account_uid, TAIL_ACCOUNT_UID, ACCOUNT_UID_LENGTH, "account uid"),

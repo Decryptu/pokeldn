@@ -4,6 +4,7 @@ import math
 import random
 
 import pytest
+import types
 
 import sv_join
 from pokeldn import gen9
@@ -467,6 +468,7 @@ def test_a_built_in_run_s_cards_top_its_tool_s_options_only_while_it_runs(monkey
     logged = []
     games = GamesView.__new__(GamesView)
     session = SessionPanel.__new__(SessionPanel)
+    session.board_screen = types.SimpleNamespace(take=lambda line: False)
     games.__dict__.update(app=app, session=session, tool=tool, run_panel=ft.Column(visible=False))
     session.__dict__.update(app=app, games=games, log=SimpleNamespace(add=logged.append), run_cards={},
                             partner_state=None, traded=0, running_tool=tool)

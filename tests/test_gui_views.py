@@ -3,6 +3,7 @@ import sys
 from types import SimpleNamespace
 
 import pytest
+import types
 
 pytest.importorskip("flet")
 
@@ -521,6 +522,7 @@ def test_start_on_another_tool_stops_the_running_session_then_starts(tmp_path, m
     monkeypatch.setattr(SessionPanel, "_tick", lambda self: None)
     first, second = (next(t for t in TOOLS if t.key == key) for key in ("swsh-join", "pla-host"))
     panel = SessionPanel.__new__(SessionPanel)
+    panel.board_screen = types.SimpleNamespace(take=lambda line: False)
     panel.__dict__.update(app=FakeApp(), games=SimpleNamespace(values={}, extra={}, visible=False, show_run_cards=lambda: None, panes=SimpleNamespace(show=lambda *a, **k: None), game=SimpleNamespace(
         name="game", key="swsh")), log=SimpleNamespace(add=lambda line: None, clear=lambda: None),
         received=SimpleNamespace(), transfer=SimpleNamespace(), partner=SimpleNamespace(), run=None,
@@ -588,6 +590,7 @@ def test_a_runs_progress_lines_draw_a_bar_with_rate_and_time_left_and_stay_out_o
     monkeypatch.setattr(games.time, "monotonic", lambda: next(clock))
     logged = []
     panel = SessionPanel.__new__(SessionPanel)
+    panel.board_screen = types.SimpleNamespace(take=lambda line: False)
     panel.__dict__.update(app=SimpleNamespace(ui=lambda fn: fn()), log=SimpleNamespace(add=logged.append),
                           transfer=ft.Container(visible=False), rates={}, partner_state=None, traded=0)
     panel.transfer.update = lambda: None
@@ -615,6 +618,7 @@ def test_a_runs_panel_lines_are_kept_for_its_plugin_and_drawn_on_its_page(monkey
     (tmp_path / "Updates" / "Game 1.0.2.nsp").write_bytes(b"nsp")
     changed, logged = [], []
     session = SessionPanel.__new__(SessionPanel)
+    session.board_screen = types.SimpleNamespace(take=lambda line: False)
     session.__dict__.update(app=SimpleNamespace(ui=lambda fn: fn()), log=SimpleNamespace(add=logged.append),
                             running_tool=SimpleNamespace(key="updates-tool"),
                             games=SimpleNamespace(plugin_changed=changed.append))

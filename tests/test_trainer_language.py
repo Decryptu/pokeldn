@@ -15,7 +15,7 @@ from test_swsh_trade_payload import a_payload_with_the_profile
 
 
 def _sv(name):
-    record = sv_reference.named_record(open(sv_reference.RECORDS + "/001.bin", "rb").read(), name)
+    record = sv_reference.named_record(Path(sv_reference.RECORDS, "001.bin").read_bytes(), name)
     return sv_reference.identity_trainer(streams.decompress(record))["language"]
 
 

@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import types
 
 from pokeldn import pokemon
 from pokeldn.app import bank, command
@@ -137,6 +138,7 @@ def test_a_completed_trade_takes_the_pokemon_out_of_the_bank_and_its_queue(vault
     values = settings.tool_values.setdefault(tool.key, {"values": {}, "extra": {}})["values"]
     values["--offer-file"] = banked_queue(settings, entry.id)
     panel = games.SessionPanel.__new__(games.SessionPanel)
+    panel.board_screen = types.SimpleNamespace(take=lambda line: False)
     panel.__dict__.update(
         app=SimpleNamespace(settings=settings, ui=lambda fn: fn()), tool=tool, traded=0, stopping=False,
         restart=False, games=SimpleNamespace(values=values, visible=False, show_run_cards=lambda: None),
