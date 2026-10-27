@@ -338,6 +338,14 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
               "Sectors 0..27 are the two save bands and need --write-unsafe; 28..31 are outside "
               "both"))
     parser.add_argument(
+        "--rom-fold-n", type=lambda v: int(v, 0), default=None, metavar="N",
+        help=("with --buffer-script rom-reset-probe: the 4 KB block in the ROM copy to write, "
+              "0..0xFFF; the address is 0x08000000 + N * 0x1000. The payload writes a pattern there "
+              "and soft-resets; needs --write-unsafe"))
+    parser.add_argument(
+        "--rom-fill-base", type=lambda v: int(v, 0), default=0x454D4552, metavar="WORD",
+        help="with --buffer-script rom-reset-probe: word[0] of the pattern (default 'EMER')")
+    parser.add_argument(
         "--flash-fill-base", type=lambda v: int(v, 0), default=0x46570000, metavar="WORD",
         help="with --buffer-script flash-write: word[0] of the pattern the console composes")
     parser.add_argument(
@@ -771,6 +779,7 @@ def build_run_config(parser, args):
                 flash_footer=args.flash_footer, flash_id=args.flash_id,
                 flash_counter=args.flash_counter, flash_derive=args.flash_derive,
                 flash_counter_bias=args.flash_counter_bias,
+                rom_fold_n=args.rom_fold_n, rom_fill_base=args.rom_fill_base,
                 flash_position=args.flash_position,
                 flash_read_offset=args.flash_read_offset,
                 flash_patch_offset=args.flash_patch_offset,

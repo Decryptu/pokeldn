@@ -84,6 +84,13 @@ FLASH_READ = "flash-read"
 SLOOP_SVC = "sloop-svc"
 INSTALL_RESIDENT = "install-resident"
 INSTALL_KEPT = "install-kept"
+ROM_RESET_PROBE = "rom-reset-probe"
+
+# The ROM copy fold: swi 0x48 with r0 = 0xFA000 + n writes 4 KB into the ROM copy at
+# 0x08000000 + n * 0x1000 [docs/frlg_rom.md, The flash sector path]. n is 0..0xFFF (16 MB).
+ROM_FOLD_SECTOR_BASE = 0xFA000
+ROM_COPY_BASE = 0x08000000
+ROM_COPY_SECTORS = 0x1000
 
 # Save flash: 32 sectors of 0x1000 [decomp:include/save.h]. Only swi 0x48 and swi 0x56 write it
 # [docs/frlg_rom.md, the dispatcher and its jump table].
@@ -1664,6 +1671,12 @@ SCRIPT_REGISTRY = {
         "after checking its sum; answers with the V-blank handler it found, 0xBAD0BAD0 when nothing "
         "was installed",
         None),
+    ROM_RESET_PROBE: BufferScriptSpec(
+        ROM_RESET_PROBE,
+        "write a 4 KB pattern into the ROM copy at 0x08000000 + n * 0x1000 through the swi 0x48 fold, "
+        "then GBA-soft-reset, to settle whether a ROM-copy write survives a soft reset. A second "
+        "Mystery Gift session dumps the address (--rom-fold-n, --rom-fill-base; needs --write-unsafe)",
+        None),
 }
 
 
@@ -1913,6 +1926,35 @@ def build_flash_write(sector, *, source=FLASH_WRITE_SCRATCH, fill_base=0x4657000
         code[offset:offset + 4] = (int(value) & 0xFFFFFFFF).to_bytes(4, "little")
     # The thunk is THUMB `swi N ; bx lr`; N is the first byte.
     code[FLASH_WRITE_THUNK_OFFSET] = int(number) & 0xFF
+    return bytes(code)
+
+
+# asm/rom-reset-probe.s's image, offsets from _start.
+ROM_RESET_SECTOR_OFFSET = 0x04
+ROM_RESET_SOURCE_OFFSET = 0x08
+ROM_RESET_FILL_BASE_OFFSET = 0x0C
+ROM_RESET_WORDS_OFFSET = 0x10
+
+
+def build_rom_reset_probe(n, *, fill_base=0x454D4552, words=FLASH_WRITE_WORDS,
+                          source=FLASH_WRITE_SCRATCH):
+    """The rom-reset-probe payload: fill one sector of pattern at `source`, write it to ROM copy fold
+    sector `0xFA000 + n` with swi 0x48, then GBA-soft-reset to 0x08000000. Settles whether a write to
+    the ROM copy survives a soft reset [docs/rse_switch_build.md, Delivery without Atmosphere]. `n` is
+    the 4 KB block in the copy, 0..0xFFF; the written address is 0x08000000 + n * 0x1000."""
+    n = int(n)
+    if not 0 <= n < ROM_COPY_SECTORS:
+        raise BufferScriptError(
+            f"a ROM copy block is 0..{ROM_COPY_SECTORS - 1} (16 MB in 4 KB), got {n}")
+    words = int(words)
+    if not 1 <= words <= FLASH_WRITE_WORDS:
+        raise BufferScriptError(f"the source is one sector, 1..{FLASH_WRITE_WORDS} words, got {words}")
+    code = bytearray(payload(ROM_RESET_PROBE))
+    for offset, value in ((ROM_RESET_SECTOR_OFFSET, ROM_FOLD_SECTOR_BASE + n),
+                          (ROM_RESET_SOURCE_OFFSET, source),
+                          (ROM_RESET_FILL_BASE_OFFSET, fill_base),
+                          (ROM_RESET_WORDS_OFFSET, words)):
+        code[offset:offset + 4] = (int(value) & 0xFFFFFFFF).to_bytes(4, "little")
     return bytes(code)
 
 

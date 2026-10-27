@@ -2645,3 +2645,25 @@ def test_a_scattered_dump_refuses_more_blocks_than_the_table_holds():
     with pytest.raises(buffer_script.BufferScriptError, match="table holds"):
         buffer_script.build_memory_dump_scatter(too_many, 1024)
     assert buffer_script.DUMP_SCATTER_TABLE_SLOTS == mg_script.MAX_DUMP_BLOCKS
+
+
+def test_rom_reset_probe_targets_the_fold_and_guards_its_range():
+    """rom-reset-probe writes ROM copy block n at 0xFA000 + n and refuses a block past 16 MB."""
+    import struct
+    from pokeldn.frlg.rom import buffer_script as b
+    code = b.build_rom_reset_probe(0x3FF)
+    assert struct.unpack_from("<I", code, b.ROM_RESET_SECTOR_OFFSET)[0] == b.ROM_FOLD_SECTOR_BASE + 0x3FF
+    assert struct.unpack_from("<I", code, b.ROM_RESET_SOURCE_OFFSET)[0] == b.FLASH_WRITE_SCRATCH
+    with pytest.raises(b.BufferScriptError):
+        b.build_rom_reset_probe(b.ROM_COPY_SECTORS)
+
+
+def test_rom_reset_probe_config_needs_its_block_and_write_unsafe():
+    from pokeldn.frlg.config import BufferScriptPayload
+    BufferScriptPayload(script="rom-reset-probe", rom_fold_n=0x3FF, write_unsafe=True).build_code()
+    with pytest.raises(ValueError):
+        BufferScriptPayload(script="rom-reset-probe", rom_fold_n=0x3FF)       # no --write-unsafe
+    with pytest.raises(ValueError):
+        BufferScriptPayload(script="rom-reset-probe", write_unsafe=True)      # no --rom-fold-n
+    with pytest.raises(ValueError):
+        BufferScriptPayload(script="flash-read", flash_sector=5, rom_fold_n=1)

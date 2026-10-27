@@ -370,6 +370,9 @@ class BufferScriptPayload:
     flash_counter: int = 0
     flash_derive: bool = False
     flash_counter_bias: int = 0
+    # rom-reset-probe: the 4 KB block in the ROM copy to write and the pattern's first word.
+    rom_fold_n: int | None = None
+    rom_fill_base: int = 0x454D4552
     flash_position: int | None = None
     flash_patch_offset: int = 0
     flash_patch_data: bytes | None = None
@@ -501,6 +504,16 @@ class BufferScriptPayload:
             raise ValueError(
                 f"a flash sector is only meaningful with {buffer_script.FLASH_WRITE} and "
                 f"{buffer_script.FLASH_READ}")
+        if self.script == buffer_script.ROM_RESET_PROBE:
+            if self.rom_fold_n is None:
+                raise ValueError(
+                    f"{buffer_script.ROM_RESET_PROBE} needs the ROM copy block to write (--rom-fold-n)")
+            if not self.write_unsafe:
+                raise ValueError(
+                    f"{buffer_script.ROM_RESET_PROBE} overwrites the running game's ROM and soft-resets "
+                    "the console. Pass --write-unsafe to mean it.")
+        elif self.rom_fold_n is not None:
+            raise ValueError(f"--rom-fold-n is only meaningful with {buffer_script.ROM_RESET_PROBE}")
         if self.script == buffer_script.MEMORY_SCAN:
             if self.scan_word is None:
                 raise ValueError(
@@ -688,6 +701,9 @@ class BufferScriptPayload:
             return buffer_script.build_flash_patch(
                 self.flash_id, self.flash_patch_offset, self.flash_patch_data,
                 counter_bias=self.flash_counter_bias, unsafe=self.write_unsafe, build=build)
+        if self.script == buffer_script.ROM_RESET_PROBE:
+            return buffer_script.build_rom_reset_probe(
+                self.rom_fold_n, fill_base=self.rom_fill_base)
         if self.script == buffer_script.FLASH_WRITE:
             return buffer_script.build_flash_write(
                 self.flash_sector, fill_base=self.flash_fill_base,

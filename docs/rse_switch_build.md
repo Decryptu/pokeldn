@@ -114,12 +114,40 @@ and redoes the checksums ([The save](rse.md#the-save)):
 x 5, y 4). `--copy-party-mon N` appends a copy of party slot N with a new PID, so a one-Pokemon save
 can trade. The Pokedex flag shows the POKeDEX menu with no seen or caught entries.
 
+## Delivery without Atmosphere
+
+A console running Atmosphere takes the ROM as a LayeredFS file ([Running it](#running-it)). A stock
+console reads only the title's signed RomFS, so the ROM has to be written into the running ROM copy
+from inside the game, each launch, through the same Mystery Gift native-code path the save transfer
+uses ([Save backup and restore](frlg_gift.md#save-backup-and-restore)).
+
+Three mechanisms are already measured and carry the design:
+
+- `swi 0x48` with `r0 = 0xFA000 + n` (n in 0..0xFFF) writes 4 KB from a guest source into the ROM copy
+  at `0x08000000 + n * 0x1000`, covering all 16 MB ([The flash sector path](frlg_rom.md#the-flash-sector-path)).
+- Code written that way runs: a routine copied to `0x083FF000` executed when branched to
+  [frlg_rom.md](frlg_rom.md#the-flash-sector-path).
+- The save transfer streams compressed data across many Mystery Gift messages into a resident EWRAM
+  block, inflates `0x800` bytes at a time and writes each sector, at about 1 KB of tokens per message
+  ([Save backup and restore](frlg_gift.md#save-backup-and-restore)).
+
+The ROM transfer is that pipeline with the write target changed from a flash sector (0..13) to a ROM
+fold (`0xFA000 + n`) and a boot at the end instead of a save. Emerald is 14,929,764 bytes before its
+`0xFF` tail, 5.75 MB under LZMA; at the save transfer's rate the stream is hours, redone every launch
+because the ROM copy is reloaded from RomFS at each application launch.
+
+The boot writes the GBA SoftReset flag and runs `swi 0x00`: the BIOS jumps to the ROM reset vector at
+`0x08000000` with RAM cleared, so Emerald's own `AgbMain` initialises from the bytes just written. A
+BIOS SoftReset is in-core and is not an application launch, so whether it keeps the written ROM copy
+or triggers a RomFS reload is the one unmeasured link in the chain. It is settled before the stream is
+built: a payload writes a recognisable 4 KB pattern to one ROM fold, runs `swi 0x00`, and a second
+Mystery Gift session dumps that address. The pattern surviving means ROM writes outlive a soft reset
+and the delivery works; FireRed's original bytes mean the copy is reloaded and the boot needs another
+route.
+
 ## Unresolved
 
+- Whether a GBA `swi 0x00` soft reset keeps writes to the ROM copy or reloads it from RomFS.
 - Whether the application emulates the GPIO real-time clock Emerald reads.
 - Whether a retail console runs the build: the Ryujinx measurements are the only ones.
-- Delivery to a console without Atmosphere. A stock console reads only the title's signed RomFS. Native
-  code from Mystery Gift can write 4 KB blocks into the running ROM copy through `swi 0x48`
-  ([The flash sector path](frlg_rom.md#the-flash-sector-path)); the copy is reloaded at every launch,
-  and the ROM is 14,929,764 bytes before its `0xFF` tail (5.75 MB under LZMA).
 - A build for the Japanese cartridges.
