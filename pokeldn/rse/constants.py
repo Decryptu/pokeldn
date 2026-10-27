@@ -18,10 +18,12 @@ FLAG_BATTLED_DEOXYS = 0x1AD
 FLAG_CAUGHT_MEW = 0x1CA
 FLAG_MYSTERY_GIFT_DONE = 0x1E4
 SYSTEM_FLAGS = 0x860
+FLAG_SYS_POKEDEX_GET = SYSTEM_FLAGS + 0x1             # opens every Pokemon Center 2F attendant [cable_club.inc:803]
 FLAG_SYS_NATIONAL_DEX = SYSTEM_FLAGS + 0x36
 FLAG_ENABLE_SHIP_SOUTHERN_ISLAND = SYSTEM_FLAGS + 0x53
 FLAG_ENABLE_SHIP_BIRTH_ISLAND = SYSTEM_FLAGS + 0x75
 FLAG_ENABLE_SHIP_FARAWAY_ISLAND = SYSTEM_FLAGS + 0x76
+FLAG_SYS_MYSTERY_GIFT_ENABLE = SYSTEM_FLAGS + 0x7B   # the title menu's MYSTERY GIFT [questionnaire.inc:37]
 FLAG_ENABLE_SHIP_NAVEL_ROCK = SYSTEM_FLAGS + 0x80
 MAX_FLAG = 0x095F                          # FLAG_UNUSED_0x95F, the last daily flag
 
@@ -58,7 +60,10 @@ EMERALD_RULES = GameRules(
 # checksum are FireRed's; the blocks are larger and fields move.
 SAVEBLOCK1_SIZE = 0x3D88
 SAVEBLOCK2_SIZE = 0xF2C
+SAVEBLOCK2_SPECIAL_SAVE_WARP_FLAGS = 0x09
+CONTINUE_GAME_WARP = 1 << 0                # CONTINUE warps to continueGameWarp [overworld.c:1739]
 SAVEBLOCK2_ENCRYPTION_KEY = 0xAC
+SAVEBLOCK1_CONTINUE_GAME_WARP = 0x0C       # struct WarpData: s8 group, s8 num, s8 warpId, pad, s16 x, s16 y
 SAVEBLOCK1_PARTY_COUNT = 0x234
 SAVEBLOCK1_PARTY = 0x238
 SAVEBLOCK1_MONEY = 0x490
@@ -67,6 +72,9 @@ SAVEBLOCK1_VARS = 0x139C
 SAVEBLOCK1_GAME_STATS = 0x159C
 SAVEBLOCK1_MYSTERY_GIFT = 0x322C
 SAVEBLOCK1_RAM_SCRIPT = 0x3728             # checksum; magic at +4, the 995-byte body at +8
+# Bytes each sector id checksums: SaveBlock2, SaveBlock1 in four, PokemonStorage in nine [save.c]
+CHUNK_SIZES = (SAVEBLOCK2_SIZE, 3968, 3968, 3968, SAVEBLOCK1_SIZE - 3 * 3968, *(3968,) * 8, 2000)
+MAP_OLDALE_TOWN_POKEMON_CENTER_2F = (2, 3)  # data/maps/map_groups.json
 
 
 # The Hoenn Pokedex as National Dex numbers, in its order [include/constants/pokedex.h, enum HOENN_DEX

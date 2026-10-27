@@ -317,12 +317,13 @@ def rse_tool(tool: Tool) -> Tool:
                    for f in tool.fields)
     if tool.key == "frlg-gift":
         tool = replace(tool, summary=tr('catalog.rse_gift_summary', 'Send an Emerald Wonder Card through Mystery Gift.'), steps=(
-            tr('catalog.rse_gift_menu', 'Title screen: Mystery Gift, Wonder Cards, Friend. Emerald lists Mystery Gift once the player has written LINK TOGETHER WITH ALL on the questionnaire.'),
+            tr('catalog.rse_gift_menu', 'Title screen: Mystery Gift, Wonder Cards, Friend. Emerald lists Mystery Gift once the player has the Pokedex and has written LINK TOGETHER WITH ALL on the Poke Mart questionnaire.'),
             tr('catalog.start_the_host_then_pick_pokeldn_when_it_appears_abee9d', 'Start the host, then pick POKELDN when it appears.'),
             tr('catalog.answer_yes_if_the_console_asks_to_replace_its_card_95ef96', 'Answer Yes if the console asks to replace its card.'),
             tr('catalog.rse_gift_delivery', 'After the card is saved, talk to the delivery man on 2F of any Pokemon Center.'),
             tr('catalog.back_out_of_the_search_screen_between_two_runs_f0a1d7', 'Back out of the search screen between two runs.')))
-    return replace(tool, key=tool.key.replace("frlg-", "rse-"), fields=fields, doc="rse.md",
+    doc = "rse_gift.md" if tool.key == "frlg-gift" else "rse_link.md"
+    return replace(tool, key=tool.key.replace("frlg-", "rse-"), fields=fields, doc=doc,
                    fixed=tuple(a.replace("/frlg-", "/rse-") for a in tool.fixed))
 
 

@@ -1929,3 +1929,17 @@ def test_a_window_resized_through_every_layout_places_each_pane_once_with_the_co
         if previous in ("full", "narrow") and layout in ("split", "single"):
             assert panes.index == 1
     assert panes._choose(1440 - 96) == "full" and panes._choose(1000) == "split" and panes._choose(600) == "single"
+
+
+def test_the_cartridge_replacement_page_never_shows_in_the_app(monkeypatch):
+    """Building Emerald in place of a FireRed cartridge is command-line only, even in preview."""
+    from gui.views import docs
+    monkeypatch.setenv("POKELDN_PREVIEW", "1")
+    files = []
+    stack = list(docs.pages())
+    while stack:
+        page = stack.pop()
+        files.append(page.file)
+        stack.extend(page.children)
+    assert "rse.md" in files and "rse_link.md" in files
+    assert "rse_switch_build.md" not in files

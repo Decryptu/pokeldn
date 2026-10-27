@@ -1,6 +1,7 @@
 ---
 title: Ruby, Sapphire and Emerald
 nav_order: 11
+has_children: true
 nav_exclude: true
 search_exclude: true
 ---
@@ -9,9 +10,18 @@ search_exclude: true
 
 Ruby, Sapphire and Emerald have no Switch release; pokeldn carries support prepared from
 [pret/pokeemerald](https://github.com/pret/pokeemerald) and [pret/pokeruby](https://github.com/pret/pokeruby)
-for a release in the same GBA application as FireRed and LeafGreen. Nothing here is measured on a
-console, and every address is the GBA English build's. The app shows the title only from a source
-checkout ([Unreleased titles](gui.md#unreleased-titles)).
+for a release in the same GBA application as FireRed and LeafGreen. Every address is the GBA English
+build's. The app shows the title only from a source checkout ([Unreleased titles](gui.md#unreleased-titles)).
+
+An Emerald built for that application runs in place of a FireRed cartridge and links with pokeldn's
+hosts ([The Switch build](rse_switch_build.md)). That build is the instrument for these pages until a
+release exists.
+
+| page | subject |
+|---|---|
+| [Trade and the Union Room](rse_link.md) | joining a host, the link trade, the Union Room |
+| [Mystery Gift](rse_gift.md) | the protocol differences, the gifts, the menu gate |
+| [The Switch build](rse_switch_build.md) | Emerald for the FireRed application: the port, building, running, test saves |
 
 The GBA application already holds a play-report table for all five Gen III game codes, `AXV?`,
 `AXP?` and `BPE?` among them ([Code on the console](frlg_rom.md)), and all twelve FireRed and
@@ -43,79 +53,22 @@ bytes FireRed and Emerald read as progress flags, so both zero those flags for a
 
 The language letter is `E`, `F`, `D`, `I`, `S` or `J` [include/constants/global.h:8-12].
 
-## Joining a host
-
-The advertisement record and `RfuGameData` are FireRed's [include/link_rfu.h:80-113]. Emerald lists a
-host whose version is not 3 as "not ready" unless the player is Champion and the host advertises
-`canLinkNationally` [union_room.c:1266-1283; trade.c:2514-2521]. `--version emerald` (or `ruby`,
-`sapphire`) advertises that version and sets `canLinkNationally`, `hasNationalDex` and `gameClear`
-from the profile (bits 16, 17 and 24 of the word at `[16:20]`; `RfuGameData` bits 7, 8, 9). FireRed
-and LeafGreen keep those bits clear.
-
-## Trade
-
-The wire is FireRed's (trainer card Wonder Card id at `0x60`), with two differences:
-
-- Without the National Dex, Emerald refuses an egg or a non-Hoenn species and sends
-  `READY_CANCEL_TRADE` after an A press [trade.c:1585-1589]; `LinkPlayer.progressFlags & 0xF` reports
-  the dex. `pokeldn.rse.constants` holds the 202-entry Hoenn dex and the host logs refused offers.
-- GBA Emerald runs five post-trade standby rounds; Switch FireRed runs six, the last followed by
-  `svc_FinishSave`. `--save-rounds N` sets the count (default 6).
-
-With version 3 Emerald draws the host's trainer card with frontier symbols at `0x3A` and Battle
-Points at `0x3C`. Its receive queue holds 32 slots (FireRed 20), and it accepts serial `0x0000`
-beside `0x0002` and `0x7F7D`.
-
-## Mystery Gift
-
-The transport, scripts, 332-byte `WonderCard`, 444-byte `WonderNews` and `MysteryGiftSave` (`0x36C`)
-are FireRed's. GameData `+0x0C` and `+0x10` carry 4 and `0x200` for a card, 5 and `0x201` for news,
-where FireRed sends 1 and its version code [mystery_gift.c:346-363]; Emerald's check wants bit 2 and
-`0x380` for a card [mystery_gift.c:390]. The host applies the rule of the game the console's game
-code names. Emerald's field opcodes differ only at `0xC7..0xCC`, `0xD0`, `0xD3..0xD5` and run to
-`0xE3`.
-
-| | FireRed / LeafGreen | Emerald |
-|---|---|---|
-| card flagId 1000 (`sReceivedGiftFlags[0]`) | `0x2A7` | `0x13A` |
-| `FLAG_MYSTERY_GIFT_DONE` | `0x3D8` | `0x1E4` |
-| the gift cursor vars | `0x40B6..0x40BC` | `0x40DE..0x40E4` |
-| last item | 374 | 376 (`ITEM_OLD_SEA_MAP`) |
-| `StartLegendaryBattle` / `GetMysteryGiftCardStat` | 312 / 390 | 314 / 392 |
-| `special` index check | bounded by `gSpecialsEnd` [scrcmd.c:101] | none: 527 specials [scrcmd.c:119] |
-| RamScript in SaveBlock1 | `0x361C` | `0x3728` |
-
-`gift_composer` takes a `GameRules` table; `pokeldn.rse.constants.EMERALD_RULES` compiles under
-Emerald's numbers. The host refuses a console of another game before sending. Emerald's Wonder News
-has no reward.
-
-### Gifts
-
-`pokeldn.rse.gifts` rebuilds pokeemerald's four official gift scripts op for op with pokeldn's text
-(`tests/test_rse.py` compares the bytecode). The Mystery Gift man on Pokemon Center 2F runs the saved
-script.
-
-| preset | card flagId | what it does |
-|---|---|---|
-| Aurora Ticket | 1000 | the ticket and `FLAG_ENABLE_SHIP_BIRTH_ISLAND` |
-| Mystic Ticket | 1001 | the ticket and `FLAG_ENABLE_SHIP_NAVEL_ROCK` |
-| Old Sea Map | 1002 | the map and `FLAG_ENABLE_SHIP_FARAWAY_ISLAND` |
-| Altering Cave rumor | 1003 | the next of the cave's nine wild tables |
-| Eon Ticket | 1007 | the game's own handout [cable_club.inc:33]: the ticket and `FLAG_ENABLE_SHIP_SOUTHERN_ISLAND` |
-| Master Ball, Rare Candy x5, Surfing Pichu egg | 1004..1006 | composed under `EMERALD_RULES` |
-
-    POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/frlg_mg_host.py --live --version emerald \
-        --gift-file old-sea-map.pokegift --keys "$HOME/Documents/Switch/23.0.0 keys/prod.keys"
-
-An Emerald gift file has one variant, `emerald` ([Mystery Gift files](gifts.md)). Native code, save
-backup and the FireRed presets are refused for Emerald.
-
 ## The save
 
 The flash layout, signature `0x08012025` and checksum are FireRed's [save.c]. SaveBlock1 is `0x3D88`
-bytes, SaveBlock2 `0xF2C`. Party count `0x234`, party `0x238`, money `0x490` (XORed with SaveBlock2
+bytes, SaveBlock2 `0xF2C`; the sectors checksum `0xF2C`, `0xF80` three times, `0xF08`, `0xF80` eight
+times and `0x7D0` bytes by id. Party count `0x234`, party `0x238`, money `0x490` (XORed with SaveBlock2
 `+0xAC`), flags `0x1270`, vars `0x139C`, game stats `0x159C`, Mystery Gift `0x322C`. SaveBlock2 has no
 `filler_B20`.
+
+| field | offset | |
+|---|---|---|
+| SaveBlock1 `continueGameWarp` | `0x0C` | `WarpData`: s8 group, s8 map, s8 warp id, pad, s16 x, s16 y |
+| SaveBlock2 `specialSaveWarpFlags` | `0x09` | bit 0 `CONTINUE_GAME_WARP`: CONTINUE warps to `continueGameWarp` [overworld.c:1739] |
+
+CONTINUE without `CONTINUE_GAME_WARP` restores SaveBlock1's map view and object events with `pos` and
+`location`; a save edit that moves only `pos` and `location` loads the old map with the player
+invisible.
 
 ## Emerald link features pokeldn lacks
 
@@ -127,8 +80,4 @@ Jump and Dodrio Berry Picking (link groups 12 to 21, activities 14 and 23 to 29)
 - Whether a Switch release exists, and its title ids, game codes and software version.
 - Whether it keeps the FireRed application's communication id, scene id and advertisement packing.
 - How a Switch release carries Ruby and Sapphire's cable link.
-- The post-trade standby count of a Switch Emerald.
 - Every ROM and RAM address of a Switch Emerald.
-- The Japanese Emerald Mystery Gift activities and card sizes.
-- Whether the Switch keeps Emerald's Mystery Gift menu gate (`FLAG_SYS_MYSTERY_GIFT_ENABLE`, set by
-  "LINK TOGETHER WITH ALL" [easy_chat.c:693]).

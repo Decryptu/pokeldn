@@ -110,7 +110,7 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
     parser.add_argument(
         "--save-rounds", type=int, default=None, metavar="N",
         help=("post-trade standby rounds before the parties are exchanged again; default 6, "
-              "the Switch FireRed count. GBA Emerald runs 5 (docs/rse.md, After the trade)"))
+              "the Switch FireRed count, and 5 with --version emerald (docs/rse_link.md, Trade)"))
     online.add_arguments(parser)
     trade_back.add_arguments(parser)
     host_cli.add_host_config_arguments(
@@ -163,10 +163,17 @@ def build_run_config(parser, args):
             trades=trades, anim_delay=args.anim_delay,
             player_ids_repeat_frames=args.player_ids_repeat_frames,
             link_player_idle_frames=args.link_player_idle_frames,
-            save_rounds=args.save_rounds, trust_pia=args.trust_pia)
+            save_rounds=_save_rounds(args), trust_pia=args.trust_pia)
         return configmod.TradeRunConfig(profile, plan, ldn, options)
     except ValueError as exc:
         parser.error(str(exc))
+
+
+def _save_rounds(args):
+    # Emerald's trade.c runs five post-trade standbys, also in the Switch build [docs/rse_link.md, Trade].
+    if args.save_rounds is None and args.version == "emerald":
+        return 5
+    return args.save_rounds
 
 
 def main(argv=None):
