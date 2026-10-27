@@ -469,7 +469,7 @@ Besides four station slots in Net 0x11, a host must send:
 | the opening | join response, the first station list, channel table, both stream opens, clock answer, Net 0x50 and all 44 records right after the seat (a retail host: within 0.3 s); the key-0x80 open before the console's trade screen draws ([Opening the channel](#opening-the-channel)) |
 
 The forty game advertise bytes change per session: zero, or a nonzero value at +0x21 (`648cf4`,
-`8170f0` and `fb149700` seen). With `--channel 6`, `--player-name RyuPlayer` and `--host-player-id
+`8170f0` and `fb149700` seen). With `--channel 6`, `--player-name` set to the emulated host's player name and `--host-player-id
 00000000000000010000000000000000` the NetworkInfo matches an emulated Scarlet host's apart from the
 session id. A session that fails above the seat draws repeated joins (16 to 57 measured).
 

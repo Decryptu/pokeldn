@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Put a ROM in place of a FireRed/LeafGreen title's cartridge as a LayeredFS mod over its RomFS file,
-in Ryujinx or on an Atmosphere SD card [docs/rse_switch_build.md, Running it]. The title's own files
+in an emulator or on an Atmosphere SD card [docs/rse_switch_build.md, Running it]. The title's own files
 and saves are untouched; removing the mod restores the game.
 
     ./.venv/bin/python tools/rse/rom_mod.py install ROM --title 0100554023408000
@@ -9,7 +9,7 @@ and saves are untouched; removing the mod restores the game.
     ./.venv/bin/python tools/rse/rom_mod.py status [--sd ...]
 
 The ROM must be built for the title's cartridge (emerald_switch_build.py --cart): BPRE for English
-FireRed. --data names a Ryujinx data folder other than the default.
+FireRed. --data names an emulator data folder other than the default.
 """
 import argparse
 import os
@@ -27,7 +27,7 @@ DEFAULT_DATA = {"darwin": "~/Library/Application Support/Ryujinx",
 
 
 def mod_dir(args, title):
-    """Ryujinx: mods/contents/<title>/<mod>/romfs. Atmosphere: atmosphere/contents/<TITLE>/romfs."""
+    """Emulator: mods/contents/<title>/<mod>/romfs. Atmosphere: atmosphere/contents/<TITLE>/romfs."""
     if args.sd:
         return os.path.join(os.path.expanduser(args.sd), "atmosphere", "contents", title.upper())
     return os.path.join(os.path.expanduser(args.data), "mods", "contents", title.lower(), MOD)
@@ -38,8 +38,8 @@ def main():
     ap.add_argument("action", choices=("install", "remove", "status"))
     ap.add_argument("rom", nargs="?")
     ap.add_argument("--title", default="0100554023408000", choices=sorted(TITLES))
-    ap.add_argument("--data", default=DEFAULT_DATA, help="Ryujinx data folder")
-    ap.add_argument("--sd", help="root of an Atmosphere SD card, instead of Ryujinx")
+    ap.add_argument("--data", default=DEFAULT_DATA, help="emulator data folder")
+    ap.add_argument("--sd", help="root of an Atmosphere SD card, instead of the emulator")
     args = ap.parse_args()
 
     if args.action == "status":

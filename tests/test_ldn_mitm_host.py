@@ -103,14 +103,14 @@ def test_the_host_answers_a_scan_and_seats_a_join(host):
     tcp.connect((HOST_IP, DISCOVERY_PORT))
     tcp.sendall(ldn_mitm.build(
         ldn_mitm.CONNECT,
-        ldn_mitm.build_node_info(PEER_IP, bytes.fromhex("aabbccddeeff"), b"Ryujinx")))
+        ldn_mitm.build_node_info(PEER_IP, bytes.fromhex("aabbccddeeff"), b"PEER")))
     kind, synced = ldn_mitm.parse(tcp.recv(65535))
     assert kind == ldn_mitm.SYNC_NETWORK
     assert synced[ldn_mitm_host.OFF_NODE_COUNT] == 2
     assert ldn_mitm_host.read_node(synced, 1) == (
-        PEER_IP, bytes.fromhex("aabbccddeeff"), 1, 1, b"Ryujinx")
+        PEER_IP, bytes.fromhex("aabbccddeeff"), 1, 1, b"PEER")
     assert _wait(lambda: host.join_events == 1)
-    assert host.participants == [(1, PEER_IP, bytes.fromhex("aabbccddeeff"), b"Ryujinx")]
+    assert host.participants == [(1, PEER_IP, bytes.fromhex("aabbccddeeff"), b"PEER")]
     tcp.close()
     udp.close()
 
@@ -162,7 +162,7 @@ def test_a_station_that_leaves_frees_its_node_and_the_next_scan_says_so(host):
     tcp.connect((HOST_IP, DISCOVERY_PORT))          # connects from 127.0.0.1
     tcp.sendall(ldn_mitm.build(
         ldn_mitm.CONNECT,
-        ldn_mitm.build_node_info(PEER_IP, bytes.fromhex("02007f000002"), b"RyuPlayer")))
+        ldn_mitm.build_node_info(PEER_IP, bytes.fromhex("02007f000002"), b"PEER")))
     kind, synced = ldn_mitm.parse(tcp.recv(65535))   # advertises 127.0.0.2
     assert kind == ldn_mitm.SYNC_NETWORK
     assert synced[ldn_mitm_host.OFF_NODE_COUNT] == 2

@@ -1,4 +1,4 @@
-"""The game's reliable channel against a Ryujinx reference pair's 0x7c bytes (`docs/pla.md`, The
+"""The game's reliable channel against an emulator reference pair's 0x7c bytes (`docs/pla.md`, The
 game's reliable channel)."""
 
 from pokeldn.ldn import reliable5

@@ -9,7 +9,7 @@ The searching console alternates a few seconds hosting with scanning; this scans
 
     (them) X -> Poke Portal -> Link Trade, offline, no code -> search
 
-Against Ryujinx in ldn_mitm mode over the LAN, no radio:
+Against an emulator in ldn_mitm mode over the LAN, no radio:
 
     ./.venv/bin/python bin/sv_join.py --ip-join --host-ip 172.16.86.1 --our-ip 172.16.86.128 \
         --session-join --capture scratchpad/svNN_join.jsonl
@@ -749,7 +749,7 @@ def host_argv(args, channel, seconds):
 
 
 def main_ip(args):
-    """The same session against a Ryujinx host over ldn_mitm (docs/ldn.md)."""
+    """The same session against an emulator host over ldn_mitm (docs/ldn.md)."""
     want = {int(args.comm_id, 16)} if args.comm_id else {sv.COMM_ID_SCARLET, sv.COMM_ID_VIOLET}
     our_mac = b"\x02\x00" + socket.inet_aton(args.our_ip)
     print(f"[sv] ip-join: host {args.host_ip}, us {args.our_ip}, "
@@ -1233,7 +1233,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             host_var = header.src_var
             print(f"[sv] the host's variable id is {host_var:#06x}")
             # A host that drew our fallback id drops a join sourced from its own id (seen on
-            # Ryujinx).
+            # an emulator).
             if not ours["assigned"] and ours["var"] == host_var:
                 while ours["var"] in (0, host_var):
                     ours["var"] = int.from_bytes(os.urandom(2), "big")

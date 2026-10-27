@@ -1,4 +1,4 @@
-"""The 0x81 data exchange against a Ryujinx reference pair's bytes (`docs/pla.md`, The data exchange)."""
+"""The 0x81 data exchange against an emulator reference pair's bytes (`docs/pla.md`, The data exchange)."""
 
 import pytest
 

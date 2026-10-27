@@ -1,5 +1,5 @@
 {
-"source": "two emulated Shield 1.3.2 instances, guest side of a won Max Raid (trainers Ryujinx, Guest); host_start: the host's BattleStart, BossPokemon, Rewards and BattleSeed",
+"source": "two emulated Shield 1.3.2 instances, guest side of a won Max Raid (two trainers); host_start: the host's BattleStart, BossPokemon, Rewards and BattleSeed",
 "lobby": [
 "d0070000122a0a2800000000000000001200000047007500650073007400000000000000000000000000000000000003",
 "d00700001a120a1000000000000000000000000000000000",
