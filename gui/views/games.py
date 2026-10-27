@@ -26,6 +26,7 @@ from gui.views.raid_seed import RaidSeedPicker
 from gui.views.lair_seed import LairSeedPicker
 from gui.views.rewards import RewardPicker
 from gui.views.gifts import GiftBuilder
+from gui.views.board_screen import BoardScreen
 from gui.views.library import LibraryCard
 from gui.views.panels import StatusCards, card_control
 from gui.views.sprites import MINI, Sprite
@@ -747,6 +748,7 @@ class SessionPanel:
         self.running_tool: Tool | None = None
         self.restart = False               # Start on another tool: stop this run, then start that one
         self.received = ft.Container(visible=False)
+        self.board_screen = BoardScreen(app)
         self.run = None                    # (process, stamp, game) of the last run started
         self.seen: dict[str, tuple] = {}   # a received file -> (size, mtime, what PKHeX read, or None)
         self.steps = ft.Container()
@@ -766,7 +768,7 @@ class SessionPanel:
         self.control = t.panel(ft.Column([
             t.panel_header(tr('games.session_6959b4', 'Session'), self.status),
             # The checklist and the steps scroll; Start stays in view below them.
-            ft.Container(t.fade(ft.Column([self.board_line, self.partner, self.offering, self.transfer, self.received,
+            ft.Container(t.fade(ft.Column([self.board_screen.control, self.board_line, self.partner, self.offering, self.transfer, self.received,
                                                      self.steps],
                                           spacing=24,
                                           scroll=ft.ScrollMode.AUTO)),
@@ -779,6 +781,7 @@ class SessionPanel:
             ft.Container(self.log.control, padding=ft.Padding(12, 0, 12, 12), expand=2),
         ], spacing=0, expand=True), width=t.SESSION_WIDTH)
         self.set_status(tr('games.ready_5fa7aa', 'Ready'), t.MUTED)
+        self.board_screen.show(app.settings.board_screen)
         app.board_listeners.append(lambda: self.refresh() if games.visible else None)
 
     def set_status(self, label: str, color: str) -> None:
@@ -866,6 +869,7 @@ class SessionPanel:
 
     def refresh(self, update: bool = True) -> None:
         tool, s = self.tool, self.app.settings
+        self.board_screen.show(s.board_screen)
         running = bool(self.app.process and self.app.process.running)
         session = running and self.run is not None and self.run[0] is self.app.process
         here = session and self.running_tool is tool
@@ -1136,6 +1140,8 @@ class SessionPanel:
         self.refresh()
 
     def _line(self, line: str) -> None:
+        if self.board_screen.take(line):
+            return
         if moved := progress.read(line):
             self.app.ui(lambda: self.show_progress(*moved))
             return

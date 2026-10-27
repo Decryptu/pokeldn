@@ -290,4 +290,6 @@ def base_env(settings, port: str, trace: str | None = None) -> dict:
     env["POKELDN_RADIO"] = f"{settings.radio}:" if settings.radio else f"esp32:{port or 'auto'}"
     if trace:
         env["POKELDN_ESP32_TRACE"] = trace
+    if settings.board_screen:
+        env["POKELDN_SCREEN_MIRROR"] = "1"
     return env

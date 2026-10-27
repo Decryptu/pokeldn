@@ -29,6 +29,7 @@ class Settings:
     capture: bool = True
     private_logs: bool = True   # mask names, trainer IDs, MACs and the home folder in the logs shown (redact.py)
     board_trace: bool = False
+    board_screen: bool = False   # draw the board's screen in the Session panel (pokeldn.app.screen_render)
     sprites: bool = True    # download Pokemon sprites from PokeAPI; the cache is read either way
     check_updates: bool = True   # ask GitHub for a newer release at launch
     # "empty" or "made": what the bank and the builder put in a HOME tracker HOME never issued (docs/gui.md,

@@ -359,6 +359,21 @@ Macros are `.pokemacro` files in `Documents/pokeldn/Macros`
 discoveries, so the packaged app runs the service from `Contents/Helpers/pokeldn-bluetooth`, a
 bare-signed copy with `_internal` linked to `../Frameworks`.
 
+## The board's screen
+
+Settings, Show the board's screen, draws the board's 128x64 pixel screen at the top of the Session
+panel, whether or not a screen is wired to the board ([The screen](hardware_esp32.md#the-screen)).
+The app sets `POKELDN_SCREEN_MIRROR=1` for a run; the run then prints each DISPLAY command it sends
+and, once a second, the board's mode, seated stations, data frames and BOOT presses from STATUS:
+
+    [screen] reset
+    [screen] cmd HEX
+    [screen] radio MODE STATIONS RX TX PRESSES
+
+`pokeldn.app.screen_render` replays them through a Python copy of the firmware's `scene.c` and
+`screen.c`; `tests/test_screen_render.py` holds every frame to the compiled C. The panel draws at the
+firmware's 50 ms frame, dims with the board and turns off after its ten idle minutes.
+
 ## Pokemon sprites
 
 Images come from [PokeAPI](https://github.com/PokeAPI/sprites) on demand, cached in `sprites/`.

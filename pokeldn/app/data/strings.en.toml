@@ -1699,6 +1699,8 @@
 "settings.adds_the_board_s_counters_and_every_serial_message_to_t_615de0" = "Adds the board's counters and every serial message to the session record. Only for radio problems someone asked you to report."
 "settings.app_language_b8352b" = "App language"
 "settings.asks_github_for_a_newer_pokeldn_when_the_app_starts_and_b07880" = "Asks GitHub for a newer pokeldn when the app starts, and each installed plugin's own address for a newer version of it. Nothing about you or your games is sent."
+"settings.board_screen" = "Show the board's screen"
+"settings.board_screen_detail" = "Draws what the board's pixel screen shows at the top of the Session panel: the link's traffic, each trade's Pokemon, the Mystery Gift card and a raid's lobby. No screen needs to be plugged into the board."
 "settings.bug_reports_aa0e58" = "Bug reports"
 "settings.can_be_freed_files_57c49a" = "{value0} can be freed · {value1} files"
 "settings.cancel_19766e" = "Cancel"

@@ -149,6 +149,8 @@ class SettingsView:
                    tr('settings.prod_keys_dumped_from_your_own_console_needed_to_talk_t_26673c', 'prod.keys dumped from your own console. Needed to talk to the games; it never leaves this computer.')),
             t.card(tr('settings.your_trainer_d70afb', 'Your trainer'), trainer,
                    tr('settings.your_trainer_detail', 'The original trainer of every Pokemon the app builds for you. Put your own name, gender and IDs to make them yours, so a traded Pokemon keeps its friendship: FireRed and LeafGreen show a five-digit ID, the Switch games a six-digit one. The IDs were drawn at random on first launch; Find mine takes the ones of the last game you traded with.')),
+            switch("board_screen", tr('settings.board_screen', "Show the board's screen"),
+                   tr('settings.board_screen_detail', "Draws what the board's pixel screen shows at the top of the Session panel: the link's traffic, each trade's Pokemon, the Mystery Gift card and a raid's lobby. No screen needs to be plugged into the board.")),
             t.card(tr('settings.received_pokemon_1d657d', 'Received Pokemon'), ft.Row([ft.Container(received.control, expand=True),
                                                t.icon_button("external-link",
                                                              lambda e: open_folder(os.path.expanduser(s.received)),

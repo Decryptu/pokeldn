@@ -10,6 +10,8 @@ import os
 import random
 import struct
 import sys
+import threading
+import time
 
 import trio
 
@@ -459,6 +461,49 @@ def default_port_factory():
 
 _radio: esp32.Radio | None = None
 station_mac: wlan.MACAddress | None = None
+# The app draws the board's screen itself (pokeldn.app.screen_render): each DISPLAY command and the
+# radio's state go to stdout as `[screen]` lines (docs/gui.md, The board's screen).
+MIRROR_PREFIX = "[screen] "
+
+
+def mirroring() -> bool:
+    return os.environ.get("POKELDN_SCREEN_MIRROR") == "1"
+
+
+def _mirror(radio: esp32.Radio) -> None:
+    """Prints `[screen] radio MODE STATIONS RX TX PRESSES` from STATUS once a second, the counters
+    radio.c's display_state reads; mode is radio.c's enum mode, which scene.h's matches."""
+    seen = {"stations": 0, "presses": 0}
+
+    def on_message(msg_type, payload):
+        if msg_type == esp32.MSG_STA_JOINED:
+            seen["stations"] += 1
+        elif msg_type == esp32.MSG_STA_LEFT:
+            seen["stations"] = max(0, seen["stations"] - 1)
+        elif msg_type == esp32.MSG_BUTTON:
+            seen["presses"] += 1
+        elif msg_type == esp32.MSG_STATUS:
+            fields = dict(f.split("=", 1) for f in payload.decode(errors="replace").split() if "=" in f)
+            try:
+                mode, rx = int(fields["mode"]), int(fields["rx_eth"])
+                tx = int(fields["tx_acked"]) + int(fields["tx_unacked"])
+            except (KeyError, ValueError):
+                return
+            if mode != 3:
+                seen["stations"] = 0
+            print(f"{MIRROR_PREFIX}radio {mode} {seen['stations']} {rx} {tx} {seen['presses']}", flush=True)
+
+    def poll():
+        while not radio._closed:
+            time.sleep(1)
+            try:
+                radio.send(esp32.CMD_STATUS)
+            except Exception:
+                return
+
+    print(f"{MIRROR_PREFIX}reset", flush=True)     # a HELLO resets the board's scene (radio.c CMD_HELLO)
+    radio.subscribe(on_message)
+    threading.Thread(target=poll, name="esp32-mirror", daemon=True).start()
 
 
 def set_station_mac(mac) -> None:
@@ -489,6 +534,9 @@ def use(port: str | None = None, *, radio: esp32.Radio | None = None, port_facto
         radio = _radio
     else:
         _radio = radio
+    if mirroring() and not getattr(radio, "_mirrored", False):
+        radio._mirrored = True        # an in-process run keeps the board across runs
+        _mirror(radio)
 
     @contextlib.asynccontextmanager
     async def factory():
@@ -541,6 +589,8 @@ def led(pattern: str, peak: int = 255, period_ms: int = 0, duration_ms: int = 0)
 def display(payload: bytes) -> bool:
     """Queues a DISPLAY command (esp32.display_*_payload) and never waits; a board without a screen
     answers ESP_ERR_NOT_FOUND. False when the process has no board."""
+    if mirroring():
+        print(f"{MIRROR_PREFIX}cmd {payload.hex()}", flush=True)
     if _radio is None:
         return False
     _radio.send(esp32.CMD_DISPLAY, payload)
