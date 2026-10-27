@@ -7,6 +7,7 @@ import os
 import struct
 import zlib
 
+from pokeldn import trainer_language
 from pokeldn.ldn.channel_table import TUPLE, decode_uint
 
 DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -52,12 +53,17 @@ def name_offset(identity, prefix=0):
 
 
 def named(identity, name, prefix=0):
-    """-> `identity` with its player called `name`, at most twelve characters."""
+    """-> `identity` with its player called `name`, at most twelve characters, and the language that
+    name is drawn in: the value's third integer, one byte before the name's `bc 1a`."""
     raw = name.encode("utf-16-le")
     if not name or len(raw) > NAME_SIZE - 2:
         raise ValueError(f"a Z-A player name is 1 to {(NAME_SIZE - 2) // 2} characters, not {name!r}")
-    at = name_offset(identity, prefix)
-    return identity[:at] + raw.ljust(NAME_SIZE, b"\0") + identity[at + NAME_SIZE:]
+    (_, _, language), at = _value(identity, prefix)
+    if identity[at - 3] != language:
+        raise ValueError("the language is not one byte before the name")
+    language = trainer_language.for_name(name, language)
+    return identity[:at - 3] + bytes([language]) + identity[at - 2:at] + raw.ljust(NAME_SIZE, b"\0") \
+        + identity[at + NAME_SIZE:]
 
 
 def sync_message(identity, prefix=0):

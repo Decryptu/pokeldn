@@ -24,7 +24,9 @@ def open_specs():
 
 
 def named_record(payload, name):
-    """-> record 1 as sent (zlib) with its player called `name`, at most twelve characters."""
+    """-> record 1 as sent (zlib) with its player called `name`, at most twelve characters, and the
+    language that name is drawn in."""
+    from pokeldn import trainer_language
     from pokeldn.sv import streams
 
     raw = name.encode("utf-16-le")
@@ -33,7 +35,9 @@ def named_record(payload, name):
     record = streams.decompress(payload)
     if record[:1] != b"\x01" or len(record) < NAME_OFFSET + NAME_SIZE:
         raise ValueError("record 1 is not the first chunk of a block")
-    return streams.compress(record[:NAME_OFFSET] + raw.ljust(NAME_SIZE, b"\0")
+    language = trainer_language.for_name(name, record[TRAINER_LANGUAGE])
+    return streams.compress(record[:TRAINER_LANGUAGE] + bytes([language])
+                            + record[TRAINER_LANGUAGE + 1:NAME_OFFSET] + raw.ljust(NAME_SIZE, b"\0")
                             + record[NAME_OFFSET + NAME_SIZE:])
 
 

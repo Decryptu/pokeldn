@@ -134,11 +134,15 @@ def first_trainer(body):
 
 
 def set_trainer_name(body, name):
-    """-> a first message's `body` naming its trainer `name`, at most twelve characters."""
+    """-> a first message's `body` naming its trainer `name`, at most twelve characters, and the
+    language that name is drawn in."""
+    from pokeldn import trainer_language
     raw = name.encode("utf-16-le")
     if not name or len(raw) > NAME_SIZE - 2:
         raise ValueError(f"a trainer name is 1 to {(NAME_SIZE - 2) // 2} characters, not {name!r}")
-    return body[:TRAINER_NAME] + raw.ljust(NAME_SIZE, b"\0") + body[TRAINER_NAME + NAME_SIZE:]
+    body = bytearray(body)
+    body[TRAINER_LANGUAGE] = trainer_language.for_name(name, body[TRAINER_LANGUAGE])
+    return bytes(body[:TRAINER_NAME] + raw.ljust(NAME_SIZE, b"\0") + body[TRAINER_NAME + NAME_SIZE:])
 
 
 def fresh(raw, rand=None):

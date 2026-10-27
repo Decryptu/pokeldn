@@ -7,6 +7,7 @@ structs are `pokeldn.bdsp.netdata`, generated from opendpr (docs/bdsp_protocol.m
 import struct
 
 from pokeldn.bdsp.netdata import FIELDS, NAMES, OPAQUE
+from pokeldn import trainer_language
 
 HEADER_SIZE = 3
 
@@ -303,7 +304,9 @@ def build_trade_poke(pb8):
 
 def build_trade_traner(name, trainer_id, secret_id, casset_version=0x31, lang_id=3,
                        slack=CONSOLE_SLACK):
-    """The marshalled 32-byte record; the defaults are a French console's own."""
+    """The marshalled 32-byte record; the defaults are a French console's own, the language one that
+    draws the name."""
+    lang_id = trainer_language.for_name(name, lang_id)
     encoded = name.encode("utf-16-le")
     if len(encoded) + 2 > TRADE_TRANER_NAME_SIZE:
         raise ValueError(f"{name!r} is too long for the {TRADE_TRANER_NAME_SIZE}-byte name field")

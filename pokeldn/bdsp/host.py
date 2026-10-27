@@ -21,6 +21,7 @@ from pokeldn.ldn.pia5 import (PiaHeader5, build_message, ciphertext, decrypt_pay
 from pokeldn.ldn import show_done
 from pokeldn import receiver_gift
 from pokeldn.app import screen
+from pokeldn import trainer_language
 
 SCENE_UNION_ROOM = 0x1100
 SCENE_UNION_ROOM_PASSWORD = 0x1400    # the room entered "avec un mot de passe"
@@ -84,7 +85,9 @@ def host_location(ip, constant_id, variable_id, service_variable_id):
 
 
 def player_info(name, language=3):
-    """One PlayerInfo as a retail host fills it: the name in UTF-8, no account, the language."""
+    """One PlayerInfo as a retail host fills it: the name in UTF-8, no account, the language (one that
+    draws the name)."""
+    language = trainer_language.for_name(name, language)
     out = (bytes([1]) + name.encode("utf-8")[:80].ljust(80, b"\0")
            + bytes([0]) + bytes(40) + bytes([language & 0xFF]) + bytes(64) + bytes(8))
     assert len(out) == PLAYER_INFO_SIZE

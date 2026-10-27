@@ -7,6 +7,7 @@ import zlib
 
 from pokeldn import gen8
 from pokeldn.swsh import pokemon
+from pokeldn import trainer_language
 
 PAYLOAD_LENGTH = 3456
 FRAGMENT_COUNT = 3
@@ -28,6 +29,7 @@ MY_STATUS_TID = 0xA0
 MY_STATUS_SID = 0xA2
 MY_STATUS_GAME = 0xA4
 MY_STATUS_GENDER = 0xA5
+MY_STATUS_LANGUAGE = 0xA7
 MY_STATUS_NAME = 0xB0
 # into TrainerCard, from `TrainerCard8.cs`
 TRAINER_CARD_NAME = 0x00
@@ -192,6 +194,11 @@ def rewrite(payload, *, trainer_name=None, trainer_id=None, secret_id=None, old_
         out[tc:tc + NAME_LENGTH] = encoded
         at = TAIL_OFFSET + TAIL_NAME_OFFSET
         out[at:at + TAIL_NAME_LENGTH] = encoded[:TAIL_NAME_LENGTH]
+        ms_lang = MY_STATUS_OFFSET + MY_STATUS_LANGUAGE
+        language = trainer_language.for_name(trainer_name, out[ms_lang])
+        out[ms_lang] = out[TRAINER_CARD_OFFSET + TRAINER_CARD_LANGUAGE] = language
+        at = TAIL_OFFSET + TAIL_APPEARANCE                       # bits 2-5, the language
+        out[at] = out[at] & ~0x3C | (language & 0xF) << 2
 
     for value, at, length, what in ((device_id, TAIL_DEVICE_ID, DEVICE_ID_LENGTH, "device id"),
                                     (account_uid, TAIL_ACCOUNT_UID, ACCOUNT_UID_LENGTH, "account uid"),

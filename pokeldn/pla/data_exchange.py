@@ -10,6 +10,7 @@ writes the player id, the name and the gender, and the look follows the gender (
 import zlib
 
 from pokeldn.ldn import reliable5
+from pokeldn import trainer_language
 
 PROTOCOL = 0x81                   # StreamBroadcastReliable
 HOST_PORT = 0                     # the sender's station index
@@ -81,6 +82,7 @@ def build_record(player_id=None, name=None, gender=None, template=REFERENCE_RECO
         if len(encoded) > NAME_SIZE:
             raise ValueError(f"{name!r} is {len(encoded)} bytes, past the {NAME_SIZE}-byte field")
         record[NAME_OFFSET:NAME_OFFSET + NAME_SIZE] = encoded.ljust(NAME_SIZE, b"\0")
+        record[LANGUAGE_OFFSET] = trainer_language.for_name(str(name), record[LANGUAGE_OFFSET])
     return bytes(record)
 
 

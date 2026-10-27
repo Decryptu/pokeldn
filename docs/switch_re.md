@@ -94,6 +94,25 @@ Traps: `arm64_xref.function_start` can cross `udf` padding into the previous fun
 
 An nnSdk call goes through a GOT slot named by a JUMP_SLOT relocation (`tools/switch/nso_imports.py`).
 
+## Trainer names
+
+Every Switch title's trainer record carries a language id beside the player name (PKHeX's LanguageID:
+1 Japanese, 2 English, 3 French, 4 Italian, 5 German, 7 Spanish, 8 Korean, 9 and 10 Chinese), and
+the game draws the name in that language's font. A retail Japanese Scarlet drew the kana name キリコ
+in narrow half-width glyphs while the record said English (2), next to the same name at full width
+from a Japanese save. `pokeldn.trainer_language.for_name` picks the id a written name needs: kana
+Japanese, hangul Korean, Chinese characters Japanese unless the record is already Chinese; a Latin
+name keeps the recorded id. Each title's identity writer applies it:
+
+| title | where the language sits |
+|---|---|
+| Scarlet / Violet | record 1 `+0x11` |
+| Legends Z-A | the 1400 identity value's third integer, one byte before the name |
+| Sword / Shield | MyStatus `+0xA7`, TrainerCard `+0x1B`, the profile's language bits |
+| Brilliant Diamond / Shining Pearl | PlayerInfo and `TradeTranerData` language bytes |
+| Let's Go | the first message's MyStatus `+0x35` |
+| Legends Arceus | the data exchange record `+0x22` |
+
 ## The tools
 
 All offline, over `pokeldn.switch`:
