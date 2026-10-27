@@ -118,4 +118,8 @@ can trade. The Pokedex flag shows the POKeDEX menu with no seen or caught entrie
 
 - Whether the application emulates the GPIO real-time clock Emerald reads.
 - Whether a retail console runs the build: the Ryujinx measurements are the only ones.
+- Delivery to a console without Atmosphere. A stock console reads only the title's signed RomFS. Native
+  code from Mystery Gift can write 4 KB blocks into the running ROM copy through `swi 0x48`
+  ([The flash sector path](frlg_rom.md#the-flash-sector-path)); the copy is reloaded at every launch,
+  and the ROM is 14,929,764 bytes before its `0xFF` tail (5.75 MB under LZMA).
 - A build for the Japanese cartridges.
