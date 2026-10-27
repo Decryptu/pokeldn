@@ -138,18 +138,37 @@ Emerald (BPRE) is 14,929,764 bytes before its `0xFF` tail, 3645 sectors of 4 KB,
 from the FireRed Switch image's sector at the same offset, so no sector can be skipped. A message
 carries 1012 token bytes (the 1 KiB link buffer less a 12-byte header):
 
-| coding | stream | messages |
-|---|---|---|
-| the save transfer's runs and literals | 11,667,649 bytes | 14,566 |
-| LZMA2, 64 KB window | 6,169,577 bytes | 6097 |
-| LZMA2, unbounded window | 5,747,728 bytes | 5680 |
-| LZMA2 with the FireRed image as its dictionary | 2,561,046 bytes | 2531 |
+| coding | stream | messages | decoder |
+|---|---|---|---|
+| the save transfer's runs and literals | 11,667,649 bytes | 14,566 | on the GBA side, tested |
+| a copy/literal format with no entropy coding, matched against the whole FireRed image and Emerald's own output, byte-aligned tokens | 8,470,154 bytes | 8370 | none written |
+| LZMA2, 64 KB window | 6,169,577 bytes | 6097 | none written |
+| LZMA2, unbounded window | 5,747,728 bytes | 5680 | none written |
+| LZMA2 with the FireRed image as its dictionary | 2,561,046 bytes | 2531 | none written |
+
+DEFLATE's 32 KiB window cannot see across the two ROMs' 15 MB of shared library and engine code, so a
+FireRed dictionary under `zlib` barely helps (6,991,630 bytes, against 6,975,681 with no dictionary at
+all): the dictionary win is specific to a window the size of the ROM. A decoder's complexity does not
+have to grow with that window: a copy token can name any 32-bit source address at no extra cost, so an
+unbounded-window matcher needs the same dispatch-and-memcpy decoder as the save transfer's existing
+one, just with a third token type. Measured against a hash-chain matcher (6 candidates, 5-byte key)
+over the FireRed image and Emerald's own output, that format still trails LZMA2 by about 3.3 MB: most
+of LZMA2's win past window size is its range coder packing short matches and literals into fractions of
+a byte, which a byte-aligned format cannot do. Reaching the LZMA2 numbers needs a real entropy coder on
+the GBA side, not just a bigger window. `tools/rse/emerald_switch_build.py` already carries a working
+agbcc / arm-none-eabi toolchain for this exact target, so that decoder is better adapted from an
+existing small LZMA or LZMA2 reference decoder in C and cross-compiled with it than hand-assembled from
+nothing; none exists yet.
 
 A retail restore over the board moved about 150 token bytes a second plus about 3.5 s a sector: 19
-sectors took 107 s for 6182 token bytes and 249 s for 27,421. At that rate the stream is about 22 hours
-in the save transfer's coding, 11 hours under LZMA2 and 5 hours with the FireRed dictionary, and 3645
-sectors at 3.5 s add 3.5 hours if each sector keeps the restore's round trip. The longest session so
-far lasted 269 s. No decoder for LZMA2 or for the FireRed dictionary exists on the GBA side.
+sectors took 107 s for 6182 token bytes and 249 s for 27,421, a 2-point fit, unconfirmed by a third run.
+At that rate the stream is about 22 hours in the save transfer's coding, 16 hours under the
+no-entropy-coding format, 11 hours under LZMA2 and 5 hours with the FireRed dictionary; 3645 sectors at
+3.5 s add 3.5 hours on top of any of them if each sector keeps the restore's one-ack-per-sector round
+trip. `SaveBackupServer` already batches up to 32 passes before an acknowledgement
+(`pokeldn/frlg/gift/save_transfer.py:27,243-245`); `SaveRestoreServer` acks every sector
+(`save_transfer.py:295-310`), so that cost has a cheap, host-only, offline-testable fix the backup path
+already proves out. The longest session measured so far lasted 269 s.
 
 The boot writes the GBA SoftReset flag and runs `swi 0x00`: the BIOS jumps to the ROM reset vector at
 `0x08000000` with RAM cleared, so Emerald's own `AgbMain` initialises from the bytes just written. A
