@@ -1,14 +1,13 @@
-# pokeldn 0.45.3
+# pokeldn 0.45.4
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- FireRed and LeafGreen Shiny legendary: Mewtwo, Articuno, Zapdos and Moltres now come out shiny on
-  a Switch. The game's automatic press lands on every countdown instead of about one in two. For
-  Mewtwo, talk to it yourself and press nothing at its cry; for a bird, tap Up once after the recap,
-  then hold B.
+- FireRed and LeafGreen Mystery Gift reaches Japanese cartridges: they now list POKELDN in the
+  Friend list. The tool's Console card has a Language choice, set by default to the trainer language
+  in Settings; choose Japanese for a Japanese cartridge. The trade tools also report that language.
 
 The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 
