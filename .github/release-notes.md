@@ -1,13 +1,18 @@
-# pokeldn 0.45.4
+# pokeldn 0.46.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- FireRed and LeafGreen Mystery Gift reaches Japanese cartridges: they now list POKELDN in the
-  Friend list. The tool's Console card has a Language choice, set by default to the trainer language
-  in Settings; choose Japanese for a Japanese cartridge. The trade tools also report that language.
+- Settings has a new switch, Show the board's screen. It draws the board's pixel screen at the top of
+  the Session panel: the link's traffic, each trade's Pokemon, the Mystery Gift card and a raid's
+  lobby. No screen needs to be plugged into the board.
+- FireRed and LeafGreen Shiny legendary keeps its countdown when a wild Pokemon's cry plays, as it
+  does in Seafoam Islands and the Power Plant. Before, each cry sent the counter back to searching.
+- A Japanese, Korean or Chinese trainer name now shows at full width on Switch consoles. The trainer
+  record gives the console the language that matches the name in Scarlet and Violet, Legends Z-A,
+  Sword and Shield, Brilliant Diamond and Shining Pearl, Let's Go and Legends Arceus.
 
 The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 
