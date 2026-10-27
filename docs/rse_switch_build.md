@@ -138,16 +138,15 @@ because the ROM copy is reloaded from RomFS at each application launch.
 
 The boot writes the GBA SoftReset flag and runs `swi 0x00`: the BIOS jumps to the ROM reset vector at
 `0x08000000` with RAM cleared, so Emerald's own `AgbMain` initialises from the bytes just written. A
-BIOS SoftReset is in-core and is not an application launch, so whether it keeps the written ROM copy
-or triggers a RomFS reload is the one unmeasured link in the chain. It is settled before the stream is
-built: a payload writes a recognisable 4 KB pattern to one ROM fold, runs `swi 0x00`, and a second
-Mystery Gift session dumps that address. The pattern surviving means ROM writes outlive a soft reset
-and the delivery works; FireRed's original bytes mean the copy is reloaded and the boot needs another
-route.
+BIOS SoftReset is in-core and is not an application launch, so a write to the ROM copy outlives it. The
+rom-reset-probe payload (`asm/rom-reset-probe.s`) wrote `word[i] = 0x454D4552 + i` to ROM copy block
+0xF00 (0x08F00000, in FireRed's `0xFF` tail), ran `swi 0x00`, and after the reboot a second Mystery
+Gift session dumped 0x08F00000: all 16 words read back unchanged (English FireRed, Ryujinx, over the IP
+host). The RomFS reload happens at an application launch, not a soft reset, so the written ROM survives
+the boot into the new game.
 
 ## Unresolved
 
-- Whether a GBA `swi 0x00` soft reset keeps writes to the ROM copy or reloads it from RomFS.
 - Whether the application emulates the GPIO real-time clock Emerald reads.
 - Whether a retail console runs the build: the Ryujinx measurements are the only ones.
 - A build for the Japanese cartridges.

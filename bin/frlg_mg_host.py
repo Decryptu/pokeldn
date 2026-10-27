@@ -701,11 +701,13 @@ def build_run_config(parser, args):
                     buffer_script.SAVE_WRITE, buffer_script.CREATE_MON,
                     buffer_script.CALL_CHAIN, buffer_script.FLASH_WRITE,
                     buffer_script.FLASH_PATCH, buffer_script.SLOOP_SVC,
-                    buffer_script.INSTALL_RESIDENT):
+                    buffer_script.INSTALL_RESIDENT, buffer_script.ROM_RESET_PROBE):
                 parser.error(
                     f"--write-unsafe belongs to --buffer-script {buffer_script.SAVE_WRITE}, "
                     f"{buffer_script.CREATE_MON}, {buffer_script.CALL_CHAIN} and "
                     f"{buffer_script.FLASH_WRITE}, the four that write the console's memory")
+            if args.rom_fold_n is not None and args.buffer_script != buffer_script.ROM_RESET_PROBE:
+                parser.error(f"--rom-fold-n belongs to --buffer-script {buffer_script.ROM_RESET_PROBE}")
             if args.flash_sector is not None and args.buffer_script not in (
                     buffer_script.FLASH_WRITE, buffer_script.FLASH_READ):
                 parser.error(
