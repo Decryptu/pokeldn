@@ -10,7 +10,7 @@ search_exclude: true
 
 Emerald's wireless link is FireRed's ([The link](frlg_link.md)); this page lists where Emerald
 differs. The launchers are `bin/frlg_trade_host.py` and `bin/frlg_trade_join.py` with
-`--version emerald`. Measurements are against [the Switch build](rse_switch_build.md) in Ryujinx.
+`--version emerald`. Measurements are against [the Switch build](rse_switch_build.md) on an emulated console.
 
 ## Joining a host
 
@@ -41,7 +41,7 @@ With version 3 Emerald draws the host's trainer card with frontier symbols at `0
 Points at `0x3C`. Its receive queue holds 32 slots (FireRed 20), and it accepts serial `0x0000`
 beside `0x0002` and `0x7F7D`.
 
-In Ryujinx the Switch build completes a Direct Corner trade with the host: LinkPlayer, trainer cards,
+On an emulated console the Switch build completes a Direct Corner trade with the host: LinkPlayer, trainer cards,
 the seat route, party, mail and ribbon blocks, the swap, five standby rounds, `READY_CLOSE_LINK`, the
 RFU disconnect frame and the Pia leave, then a save written to the emulator's storage.
 
@@ -52,7 +52,7 @@ The room, the activity menu and the trading board run as on FireRed ([The Union 
 player talks to it. Talking to POKELDN shows GREETINGS, BATTLE, CHAT and EXIT; Emerald offers no trade
 from that menu.
 
-| activity | flags | measured in Ryujinx |
+| activity | flags | measured on an emulated console |
 |---|---|---|
 | GREETINGS | `--union-room` | both trainer cards, the standby barrier, back to the room |
 | EXIT | `--union-room` | `READY_CLOSE_LINK` and a normal disconnect |

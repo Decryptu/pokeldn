@@ -11,7 +11,7 @@ app_exclude: true
 
 The Switch build is pret/pokeemerald with pokefirered's `REVISION >= 0xA` changes ported, linked so
 the FireRed/LeafGreen application's load-time patches land on Emerald's wireless driver. It runs in
-place of a FireRed cartridge: in Ryujinx it saves, receives Mystery Gift, trades and uses the Union
+place of a FireRed cartridge: on an emulated console it saves, receives Mystery Gift, trades and uses the Union
 Room against pokeldn's hosts. `tools/rse/pokeemerald_switch.patch` is the port against pret commit
 `731ad5bf`; `tools/rse/emerald_switch_build.py` applies and builds it.
 
@@ -83,7 +83,7 @@ REVISION 0 build passes `pokeemerald.gba: OK`.
 
 The application loads the ROM from its RomFS at every launch ([The ROM map](frlg_rom_map.md)), so a
 LayeredFS file over that path replaces the cartridge until it is removed. `tools/rse/rom_mod.py`
-installs one for Ryujinx or an Atmosphere SD card:
+installs one in an emulator's mod folder or on an Atmosphere SD card:
 
     ./.venv/bin/python tools/rse/rom_mod.py install pokeemerald_switch_BPRE.gba --title 0100554023408000
     ./.venv/bin/python tools/rse/rom_mod.py install pokeemerald_switch_BPRE.gba --title 0100554023408000 --sd /Volumes/SWITCH
@@ -93,10 +93,9 @@ The ROM must match the title's cartridge: BPRE for English FireRed (`01005540234
 FireRed (`01004B3023412000`). The game keeps the title's save file name (`FireRed_e.sav`); an Emerald
 save and a FireRed save cannot share it, so back the FireRed save up first.
 
-In Ryujinx (English FireRed, BPRE build) Emerald boots at 60 FPS, shows no dead-battery message,
-saves, and loads the save after a relaunch. With Ryujinx's LDN pointed at the Mac
-(`RYUJINX_LDN_PEER`, `RYUJINX_LDN_SCAN_TARGETS`) the hosts' `--over-ip` serves it
-([Trade and the Union Room](rse_link.md), [Mystery Gift](rse_gift.md)).
+On an emulated console (English FireRed, BPRE build) Emerald boots at 60 FPS, shows no dead-battery
+message, saves, and loads the save after a relaunch. With the emulator's LDN pointed at the Mac the
+hosts' `--over-ip` serves it ([Trade and the Union Room](rse_link.md), [Mystery Gift](rse_gift.md)).
 
 ## Test saves
 
@@ -141,12 +140,16 @@ The boot writes the GBA SoftReset flag and runs `swi 0x00`: the BIOS jumps to th
 BIOS SoftReset is in-core and is not an application launch, so a write to the ROM copy outlives it. The
 rom-reset-probe payload (`asm/rom-reset-probe.s`) wrote `word[i] = 0x454D4552 + i` to ROM copy block
 0xF00 (0x08F00000, in FireRed's `0xFF` tail), ran `swi 0x00`, and after the reboot a second Mystery
-Gift session dumped 0x08F00000: all 16 words read back unchanged (English FireRed, Ryujinx, over the IP
+Gift session dumped 0x08F00000: all 16 words read back unchanged (English FireRed, emulated console, over the IP
 host). The RomFS reload happens at an application launch, not a soft reset, so the written ROM survives
 the boot into the new game.
 
 ## Unresolved
 
-- Whether the application emulates the GPIO real-time clock Emerald reads.
-- Whether a retail console runs the build: the Ryujinx measurements are the only ones.
+- Whether the application emulates the GPIO real-time clock Emerald reads. Emerald's main menu showed
+  no dead-battery message on an emulated console.
+- Whether a retail console runs the build: the emulated-console measurements are the only ones.
+- The whole-ROM stream, its message rate and the boot into the streamed ROM. Only a one-block write
+  followed by `swi 0x00` has run.
+- What FireRed does with the save file after Emerald has saved into it.
 - A build for the Japanese cartridges.

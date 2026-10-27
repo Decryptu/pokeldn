@@ -558,8 +558,8 @@ destination in EWRAM, IWRAM or the cartridge buffer passes both bounds checks (`
 `size - fold >= 0x1000`); with `r0 = 0xFA000 + n` the destination folds into the ROM copy's
 4 KB at `n * 0x1000` (`n` 0..0xFFF), from any source region.
 
-A ROM destination is a live write into the cartridge buffer, measured on the patched Ryubing
-build of the emulated console over the IP host (no retail console touched): with
+A ROM destination is a live write into the cartridge buffer, measured on the emulated
+console over the IP host (no retail console touched): with
 `r0 = 0xFA3FF` (`dest` 0x083FF000, `n` = 0x3FF, region entry 0x08) and an EWRAM source
 (`r1` 0x0201C400, fold 0x1C400, mask 0x3ffff), both gates pass and the copy lands: the cartridge
 buffer's bytes at 0x3FF000 became the source's own 0x1000 bytes exactly (200 words of a chosen
@@ -1186,7 +1186,7 @@ dispatcher's frame, shared by every handler, is `0x40` bytes of saved registers 
 
 `bkpt #0xFF` from a payload closes the game: the wrapper files the session's play report, finalizes
 LDN, stops audio, files a report built from the save, commits the save and exits. No answer reaches
-the host. The reports as Ryujinx's `prepo` prints them:
+the host. The reports as an emulated console's `prepo` service prints them:
 
 | room | fields |
 | --- | --- |
@@ -1204,8 +1204,8 @@ table; the one count the copied save supplies, `playerPartyCount` (a byte), boun
 `MonsSelect` (the starter, through
 the internal-to-national table at `main + 0x17DA8C`); the printed JSON carries a fixed subset of the
 table and omits `MonsSelect`. `swi 0x62` increments `component + 0xE1B0`, which becomes `CommsError`:
-each call adds one to `CommsError` in the next report Ryujinx's `ServicePrepo ProcessPlayReport`
-prints to the host log. The one reader of the SaveBlock2 pointer `swi 0x55` stores
+each call adds one to `CommsError` in the next report the emulated console's `prepo` service
+(`ProcessPlayReport`) prints to the host log. The one reader of the SaveBlock2 pointer `swi 0x55` stores
 at `component + 0xE1BC` is `main + 0x0577D8`, which tests `optionsButtonMode == 2` (L=A). The store
 site is the handler itself, `main + 0x057308`: the dispatcher sets `x8 = component + 0xE1B0` at
 `main + 0x057058`, and the handler stores the raw guest `r0` at `[x8 + 0xC]`. The reader folds the
@@ -2036,11 +2036,11 @@ On retail English FireRed on a Switch 2, a press at Mewtwo's cry with `offset=1`
 the targeted shiny one, and `offset=5` a shiny Zapdos (`tests/test_shiny.py`). The app sends 3 and 5.
 
 The Switch's emulator calls `Random` twice per V-blank where mGBA calls it once: standing in Cerulean
-Cave B1F in Ryujinx, French FireRed, 1200 calls in 600 V-blanks with `intrCheck` bit 0 clear on every
+Cave B1F on an emulated console, French FireRed, 1200 calls in 600 V-blanks with `intrCheck` bit 0 clear on every
 one. A countdown that is odd at two calls a frame goes from 1 to -1 and is never pressed; on the retail
 console that cost the Zapdos talk press two of three countdowns. The hook keeps `64 - calls` of the
 last frame at state `+32` and drops a held target whose countdown is odd while that is 62, so every
-countdown it shows reaches 0. With that hook and `offset=3`, Ryujinx gave a shiny Mewtwo
+countdown it shows reaches 0. With that hook and `offset=3`, the emulated console gave a shiny Mewtwo
 (`0xA893924D`) at the first countdown at its cry.
 
 In mGBA the recap after CONTINUE leaves the player object
@@ -2472,7 +2472,7 @@ appears nowhere) reads back in EWRAM, 500 consecutive words at each of two sites
 
 The Switch release's save data holds one file, `save:/FireRed_f.sav` (English `FireRed_e.sav`, and
 the same pattern for the other languages), a raw 128 KiB GBA flash image. The wrapper creates no
-script, config or state file in that storage; the save directory in Ryujinx contains only the image.
+script, config or state file in that storage; the emulated console's save directory contains only the image.
 The save path and the `.sav` suffix appear in the wrapper's `main`, which carries no Lua or script
 interpreter. A save import or export therefore carries the guest's flash image and nothing the
 wrapper reads as code or configuration.

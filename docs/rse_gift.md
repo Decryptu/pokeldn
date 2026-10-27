@@ -40,7 +40,7 @@ code names. Emerald's field opcodes differ only at `0xC7..0xCC`, `0xD0`, `0xD3..
 Emerald's numbers. The host refuses a console of another game before sending. Emerald's Wonder News
 has no reward.
 
-In Ryujinx [the Switch build](rse_switch_build.md) lists POKELDN on the Friend search, identifies
+On an emulated console [the Switch build](rse_switch_build.md) lists POKELDN on the Friend search, identifies
 itself as Emerald holding no card, takes the Old Sea Map card and closes LDN normally; the Pokemon
 Center 2F delivery man then hands over the OLD SEA MAP from the saved script.
 
