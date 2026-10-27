@@ -131,9 +131,25 @@ Three mechanisms are already measured and carry the design:
   ([Save backup and restore](frlg_gift.md#save-backup-and-restore)).
 
 The ROM transfer is that pipeline with the write target changed from a flash sector (0..13) to a ROM
-fold (`0xFA000 + n`) and a boot at the end instead of a save. Emerald is 14,929,764 bytes before its
-`0xFF` tail, 5.75 MB under LZMA; at the save transfer's rate the stream is hours, redone every launch
+fold (`0xFA000 + n`) and a boot at the end instead of a save. The stream is redone at every launch
 because the ROM copy is reloaded from RomFS at each application launch.
+
+Emerald (BPRE) is 14,929,764 bytes before its `0xFF` tail, 3645 sectors of 4 KB, and every one differs
+from the FireRed Switch image's sector at the same offset, so no sector can be skipped. A message
+carries 1012 token bytes (the 1 KiB link buffer less a 12-byte header):
+
+| coding | stream | messages |
+|---|---|---|
+| the save transfer's runs and literals | 11,667,649 bytes | 14,566 |
+| LZMA2, 64 KB window | 6,169,577 bytes | 6097 |
+| LZMA2, unbounded window | 5,747,728 bytes | 5680 |
+| LZMA2 with the FireRed image as its dictionary | 2,561,046 bytes | 2531 |
+
+A retail restore over the board moved about 150 token bytes a second plus about 3.5 s a sector: 19
+sectors took 107 s for 6182 token bytes and 249 s for 27,421. At that rate the stream is about 22 hours
+in the save transfer's coding, 11 hours under LZMA2 and 5 hours with the FireRed dictionary, and 3645
+sectors at 3.5 s add 3.5 hours if each sector keeps the restore's round trip. The longest session so
+far lasted 269 s. No decoder for LZMA2 or for the FireRed dictionary exists on the GBA side.
 
 The boot writes the GBA SoftReset flag and runs `swi 0x00`: the BIOS jumps to the ROM reset vector at
 `0x08000000` with RAM cleared, so Emerald's own `AgbMain` initialises from the bytes just written. A
@@ -150,6 +166,11 @@ the boot into the new game.
   no dead-battery message on an emulated console.
 - Whether a retail console runs the build: the emulated-console measurements are the only ones.
 - The whole-ROM stream, its message rate and the boot into the streamed ROM. Only a one-block write
-  followed by `swi 0x00` has run.
+  followed by `swi 0x00` has run, and it wrote the `0xFF` tail.
+- Whether the link survives the stream. The Mystery Gift session runs FireRed's librfu and client code
+  from the ROM copy, and the three librfu patches ([The breakpoint hooks](frlg_rom.md#the-breakpoint-hooks))
+  are bytes in the same copy; a stream that writes those sectors replaces them with Emerald's unpatched
+  instructions.
+- Whether a session lasting hours stays up.
 - What FireRed does with the save file after Emerald has saved into it.
 - A build for the Japanese cartridges.
