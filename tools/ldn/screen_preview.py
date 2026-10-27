@@ -42,6 +42,10 @@ class Scene:
         self.lib = ctypes.CDLL(str(lib))
         self.lib.scene_command.restype = ctypes.c_bool
         self.lib.scene_draw.restype = ctypes.c_uint8
+        # Windows' C long is 32 bits: an untyped clock past 2**31 overflows.
+        self.lib.scene_command.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_uint32]
+        self.lib.scene_draw.argtypes = [ctypes.c_void_p, ctypes.POINTER(Radio), ctypes.c_uint32]
+        self.lib.scene_panel.argtypes = [ctypes.c_uint8]
         self.lib.scene_panel(PANELS[panel][0])
         self.lib.scene_reset()
         self.radio = Radio()

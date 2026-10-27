@@ -33,6 +33,10 @@ def firmware(tmp_path):
     lib = ctypes.CDLL(str(lib))
     lib.scene_command.restype = ctypes.c_bool
     lib.scene_draw.restype = ctypes.c_uint8
+    # Windows' C long is 32 bits: an untyped clock past 2**31 overflows.
+    lib.scene_command.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_uint32]
+    lib.scene_draw.argtypes = [ctypes.c_void_p, ctypes.POINTER(Radio), ctypes.c_uint32]
+    lib.scene_panel.argtypes = [ctypes.c_uint8]
     return lib
 
 
