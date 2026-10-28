@@ -1,18 +1,14 @@
-# pokeldn 0.46.0
+# pokeldn 0.47.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Settings has a new switch, Show the board's screen. It draws the board's pixel screen at the top of
-  the Session panel: the link's traffic, each trade's Pokemon, the Mystery Gift card and a raid's
-  lobby. No screen needs to be plugged into the board.
-- FireRed and LeafGreen Shiny legendary keeps its countdown when a wild Pokemon's cry plays, as it
-  does in Seafoam Islands and the Power Plant. Before, each cry sent the counter back to searching.
-- A Japanese, Korean or Chinese trainer name now shows at full width on Switch consoles. The trainer
-  record gives the console the language that matches the name in Scarlet and Violet, Legends Z-A,
-  Sword and Shield, Brilliant Diamond and Shining Pearl, Let's Go and Legends Arceus.
+- The Bank queues several Pokemon for a trade at once. Press Select, pick the Pokemon, and the side
+  panel shows the whole selection and how many of them each game can take. Choose a game, then a
+  trade tool: each button shows its free slots (a queue holds six), and one click queues as many as
+  fit, in the box's order. Each trade still sends one Pokemon; the session runs the queue in turn.
 
 The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 
