@@ -73,6 +73,8 @@ class BankView:
         self.tiles: dict[str, Tile] = {}
         self.picking = False              # several Pokemon are being chosen for one action
         self.picked: set[str] = set()
+        self.picked_target = ""           # the game chosen to send the picked Pokemon to
+        self.checking: set[str] = set()   # Entry.ids whose destinations PKHeX is reading
         self.query, self.sort, self.only = "", "newest", "any"
         self.dex_names: dict[int, str] = {}   # species id -> name, every species one of the bank's games holds
         self.dex_only = "all"
@@ -330,6 +332,7 @@ class BankView:
         self._paint(entry_id, update=True)
         self.render_actions()
         self.actions.update()
+        self._picked_changed()
 
     def pick(self, entry_id: str) -> None:
         """A long press starts choosing several, with that one chosen."""
@@ -341,9 +344,11 @@ class BankView:
     def _picking(self, on: bool) -> None:
         self.picking = on
         self.picked.clear()
+        self.picked_target = ""
         for key in self.tiles:
             self._paint(key)
         self.render_actions()
+        self.render_detail()
         self.control.update()
 
     def _pick_all(self, on: bool) -> None:
@@ -352,6 +357,119 @@ class BankView:
             self._paint(key)
         self.render_actions()
         self.control.update()
+        self._picked_changed()
+
+    def _picked_changed(self) -> None:
+        missing = [e for e in self.items if e.id in self.picked and e.id not in self.routes and e.id not in self.checking]
+        self.checking.update(e.id for e in missing)
+        if missing:
+            threading.Thread(target=lambda: [self._find_routes(e) for e in missing], daemon=True).start()
+        self.render_detail()
+        self.detail.update()
+        if self.picked:
+            self.panes.show(2)
+
+    def _picked_entries(self) -> list[bank.Entry]:
+        shown = {e.id: n for n, e in enumerate(sorted(self.items, key=SORTS[self.sort]))}
+        return sorted((e for e in self.items if e.id in self.picked), key=lambda e: shown[e.id])
+
+    def render_picked(self) -> None:
+        chosen = self._picked_entries()
+        queued = bank.queued_ids(self.app.settings)
+        free = [e for e in chosen if e.id not in queued]
+        sprites = [Sprite(self.app, e.species_id, e.shiny, size=MINI).control for e in chosen[:24]]
+        if len(chosen) > 24:
+            sprites.append(ft.Container(t.text(f"+{len(chosen) - 24}", 12, t.MUTED), width=MINI, height=MINI,
+                                        alignment=ft.Alignment.CENTER))
+        controls = [ft.Column([
+            t.text(tr('bank.picked_count', '{count} selected', count=len(chosen)), 15, weight=ft.FontWeight.W_600),
+            ft.Row(sprites, spacing=4, run_spacing=4, wrap=True),
+            *([t.text(tr('bank.picked_already_queued', '{count} already waiting to trade; they stay where they are.',
+                         count=len(chosen) - len(free)), 12, t.MUTED)] if len(free) < len(chosen) else []),
+        ], spacing=10)]
+        if free:
+            controls.append(t.section(tr('bank.send_them_to_a_game', 'Send them to a game'), self._picked_routes(free)))
+        self.detail.controls = controls
+
+    def _picked_routes(self, free: list[bank.Entry]) -> ft.Control:
+        waiting = sum(e.id not in self.routes for e in free)
+        if waiting:
+            return t.badge(tr('bank.pkhex_is_checking_many', 'PKHeX is checking each game, {done} of {count}...',
+                              done=len(free) - waiting, count=len(free)), t.BLUE, "refresh")
+        rows = []
+        for key in NAMES:
+            fit = len(self._can_go(free, key))
+            chosen = key == self.picked_target
+            why = (tr('bank.none_can_go', 'None of them can go there.') if not fit else
+                   tr('bank.all_can_go', 'All {count} can go', count=fit) if fit == len(free) else
+                   tr('bank.some_can_go', '{fit} of {count} can go', fit=fit, count=len(free)))
+            rows.append(ft.Container(ft.Row([
+                game_icon(key, 24),
+                ft.Column([t.text(NAMES[key], 13, t.TEXT if fit else t.FAINT, weight=ft.FontWeight.W_600),
+                           t.text(why, 11, t.MUTED if fit else t.FAINT)], spacing=0, expand=True),
+                t.pixel_icon("chevron-right", color=t.BLUE) if chosen else ft.Container(),
+            ], spacing=10), padding=ft.Padding(8, 6, 8, 6), border_radius=10,
+                bgcolor=t.SELECTED if chosen else None,
+                on_click=(lambda e, k=key: self._choose_picked(k)) if fit else None))
+        body = [ft.Column(rows, spacing=2)]
+        if self.picked_target:
+            going = self._can_go(free, self.picked_target)
+            body.append(t.text(tr('bank.queue_them_for_a_trade', 'Queue them for a {game} trade (one Pokemon per trade):',
+                                  game=NAMES[self.picked_target]), 12, t.MUTED))
+            buttons = []
+            for n, (tool, field) in enumerate(trade_tools(self.picked_target)):
+                room = bank.room(self.app.settings, tool, field)
+                label = tr('bank.tool_room', '{tool}: queue {count} ({free} free)',
+                           tool=tool.name, count=min(room, len(going)), free=room) if room else \
+                    tr('bank.tool_full', '{tool}: queue full', tool=tool.name)
+                buttons.append(t.button(label, lambda e, x=tool, f=field: self._send_picked(going, x, f),
+                                        "arrows-horizontal", filled=n == 0, disabled=self.working or not room,
+                                        tooltip=tool_role(tool)))
+            body.append(ft.Row(buttons, spacing=8, wrap=True))
+        return ft.Column(body, spacing=10)
+
+    def _can_go(self, entries: list[bank.Entry], key: str) -> list[bank.Entry]:
+        return [e for e in entries if self.routes.get(e.id, {}).get(key, {}).get("ok")]
+
+    def _choose_picked(self, key: str) -> None:
+        self.picked_target = key
+        self.render_detail()
+        self.detail.update()
+
+    def _send_picked(self, going: list[bank.Entry], tool, field) -> None:
+        game = self.picked_target
+        going = going[:bank.room(self.app.settings, tool, field)]
+        self.working = True
+        self._say(tr('bank.moving_many', 'Moving {count} to {game}...', count=len(going), game=NAMES[game]), t.BLUE)
+        self.render_detail()
+        self.detail.update()
+
+        def work():
+            sent, problems = 0, []
+            for entry in going:
+                try:
+                    item = bank.offer(entry, game, self.app.settings.trainer(game))
+                    problem = bank.enqueue(self.app.settings, tool, field, item)
+                except (OSError, pokemon.BuilderError) as error:
+                    problem = str(error)
+                if problem:
+                    problems.append(f"{entry.summary.split(' · ')[0]}: {problem}")
+                else:
+                    sent += 1
+
+            def done():
+                self.working = False
+                if problems:
+                    self.render_grid()
+                    self.render_detail()
+                    self.control.update()
+                    self._say(tr('bank.queued_some', '{sent} queued. {problems}', sent=sent,
+                                 problems=" ".join(problems)), t.RED)
+                    return
+                self._picking(False)
+                self.app.navigate("games", game=game, tool=tool.key)
+            self.app.ui(done)
+        threading.Thread(target=work, daemon=True).start()
 
     def render_actions(self) -> None:
         self.pick_button.content = tr('bank.done_selecting', 'Done') if self.picking else tr('bank.select_several', 'Select')
@@ -454,12 +572,16 @@ class BankView:
         def done():
             self.routes[entry.id] = routes
             self.battle[entry.id] = battle
-            if self.visible and self.selected == entry.id:
+            self.checking.discard(entry.id)
+            if self.visible and (self.selected == entry.id or self.picking and entry.id in self.picked):
                 self.render_detail()
                 self.detail.update()
         self.app.ui(done)
 
     def render_detail(self) -> None:
+        if self.picking and self.picked:
+            self.render_picked()
+            return
         entry = self._entry()
         if entry is None:
             self.detail.controls = [t.text(tr('bank.pick_a_pokemon_to_see_where_it_can_go_3b278b', 'Pick a Pokemon to see where it can go.'), 13, t.MUTED)]

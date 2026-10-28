@@ -296,11 +296,21 @@ def queued_ids(settings) -> set[str]:
             for v in value if isinstance(v, dict) and v.get("bank")}
 
 
+def _queue(settings, tool, field) -> list[dict]:
+    from pokeldn.app.command import offers
+    stored = settings.tool_values.get(tool.key, {}).get("values", {})
+    return [v for v in offers(stored.get(field.key, field.default)) if v.get("file")]
+
+
+def room(settings, tool, field) -> int:
+    """How many more Pokemon a tool's queue takes."""
+    return max(0, field.queue - len(_queue(settings, tool, field)))
+
+
 def enqueue(settings, tool, field, item: dict) -> str:
     """Append a moved Pokemon to a tool's queue; why it cannot be, or ""."""
-    from pokeldn.app.command import offers
+    queue = _queue(settings, tool, field)
     stored = settings.tool_values.setdefault(tool.key, {"values": {}, "extra": {}})
-    queue = [v for v in offers(stored["values"].get(field.key, field.default)) if v.get("file")]
     if len(queue) >= field.queue:
         return f"{tool.name} already has {field.queue} Pokemon queued."
     stored["values"][field.key] = queue + [item]

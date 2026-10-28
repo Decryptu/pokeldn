@@ -225,7 +225,8 @@ IDs are kept, and the run omits `--fresh-pid`.
 
 The box lists every banked Pokemon with a search over its summary, a sort (newest, oldest, Pokedex
 number, name), a filter (shiny, waiting to trade, not legal) and Select, which picks several Pokemon (a long press starts it too) for one Export to a
-folder, Take out of trades or Remove. A sprite's crop is kept with its SHA-256 in the sprite cache's
+folder, Take out of trades or Remove. With several picked, the side pane lists how many of them each game takes and
+queues those for a chosen trade tool up to its free slots (a queue holds six), in the box's order. A sprite's crop is kept with its SHA-256 in the sprite cache's
 `index.json`, so a box opens without decoding a PNG it has shown before.
 
 A Pokemon's pane shows its battle set from the helper's `check` (`battle`): IVs, effort and stats in

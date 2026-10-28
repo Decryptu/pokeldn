@@ -372,3 +372,17 @@ def test_a_battle_set_reads_back_the_effort_it_was_built_with_and_its_showdown_s
         25, 10, built["moves"])
     ivs = pasted["options"].get("ivs", {})      # Showdown leaves out an IV of 31
     assert [ivs.get(s, 31) for s in ("hp", "atk", "def", "spa", "spd", "spe")] == battle["ivs"]
+
+
+def test_a_queue_with_two_offers_takes_four_more_and_refuses_the_fifth(tmp_path):
+    """The Bank's selection queues as many as the room left; an empty builder slot is not a trade."""
+    tool = TOOLS["swsh-host"]
+    field = next(f for f in tool.fields if f.kind == "pokemon")
+    settings = Settings(keys="", received=str(tmp_path))
+    settings.save = lambda: None
+    values = settings.tool_values.setdefault(tool.key, {"values": {}, "extra": {}})["values"]
+    values[field.key] = banked_queue(settings, "A") + [{}]
+    assert bank.room(settings, tool, field) == field.queue - 2 == 4
+    problems = [bank.enqueue(settings, tool, field, {"file": f"{n}.pk8", "bank": f"B{n}"}) for n in range(5)]
+    assert problems[:4] == [""] * 4 and problems[4]
+    assert bank.room(settings, tool, field) == 0 and len(values[field.key]) == 6
