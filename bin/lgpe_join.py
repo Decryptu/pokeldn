@@ -31,7 +31,7 @@ from pokeldn import pokemon as pokemon_service
 from pokeldn import receiver_gift, trade_back
 from pokeldn.ldn import pia3, pia4, station9, station4
 from pokeldn.ldn import mesh_protocol as mp
-from pokeldn.ldn import clone, sync_clock, ldn_mitm
+from pokeldn.ldn import clone, hold_after_trade_over, sync_clock, ldn_mitm
 from pokeldn.ldn import rtt_protocol as rtt
 from pokeldn.ldn import reliable3
 from pokeldn.ldn import local_protocol as lp
@@ -277,6 +277,7 @@ def build_parser():
     ap.add_argument("--leave-after", type=float, default=None, metavar="SECONDS",
                     help="leave the session the way a console backs out of its trade screen, "
                          "this long after the first trade step we answered (docs/lgpe_session.md)")
+    launcher.add_hold_after_trade_argument(ap)
     ap.add_argument("--stall-leave", type=float, default=5.0, metavar="SECONDS",
                     help="leave the way a console backs out when both players have voted and the "
                          "host has not agreed for this long, before any commit; 0 never. It ends "
@@ -619,8 +620,22 @@ def _run(args, net, keys, facts, opener):
             else:
                 deadline = args.hold
                 print(f"[lg] listening on :{PIA_PORT} for {deadline:.0f}s")
-            while (time.monotonic() - t0 < deadline
-                   or state.get("mid_trade") and time.monotonic() - t0 < deadline + args.grace):
+            def seat_over():
+                """Time is up outside a trade: a seat with a clone leaves through the Leaver, which
+                ends itself (pokeldn.lgpe.leave.LEAVE_UNANSWERED); a trade holds until --grace."""
+                t = time.monotonic() - t0
+                if t < deadline or state.get("leaver") is not None:
+                    return False
+                if state.get("mid_trade"):
+                    return t >= deadline + args.grace
+                if state.get("clone") is None or state.get("host_left"):
+                    return True
+                if state.get("leave_at") is None or state["leave_at"] > time.monotonic():
+                    state["leave_at"] = time.monotonic()
+                    print(f"[lg] {deadline:.0f} s are up; leaving the seat")
+                return False
+
+            while not seat_over():
                 # Our own leave sends its disconnection request first: that, not the network
                 # leaving, returns a console host's player at once (docs/lgpe_session.md).
                 lv = state.get("leaver")
@@ -630,6 +645,10 @@ def _run(args, net, keys, facts, opener):
                         and state.get("answered_step")):
                     state["leave_at"] = time.monotonic() + args.leave_after
                     print(f"[lg] leaving in {args.leave_after:.0f} s")
+                if (state.get("leave_at") is None and state.get("clone") is not None
+                        and hold_after_trade_over(args.hold_after_trade, state.get("queue_done", False))):
+                    state["leave_at"] = time.monotonic()
+                    print(f"[lg] leaving {args.hold_after_trade:.0f} s after the last queued trade")
                 if (args.stall_leave and state.get("leave_at") is None
                         and state.get("clone") is not None and not TRADE_IN_PROGRESS["commit"]):
                     cid = unagreed_vote(state["clone"])

@@ -30,7 +30,7 @@ from pokeldn.host_support import write_file
 from pokeldn import config, gen8
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn import launcher
-from pokeldn.ldn import host4, left_after_trade, mesh_protocol as mesh
+from pokeldn.ldn import hold_after_trade_over, host4, left_after_trade, mesh_protocol as mesh
 from pokeldn.ldn import pia_lan
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, find_ap_phy
@@ -219,6 +219,7 @@ def build_parser():
                     help="advertise 0x00, hex; a searching Sword joins only a larger one than its "
                          "own; default 0xFFFF and two random bytes")
     ap.add_argument("--seconds", type=float, default=300)
+    launcher.add_hold_after_trade_argument(ap, host=True)
     ap.add_argument("--raid-boss", default=None, metavar="PK8",
                     help="host a Max Raid den lobby with this boss instead of a Link Trade "
                          "(docs/swsh_raid.md)")
@@ -637,9 +638,34 @@ def main(argv=None):
     show_lobby(app_data, boss_pk8, args.lair_legendary, args.code)
     print(f"[sw] up at {transport.our_ip}; waiting for a console")
     deadline = time.time() + args.seconds
+    closing = [None]    # when the session started to close: --hold-after-trade or --seconds
+
+    def queue_done():
+        return completed[0] >= max(1, len(args.offer_file)) * (2 if args.trade_back else 1)
+
+    def close(now, why):
+        """Leave as a hosting Sword does: box command 3 on an idle trade, then the host migration
+        (docs/swsh_session.md, Leaving); the network closes once it is empty or LAIR_HANDOVER on."""
+        print(f"[sw] {why}; closing the session")
+        for tr in trades.values():
+            if getattr(tr, "idle", False):
+                tr.leave()
+        closing[0] = now
+
     try:
-        while time.time() < deadline:
+        while True:
             now = time.time()
+            if now >= deadline and closing[0] is None:
+                if not host.stations:
+                    break
+                close(now - host_trade.MIGRATION_DELAY, "--seconds is over")
+            if (closing[0] is None and trades
+                    and all(getattr(tr, "idle", False) for tr in trades.values())
+                    and hold_after_trade_over(args.hold_after_trade, queue_done())):
+                close(now, f"{args.hold_after_trade:.0f}s after trade {completed[0]}")
+            if (closing[0] is not None and host.migrating is None
+                    and now - closing[0] >= host_trade.MIGRATION_DELAY):
+                host.leave_with_migration(now)
             if args.lan and transport.session_key is not None:
                 host.session_key = transport.session_key    # keyed by the first browse
             if args.lan:
@@ -672,7 +698,7 @@ def main(argv=None):
                 host.leave_with_migration(now)
                 print("[lair] the adventure has started; handing the session to the console")
             if host.migrating is not None and (not host.stations or now - host.migrating >= LAIR_HANDOVER):
-                print(f"[lair] closing the network {now - host.migrating:.1f} s after the handover, "
+                print(f"[sw] closing the network {now - host.migrating:.1f} s after the handover, "
                       f"{len(host.stations)} station(s) left in it")
                 break
             for tr in list(trades.values()):

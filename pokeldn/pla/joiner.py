@@ -473,6 +473,11 @@ class JoinerSession:
             self._next_round()
         return out
 
+    @property
+    def queue_done(self):
+        """No queued offer is left for this seat (--hold-after-trade)."""
+        return not self.next_offers
+
     def _next_round(self):
         """Ready the seat for the console's next trade: it repeats the showing, the offer,
         selectors 5 and 7 and the phases byte for byte (docs/pla.md, The phase protocol)."""

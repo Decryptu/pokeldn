@@ -251,6 +251,12 @@ comes 0.17 s after MIGRATION_START; answering nothing leaves it sending for 25.0
 `bin/swsh_connect.py --answer-migration --update-mesh --leave-with-host` (in `--preset trade`) does
 all three answers.
 
+`bin/swsh_connect.py` leaves as a joined Sword does, box command 3, LEAVE_REQUEST until answered and
+then the disconnection requests, when `--hold` ends outside a trade. `bin/swsh_host.py` closes as a
+hosting Sword does when `--seconds` ends: box command 3 on an idle trade, MIGRATION_START 0.75 s later,
+then the network once the joiner has left or 10 s on. With `--hold-after-trade SECONDS`, either one
+does the same that long after its last queued trade.
+
 ## LAN mode
 
 Options, then L, R and the Left Stick pressed together, turns Sword's LAN mode on; the game shows

@@ -22,7 +22,7 @@ from pokeldn.frlg.link import trade_runtime  # noqa: E402
 from pokeldn.frlg.link import beacon as beaconmod
 from pokeldn.frlg.link.host_app import HostApplication  # noqa: E402
 from pokeldn.online import session as online  # noqa: E402
-from pokeldn import trade_back  # noqa: E402
+from pokeldn import launcher, trade_back  # noqa: E402
 from pokeldn.frlg.link import trade as tradeproto  # noqa: E402
 
 
@@ -111,6 +111,7 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
         "--save-rounds", type=int, default=None, metavar="N",
         help=("post-trade standby rounds before the parties are exchanged again; default 6, "
               "the Switch FireRed count, and 5 with --version emerald (docs/rse_link.md, Trade)"))
+    launcher.add_hold_after_trade_argument(parser, host=True)
     online.add_arguments(parser)
     trade_back.add_arguments(parser)
     host_cli.add_host_config_arguments(
@@ -208,7 +209,7 @@ def main(argv=None):
     try:
         joined = HostApplication(
             run_config, log=trade_runtime.ConsoleLog(args.verbose), partner=partner,
-            transport_factory=factory).run()
+            transport_factory=factory, hold_after_trade=args.hold_after_trade).run()
     finally:
         if partner:
             partner.close()

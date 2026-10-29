@@ -31,7 +31,7 @@ from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn import launcher
-from pokeldn.ldn import left_after_trade, show_done
+from pokeldn.ldn import hold_after_trade_over, left_after_trade, show_done
 from pokeldn.online import session as online
 from pokeldn.app import screen
 
@@ -206,6 +206,7 @@ def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seconds", type=float, default=240.0)
+    launcher.add_hold_after_trade_argument(ap, host=True)
     online.add_arguments(ap)
     launcher.add_radio_arguments(ap)
     ap.add_argument("--channel", type=int, default=None)
@@ -880,6 +881,10 @@ def main(argv=None):
                 current_ips.add(entry[1])
             if left_after_trade(current_ips):
                 print("[sv] the console left after the trade; closing")
+                break
+            if hold_after_trade_over(args.hold_after_trade,
+                                     bool(stages) and all(st.done for st in stages.values())):
+                print(f"[sv] {args.hold_after_trade:.0f}s after the last trade; closing")
                 break
             # The Pia block's player count, not the LDN list, is the session the game sees. A
             # returning station needs the Net 0x11 again.

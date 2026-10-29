@@ -210,7 +210,12 @@ one station left (count `0x016b014c`, test `0x016b9614`) or 10000 ms since
 
 `pokeldn.bdsp.session.answer_departure` builds both answers; `bin/bdsp_host.py` answers a leaving
 joiner, and `bin/bdsp_connect.py` answers a migration start and leaves the network on 0x13
-(`--no-leave-on-host-migration` stays). Leaving the trade box sends no departure message, only
+(`--no-leave-on-host-migration` stays). Both launchers also leave as the console does: `bin/bdsp_connect.py` sends the
+leave request and the station disconnection when `--hold` ends or on a signal, and `bin/bdsp_host.py`
+sends `44 00 01` (`HostSession.close`) when `--seconds` ends or on Ctrl-C, then stops on the `48`
+or after 5 s. `--hold-after-trade N` takes the same path N seconds after the last queued trade, and
+never sooner than 30 s after it, when the player has control again
+([The completed trade](bdsp_trade.md#the-completed-trade)). Leaving the trade box sends no departure message, only
 `NetDataCurrentFlowCancelData{0}` (0x25) and `NetCharacterStateData{0}` in one packet.
 
 ## LAN mode

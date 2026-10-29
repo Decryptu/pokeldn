@@ -1079,7 +1079,7 @@ def test_the_firered_gift_host_comes_up_and_advertises_on_a_simulated_board(tmp_
     assert result.get("code") == 124           # idle timeout: nothing joined, as expected
 
 
-def test_the_lets_go_joiner_reaches_the_game_on_simulated_boards(tmp_path, monkeypatch):
+def test_the_lets_go_joiner_reaches_the_game_on_simulated_boards(tmp_path, monkeypatch, capsys):
     """bin/lgpe_join.py against bin/lgpe_host.py: association through the kind-1 identity both ways,
     each under its own trainer's name."""
     import threading
@@ -1133,6 +1133,8 @@ def test_the_lets_go_joiner_reaches_the_game_on_simulated_boards(tmp_path, monke
         host_radio.close()
         join_radio.close()
     assert result == {"host": 0, "join": 0}
+    out = capsys.readouterr().out      # the seat's end runs the departure (docs/lgpe_session.md)
+    assert "[lg] 10 s are up; leaving the seat" in out and "[lg] *** LEAVING ***" in out
 
     def named(name):
         return pb7.build_message(pb7.FIRST_MESSAGE, pb7.set_trainer_name(identity[pb7.HEADER_SIZE:], name))
@@ -1186,16 +1188,16 @@ def test_the_lets_go_joiner_trades_its_queue_on_one_seat_on_simulated_boards(tmp
     result = {}
     scale = float(os.environ.get("POKELDN_TEST_TIME_SCALE", "1"))
     threads["host"] = threading.Thread(target=lambda: result.setdefault("host", lgpe_host.main(
-        # A host leaves at its deadline between trades; the phone's self-test (examples/android)
-        # runs this about three times slower and scales both deadlines.
-        ["--keys", str(keys_file), "--channel", "6", "--seconds", str(30 * scale), "--grace", "0",
+        # The joiner leaves 1 s after its queue (--hold-after-trade) and the host closes on it; the
+        # phone's self-test (examples/android) runs this about three times slower and scales the deadlines.
+        ["--keys", str(keys_file), "--channel", "6", "--seconds", str(70 * scale), "--grace", "0",
          "--first", "echo", "--lead", "1", "--result-after", "2",
          "--offer", host_offers[0], "--next-offer", host_offers[1],
          "--received", str(tmp_path / "host_got.pb7"),
          "--capture", str(tmp_path / "host.jsonl")])), daemon=True)
     threads["join"] = threading.Thread(target=lambda: result.setdefault("join", lgpe_join.main(
         ["--keys", str(keys_file), "--channels", "6", "--dwell", "0.5", "--connect",
-         "--connect-seconds", str(26 * scale), "--grace", "0", "--facts", str(tmp_path / "facts.json"),
+         "--connect-seconds", str(60 * scale), "--hold-after-trade", "1", "--grace", "0", "--facts", str(tmp_path / "facts.json"),
          "--capture", str(tmp_path / "join.jsonl"), "--ack-peer-clock", "--ack-re-announce",
          "--offer", join_offers[0], "--offer", join_offers[1],
          "--received", str(tmp_path / "join_got.pb7")])), daemon=True)
@@ -1674,14 +1676,14 @@ def test_sword_host_and_joiner_trade_on_simulated_boards(tmp_path, monkeypatch):
 
     result = {}
     threads["host"] = threading.Thread(target=lambda: result.setdefault("host", swsh_host.main(
-        ["--keys", str(keys_file), "--channel", "6", "--seconds", "50", "--accept-first",
+        ["--keys", str(keys_file), "--channel", "6", "--seconds", "120", "--accept-first",
          "--lead", "3",
          "--snapshot", str(tmp_path / "snapshot.bin"), "--received", str(tmp_path / "host.pk8"),
          "--offer-file", str(tmp_path / "offer0.pk8"), "--offer-file", str(tmp_path / "offer1.pk8")])),
         daemon=True)
     threads["join"] = threading.Thread(target=lambda: result.setdefault("join", swsh_connect.main(
         ["--keys", str(keys_file), "--preset", "trade", "--channels", "6", "--dwell", "0.5",
-         "--hold", "35", "--save-offered", str(tmp_path / "join.pk8"),
+         "--hold", "90", "--hold-after-trade", "1", "--save-offered", str(tmp_path / "join.pk8"),
          "--offer-file", str(tmp_path / "offer2.pk8"), "--offer-file", str(tmp_path / "offer3.pk8")])),
         daemon=True)
     wlan.set_factory(factory)

@@ -43,7 +43,8 @@ from pokeldn.lgpe import (APPLICATION_VERSION, COMM_ID_PIKACHU, MAX_PARTICIPANTS
                           session_keys)
 from pokeldn.lgpe.session import SEARCH_CHANNELS
 from pokeldn.lgpe import local_host, mesh_host
-from pokeldn.ldn import left_after_trade, show_done
+from pokeldn.lgpe.leave import HostLeaver
+from pokeldn.ldn import hold_after_trade_over, left_after_trade, show_done
 
 HOST_INDEX = 0
 JOINER_INDEX = 1
@@ -121,6 +122,7 @@ def build_parser():
                     help="seconds between the steps the host drives an offered clone through")
     ap.add_argument("--grace", type=float, default=900.0,
                     help="seconds past --seconds to hold a session whose trade is half done")
+    launcher.add_hold_after_trade_argument(ap, host=True)
     ap.add_argument("--first-copies", type=int, default=1,
                     help="how many kind 1 identities to send, 0.3 s apart under successive steps")
     ap.add_argument("--advance-after", type=float, default=0.0,
@@ -274,24 +276,54 @@ def main(argv=None):
                                              notify=receiver_gift.pop_up())
     session = Session(host, adv, args, record, partner=partner)
     t0 = time.monotonic()
+    closing = None
+
+    def close(why):
+        """-> True when there is nobody to tell; else the departure starts and the loop runs it."""
+        nonlocal closing
+        print(f"[lgh] {why}; closing the session")
+        if not session.seated:
+            return True
+        closing = time.monotonic()
+        session.close(closing)
+        return False
+
+    def closed():
+        return (session.closed or not session.seated
+                or time.monotonic() - closing >= CLOSE_LIMIT)
+
     try:
-        while True:
-            if time.monotonic() - t0 >= args.seconds:
-                # Stopping between offer and result makes the console refuse the next trade for
-                # 600 s of play: hold until the exchange is settled or the console has left.
-                # This session's own flag: TRADE_IN_PROGRESS is the process's, which a joiner in
-                # the same process (tests/test_esp32.py) clears.
-                if not session.trade.get("mid_trade") or session.trade.get("done"):
+        try:
+            while True:
+                if closing is not None:
+                    if closed():
+                        break
+                else:
+                    settled = not session.trade.get("mid_trade") or session.trade.get("done")
+                    if settled and hold_after_trade_over(args.hold_after_trade, session.queue_done):
+                        if close(f"{args.hold_after_trade:.0f}s after trade {session.trades}"):
+                            break
+                    # Stopping between offer and result makes the console refuse the next trade
+                    # for 600 s of play: hold until the exchange is settled or the console has
+                    # left. This session's own flag: TRADE_IN_PROGRESS is the process's.
+                    elif time.monotonic() - t0 >= args.seconds and settled:
+                        if close(f"{args.seconds:.0f}s are up"):
+                            break
+                    elif time.monotonic() - t0 >= args.seconds + args.grace:
+                        break
+                if left_after_trade(host.participants):
+                    print("[lgh] the console left after the trade; closing")
                     break
-                if time.monotonic() - t0 >= args.seconds + args.grace:
-                    break
-            if left_after_trade(host.participants):
-                print("[lgh] the console left after the trade; closing")
-                break
-            session.poll()
-            time.sleep(0.005)
+                session.poll()
+                time.sleep(0.005)
+        except KeyboardInterrupt:
+            print("[lgh] interrupted")
+            if closing is None and not close("Ctrl-C; a second Ctrl-C closes at once"):
+                while not closed():
+                    session.poll()
+                    time.sleep(0.005)
     except KeyboardInterrupt:
-        print("[lgh] interrupted")
+        print("[lgh] interrupted again")
     finally:
         host.stop()
         if cap:
@@ -300,6 +332,10 @@ def main(argv=None):
     print(f"[lgh] done: {session.rx} datagrams in, {session.tx} out, "
           f"{len(session.payloads)} game payload(s)")
     return 0
+
+
+# A host's departure takes at most 0.5 + 2.5 + 5 + 10 s (pokeldn.lgpe.leave.HostLeaver).
+CLOSE_LIMIT = 20.0
 
 
 class Session:
@@ -331,6 +367,7 @@ class Session:
         self.window.clock = time.monotonic
         self.trade = {"window": self.window, "step": 1}
         self.round = 0
+        self.trades = 0
         self.received = args.received
         self.payloads = []
         self.clone = None
@@ -379,6 +416,30 @@ class Session:
         self.next_update = 0.0
         self.next_rtt = 0.0
         self.joined = False
+        self.leaver = None
+
+    @property
+    def seated(self):
+        """The console is in our mesh and has not left it."""
+        return self.joined and not self.peer_left and bool(self.host.participants)
+
+    def close(self, now):
+        """Leave as a console host does: state 4, argument 3 on the offered clone, then the releases
+        and the host migration (`pokeldn.lgpe.leave.HostLeaver`, docs/lgpe_session.md)."""
+        if self.leaver is not None:
+            return
+        self.drive = []
+        cid = self.offered_clone if self.clone and self.offered_clone in self.clone.flags else None
+        if cid is not None:
+            counter = int.from_bytes(self.clone.flags[cid][8:12], "little") + 1
+            self.clone.flags[cid] = struct.pack("<III", 4, 3, counter)
+            self.publish_step()
+        self.leaver = HostLeaver(self.clone, now)
+        print(f"[lgh] *** CLOSING *** state 4 on clone {cid}, then the releases and the host migration")
+
+    @property
+    def closed(self):
+        return self.leaver is not None and self.leaver.done
 
     def now(self):
         return time.monotonic() - self.t0
@@ -470,6 +531,17 @@ class Session:
             self.send(msg, reliable3.PROTOCOL)
             print(f"[lgh] reliable: sent again, unacknowledged for {self.window.RETRANSMIT_AFTER} s: "
                   f"{reliable3.parse(msg)['sequence']:#x}")
+        if self.leaver is not None and not self.leaver.done:
+            for payload, protocol, port, broadcast in self.leaver.poll(now, self.seated):
+                if payload is None:
+                    self.broadcast_session(self.session_nodes(), host_migration_state=1)
+                elif broadcast:
+                    self.send(payload, protocol, destination=0,
+                              flags=pia3.MESSAGE_FLAG_BITMAP | pia3.MESSAGE_FLAG_UNBUNDLED)
+                else:
+                    self.send(payload, protocol, port=port)
+            if self.leaver.done:
+                print("[lgh] *** CLOSED *** " + "; ".join(self.leaver.log))
         if self.clone is not None:
             for out in self.clone.poll(now):
                 if out[1] == clone.PARTICIPATE:
@@ -640,6 +712,15 @@ class Session:
     def result_kind(self):
         return pb7.RESULT_MESSAGE + 2 * self.round
 
+    @property
+    def queue_done(self):
+        """No queued trade is left (--hold-after-trade): --trade-back's rounds return each offer."""
+        if isinstance(self.partner, trade_back.TradeBack):
+            return self.partner.rounds.finished
+        if isinstance(self.partner, receiver_gift.ReceiverGift):
+            return self.trades >= len(self.partner.rounds)
+        return self.trades >= (1 if self.partner is not None else 1 + len(self.args.next_offer))
+
     def next_round(self, result_step):
         self.round += 1
         if self.partner is not None:
@@ -757,13 +838,13 @@ class Session:
             nodes.append((self.peer_ip, PIA_PORT, 1))
         return tuple(nodes)
 
-    def broadcast_session(self, nodes):
+    def broadcast_session(self, nodes, host_migration_state=0):
         body = local_host.build_update_session(
             self.session_sequence, self.local_network_id, self.args.variable_id,
             # Little-endian here, big-endian in the message header (tests/test_pia4.py). The game
             # resolves a message's sender to a node through this table.
             ldn_service_variable_id(self.host.our_mac), self.our_const.to_bytes(8, "little"),
-            list(nodes))
+            list(nodes), host_migration_state=host_migration_state)
         self.send(body, lp.PROTOCOL, destination=0,
                   flags=pia3.MESSAGE_FLAG_BITMAP | pia3.MESSAGE_FLAG_UNBUNDLED)
 
@@ -781,6 +862,8 @@ class Session:
             self.seen[key] = 0
             print(f"[lgh] first {protocol:#04x} type {first:#04x} ({len(pl)}B) {pl[:24].hex()}")
         self.seen[key] += 1
+        if self.leaver is not None:
+            self.leaver.receive(protocol, pl)
         if protocol == station9.PROTOCOL:
             self.station(pl)
         elif protocol == mp.PROTOCOL:
@@ -888,6 +971,7 @@ class Session:
                             body=msg["body"].hex(), t=round(self.now(), 3))
                 return
             self.trade["done"] = True
+            self.trades += 1
             show_done()
             screen.arrived()
             TRADE_IN_PROGRESS["offer"] = TRADE_IN_PROGRESS["commit"] = self.trade["mid_trade"] = False

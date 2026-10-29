@@ -514,3 +514,15 @@ class HostTrade:
 
     def _stage_done(self, now):
         pass
+
+    @property
+    def idle(self):
+        """Between trades: the last one saved, or back in the box with no offer from the joiner."""
+        return self.stage == "saving" or self.stage == "box" and self.box["peer_pk8"] is None
+
+    def leave(self):
+        """Box command 3, the first word of a hosting Sword leaving; the host's migration follows
+        MIGRATION_DELAY later (docs/swsh_session.md, Leaving)."""
+        self.send(PORT_CONTENT, trade.box_sync_state(3))
+        self.log("[trade] -> box command 3, leaving")
+        self.goto("done")

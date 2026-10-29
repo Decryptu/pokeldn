@@ -112,6 +112,7 @@ def answer_console(args, state, msg, send, tag="[lg]"):
         queue = getattr(args, "offers", None) or [args.offer]
         if r + 1 >= len(queue):
             print(f"{tag} game: trade {r + 1} was the last queued; a further trade is not answered")
+            state["queue_done"] = True
             return
         from pokeldn.pokemon import trade_path
         state["round"] = r + 1

@@ -589,8 +589,10 @@ request, type 3; the console answers type 4.
 A console host answers a joiner's leave request with `08 00` twice, then repeats a Local Protocol
 start host migration (type 0x13) every 0.3 s. A joiner's disconnection request returns the host's
 player to the menu. `bin/lgpe_join.py --leave-after SECONDS` runs the exit (`pokeldn.lgpe.leave`);
-`--stall-leave` (default 5) runs it when a vote stands unagreed before any kind 3. The exit does not
-lift the trade lock.
+`--stall-leave` (default 5) runs it when a vote stands unagreed before any kind 3,
+`--hold-after-trade N` runs it N seconds after the last queued trade, and the end of
+`--connect-seconds` or `--hold` outside a trade runs it too. Unanswered, our leave request is given up
+5.0 s after the first, as `LeaveMeshJob` gives up. The exit does not lift the trade lock.
 
 ### A host leaving
 
@@ -601,6 +603,13 @@ session carrying host migration state 1 and repeats start host migration (type 0
 until no other station is connected or 10000 ms have passed, then destroys the network (eight LDN
 disconnect frames, reason 3). `bin/lgpe_join.py` answers the ack and `48 01` and leaves on the first
 0x13 (`pokeldn.lgpe.leave.host_departure`).
+
+`bin/lgpe_host.py` leaves the same way at `--seconds`, at `--hold-after-trade N` (N seconds after the
+console's result for the last queued trade) and on Ctrl-C (`pokeldn.lgpe.leave.HostLeaver`): state 4,
+argument 3 on the offered clone, its releases resent every 100 ms for up to 2.5 s until each is
+acknowledged, the migration start, then the update session and start host migration. The two
+messages are the recorded ones byte for byte. It stops the network once the console has left, or
+after 20 s; a second Ctrl-C stops it at once.
 
 ### The wait before leaving
 

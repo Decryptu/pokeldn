@@ -8,7 +8,7 @@ import types
 
 import pytest
 
-from pokeldn import gen8, pla
+from pokeldn import gen8, ldn, pla
 from pokeldn.ldn import pia6, pia_connect, reliable5
 from pokeldn.pla import channel_table, data_exchange, game_channel, joiner, trade_box
 from pokeldn.pla import pokemon as pla_pokemon
@@ -115,7 +115,7 @@ def run_host(monkeypatch, capsys, console_class, goal, drop=None, extra=()):
             pass
 
         def stop(self):
-            pass
+            run.stopped_at = clock.t
 
         def send(self, pkt, ip):
             header, plain, _ = pia6.parse_packet(keys.session_key, HOST_IP, keys.network_id, pkt)
@@ -142,6 +142,8 @@ def run_host(monkeypatch, capsys, console_class, goal, drop=None, extra=()):
 
     monkeypatch.setattr(pla_host, "IpHostTransport", Loopback)
     monkeypatch.setattr(pla_host, "time", types.SimpleNamespace(time=clock, monotonic=clock))
+    monkeypatch.setattr(ldn, "_time", types.SimpleNamespace(monotonic=clock))
+    monkeypatch.setattr(ldn, "_done_at", None)
     monkeypatch.setattr(joiner, "trade_box", _faithful_trade_box())
     monkeypatch.setattr(sys, "argv", [
         "pla_host.py", "--ip-host", "--our-ip", HOST_IP, "--seconds", str(SECONDS), "--print-packets",
@@ -215,6 +217,22 @@ def test_one_lost_message_and_the_trade_still_completes(monkeypatch, capsys, los
         assert copies, "the lost message was never sent again"
         assert copies[0][2] == message and copies[0][3] != packet      # same sequence, new nonce
         assert f"game channel resend (port {port}, seq {seq})" in run.log
+
+
+@pytest.mark.parametrize("extra, trades", [((), 1), (("--trade-back",), 2)])
+def test_hold_after_trade_sends_the_leave_soon_after_the_last_queued_trade(monkeypatch, capsys, tmp_path,
+                                                                          extra, trades):
+    """--hold-after-trade 1: one second after the last queued trade the console gets the type-3 leave
+    and the run ends, ahead of the goal's SETTLE and of --seconds; --trade-back waits for the trade back."""
+    if extra:
+        path = tmp_path / "ours.pa8"
+        path.write_bytes(trade_box.REFERENCE_RECORD)
+        extra += ("--trade-box-record", str(path))
+    run = run_host(monkeypatch, capsys, SixTrades,
+                   lambda c: len(c.trades) == trades, extra=("--hold-after-trade", "1", *extra))
+    assert len(run.console.trades) == trades and run.console.host_left
+    assert run.log.count("session leave request (type 3)") == 1
+    assert run.stopped_at - run.done_at < SETTLE
 
 
 class TwoTrades(Console):

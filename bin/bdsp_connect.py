@@ -28,8 +28,15 @@ from pokeldn.ldn.transport import board_radio, find_ap_phy
 UNRELIABLE_PROTOCOL = 0x68  # its payload is the game's live state
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn import launcher
-from pokeldn.ldn import show_done
+from pokeldn.ldn import hold_after_trade_over, show_done
 from pokeldn.app import screen
+
+# The player has control about 29 s after the sealed trade; never leave inside the save and animation
+# (docs/bdsp_trade.md, The completed trade).
+TRADE_SETTLE = 30.0
+# Answered, a retail joiner's departure takes 0.2 s; unanswered, it retries for 5 s
+# (docs/bdsp_session.md, Leaving).
+LEAVE_RETRY, LEAVE_LIMIT = 0.3, 5.0
 
 
 def cleanup():
@@ -158,7 +165,7 @@ async def main_async(args):
               "their_poke": None, "their_raw": None, "their_pokes": 0, "our_pokes": [], "trades": 0, "answered_with": set(), "trade_replies": 0, "check_oks": 0,
               "their_ready_ok": None, "ready_oks_sent": 0, "their_security_state": None,
               "our_security_state": 0, "our_next_seq": 0, "return_selects": 0, "arriving": False,
-              "departure_answers": 0, "leaving": False, "hold_scope": None}
+              "departure_answers": 0, "leaving": False, "hold_scope": None, "traded_at": None}
 
         # Build the offer before the radio is touched, so a bad template or nickname fails here.
         # No species edit: the species word alone leaves the template's gender, ability, moves
@@ -1143,6 +1150,7 @@ async def main_async(args):
                 if their >= room.TRADE_STATE_SEND_READYOK and not st["arriving"]:
                     st["arriving"] = True
                     st["trades"] += 1
+                    st["traded_at"] = now
                     print(f"[cx]   trade {st['trades']} complete - the console saves next, repeater quiet")
                     show_done()
                     record(rec="security_phase_end", t=now)
@@ -1452,6 +1460,49 @@ async def main_async(args):
                               f"at seq {seq}")
                 await trio.sleep(args.match_wait_period)
 
+        def queue_done():
+            if rounds:
+                return rounds.finished
+            return bool(st["our_pokes"]) and st["trades"] >= len(st["our_pokes"])
+
+        async def leave_after_trade(scope):
+            while True:
+                await trio.sleep(0.1)
+                now = time.monotonic() - t0
+                if (st["traded_at"] is not None and now - st["traded_at"] >= TRADE_SETTLE
+                        and hold_after_trade_over(args.hold_after_trade, queue_done())):
+                    print(f"\n[cx] t={now:6.2f} {args.hold_after_trade:.0f}s after trade "
+                          f"{st['trades']}: leaving the room")
+                    scope.cancel()
+                    return
+
+        async def leave_the_mesh():
+            """Leave as a retail joiner does: `04 <own index>` on the mesh's reliable window until the
+            host's `08`, then station disconnection `03` until its `04` (docs/bdsp_session.md, Leaving)."""
+            jr = mp.parse_join_response(st["join_response"])
+            own, host_index = jr["our_index"], jr["host_index"]
+            leave = bytes([mp.LEAVE_REQUEST, own])
+            steps = ((rl.build_header(rl.FLAG_APPLICATION_DATA | rl.FLAG_MESSAGE_START
+                                      | rl.FLAG_MESSAGE_END | rl.FLAG_IS_INITIALIZED, 1, len(leave),
+                                      lowest_pending=1) + leave,
+                      mp.PROTOCOL, mp.PORT_RELIABLE, ("mesh", mp.LEAVE_RESPONSE)),
+                     (bytes([stp.DISCONNECTION_REQUEST]), stp.PROTOCOL, 0,
+                      (stp.DISCONNECTION_RESPONSE, None)))
+            st["reply"] = None
+            for payload, protocol, port, wanted in steps:
+                while st["reply"] != wanted:
+                    st["waiter"] = trio.Event()
+                    sock.sendto(wrap(keys, our_mac, args.src_var, st["dst_var"], next_nonce(), payload,
+                                     protocol, port=port, destination=1 << host_index,
+                                     message_flags=0x01), (st["dst_ip"], PIA_PORT))
+                    record(rec="tx_leave", t=time.monotonic() - t0, protocol=protocol,
+                           payload=payload.hex())
+                    with trio.move_on_after(LEAVE_RETRY):
+                        while st["reply"] != wanted:
+                            await st["waiter"].wait()
+                            st["waiter"] = trio.Event()
+            print(f"[cx] t={time.monotonic() - t0:6.2f} left the room: the host answered both departures")
+
         async def stop_on_signal(scope):
             with trio.open_signal_receiver(signal.SIGINT, signal.SIGTERM) as signals:
                 async for _ in signals:
@@ -1477,6 +1528,16 @@ async def main_async(args):
                     nursery.start_soon(ug_join)
                 if args.complete_trade:
                     nursery.start_soon(repeat_the_security_state)
+                if args.hold_after_trade is not None:
+                    nursery.start_soon(leave_after_trade, hold_scope)
+
+        # --hold, a signal and --hold-after-trade all leave the same way; a closing host needs nothing.
+        if st["join_response"] is not None and not st["leaving"]:
+            with trio.move_on_after(LEAVE_LIMIT):
+                async with trio.open_nursery() as nursery:
+                    nursery.start_soon(receiver)
+                    await leave_the_mesh()
+                    nursery.cancel_scope.cancel()
 
         print(f"\n[cx] {st['updates']} update session(s), {len(st['replies'])} station-protocol "
               f"reply/replies")
@@ -1548,6 +1609,7 @@ def build_parser():
                     help="the PlayerInfo language byte, a MsgLangId (3 is French); 1, 8, 9 and 10 cap "
                          "the greeting's name at 6 characters, others at 12 (docs/bdsp_protocol.md)")
     ap.add_argument("--hold", type=float, default=300.0)
+    launcher.add_hold_after_trade_argument(ap)
     ap.add_argument("--listen-first", type=float, default=5.0)
     ap.add_argument("--ack-seconds", type=float, default=6.0)
     ap.add_argument("--quiet-for", type=float, default=1.0)

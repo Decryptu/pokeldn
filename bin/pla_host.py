@@ -21,7 +21,7 @@ from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
 from pokeldn import config
 from pokeldn import gen8, pla
-from pokeldn.ldn import left_after_trade, pia6, pia_connect, reliable5, show_done
+from pokeldn.ldn import hold_after_trade_over, left_after_trade, pia6, pia_connect, reliable5, show_done
 from pokeldn.ldn import channel_table
 from pokeldn import receiver_gift, trade_back
 from pokeldn.app import screen
@@ -253,6 +253,7 @@ def build_parser():
     ap.add_argument("--leave-after", type=float, default=None,
                     help="seconds after a station's session join to send it the type-3 leave and "
                          "end the run; the one direction no capture shows")
+    launcher.add_hold_after_trade_argument(ap, host=True)
     ap.add_argument("--leave-sends", type=int, default=4,
                     help="how many times to send it; a console sends four")
     ap.add_argument("--stay-after-leave", action="store_true",
@@ -511,6 +512,13 @@ def main():
                 if left and all(ip in left for ip in station_ids) and not args.stay_after_leave:
                     print("[pla] left the session; the run ends here")
                     break
+            # --trade-back returns each queued record in the trade after it (pokeldn.trade_back).
+            queued = 1 if partner is not None else len(box_files) * (2 if args.trade_back else 1)
+            if hold_after_trade_over(args.hold_after_trade, trades[0] >= queued):
+                print(f"[pla] closing the session {args.hold_after_trade:.0f}s after trade {trades[0]}")
+                for ip in list(station_ids):
+                    leave(ip)
+                break
             # Probe every address that ever joined, and keep probing after an answer: a searching
             # console rebinds its station every cycle, and each needs the Net 0x11 to pass
             # WaitConnected.

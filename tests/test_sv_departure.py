@@ -8,8 +8,9 @@ import trio
 
 import sv_host
 import sv_join
-from pokeldn import sv
-from pokeldn.ldn import pia6, pia_connect
+from pokeldn import ldn, sv
+from pokeldn.ldn import game_channel, pia6, pia_connect, reliable5
+from pokeldn.sv import trade
 
 HOST_IP, JOIN_IP = '127.0.0.2', '127.0.0.3'
 HOST_MAC, JOIN_MAC = bytes.fromhex('02007f000002'), bytes.fromhex('02007f000003')
@@ -243,3 +244,169 @@ def test_our_type_7_is_a_retail_hosts():
     assert pia_connect.build_session_migration_v11(
         CONSOLE_CID, RETAIL_HOST_VAR, "169.254.25.1", bytes.fromhex("24c93ad134e60000"), 0xC493,
         tail=1) == RETAIL_TYPE7
+
+
+PAIR = os.path.join(ROOT, 'tests', 'data', 'sv_pair_trade.txt')
+
+
+class TradingPeer:
+    """The other side of a Scarlet trade, played by the other role's stage over 0x7C (pokeldn.sv.trade,
+    pinned to a retail pair by tests/test_sv.py); answers a type-3 leave as a retail host does."""
+
+    def __init__(self, clock, stage, own_ip, other_ip, own_var, other_var):
+        self.clock, self.stage, self.own_ip, self.other_ip = clock, stage, own_ip, other_ip
+        self.own_var, self.other_var = own_var, other_var
+        self.keys = sv.session_keys(SSID)
+        self.queue, self.seq, self.got, self.leaves = [], {}, set(), []
+
+    def packet(self, body, protocol, port=0):
+        return sv_join.build_out(self.keys, self.own_ip, body, self.other_var, protocol=protocol,
+                                 port=port, src_var=self.own_var)
+
+    def send_channel(self, port, payload):
+        self.seq[port] = self.seq.get(port, 0) + 1
+        self.queue.append(self.packet(game_channel.build_payload_message(payload, self.seq[port]),
+                                      sv_join.PROTO_RELIABLE, port))
+
+    def received(self, packet):
+        _, plain, _ = pia6.parse_packet(self.keys.session_key, self.other_ip, self.keys.network_id,
+                                        packet)
+        for msg in pia6.parse_messages(plain):
+            p = bytes(msg.payload)
+            if msg.protocol == sv_join.PROTO_SESSION and p[:1] == bytes([pia_connect.SESSION_LEAVE_REQUEST]):
+                self.leaves.append(self.clock.now)
+                self.queue.append(self.packet(pia_connect.build_session_leave_response_v11(
+                    p, random4=bytes(4)), sv_join.PROTO_SESSION))
+            if msg.protocol != sv_join.PROTO_RELIABLE or len(p) < reliable5.HEADER_SIZE:
+                continue
+            rm = reliable5.parse(p)
+            if not rm['flags'] & reliable5.FLAG_APPLICATION_DATA or (msg.port, rm['sequence_id']) in self.got:
+                continue
+            self.got.add((msg.port, rm['sequence_id']))
+            for _delay, port, payload in self.stage.on_message(msg.port, rm['payload']):
+                self.send_channel(port, payload)
+
+
+def pair_offers(tmp_path):
+    with open(PAIR, encoding='utf-8') as fh:
+        rows = [line.split() for line in fh if line.strip()]
+    host, joiner = bytes.fromhex(rows[2][2])[4:], bytes.fromhex(rows[3][2])[4:]
+    (tmp_path / 'host.bin').write_bytes(host)
+    (tmp_path / 'joiner.bin').write_bytes(joiner)
+    return host, joiner
+
+
+@pytest.mark.parametrize('extra, why, after', [
+    (['--hold-after-trade', '2'], 'left_after_trade', 2.0),
+    ([], 'left_at_hold', None),
+])
+def test_the_joiner_leaves_its_trade_seat_with_the_retail_leave(monkeypatch, tmp_path, extra, why, after):
+    """The joiner sends the type-3 leave a retail station sends (`0x6db590`) when --hold ends, or
+    --hold-after-trade seconds after its last queued trade, well inside --hold."""
+    clock = Clock()
+    start = clock.now
+    host_offer, _ = pair_offers(tmp_path)
+    host = TradingPeer(clock, trade.TradeStage(host_offer), HOST_IP, JOIN_IP, 1, 2)
+    host.queue.append(host.packet(pia_connect.build_session_join_response_v11(
+        pia_connect.ldn_constant_id(HOST_MAC), 1, pia_connect.ldn_constant_id(JOIN_MAC), 2,
+        version=11, route=None), sv_join.PROTO_SESSION))
+    host.send_channel(1, trade.table_update(trade.KEY_TRADE, True))
+    for _delay, port, payload in host.stage.offer_first():
+        host.send_channel(port, payload)
+
+    class Socket:
+        def sendto(self, packet, _):
+            host.received(packet)
+
+        def recvfrom(self, _):
+            if host.queue:
+                return host.queue.pop(0), (HOST_IP, sv.PIA_PORT)
+            raise BlockingIOError
+
+        def close(self):
+            pass
+
+    async def wait_readable(_):
+        clock.now += 0.05
+        await trio.lowlevel.checkpoint()
+
+    rows = []
+    monkeypatch.setattr(sv_join, 'time', clock)
+    monkeypatch.setattr(ldn, '_time', clock)
+    monkeypatch.setattr(ldn, '_done_at', None)
+    monkeypatch.setattr(sv_join, 'make_socket', lambda *a: Socket())
+    monkeypatch.setattr(trio.lowlevel, 'wait_readable', wait_readable)
+    args = sv_join.build_parser().parse_args([
+        '--ip-join', '--hold', '60', '--no-clock', '--rtt-period', '0',
+        '--trade-offer', str(tmp_path / 'joiner.bin'), *extra])
+    trio.run(sv_join.run_session, args, host.keys, HOST_IP, HOST_MAC, JOIN_IP, JOIN_MAC,
+             lambda **row: rows.append(row))
+    traded = [r['t'] for r in rows if r['rec'] == 'trade_done']
+    left = [r for r in rows if r['rec'] == why]
+    assert len(traded) == 1 and host.stage.done
+    assert left and left[0]['answered'], "the joiner dropped its seat without the leave"
+    assert len(host.leaves) == 1
+    sent = host.leaves[0] - (traded[0] if after else start)
+    assert (after or 60) <= sent < (after or 60) + 0.5
+    assert left[0]['t'] - host.leaves[0] < 0.5
+
+
+def test_the_host_closes_hold_after_trade_seconds_after_the_trade(monkeypatch, tmp_path):
+    """With --hold-after-trade the host closes its session that long after the last queued trade
+    while the console stays seated, well inside --seconds; the close is the one --seconds ends in."""
+    clock = Clock()
+    _, joiner_offer = pair_offers(tmp_path)
+    console = TradingPeer(clock, trade.JoinerTradeStage(joiner_offer), JOIN_IP, HOST_IP,
+                          CONSOLE_VAR, 1)
+    console.queue.append(console.packet(pia6.build_session_join(
+        CONSOLE_CID, CONSOLE_VAR, JOIN_IP, pia_connect.ldn_constant_id(HOST_MAC), 1, 'Player',
+        bytes(4)), sv_host.PROTO_SESSION))
+    stopped = []
+
+    class Transport:
+        ssid, our_ip, our_mac = SSID, HOST_IP, HOST_MAC
+        participants, join_events = [(JOIN_MAC, JOIN_IP)], 1
+
+        def __init__(self, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+        def stop(self):
+            stopped.append(clock.now)
+
+        def set_application_data(self, _):
+            pass
+
+        def send(self, packet, _):
+            console.received(packet)
+            if console.stage.opened and not console.stage.offered:
+                for _delay, port, payload in console.stage.offer_first():
+                    console.send_channel(port, payload)
+
+        def wait_readable(self, _):
+            clock.now += 0.05
+
+        def recv(self):
+            queued, console.queue = console.queue, []
+            return [(packet, JOIN_IP) for packet in queued]
+
+    done = []
+    monkeypatch.setattr(sv_host, 'time', clock)
+    monkeypatch.setattr(ldn, '_time', clock)
+    monkeypatch.setattr(ldn, '_done_at', None)
+    monkeypatch.setattr(sv_host, 'show_done', lambda: (done.append(clock.now), ldn.show_done()))
+    monkeypatch.setattr(sv_host, 'IpHostTransport', Transport)
+    monkeypatch.setattr(sv_host.pokemon_service, 'prepare_file', lambda game, path, **kw: path)
+    start = clock.now
+    monkeypatch.setattr('sys.argv', [
+        'sv_host', '--ip-host', '--seconds', '120', '--no-net-probe', '--scarlet-response',
+        '--no-session-update', '--session-flags', '0x00', '--no-identity',
+        '--send-at', '0.5:0x7c:1:' + trade.table_update(trade.KEY_TRADE, True).hex(),
+        '--trade-offer', str(tmp_path / 'host.bin'), '--hold-after-trade', '2'])
+    assert sv_host.main() == 0
+    assert len(done) == 1 and console.stage.done
+    assert not console.leaves
+    assert stopped and 2.0 <= stopped[0] - done[0] < 2.5
+    assert stopped[0] - start < 120 / 2

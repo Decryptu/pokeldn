@@ -22,7 +22,7 @@ import pathlib
 
 from pokeldn.host_support import open_output, write_file
 from pokeldn import pokemon as pokemon_service
-from pokeldn.ldn import left_after_trade
+from pokeldn.ldn import hold_after_trade_over, left_after_trade
 from pokeldn.online import session as online
 from pokeldn import receiver_gift, trade_back
 from pokeldn.bdsp import pokemon, room
@@ -39,13 +39,20 @@ SHOWN = {"seat", "left", "session_ack", "connection_request", "request_not_ours"
          "approach", "approach_result", "talked_to", "their_trainer", "their_poke",
          "their_check_ok", "their_ready_ok", "their_security_state", "trade_complete",
          "their_return_select",
-         "leave_request", "disconnection_request"}
+         "leave_request", "disconnection_request", "close", "migration_response"}
+# A retail host closes 0.5 s after the console's answer; unanswered, this stops waiting
+# (docs/bdsp_session.md, Leaving).
+CLOSE_LIMIT = 5.0
+# The player has control about 29 s after the sealed trade; never close inside the save and animation
+# (docs/bdsp_trade.md, The completed trade).
+TRADE_SETTLE = 30.0
 
 
 def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seconds", type=float, default=600.0, help="how long to host")
+    launcher.add_hold_after_trade_argument(ap, host=True)
     launcher.add_radio_arguments(ap, capture="every datagram and event, one JSON line each")
     ap.add_argument("--channel", type=int, default=6)
     ap.add_argument("--ldn-protocol", type=int, default=1, choices=(1, 3),
@@ -183,37 +190,77 @@ def main(argv=None):
                           language=args.language, join=join, on_game=on_game,
                           on_tick=partner.tick if trading else None, record=record,
                           nonce_start=random.getrandbits(48))
-    last_status = 0.0
-    joins_seen = 0
+    state = {"last_status": 0.0, "joins_seen": 0, "closing": None, "trades": 0, "traded_at": None}
+
+    def queue_done():
+        """No queued offer is left for this seat; an online partner's queue is theirs."""
+        if isinstance(remote, trade_back.TradeBack):
+            return remote.rounds.finished
+        if remote is not None and not isinstance(remote, receiver_gift.ReceiverGift):
+            return False
+        return partner.trades >= len(offers)
+
+    def pump(now):
+        out = []
+        present = list(host.participants)
+        if session.joiner is not None and not any(p[1] == session.joiner.ip for p in present):
+            print(f"[bh] t={now:7.2f} the console left its seat")
+            session.leave(now)
+        if left_after_trade(present):
+            print(f"[bh] t={now:7.2f} the console left after the trade; closing")
+            return False
+        # An association can follow a deauthentication inside one pass with no leave reported:
+        # every join event starts the handshake over.
+        if host.join_events > state["joins_seen"] and present:
+            state["joins_seen"] = host.join_events
+            _, ip, mac, _ = present[-1]
+            print(f"[bh] t={now:7.2f} *** CONSOLE ASSOCIATED *** ip={ip} mac={bytes(mac).hex()}")
+            out += session.seat(ip, mac, now)
+        for payload, src_ip in host.recv():
+            out += session.receive(payload, src_ip, now)
+        out += session.tick(now)
+        for pkt, ip in out:
+            host.send(pkt, ip)
+        if partner.trades != state["trades"]:
+            state["trades"], state["traded_at"] = partner.trades, now
+        if now - state["last_status"] >= 10:
+            state["last_status"] = now
+            print(f"[bh] t={now:7.2f} {session.counters}")
+        time.sleep(0.005)
+        return True
+
+    def close(why, now):
+        print(f"[bh] t={now:7.2f} {why}; closing the room")
+        state["closing"] = now
+        for pkt, ip in session.close(now):
+            host.send(pkt, ip)
+
+    def closed(now):
+        return session.closed or session.joiner is None or now - state["closing"] > CLOSE_LIMIT
+
     try:
-        while time.monotonic() - t0 < args.seconds:
+        try:
+            while True:
+                now = time.monotonic() - t0
+                if state["closing"] is not None:
+                    if closed(now):
+                        break
+                elif now >= args.seconds:
+                    close(f"{args.seconds:.0f}s are up", now)
+                elif (state["traded_at"] is not None and now - state["traded_at"] >= TRADE_SETTLE
+                      and hold_after_trade_over(args.hold_after_trade, queue_done())):
+                    close(f"{args.hold_after_trade:.0f}s after trade {partner.trades}", now)
+                if not pump(now):
+                    break
+        except KeyboardInterrupt:
+            print("[bh] interrupted; a second Ctrl-C stops at once")
             now = time.monotonic() - t0
-            out = []
-            present = list(host.participants)
-            if session.joiner is not None and not any(p[1] == session.joiner.ip for p in present):
-                print(f"[bh] t={now:7.2f} the console left its seat")
-                session.leave(now)
-            if left_after_trade(present):
-                print(f"[bh] t={now:7.2f} the console left after the trade; closing")
-                break
-            # An association can follow a deauthentication inside one pass with no leave reported:
-            # every join event starts the handshake over.
-            if host.join_events > joins_seen and present:
-                joins_seen = host.join_events
-                _, ip, mac, _ = present[-1]
-                print(f"[bh] t={now:7.2f} *** CONSOLE ASSOCIATED *** ip={ip} mac={bytes(mac).hex()}")
-                out += session.seat(ip, mac, now)
-            for payload, src_ip in host.recv():
-                out += session.receive(payload, src_ip, now)
-            out += session.tick(now)
-            for pkt, ip in out:
-                host.send(pkt, ip)
-            if now - last_status >= 10:
-                last_status = now
-                print(f"[bh] t={now:7.2f} {session.counters}")
-            time.sleep(0.005)
+            if state["closing"] is None:
+                close("interrupted", now)
+            while not closed(time.monotonic() - t0) and pump(time.monotonic() - t0):
+                pass
     except KeyboardInterrupt:
-        print("[bh] interrupted")
+        print("[bh] interrupted again")
     finally:
         host.stop()
         if remote:

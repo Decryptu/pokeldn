@@ -1,14 +1,30 @@
-# pokeldn 0.47.1
+# pokeldn 0.48.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The switch above each tool now says what pokeldn does: Hosts comes first, then Joins. Before, it
-  said what the console does, while the sentence under it said what pokeldn does.
-- A Scarlet and Violet Tera Raid's boss card takes the whole width of The raid card, so its six IVs
-  read on one line. Before, a narrow column squeezed them to one letter a line.
+- When a run fails, the session panel says why in one sentence, with a button to the page that fixes
+  it: a dropped or busy board, firmware that does not match, a missing key in prod.keys, or a console
+  that never joined. While a run waits, it shows "Waiting for the console" with the time, then
+  "Console connected".
+- Retry failed trades (Settings, off by default) starts a failed trade run again after 15 s, up to
+  three times, with only the Pokemon not yet traded.
+- Settings, the checklist and Start name any key your prod.keys lacks. A prod.keys with comment
+  lines now loads.
+- A damaged settings file is kept as `settings.json.bad`, and only the fields it could not read go
+  back to their defaults; the app says so at launch.
+- After you choose your keys, the welcome watches for the board and sends you to the Board page if
+  it needs firmware. Escape closes the welcome.
+- Keyboard shortcuts: Cmd or Ctrl with 1 to 6 switches pages, with a comma opens Settings, with Enter
+  starts and with a full stop stops.
+- Larger text (Settings) makes the text 15% bigger, and faint text has more contrast.
+- The Bank remembers its sort and filters, and its search also matches English names and the game.
+- Every trade launcher takes `--hold-after-trade SECONDS` in both roles: leave the seat, or close the
+  hosted session, that long after the last queued trade. Brilliant Diamond and Shining Pearl, Sword
+  and Shield, Let's Go, and Scarlet and Violet now leave or close with the departure messages a console sends
+  when a time limit ends.
 
 The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 

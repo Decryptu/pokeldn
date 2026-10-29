@@ -35,4 +35,5 @@ def _fresh_trade_count():
     """A run is one process; each test starts with no completed trade (pokeldn.ldn.trades_done)."""
     import pokeldn.ldn
     pokeldn.ldn._done.clear()
+    pokeldn.ldn._done_at = None
     yield

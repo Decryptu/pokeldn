@@ -403,8 +403,9 @@ to `--snapshot-name/-tid/-sid`, and it goes out once the console's has been reas
 `--offer-file FILE` puts a `.pk8` in the offered party slot. Repeated, it queues one record per trade
 on the session; the last serves every later trade, under a new PID with `--fresh-pid`, and trade N
 writes `--save-offered` with `-N`. A trade the console has offered and whose ladder has not finished
-holds the session up to `--grace` seconds (300) past `--hold`. A stored-format record with no party
-stats trades; the console computes the level from the experience.
+holds the session up to `--grace` seconds (300) past `--hold`. `--hold-after-trade SECONDS` on either
+launcher ends the run that long after the last queued trade ([Leaving](swsh_session.md#leaving)). A
+stored-format record with no party stats trades; the console computes the level from the experience.
 
 ## The penalty, and ending a run cleanly
 

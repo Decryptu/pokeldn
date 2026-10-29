@@ -174,3 +174,52 @@ def test_a_new_copy_within_one_mesh_clock_tick_still_carries_a_newer_clock():
     second = clone.parse_data_message(part.receive(vote, 100.12)[0])["record"]
     assert words(second["data"])[:3] == [1, 1, 1]
     assert second["clock"] > first["clock"]
+
+
+def test_our_hosts_departure_is_the_recorded_one_and_our_joiner_answers_it():
+    """`HostLeaver` against the joiner's `host_departure`: the releases, the migration start the
+    emulated pair recorded every 45 ms until `48 01`, then the retail host's START_HOST_MIGRATION
+    every 301 ms until no station is left (docs/lgpe_session.md, A host leaving)."""
+    from pokeldn.ldn import local_protocol as lp
+    from pokeldn.lgpe.leave import HostLeaver
+    part = clone.Participant(100.0, dest=2, own=1, station=0)
+    part.held.update({1, 2, 3})
+    host = HostLeaver(part, 100.0)
+    assert run_host(host, 100.0, 100.45) == []
+    ends = [clone.parse_command(p) for p, proto, port, _ in run_host(host, 100.45, 100.55)]
+    assert sorted({c["clone_id"] for c in ends}) == [0, 1, 2, 3]
+    for cid in (1, 0, 2, 3):
+        host.receive(clone.PROTOCOL, clone.build_command(clone.COMMAND_END_ACK, 4, 0xFD, cid, 9, 1))
+    out = run_host(host, 100.55, 100.65)
+    starts = [(p, port) for p, proto, port, _ in out if proto == mp.PROTOCOL]
+    assert starts[0] == (HOST_MIGRATION_START, 1) and len(starts) == 3      # every 45 ms
+    replies, leave = host_departure(mp.PROTOCOL, starts[0][0], 1)
+    for payload, proto, port in replies:
+        host.receive(proto, payload)
+    out = run_host(host, 100.65, 101.3)
+    assert out[0] == (None, lp.PROTOCOL, 0, True)                         # migration state 1
+    sent = [p for p, proto, port, _ in out[1:]]
+    assert sent == [START_HOST_MIGRATION] * 3 and host_departure(lp.PROTOCOL, sent[0], 1)[1]
+    assert not host.done
+    run_host(host, 101.3, 101.32, stations=False)
+    assert host.done
+
+
+def run_host(host, t_from, t_to, step=0.005, stations=True):
+    out, t = [], t_from
+    while t < t_to:
+        out += host.poll(t, stations)
+        t += step
+    return out
+
+
+def test_a_leave_request_never_answered_ends_the_leave_after_five_seconds():
+    """`LeaveMeshJob` deauthenticates 5.0 s after its first unanswered request (docs/lgpe_session.md),
+    so a seat whose host is gone ends instead of retrying until --grace."""
+    part, lv = make()
+    out = run(lv, 100.0, 107.0)
+    assert [p for p, proto, port in out if proto == mp.PROTOCOL] and not lv.done
+    run(lv, 107.0, lv.leave_first + 4.99)
+    assert not lv.done
+    run(lv, lv.leave_first + 4.99, lv.leave_first + 5.01)
+    assert lv.done and lv.log[-1] == "given up on the leave response"

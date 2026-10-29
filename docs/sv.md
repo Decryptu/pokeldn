@@ -999,7 +999,9 @@ untraced; `NetHostMigrationJob` opens with DisconnectNetwork or EmulateDisconnec
 A joiner that holds the seat draws NetStartHostMigration for about 4 s. `bin/sv_join.py` leaves at
 the first one (`--stay-on-host-migration` holds the seat).
 
-After a completed trade, both launchers exit when the console leaves. A seat that completes no trade
+After a completed trade, both launchers exit when the console leaves. With `--hold-after-trade N`,
+`bin/sv_join.py` sends the type-3 leave N seconds after its last queued trade, as it does on a trade
+seat when `--hold` ends, and `bin/sv_host.py` closes its network as it does when `--seconds` ends. A seat that completes no trade
 lets `bin/sv_join.py` resume scanning ([Ending a run](architecture.md#ending-a-run)).
 
 ## Unresolved

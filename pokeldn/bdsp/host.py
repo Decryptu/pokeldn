@@ -52,6 +52,7 @@ UPDATE_MESH_PERIOD = 1.0
 RTT_PERIOD = 0.4
 RELIABLE_RETRY = 0.2
 STATE_PERIOD = 1.0
+CLOSE_RETRY = 0.3                 # a retail host's resend (docs/bdsp_session.md, Leaving)
 
 
 def build_advertise_data(network_id, session_param, application_data=b"\0", password=""):
@@ -216,6 +217,9 @@ class HostSession:
                          "leave_requests": 0, "disconnection_requests": 0}
         # the mesh clock a host hands out, in ms; any monotonic value
         self.clock_origin_ms = 1_000_000
+        self.closing = None
+        self.closed = False
+        self.next_close = 0.0
 
     def _nonce8(self):
         self.nonce = (self.nonce + 1) & ((1 << 64) - 1)
@@ -246,6 +250,21 @@ class HostSession:
             self.record(rec="left", t=now, ip=self.joiner.ip)
         self.joiner = None
         self.session_seq += 1
+
+    def close(self, now):
+        """Leave the room as a retail host does: MIGRATION_START `44 <host> <joiner>` on the mesh's
+        reliable window until the console's `48 <joiner>`; `closed` then, or at once with no console in
+        the mesh (docs/bdsp_session.md, Leaving)."""
+        j = self.joiner
+        if self.closing is not None:
+            return self._drain()
+        self.closing = now
+        self.record(rec="close", t=now)
+        if j is None or not j.join_acked or j.leaving:
+            self.closed = True
+            return self._drain()
+        self.next_close = now
+        return self.tick(now)
 
     def update_session(self):
         nodes = [(self.our_ip, PIA_PORT, 0)]
@@ -340,7 +359,10 @@ class HostSession:
             self._mesh_reliable(j, m, now)
             return
         kind = m.payload[0] if m.payload else None
-        if kind == mp.JOIN_REQUEST:
+        if kind == mp.MIGRATION_RESPONSE and self.closing is not None:
+            self.closed = True
+            self.record(rec="migration_response", t=now, payload=m.payload.hex())
+        elif kind == mp.JOIN_REQUEST:
             ack = mp.read_ack_id(m.payload)
             msgs = [(stp.build_ack(ack), stp.PROTOCOL, 0, 0x01, 0)]
             if j.join_response is None and j.location is not None:
@@ -499,6 +521,13 @@ class HostSession:
         if j.join_ack is not None and j.join_response is not None and now >= j.next_join_response:
             self._send([(j.join_response, mp.PROTOCOL, 0, 0x01, 0)], 0, self.broadcast)
             j.next_join_response = now + STATION_RETRY
+        if self.closing is not None and not self.closed and j.join_acked and now >= self.next_close:
+            start = bytes([mp.MIGRATION_START, HOST_INDEX, JOINER_INDEX])
+            msg = rl.build_header(rl.FLAG_APPLICATION_DATA | rl.FLAG_MESSAGE_START | rl.FLAG_MESSAGE_END
+                                  | rl.FLAG_IS_INITIALIZED, 1, len(start), lowest_pending=1) + start
+            self._send([(msg, mp.PROTOCOL, mp.PORT_RELIABLE, rl.MESSAGE_FLAGS, 1 << JOINER_INDEX)],
+                       j.variable_id or 0, j.ip)
+            self.next_close = now + CLOSE_RETRY
         if j.join_acked and not j.leaving:
             if now >= self.next_mesh:
                 self._send([(build_update_mesh(self.mesh_entries(), self.mesh_counter),

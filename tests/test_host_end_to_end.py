@@ -6,6 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 import os
 import sys
+import time
 
 import pytest
 
@@ -16,7 +17,7 @@ from pokeldn.frlg.save import mon
 from pokeldn.gba import block, gbaframe, ni, rfu
 from pokeldn.ldn import reliable
 from pokeldn.frlg.link.host_session import HostSession
-from pokeldn.frlg.link.host_trade import H_DONE, PARTY_LINK_SETTLE_FRAMES, HostTradeEngine
+from pokeldn.frlg.link.host_trade import H_DONE, H_LEAVE_MENU, PARTY_LINK_SETTLE_FRAMES, HostTradeEngine
 from pokeldn.gba.rfu_leader import DISCONNECTED, UNI, RFULeader
 
 
@@ -91,9 +92,11 @@ class ScriptedFireRedChild:
     """Right-seat peer that reacts only to leader wire traffic."""
 
     def __init__(self, party, *, offered=(0, 1), trades=2, save_rounds=6,
-                 version=linkplayer.VERSION_FIRE_RED):
-        """`save_rounds` post-trade standbys: 6 on Switch FireRed, 5 in GBA Emerald's trade.c."""
+                 version=linkplayer.VERSION_FIRE_RED, cancels=True):
+        """`save_rounds` post-trade standbys: 6 on Switch FireRed, 5 in GBA Emerald's trade.c.
+        `cancels` False is a player who stays on the trade menu after the last trade."""
         self.party = list(party)
+        self.cancels = cancels
         self.offered = list(offered)
         self.save_rounds = save_rounds
         self.trades = trades
@@ -301,7 +304,7 @@ class ScriptedFireRedChild:
                     if self.confirmed < self.trades:
                         self._queue_linkcmd(
                             trade.READY_TO_TRADE, self.offered[self.round])
-                    elif not self.cancel_seen:
+                    elif not self.cancel_seen and self.cancels:
                         self._queue_linkcmd(trade.REQUEST_CANCEL)
             cmd = (self._cmd_slots.pop(0) if self._cmd_slots
                    else rfu.idle_slot())
@@ -452,3 +455,101 @@ def test_an_emerald_console_with_five_save_rounds_trades_twice_with_save_rounds_
     host, child, *_, elapsed = _run_full_stack(2, console_rounds=5, version=linkplayer.VERSION_EMERALD,
                                                require_completion=False)
     assert elapsed is None and child.confirmed == 1
+
+
+class _Network:
+    """HostApplication's LDN network: the console stays associated throughout."""
+
+    def __init__(self):
+        self.participants, self.stopped, self.started_at = [("switch",)], 0, time.monotonic()
+
+    def start(self, preflight=True):
+        return self
+
+    def stop(self):
+        self.stopped += 1
+
+    def recv(self):
+        return []
+
+    def send(self, data, destination):
+        pass
+
+    def wait_readable(self, timeout):
+        assert time.monotonic() - self.started_at < 10, "the host never closed"
+
+
+class _Bridge:
+    """HostApplication's Pia layer: each tick runs 20 ms of the leader stack against the scripted
+    console over the impaired radio."""
+
+    def __init__(self, host, child, radio):
+        self.host, self.child, self.radio, self.ms = host, child, radio, 0
+
+    def on_participant_joined(self):
+        for emission in self.child.start(0):
+            self.radio.send("child", emission, 0)
+
+    def receive(self, datagram, src_ip):
+        return []
+
+    def drain(self):
+        return []
+
+    def tick(self, now):
+        for _ in range(20):
+            for packet in self.radio.deliver(self.ms):
+                (self.host if packet.direction == "child" else self.child).receive(packet.wire, self.ms)
+            for emission in self.host.advance(self.ms):
+                self.radio.send("host", emission, self.ms)
+            for emission in self.child.advance(self.ms):
+                self.radio.send("child", emission, self.ms)
+            self.ms += 1
+        return []
+
+    def next_deadline(self, now, default):
+        return 0
+
+
+def test_hold_after_trade_closes_the_link_when_the_console_stays_on_the_trade_menu(tmp_path):
+    """--hold-after-trade: two queued trades complete and are saved; the console's player never
+    chooses CANCEL, so the host closes the link (the Ctrl-C path) soon after the last trade."""
+    from pokeldn import config
+    from pokeldn.config import DEFAULT_TRAINER
+    from pokeldn.frlg.link.host_app import HostApplication
+    trades = 2
+    host = LeaderStack([_mon(0x11 + n) for n in range(trades)], trades)
+    child = ScriptedFireRedChild([_mon(0x21 + n) for n in range(trades)], offered=range(trades),
+                                 trades=trades, cancels=False)
+    network, bridge = _Network(), _Bridge(host, child, ImpairedRadio())
+    log = []
+
+    class App(HostApplication):
+        def _build_components(self):
+            self.network, self.session, self.peer = network, host.session, bridge
+            self._last_trade_state = self.session.trade.state
+            return DEFAULT_TRAINER.to_link_player()
+
+        def _log_identity(self, link_player):
+            pass
+
+    plan = config.TradePlan(party_paths=("a.pk3", "b.pk3"), trade_slot=0, offered_slots=(0, 1),
+                            trades=trades, output_path=str(tmp_path / "received.pk3"), trust_pia=True)
+    run = config.TradeRunConfig(DEFAULT_TRAINER, plan, config.LdnConfig(), config.HostOptions())
+    app = App(run, log=lambda *parts: log.append(" ".join(map(str, parts))),
+              injector_factory=lambda **unused: _Injector(), hold_after_trade=0.3)
+    assert app.run() is True
+    assert host.trade.commits == child.confirmed == trades and not child.cancel_seen
+    assert host.trade.state == H_LEAVE_MENU and network.stopped == 1
+    assert any("after the last trade with no CANCEL" in line for line in log)
+    assert time.monotonic() - network.started_at < 5
+
+
+class _Injector:
+    error = None
+
+    def start(self):
+        return self
+
+    def stop(self):
+        pass

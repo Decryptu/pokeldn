@@ -28,7 +28,7 @@ from pokeldn.ldn import transport as tmod  # noqa: E402
 from pokeldn.gba import barrier as lsmod_barrier  # noqa: E402
 from pokeldn.ldn import pia_connect  # noqa: E402
 from pokeldn.frlg.link import trade_runtime as runtime  # noqa: E402
-from pokeldn.ldn import show_done  # noqa: E402
+from pokeldn.ldn import hold_after_trade_over, show_done  # noqa: E402
 from pokeldn.app import screen  # noqa: E402
 from pokeldn import trade_back  # noqa: E402
 
@@ -186,6 +186,13 @@ class _LiveJoiner:
             except Exception as e:                       # never let a save error kill the link tail
                 lg(f"[live] WARNING: could not save received mon at commit: {e}")
 
+    def queue_done(self):
+        """The last queued trade is saved and our CANCEL is out; the room ends only when the console's
+        player cancels too [trade.c:1716]."""
+        engine = self.engine
+        return (engine.commits >= engine.trades and engine.requested_cancel
+                and engine.state != trade.S_CANCEL)
+
     def check_abort(self):
         """True when the host refused or dropped us and the loop must stop."""
         s, lg = self.s, self.lg
@@ -329,7 +336,7 @@ class _LiveJoiner:
         return False
 
 
-def run_live(run_config, lg):
+def run_live(run_config, lg, hold_after_trade=None):
     t, engine, s, conn, lstate = _live_connect(run_config, lg)
     period = 1.0 / 59.727
     st = _LiveJoiner(run_config, lg, t, engine, s, conn, lstate)
@@ -340,6 +347,10 @@ def run_live(run_config, lg):
             st.handle_interrupt()
             st.save_at_commit()
             if st.check_abort():
+                break
+            if hold_after_trade_over(hold_after_trade, st.queue_done()):
+                lg(f"[live] {hold_after_trade:.0f}s after the last trade with no CANCEL from the "
+                   "console - disconnecting.")
                 break
             if st.connect_gate():
                 _paced_sleep(s, period)
@@ -405,6 +416,7 @@ def build_parser():
                     help="number of sequential trades to perform, 1..6 (default 1; 6 = swap both "
                          "entire parties). After the Nth trade the sim cancels-to-leave.")
     trade_back.add_arguments(ap)
+    launcher.add_hold_after_trade_argument(ap)
     ap.add_argument("--self-id", type=int, default=1, choices=(1,),
                     help="wire mpId / gLocalLinkPlayerId (joiner = 1 = right seat; the only valid "
                          "value - mpId 0 is the host/parent) [trade.c:1816; link_rfu_2.c:1633-1638]")
@@ -496,7 +508,8 @@ def main(argv=None):
                  f"    {sys.executable} -m pip install zstandard")
 
     lg = runtime.ConsoleLog(args.verbose)
-    engine = run_live(run_config, lg) if args.live else run_replay(run_config, lg)
+    engine = (run_live(run_config, lg, args.hold_after_trade) if args.live
+              else run_replay(run_config, lg))
 
     saved = save_received(engine, run_config, lg)
     if not saved and args.live:

@@ -41,7 +41,7 @@ from pokeldn.ldn import sync_clock
 from pokeldn import gen8, trade_back
 from pokeldn.swsh import pokemon as swsh_pokemon
 from pokeldn.swsh import trade_payload
-from pokeldn.ldn import show_done
+from pokeldn.ldn import hold_after_trade_over, show_done
 from pokeldn.app import screen
 
 # Only a matching search's network takes a seat; its Y-Comm beacon (65535) never reached the trade
@@ -349,6 +349,7 @@ async def main_async(args):
               "we_are_host": False, "update_mesh_out": 0,
               "migration_pending": None, "migration_out": 0, "migration_acked": None,
               "host_leaving": None, "last_rx": None, "lan_host_message": None,
+              "leave_answered": None, "disconnected": None,
               "said_serial": 0, "serial_by_proto": {}, "serial_by_port": {},
               "rpc_seen": {}, "rpc_pair_sent": set(), "offer_status_answered": set(),
               "rpc_bodies_answered": set(), "confirmation_opened": False, "rpc_pair_delta": {},
@@ -963,6 +964,8 @@ async def main_async(args):
                                    response=reply.hex())
                             print(f"[tx]     answered with result {args.respond_result}, "
                                   f"{'our' if mine else 'their'} ids: {reply.hex()}")
+                        elif kind == stp.DISCONNECTION_RESPONSE:
+                            st["disconnected"] = st["disconnected"] or now
                         elif kind == station4.CONNECTION_RESPONSE and args.respond:
                             # The console repeats its acceptance until acked; the ack's u32
                             # alternates two readings.
@@ -1024,6 +1027,8 @@ async def main_async(args):
                                 st["host_index"] = got["host_index"]
                             st["join_response"] = st["join_response"] or (now, body.hex())
                             record(rec="rx_join_response", t=now, parsed=got, raw=body.hex())
+                        elif kind == mesh.LEAVE_RESPONSE:
+                            st["leave_answered"] = st["leave_answered"] or now
                         elif kind == mesh.UPDATE_MESH:
                             st["updates_mesh"] += 1
                             # Kept: after a migration we resend the console's own with the host
@@ -1995,6 +2000,45 @@ async def main_async(args):
             """The console has offered and the ladder has not finished: leaving now fails it."""
             return st["offered_pk8"] is not None and not st["ladder_finished"]
 
+        def queue_done():
+            """Every queued offer has traded, and with --trade-back come back."""
+            return st["trades"] >= max(1, len(args.offer_file)) * (2 if rounds is not None else 1)
+
+        async def leave_seat():
+            """Leave as a joined Sword does: box command 3, LEAVE_REQUEST on mesh port 1 until answered
+            (5 s), then `03` on 0x14 every 0.5 s until `04`, 8 at most (docs/swsh_session.md, Leaving)."""
+            if not (args.raid_join or args.lair_join):
+                st["box_queue"] = st["box_queue"] + [swsh_trade.box_sync_state(3)]
+                await trio.sleep(0.77)
+            if st["our_index"] is not None:
+                # Its own sequence on the window a migration response may already have used.
+                seq = reliable4.FIRST_SEQUENCE + (1 if st["migration_out"] else 0)
+                dests = [host_constant] if args.send_destinations != "none" else []
+                body = reliable4.build_data_message(bytes([mesh.LEAVE_REQUEST, st["our_index"]]),
+                                                    sequence_id=seq, destinations=dests,
+                                                    stream_id=args.send_stream)
+                until = time.monotonic() + 5.0
+                while st["leave_answered"] is None and time.monotonic() < until:
+                    sock.sendto(wrap(keys, our_mac, our_constant, next_nonce(), body,
+                                     mesh.PROTOCOL, args.connect_station_first,
+                                     port=mesh.PORT_RELIABLE, message_flags=pia4.MESSAGE_FLAGS,
+                                     destination=args.data_destination),
+                                (host_ip, PIA_PORT))
+                    await trio.sleep(0.5)
+            for _ in range(8):
+                if st["disconnected"] is not None:
+                    break
+                sock.sendto(wrap(keys, our_mac, our_constant, next_nonce(),
+                                 bytes([stp.DISCONNECTION_REQUEST]), station4.PROTOCOL,
+                                 args.connect_station_first),
+                            (host_ip, PIA_PORT))
+                await trio.sleep(0.5)
+            record(rec="leave", t=time.monotonic() - t0, answered=st["leave_answered"],
+                   disconnected=st["disconnected"])
+            print(f"[cx] left the seat: leave request "
+                  f"{'answered' if st['leave_answered'] else 'NOT answered'}, disconnection "
+                  f"{'answered' if st['disconnected'] else 'NOT answered'}")
+
         async def guarded(name, task):
             """Run one sender; an exception reaching the nursery would stop sending mid-trade."""
             try:
@@ -2018,10 +2062,17 @@ async def main_async(args):
             # Drop the link on a stall: one held through a stalled ladder becomes a failed trade and
             # an hour's lockout; a dropped link is a plain communication error.
             hold_until = time.monotonic() + args.hold
+            leave = True              # the seat ends with the departure messages
             while (time.monotonic() < hold_until
                    or mid_trade() and time.monotonic() < hold_until + args.grace):
                 await trio.sleep(0.25)
                 if st["host_leaving"] is not None:
+                    leave = False
+                    break
+                if (not mid_trade()
+                        and hold_after_trade_over(args.hold_after_trade, queue_done())):
+                    print(f"\n[cx] leaving the seat {args.hold_after_trade:.0f}s after trade "
+                          f"{st['trades']}")
                     break
                 quiet = time.monotonic() - t0 - (st["last_rx"] or math.inf)
                 if args.lan and quiet > args.lan_quiet:
@@ -2029,6 +2080,7 @@ async def main_async(args):
                     # alone keeps a seated one talking about three times a second.
                     st["host_leaving"] = time.monotonic() - t0
                     print(f"\n[cx] *** THE CONSOLE WENT QUIET FOR {quiet:.1f} s - IT LEFT ***")
+                    leave = False
                     break
                 if stall_abort(st["confirm_last_step"], time.monotonic() - t0,
                                args.abort_on_stall, st["ladder_finished"]):
@@ -2036,7 +2088,10 @@ async def main_async(args):
                           f"ABORTING SO THE CONSOLE SEES A DROPPED LINK, NOT A FAILED TRADE *** "
                           f"last step at t={st['confirm_last_step']:.2f}, "
                           f"{len(st['confirm_steps_seen'])} distinct steps")
+                    leave = False
                     break
+            if leave and not mid_trade() and st["join_response"] is not None:
+                await leave_seat()
             nursery.cancel_scope.cancel()
         # Closed before the network is released.
         sock.close()
@@ -2638,6 +2693,7 @@ def build_parser():
                     help="the move slot our Pokemon uses every turn")
     ap.add_argument("--raid-name", default="POKELDN", help="the name the raid lobby shows for us")
     ap.add_argument("--hold", type=float, default=30.0)
+    launcher.add_hold_after_trade_argument(ap)
     ap.add_argument("--grace", type=float, default=300.0,
                     help="seconds past --hold to keep a session whose trade is under way: the "
                          "console has offered and the ladder has not finished")

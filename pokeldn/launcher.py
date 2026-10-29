@@ -37,6 +37,15 @@ def add_ip_host_arguments(ap, *, our_ip_help="with --ip-host, the address to adv
     ap.add_argument("--our-ip", default=None, help=our_ip_help)
 
 
+def add_hold_after_trade_argument(ap, *, host=False):
+    """--hold-after-trade: leave the seat, or close the hosted session, N seconds after the last queued
+    trade (pokeldn.ldn.hold_after_trade_over); by default the run waits for the console to leave."""
+    what = "close the session" if host else "leave the seat"
+    ap.add_argument("--hold-after-trade", type=float, default=None, metavar="SECONDS",
+                    help=f"{what} this long after the last queued trade; by default the run keeps it "
+                         "until the console leaves or the time limit ends")
+
+
 def describe_network(net, name="", suffix=""):
     """One scanned network on one line; `name` is the title its communication id belongs to."""
     return (f"comm_id=0x{net.local_communication_id:016x}{f' ({name})' if name else ''} "

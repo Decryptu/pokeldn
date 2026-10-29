@@ -35,7 +35,7 @@ from pokeldn import pokemon as pokemon_service
 from pokeldn import gen8, pla, trade_back
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn import launcher
-from pokeldn.ldn import ldn_mitm, pia6
+from pokeldn.ldn import hold_after_trade_over, ldn_mitm, pia6
 from pokeldn.ldn.transport import board_radio, find_ap_phy, cleanup_stale_vifs
 from pokeldn.pla import data_exchange, joiner, trade_box
 from pokeldn.pla import pokemon as pla_pokemon
@@ -94,6 +94,10 @@ class TradeBackSession(joiner.JoinerSession):
         super().__init__(*a, **kw)
         self.rounds = trade_back.Rounds([self.offer, *next_offers], log=self.log)
 
+    @property
+    def queue_done(self):
+        return self.rounds.finished
+
     def _next_round(self):
         received = self.received
         if received is not None and len(received) != pla_pokemon.SIZE_PARTY:
@@ -116,7 +120,6 @@ async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchang
     """Wait in trio, never in select() (docs/hardware_esp32.md, The userspace stack)."""
     session = make_session(args, keys, our_ip, our_mac, offer, exchange)
     end = time.monotonic() + args.hold
-    traded_at = None
     seen = authed = written = 0
 
     def send(packets, note=""):
@@ -165,16 +168,13 @@ async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchang
             send(session.poll())
             while written < len(session.trades):
                 written += 1
-                traded_at = time.monotonic()
                 received = session.trades[written - 1]
                 path = pokemon_service.trade_path(args.offer_out, written)
                 if path and received is not None:
                     with open_output(path, "wb") as fh:
                         fh.write(received)
                     print(f"[pla] wrote the record the console traded, {path}")
-            if (traded_at is not None and args.hold_after_trade is not None
-                    and not session.next_offers
-                    and time.monotonic() - traded_at >= args.hold_after_trade):
+            if hold_after_trade_over(args.hold_after_trade, session.queue_done):
                 send(session.leave(), note="leave")
                 print(f"[pla] left the session {args.hold_after_trade:.0f}s after the trade")
                 break
@@ -404,9 +404,7 @@ def build_parser():
                     help="write the record the console traded to this file")
     ap.add_argument("--collect", default=None,
                     help="write every record the console showed or offered to this directory")
-    ap.add_argument("--hold-after-trade", type=float, default=None, metavar="SECONDS",
-                    help="leave this long after the last queued trade; by default the seat is kept until the "
-                         "console's player backs out or --hold ends")
+    launcher.add_hold_after_trade_argument(ap)
     ap.add_argument("--drive", action="store_true",
                     help="act as the player too: offer once the host shows, confirm once it "
                          "offers, then selector 7; without it the console's player leads")
@@ -439,6 +437,8 @@ def host_argv(args, channel, seconds):
         argv += ["--trade-back"]
     if args.offer_out:
         argv += ["--offer-out", args.offer_out]
+    if args.hold_after_trade is not None:
+        argv += ["--hold-after-trade", str(args.hold_after_trade)]
     if args.collect:
         argv += ["--trade-box-collect", args.collect]
     if args.capture:

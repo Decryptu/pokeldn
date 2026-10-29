@@ -8,11 +8,13 @@ from pokeldn.ldn import mesh_protocol as mp
 from pokeldn.ldn.station_protocol import DISCONNECTION_REQUEST, DISCONNECTION_RESPONSE
 from pokeldn.ldn import station9
 
-__all__ = ["Leaver", "host_departure", "unagreed_vote"]
+__all__ = ["HostLeaver", "Leaver", "host_departure", "unagreed_vote"]
 
 RELEASE_ORDER = (1, 0, 2, 3)
 # The console's pause between its last release and its leave request, measured three times.
 LEAVE_AFTER_RELEASES = 2.45
+# `LeaveMeshJob` deauthenticates 5.0 s after its first unanswered leave request.
+LEAVE_UNANSWERED = 5.0
 
 
 class Leaver:
@@ -34,6 +36,7 @@ class Leaver:
         self.released = {}          # clone id -> last send time
         self.acked = set()
         self.leave_sent = None
+        self.leave_first = None
         self.leave_answered = False
         self.leave_next = 0.0
         self.disconnect_at = None
@@ -80,8 +83,15 @@ class Leaver:
                     all(cid in self.acked for cid in self.clone_ids) or t >= 1.5 + 3.0):
                 self.leave_sent = now
                 self.leave_next = now + LEAVE_AFTER_RELEASES
+        if (self.leave_first is not None and not self.leave_answered
+                and now - self.leave_first >= LEAVE_UNANSWERED):
+            self.done = True
+            self.log.append("given up on the leave response")
+            return out
         if self.leave_sent is not None and not self.leave_answered and now >= self.leave_next:
             self.leave_next = now + 0.5
+            if self.leave_first is None:
+                self.leave_first = now
             msg = reliable3.build(bytes([mp.LEAVE_REQUEST, self.station]),
                                   reliable3.FIRST_SEQUENCE, reliable3.FIRST_SEQUENCE)
             out.append((msg, mp.PROTOCOL, 1))
@@ -121,6 +131,78 @@ class Leaver:
                 self.done = True
                 self.log.append("disconnection response")
         return []
+
+
+# A console host leaving (docs/lgpe_session.md, A host leaving); both messages are byte for byte the
+# ones tests/test_lgpe_leave.py holds from an emulated pair and a retail host.
+MIGRATION_START = reliable3.build(bytes([mp.MIGRATION_START, 0, 1]), reliable3.FIRST_SEQUENCE,
+                                  reliable3.FIRST_SEQUENCE)
+START_HOST_MIGRATION = bytes([1, lp.START_HOST_MIGRATION]) + bytes(14)
+# The teardown's idle wait, 150 calls (0x116bc0, docs/lgpe_session.md, The wait before leaving).
+IDLE_WAIT = 2.5
+
+
+class HostLeaver:
+    """Drives a host's exit after its state 4, argument 3: the releases, the migration start every
+    45 ms for 5 s until `48 01`, then start host migration every 301 ms for 10 s until no station is
+    left. `poll(now, stations)` -> [(payload, protocol, port, broadcast)]; `done` once over."""
+
+    def __init__(self, participant, now, clone_ids=RELEASE_ORDER):
+        self.p = participant
+        self.t0 = now
+        self.clone_ids = [c for c in clone_ids if participant is not None
+                          and (c in participant.held or c == 0)]
+        self.released = {}
+        self.acked = set()
+        self.migration_at = self.migration_next = None
+        self.answered = False
+        self.start_at = self.start_next = None
+        self.done = False
+        self.log = []
+
+    def poll(self, now, stations):
+        if self.done:
+            return []
+        out = []
+        if self.migration_at is None:
+            if now - self.t0 < 0.5:
+                return out
+            for cid in self.clone_ids:
+                if cid not in self.acked and now - self.released.get(cid, -1.0) >= 0.1:
+                    if cid not in self.released:
+                        self.log.append(f"release {cid}")
+                    self.released[cid] = now
+                    out += [(m, clone.PROTOCOL, 0, False) for m in self.p.release(cid, now)]
+            if all(c in self.acked for c in self.clone_ids) or now - self.t0 >= 0.5 + IDLE_WAIT:
+                self.migration_at = self.migration_next = now
+                self.log.append("migration start")
+        if self.start_at is None and self.migration_at is not None:
+            if self.answered or now - self.migration_at >= 5.0 or not stations:
+                self.start_at = self.start_next = now
+                self.log.append("start host migration" + ("" if self.answered else ", unanswered"))
+                out.append((None, lp.PROTOCOL, 0, True))     # the update session, migration state 1
+            elif now >= self.migration_next:
+                self.migration_next = now + 0.045
+                out.append((MIGRATION_START, mp.PROTOCOL, 1, False))
+        if self.start_at is not None:
+            if not stations or now - self.start_at >= 10.0:
+                self.done = True
+                self.log.append("no station left" if not stations else "given up after 10 s")
+            elif now >= self.start_next:
+                self.start_next = now + 0.301
+                out.append((START_HOST_MIGRATION, lp.PROTOCOL, 0, True))
+        return out
+
+    def receive(self, protocol, payload):
+        payload = bytes(payload)
+        if protocol == clone.PROTOCOL and len(payload) > 1 and payload[1] == clone.COMMAND_END_ACK:
+            c = clone.parse_command(payload)
+            if c:
+                self.acked.add(c["clone_id"])
+        elif protocol == mp.PROTOCOL and len(payload) == 2 and payload[0] == mp.MIGRATION_RESPONSE:
+            if not self.answered:
+                self.log.append(f"migration response {payload[1]}")
+            self.answered = True
 
 
 def host_departure(protocol, payload, station_index):

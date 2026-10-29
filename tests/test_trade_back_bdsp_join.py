@@ -1,15 +1,17 @@
-"""Trade back in the Brilliant Diamond / Shining Pearl joiner (bin/bdsp_connect.py): a scripted console
-on a loopback socket runs two trades over the whole receive and send path, Pia encryption included."""
+"""The Brilliant Diamond / Shining Pearl joiner (bin/bdsp_connect.py) against a scripted console on a
+loopback socket, over the whole receive and send path, Pia encryption included: trade back over two
+trades, and the departure --hold-after-trade sends after the queue."""
 import contextlib
 import socket
 import struct
+import time
 import types
 
 import trio
 
 import bdsp_connect
-from pokeldn.bdsp import COMM_ID, pokemon, room
-from pokeldn.ldn import reliable5 as rl
+from pokeldn.bdsp import COMM_ID, host, pokemon, room
+from pokeldn.ldn import mesh_protocol as mp, reliable5 as rl, station_protocol as stp
 from pokeldn.ldn.pia5 import PiaHeader5, ciphertext, decrypt_payload, gcm_iv, ldn_nonce_crc, parse_messages
 
 HOST_MAC, OUR_MAC = bytes.fromhex("021111111111"), bytes.fromhex("022222222222")
@@ -58,10 +60,15 @@ class ScriptedConsole:
         self.seq = 1
         self.nonce = 0
 
-    def packet(self, payload):
+    def packet(self, payload, protocol=rl.PROTOCOL, port=rl.PORT):
         self.nonce += 1
         return bdsp_connect.wrap(KEYS, HOST_MAC, CONSOLE_VAR, OUR_VAR, self.nonce.to_bytes(8, "big"),
-                                 payload, rl.PROTOCOL, port=rl.PORT)
+                                 payload, protocol, port=port)
+
+    def messages(self, data):
+        h = PiaHeader5.parse(data)
+        iv = gcm_iv(ldn_nonce_crc(KEYS.network_id_le, OUR_MAC), h.src_var, h.nonce8)
+        return parse_messages(decrypt_payload(KEYS.session_key, iv, ciphertext(data, h.footer_size), h.tag))
 
     async def send_data(self, message):
         frame = rl.build_header(rl.FLAG_APPLICATION_DATA | rl.FLAG_MESSAGE_START | rl.FLAG_MESSAGE_END
@@ -77,10 +84,7 @@ class ScriptedConsole:
         """-> the PB8 of the next NetTradePokeData the joiner sends, after acking it."""
         while True:
             data, _ = await self.sock.recvfrom(4096)
-            h = PiaHeader5.parse(data)
-            iv = gcm_iv(ldn_nonce_crc(KEYS.network_id_le, OUR_MAC), h.src_var, h.nonce8)
-            pt = decrypt_payload(KEYS.session_key, iv, ciphertext(data, h.footer_size), h.tag)
-            for m in parse_messages(pt):
+            for m in self.messages(data):
                 if m.protocol != rl.PROTOCOL:
                     continue
                 d = rl.parse(m.payload)
@@ -101,17 +105,7 @@ class ScriptedConsole:
         return got
 
 
-def test_the_bdsp_joiner_offers_back_the_console_pokemon_byte_for_byte(monkeypatch, tmp_path):
-    queued = a_pb8(0x0000E000, 41, "Nosferapti")
-    console_first, console_second = a_pb8(0xCDBEB642, 25, "Pikachu"), a_pb8(0x12345678, 63, "Abra")
-    template = tmp_path / "queued.pb8"
-    template.write_bytes(queued)
-    args = bdsp_connect.build_parser().parse_args([
-        "--phy", "none", "--scans", "1", "--listen-first", "0", "--hold", "20",
-        "--trade-reply", "--complete-trade", "--security-repeat", "100", "--trade-back",
-        "--trade-template", str(template), "--trade-save-poke", str(tmp_path / "received.pb8"),
-        "--src-var", hex(OUR_VAR)])
-
+def _run_joiner(monkeypatch, args, console, script):
     net = types.SimpleNamespace(local_communication_id=COMM_ID, ssid=b"room", channel=1, app_version=1)
     participant = lambda ip, mac: types.SimpleNamespace(ip_address=ip, mac_address=mac, connected=True)
     info = types.SimpleNamespace(participants=[participant("169.254.54.1", HOST_MAC),
@@ -124,7 +118,6 @@ def test_the_bdsp_joiner_offers_back_the_console_pokemon_byte_for_byte(monkeypat
     async def scan(*_a, **_k):
         return [net]
 
-    console = ScriptedConsole()
     monkeypatch.setattr(bdsp_connect, "cleanup", lambda: None)
     monkeypatch.setattr(bdsp_connect, "resolve_keys", lambda k: k)
     monkeypatch.setattr(bdsp_connect, "session_keys", lambda n: KEYS)
@@ -140,7 +133,6 @@ def test_the_bdsp_joiner_offers_back_the_console_pokemon_byte_for_byte(monkeypat
         return joiner["sock"]
 
     monkeypatch.setattr(bdsp_connect, "make_socket", make_socket)
-    offered = []
 
     async def run():
         console.sock = trio.socket.socket(trio.socket.AF_INET, trio.socket.SOCK_DGRAM)
@@ -151,15 +143,79 @@ def test_the_bdsp_joiner_offers_back_the_console_pokemon_byte_for_byte(monkeypat
                 with trio.fail_after(10):
                     while console.joiner is None:
                         await trio.sleep(0.01)
-                    await console.ack(1)           # the joiner's first reliable message takes id 1
-                    offered.append(await console.trade(console_first))
-                    await trio.sleep(0.2)
-                    offered.append(await console.trade(console_second))
-                nursery.cancel_scope.cancel()
+                    await script(nursery)
 
     try:
         trio.run(run)
     finally:
         joiner["sock"].sock.close()
+
+
+# A retail Shining Pearl leaving a room, decrypted: the mesh leave request `04 01` under the reliable
+# header (sequence 1), as tests/test_bdsp_host.py has it.
+RETAIL_LEAVE_REQUEST = bytes.fromhex("0f00000200010001000401")
+
+
+def test_the_bdsp_joiner_leaves_as_a_retail_station_does_soon_after_its_queued_trade(monkeypatch, tmp_path):
+    """--hold-after-trade: once the only queued offer has traded, the joiner sends a retail station's
+    leave request and station disconnection, each until the host answers, and ends well before --hold."""
+    template = tmp_path / "queued.pb8"
+    template.write_bytes(a_pb8(0x0000E000, 41, "Nosferapti"))
+    args = bdsp_connect.build_parser().parse_args([
+        "--phy", "none", "--scans", "1", "--listen-first", "0", "--hold", "20",
+        "--trade-reply", "--complete-trade", "--security-repeat", "100",
+        "--trade-template", str(template), "--src-var", hex(OUR_VAR), "--hold-after-trade", "0.2"])
+    monkeypatch.setattr(bdsp_connect, "TRADE_SETTLE", 0.3)
+    console = ScriptedConsole()
+    heard, timeline = [], {}   # the joiner's run must end on its own once both are answered
+
+    async def script(nursery):
+        loc = lambda ip, mac, var: host.host_location(ip, stp.ldn_constant_id(mac), var,
+                                                      stp.ldn_service_variable_id(mac))
+        join = host.build_join_response([(loc("169.254.54.1", HOST_MAC, CONSOLE_VAR), 0, 0),
+                                         (loc("169.254.54.2", OUR_MAC, OUR_VAR), 1, 1)], 1, 5)
+        await console.sock.sendto(console.packet(join, mp.PROTOCOL, mp.PORT_UNRELIABLE), console.joiner)
+        await console.ack(1)
+        await console.trade(a_pb8(0xCDBEB642, 25, "Pikachu"))
+        timeline["traded"] = time.monotonic()
+        while (stp.PROTOCOL, bytes([stp.DISCONNECTION_REQUEST])) not in heard:
+            data, _ = await console.sock.recvfrom(4096)
+            for m in console.messages(data):
+                if (m.protocol, m.port) == (mp.PROTOCOL, mp.PORT_RELIABLE) and m.payload[:1] == b"\x0f":
+                    heard.append((m.protocol, m.payload))
+                    answer = console.packet(bytes([mp.LEAVE_RESPONSE, 0]), mp.PROTOCOL, mp.PORT_UNRELIABLE)
+                    await console.sock.sendto(answer, console.joiner)
+                elif m.protocol == stp.PROTOCOL and m.payload == bytes([stp.DISCONNECTION_REQUEST]):
+                    heard.append((m.protocol, m.payload))
+                    answer = console.packet(bytes([stp.DISCONNECTION_RESPONSE]), stp.PROTOCOL, 0)
+                    await console.sock.sendto(answer, console.joiner)
+
+    _run_joiner(monkeypatch, args, console, script)
+    assert heard[0] == (mp.PROTOCOL, RETAIL_LEAVE_REQUEST)
+    assert heard[-1] == (stp.PROTOCOL, bytes([stp.DISCONNECTION_REQUEST]))
+    assert time.monotonic() - timeline["traded"] < 4.0
+
+
+def test_the_bdsp_joiner_offers_back_the_console_pokemon_byte_for_byte(monkeypatch, tmp_path):
+    queued = a_pb8(0x0000E000, 41, "Nosferapti")
+    console_first, console_second = a_pb8(0xCDBEB642, 25, "Pikachu"), a_pb8(0x12345678, 63, "Abra")
+    template = tmp_path / "queued.pb8"
+    template.write_bytes(queued)
+    args = bdsp_connect.build_parser().parse_args([
+        "--phy", "none", "--scans", "1", "--listen-first", "0", "--hold", "20",
+        "--trade-reply", "--complete-trade", "--security-repeat", "100", "--trade-back",
+        "--trade-template", str(template), "--trade-save-poke", str(tmp_path / "received.pb8"),
+        "--src-var", hex(OUR_VAR)])
+    console = ScriptedConsole()
+    offered = []
+
+    async def script(nursery):
+        await console.ack(1)           # the joiner's first reliable message takes id 1
+        offered.append(await console.trade(console_first))
+        await trio.sleep(0.2)
+        offered.append(await console.trade(console_second))
+        nursery.cancel_scope.cancel()
+
+    _run_joiner(monkeypatch, args, console, script)
     assert offered[0] == queued
     assert offered[1] == console_first

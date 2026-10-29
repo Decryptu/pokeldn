@@ -41,7 +41,7 @@ from pokeldn.ldn import channel_table, game_channel
 from pokeldn.ldn.transport import board_radio, find_ap_phy, cleanup_stale_vifs as cleanup_stale
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn import launcher
-from pokeldn.ldn import show_done, trades_done
+from pokeldn.ldn import hold_after_trade_over, show_done, trades_done
 from pokeldn.app import screen
 
 PROTO_NET = 0x2C
@@ -185,6 +185,7 @@ def build_parser():
     ap.add_argument("--seconds", type=float, default=600.0, help="how long to keep trying")
     ap.add_argument("--hold", type=float, default=60.0,
                     help="how long to stay in one joined session before scanning again")
+    launcher.add_hold_after_trade_argument(ap)
     ap.add_argument("--name", default="POKELDN", help="the LDN node name we publish")
     ap.add_argument("--platform", type=int, default=sv.PLATFORM,
                     help="the station platform byte we publish; 1 is what a Switch 2 sends")
@@ -839,7 +840,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     frames_followed = 0
     first_update_at = None      # a raid guest leaves the first station list unanswered
     raid_lobby_sent = raided = False
-    leaving = None              # a raid guest's type-3 leave: {"sends", "next", "answered"}
+    leaving = None              # our type-3 leave: {"sends", "next", "answered", "why"}
     task_done_at = None         # when the --circle-task's last clear went out and its goal held
     snacks_shown = None
     zone_shown = None           # the zone search's status card last shown
@@ -870,7 +871,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
         pending_trade.append((due, port, payload))
     pending_open = []           # (due, spec) hung on the host's own key-0x80 open
     offers_seen = 0
-    trades_done = 0
+    traded = 0
     record_set = []
     if args.record_set:
         for name in sorted(os.listdir(args.record_set)):
@@ -1008,16 +1009,30 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     last_rtt = 0.0
     pending_rtt = []            # (due, request payload, requester var)
     host_leaving = False
-    while time.monotonic() - t0 < args.hold:
+    while True:
         now = time.time()
+        why = None
+        if time.monotonic() - t0 >= args.hold:
+            why = "hold"
+        elif stage is not None and hold_after_trade_over(args.hold_after_trade, stage.done):
+            why = "trade"
+        if why and leaving is None:
+            if stage is None or host_var is None or handed:    # a raid or circle seat drops at --hold
+                break
+            print(f"[sv] the hold ended after {time.monotonic() - t0:.1f}s; leaving the seat"
+                  if why == "hold" else
+                  f"[sv] leaving the seat {args.hold_after_trade:.0f}s after trade {traded}")
+            leaving = {"sends": 0, "next": now, "answered": False, "why": why}
         # A leaving retail station sends the type 3 every 0.5 s until the type 4, four sends at
         # most (`0x6db590`, `0x6db7b0`; docs/sv.md, Leaving).
         if leaving is not None:
             if leaving["answered"] or (leaving["sends"] >= LEAVE_SENDS and now >= leaving["next"]):
-                print("[sv] our player has left the " + ("circle" if circled else "raid")
+                what, rec = {"hold": ("seat", "left_at_hold"), "trade": ("seat", "left_after_trade"),
+                             "circle": ("circle", "left_circle")}.get(leaving["why"],
+                                                                      ("raid", "left_at_battle"))
+                print(f"[sv] our player has left the {what}"
                       + ("" if leaving["answered"] else "; the host never answered our leave"))
-                record(rec="left_circle" if circled else "left_at_battle",
-                       answered=leaving["answered"], t=time.time())
+                record(rec=rec, answered=leaving["answered"], t=time.time())
                 break
             if now >= leaving["next"] and leaving["sends"] < LEAVE_SENDS:
                 send(out(pia_connect.build_session_leave_v11(our_const, ours["var"], our_ip,
@@ -1141,7 +1156,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                 task_done_at = task_done_at or now
                 if now - task_done_at >= CIRCLE_LEAVE_GRACE:
                     print("[sv] the circle task is done; our player leaves the circle")
-                    leaving = {"sends": 0, "next": now, "answered": False}
+                    leaving = {"sends": 0, "next": now, "answered": False, "why": "circle"}
                     circled = True
             for label, flags, payload in member.objects():
                 seq = send_channel(0, payload, "circle object", flags=flags)
@@ -1460,21 +1475,21 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                             body = stage.host_offers[offers_seen]
                             offers_seen += 1
                             print(f"[sv] {host_ip}: offers {describe_offer(body)}")
-                        if stage.trades > trades_done:
-                            trades_done = stage.trades
+                        if stage.trades > traded:
+                            traded = stage.trades
                             if args.offer_out and stage.host_offers:
                                 # Written once the trade completes; an offer can still be withdrawn.
-                                path = pokemon_service.trade_path(args.offer_out, trades_done)
+                                path = pokemon_service.trade_path(args.offer_out, traded)
                                 pokemon_service.save_received("sv", path, stage.host_offers[-1])
                                 print(f"[sv] the received record written to {path}")
                             show_done()
                             screen.received("sv", (stage.host_offers or [None])[-1])
-                            record(rec="trade_done", n=trades_done, t=time.time())
+                            record(rec="trade_done", n=traded, t=time.time())
                             if stage.done:
-                                print(f"[sv] TRADE {trades_done} COMPLETE; no record left to offer")
+                                print(f"[sv] TRADE {traded} COMPLETE; no record left to offer")
                             else:
                                 screen.offer("sv", stage.offer)
-                                print(f"[sv] TRADE {trades_done} COMPLETE; offering "
+                                print(f"[sv] TRADE {traded} COMPLETE; offering "
                                       f"{describe_offer(stage.offer)} next")
                                 if args.offer_after_open is not None:
                                     for delay, out_port, payload in stage.offer_first():
@@ -1595,7 +1610,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
             last_ack[key] = time.time()
         if raided and leaving is None:
             print("[sv] the battle begins; our player leaves and its Pokemon stays in the raid")
-            leaving = {"sends": 0, "next": time.time(), "answered": False}
+            leaving = {"sends": 0, "next": time.time(), "answered": False, "why": "raid"}
         if host_leaving and not args.stay_on_host_migration:
             print("[sv] the console is destroying its network (NetStartHostMigration); "
                   "leaving the seat")

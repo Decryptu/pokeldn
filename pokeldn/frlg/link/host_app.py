@@ -14,7 +14,7 @@ from pokeldn.frlg.link.host_beacon import (
 )
 from pokeldn.ldn.host_pia import HostPeerProtocol
 from pokeldn.host_support import resolve_keys
-from pokeldn.ldn import show_done
+from pokeldn.ldn import hold_after_trade_over, show_done
 from pokeldn.app import screen
 
 
@@ -66,7 +66,7 @@ class ChatFileWatcher:
 class HostApplication:
     def __init__(self, config, *, log=print,
                  transport_factory=transport.HostTransport,
-                 injector_factory=BeaconInjector, partner=None):
+                 injector_factory=BeaconInjector, partner=None, hold_after_trade=None):
         if not isinstance(config.role, configmod.HostOptions):
             raise ValueError("HostApplication requires HostOptions")
         self.config = config
@@ -77,6 +77,7 @@ class HostApplication:
         self.log = log
         self.info = getattr(log, "info", log)
         self.partner = partner             # pokeldn.online: a trade with a player far away
+        self.hold_after_trade = hold_after_trade
         self.transport_factory = transport_factory
         self.injector_factory = injector_factory
         self.network = None
@@ -275,6 +276,11 @@ class HostApplication:
     def _completion_message(self):
         return "Room-exit grace period complete; host peer traffic stopped cleanly."
 
+    def _queue_done(self):
+        """The last queued trade is saved and the host waits on the console's CANCEL, which only its
+        player can give: the room ends only when both cancel [trade.c:1716]."""
+        return self._trades() and self._activity().state == host_trade.H_LEAVE_MENU
+
     def _idle_timeout_seconds(self):
         return getattr(self.config, "idle_timeout_seconds", None)
 
@@ -395,6 +401,10 @@ class HostApplication:
                 if self.session.rfu.ni_complete and not rfu_ni_logged:
                     rfu_ni_logged = True
                     self.info(self._rfu_ready_message())
+                if hold_after_trade_over(self.hold_after_trade, self._queue_done()):
+                    self.info(f"{self.hold_after_trade:.0f}s after the last trade with no CANCEL "
+                              "from the console; closing the link.")
+                    break
                 if (self._activity().done and (
                         not self.network.participants
                         or (self._end_on_success() and self._activity_succeeded()))):

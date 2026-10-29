@@ -68,6 +68,13 @@ queues the RFU disconnect. It answers the console's Session leave request with t
 ([frlg_link.md](frlg_link.md), Leaving the Pia session). An LDN leave event stops peer output at
 once.
 
+The room ends only when both players choose CANCEL [trade.c:1716], so nothing the host sends can take
+the console out of it. With `--hold-after-trade N`, `bin/frlg_trade_host.py` and
+`bin/frlg_trade_join.py` close the link N seconds after the last queued trade when the console's
+player has not cancelled by then, through the teardown Ctrl-C runs; the console then shows the
+wireless link error, and A returns it to the counter with its save reloaded
+[link.c:1540-1560]. The trades are already in that save.
+
 ## Shutdown and cleanup
 
 After the disconnect the host saves the received Pokemon if one exists, joins the beacon worker,

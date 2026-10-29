@@ -2,11 +2,14 @@
 scripted joiner."""
 import base64
 import struct
+import time
 import zlib
 
 import pytest
 
 from pokeldn.bdsp import host, room
+from pokeldn.bdsp.host import JOINER_INDEX
+from pokeldn.bdsp.session import answer_departure
 from pokeldn.ldn import local_protocol as lp
 from pokeldn.ldn import mesh_protocol as mp
 from pokeldn.ldn import reliable5 as rl
@@ -351,3 +354,108 @@ def test_a_departure_is_answered_and_its_window_acked(message, own, answer):
     entry = rl.parse_ack_payload(rl.parse(ack)["payload"])["entries"][0]
     assert (entry["stream_id"], entry["ack_id"]) == (0, 2)
     assert (got.hex() if got else None) == answer
+
+
+# A retail host leaving its room, decrypted: MIGRATION_START `44 00 01` under the reliable header.
+RETAIL_HOST_DEPARTURE = bytes.fromhex("0f0000030001000100440001")
+
+
+class _Radio:
+    """bin/bdsp_host.py's HostTransport: one console seated, which trades once through the launcher's
+    session and then answers a departure as a retail station does."""
+
+    ssid, our_ip, our_mac, join_events = bytes(16), "169.254.112.1", HOST_MAC, 1
+
+    def __init__(self, sessions):
+        self.sessions = sessions
+        self.participants = [(0, "169.254.112.2", JOINER_MAC, 0)]
+        self.inbox, self.departures, self.console = [], [], None
+        self.traded_at = self.stopped_at = None
+
+    def start(self):
+        return True
+
+    def stop(self):
+        self.stopped_at = time.monotonic()
+
+    def recv(self):
+        if self.console is None:
+            self.console = Console(self.sessions[0])
+            self._trade(self.sessions[0], self.console)
+            self.traded_at = time.monotonic()
+        out, self.inbox = self.inbox, []
+        return out
+
+    def send(self, pkt, ip):
+        s, c = self.sessions[0], self.console
+        if c is None:
+            return
+        _, msgs = host.unwrap(s.keys, s.our_mac, pkt)
+        for m in msgs or []:
+            if (m.protocol, m.port) == (mp.PROTOCOL, mp.PORT_RELIABLE) and not rl.parse(m.payload)["is_ack"]:
+                self.departures.append(m.payload)
+                ack, answer = answer_departure(m.payload, JOINER_INDEX)
+                c.nonce += 1
+                self.inbox.append((host.wrap(s.keys, c.mac, c.var, 0, c.nonce.to_bytes(8, "big"),
+                                             [(ack, mp.PROTOCOL, mp.PORT_RELIABLE, 1, 1)]
+                                             + [(answer, mp.PROTOCOL, mp.PORT_UNRELIABLE, 1, 1)] * 2),
+                                   c.ip))
+
+    @staticmethod
+    def _trade(s, c):
+        [(_, resp)] = c.send([(c.request(s.constant_id, s.variable_id), stp.PROTOCOL, 0, 1, 0)], 0.1)
+        c.send([(stp.build_ack(stp.parse_connection_response(resp.payload)["ack_id"]), stp.PROTOCOL,
+                 0, 1, 0)], 0.1)
+        got = c.send([(mp.build_join_request(1), mp.PROTOCOL, 0, 1, 0)], 0.1)
+        c.send([(stp.build_ack(mp.parse_join_response(got[1][1].payload)["ack_id"]), stp.PROTOCOL, 0,
+                 1, 0)], 0.1)
+        seq = 0
+        for message in (room.build_state(room.STATE_RECRUITMENT_TRADE, 1),
+                        room.build_talk_reserve_result(can_talk=0, is_recruitment=1, emoticon_state=4),
+                        room.build_trade_traner("POKELDN", 24680, 13579),
+                        room.build_trade_poke(bytes([0x41]) * 328),
+                        room.build_fields(room.TRADE_POKE_CHECK_OK, 1),
+                        room.build_trade_ready_ok(room.TRADE_STATE_WAIT, 0),
+                        *(room.build_trade_ready_ok(state, 1) for state in range(1, 7))):
+            seq += 1
+            msg = rl.build_header(0x07 | (0x08 if seq == 1 else 0), seq, len(message),
+                                  lowest_pending=seq) + message
+            c.send([(msg, rl.PROTOCOL, 0, 1, 2)], 0.1, dst_var=HOST_VAR)
+            c.send([(rl.build_ack_message(s.joiner.tx_seq), rl.PROTOCOL, 0, 1, 2)], 0.1,
+                   dst_var=HOST_VAR)
+
+
+def test_the_host_closes_its_room_as_a_retail_host_does_soon_after_the_queued_trade(
+        monkeypatch, tmp_path, capsys):
+    """--hold-after-trade: once the only queued offer has traded, the launcher sends a retail host's
+    departure, waits for the console's `48`, and stops well before --seconds."""
+    import bdsp_host
+    from pokeldn import pokemon as pokemon_service
+    from pokeldn.bdsp import pokemon
+    plain = bytearray(bytes(range(256)) * 2)[:pokemon.SIZE_STORED]
+    struct.pack_into("<I", plain, 0, 0x0000E000)
+    struct.pack_into("<H", plain, pokemon.OFF_SPECIES, 41)
+    offer = tmp_path / "offer.pb8"
+    offer.write_bytes(pokemon.encrypt(bytes(plain)))
+    keys = tmp_path / "prod.keys"
+    keys.write_text("")
+    sessions = []
+
+    class Session(host.HostSession):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            sessions.append(self)
+
+    radio = _Radio(sessions)
+    monkeypatch.setattr(bdsp_host, "HostSession", Session)
+    monkeypatch.setattr(bdsp_host, "HostTransport", lambda **kw: radio)
+    monkeypatch.setattr(bdsp_host, "needs_root", lambda: False)
+    monkeypatch.setattr(bdsp_host, "TRADE_SETTLE", 0.3)
+    monkeypatch.setattr(pokemon_service, "prepare_file", lambda game, path, **kw: path)
+    t0 = time.monotonic()
+    assert bdsp_host.main(["--phy", "none", "--keys", str(keys), "--seconds", "8",
+                           "--offer", str(offer), "--complete-trade", "--variable-id", hex(HOST_VAR),
+                           "--hold-after-trade", "0.2"]) == 0
+    assert sessions[0].closed and radio.departures[0] == RETAIL_HOST_DEPARTURE
+    assert radio.stopped_at - radio.traded_at < 2.0 and radio.stopped_at - t0 < 4.0
+    assert "after trade 1; closing the room" in capsys.readouterr().out

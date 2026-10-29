@@ -203,6 +203,8 @@ Union Circle modes. Mystery Gift - Simulated never offers it.
 | joiner | the host closes or hands its role on; Scarlet/Violet, Legends Arceus and Legends Z-A search again after a seat with no trade |
 
 `--seconds` and `--hold` bound a run whose console never leaves.
+`--hold-after-trade N`, on every trade launcher in both roles, leaves the seat or closes the session N
+seconds after the last queued trade (`pokeldn.ldn.hold_after_trade_over`).
 
 ## Local files and releases
 

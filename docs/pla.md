@@ -781,7 +781,8 @@ A received leave changes nothing on screen. With the console on the box screen:
 | network up and silent (`--leave-sends 0`) | "Your trade partner chose not to continue trading" about 13 s in, then Communicating, then `DisconnectedByUser`, no error code |
 
 `--leave-after SECONDS` sends the leave to each joined station and ends the run;
-`--stay-after-leave` keeps the network up, silent.
+`--stay-after-leave` keeps the network up, silent. `bin/pla_host.py --hold-after-trade N` sends the
+same leave to each station and ends the run N seconds after the last queued trade.
 
 ## Unresolved
 
