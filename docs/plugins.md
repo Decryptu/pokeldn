@@ -128,7 +128,7 @@ Tool("my-lan-trade", "Trade over my LAN", "lan.py", "Trades over this computer's
 
 | axis | options | buttons |
 |---|---|---|
-| `role` | `host`, `join` | Your console: Joins (pokeldn hosts), Hosts (pokeldn joins) |
+| `role` | `host`, `join` | pokeldn: Hosts (your console joins), Joins (your console hosts) |
 | `link` | `board`, `lan`, `online` | Connection: Board, Wi-Fi with no board, Online |
 | `mode` | `quests`, `encounters` | Mode |
 

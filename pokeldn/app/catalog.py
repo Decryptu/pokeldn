@@ -96,9 +96,9 @@ class Axis:
 
 # What tells an activity's tools apart, shown as one row of buttons each. "host" is pokeldn hosting.
 AXES = {
-    "role": Axis(tr('catalog.axis_role', 'Your console'), (
-        ("host", tr('catalog.axis_role_host', 'Joins'), "search"),
-        ("join", tr('catalog.axis_role_join', 'Hosts'), "home"))),
+    "role": Axis(tr('catalog.axis_role_pokeldn', 'pokeldn'), (
+        ("host", tr('catalog.axis_role_host_hosts', 'Hosts'), "home"),
+        ("join", tr('catalog.axis_role_join_joins', 'Joins'), "search"))),
     "link": Axis(tr('catalog.axis_link', 'Connection'), (
         ("board", tr('catalog.axis_link_board', 'Board'), "radio"),
         ("lan", tr('catalog.axis_link_lan', 'Wi-Fi, no board'), "wifi"),

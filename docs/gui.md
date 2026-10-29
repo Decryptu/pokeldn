@@ -88,7 +88,7 @@ Circle. The row's ways of running it are buttons above its options, one line per
 
 | choice | buttons | shown on |
 |---|---|---|
-| Your console | Joins (pokeldn hosts), Hosts (pokeldn joins) | Trade on a board or LAN, raids, Dynamax Adventure |
+| pokeldn | Hosts (your console joins), Joins (your console hosts) | Trade on a board or LAN, raids, Dynamax Adventure |
 | Connection | Board, Wi-Fi with no board, Online | Trade; Wi-Fi only on Sword/Shield |
 | Mode | Quests, Encounters | Union Circle |
 

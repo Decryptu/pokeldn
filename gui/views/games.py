@@ -440,7 +440,11 @@ class GamesView:
             else:
                 fields = groups[item]
                 sprite = self.species_sprite(fields)
-                rows = [t.field_grid([t.labeled_control(f.label, self.input(f, grouped=True)) for f in fields], 200)]
+                # A raid seed's boss card takes the full row: in a grid cell its six IV tiles squeeze to one letter wide.
+                wide = [f for f in fields if f.kind == "raidseed"]
+                rows = [t.field_grid([t.labeled_control(f.label, self.input(f, grouped=True))
+                                      for f in fields if f not in wide], 200)]
+                rows += [t.labeled_control(f.label, self.input(f, grouped=True)) for f in wide]
                 out.append(t.card(item, ft.Column(rows, spacing=10),
                                   " ".join(f.help for f in fields if f.help), trailing=sprite))
         if not self.tool.fields:
