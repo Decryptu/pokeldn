@@ -1,14 +1,14 @@
-# pokeldn 0.47.0
+# pokeldn 0.47.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The Bank queues several Pokemon for a trade at once. Press Select, pick the Pokemon, and the side
-  panel shows the whole selection and how many of them each game can take. Choose a game, then a
-  trade tool: each button shows its free slots (a queue holds six), and one click queues as many as
-  fit, in the box's order. Each trade still sends one Pokemon; the session runs the queue in turn.
+- The switch above each tool now says what pokeldn does: Hosts comes first, then Joins. Before, it
+  said what the console does, while the sentence under it said what pokeldn does.
+- A Scarlet and Violet Tera Raid's boss card takes the whole width of The raid card, so its six IVs
+  read on one line. Before, a narrow column squeezed them to one letter a line.
 
 The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 
