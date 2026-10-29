@@ -31,6 +31,22 @@ the window and maximizes on double-click.
 | Windows | extract the zip and run `pokeldn.exe`, `_internal` beside it; SmartScreen: More info, Run anyway. No COM port: [Windows USB drivers](#windows-usb-drivers) |
 | Linux | GTK 3 and libsecret; `sudo usermod -aG dialout $USER` (`uucp` on Arch), then log in again. See [Linux serial ports](#linux-serial-ports) |
 
+With no usable `prod.keys`, the app opens on a welcome that asks for one; Esc or Later closes it. Once
+the keys are chosen on a computer, a second step watches the USB ports and says what the board needs:
+plugged in, the firmware from the Board page, or nothing. Phones set the board up on their own pages.
+
+A keys file is usable when it holds every entry the radio's key derivation reads (`ldn.KEYS_NEEDED`):
+`aes_kek_generation_source`, `aes_key_generation_source`, `master_key_00` (LDN protocol 1) and
+`master_key_12` (protocol 3). Settings, the Games page checklist and Start name the missing ones.
+`ldn.load_keys` skips a line that is not a 16- or 32-byte key, such as a comment.
+
+### Damaged settings
+
+`settings.json` is read at launch (`pokeldn.app.settings.load`). A file that is not JSON, or a field
+whose value has the wrong type, is copied to `settings.json.bad` beside it before anything is
+replaced; only the unreadable fields go back to their defaults. The app then shows which fields
+were reset and where the old file is.
+
 ## Android setup requirements
 
 The [Android app](../examples/android/README.md) is this interface on a phone. The Board page
@@ -223,8 +239,10 @@ IDs are kept, and the run omits `--fresh-pid`.
 | species or form absent | destination's personal table |
 | Legends Z-A records out | PKHeX.Core 26.8.26 has no route |
 
-The box lists every banked Pokemon with a search over its summary, a sort (newest, oldest, Pokedex
-number, name), a filter (shiny, waiting to trade, not legal) and Select, which picks several Pokemon (a long press starts it too) for one Export to a
+The box lists every banked Pokemon with a search over its summary (as shown and in English: species,
+nickname, nature, ability, ball) and its game's name, a sort (newest, oldest, Pokedex number, name),
+a filter (shiny, waiting to trade, not legal); the sort, the filter and the Pokedex filter are kept in
+`settings.json` (`bank_view`). Select which picks several Pokemon (a long press starts it too) for one Export to a
 folder, Take out of trades or Remove. With several picked, the side pane lists how many of them each game takes and
 queues those for a chosen trade tool up to its free slots (a queue holds six), in the box's order. A sprite's crop is kept with its SHA-256 in the sprite cache's
 `index.json`, so a box opens without decoding a PNG it has shown before.
@@ -476,6 +494,55 @@ on stdout and reads `[popup] {"id", "n", "answer"}` on stdin (`pokeldn.app.runne
 a late answer to a replaced pop-up fire nothing. `pokeldn.app.popups.Manager` keeps them,
 `gui.popups.Dialogs` draws them. The app's own pop-ups report a failed update, a disabled plugin and a
 receiver gift sent with the Settings trainer ([The trade](gift_simulated.md#the-trade)).
+
+## Run status
+
+While a run waits, the Session panel shows `Waiting for the console` with the time; after 60 s with
+no console it asks whether the console is on the screen the steps name. `Console connected` follows
+a join. The board's backend prints `[link] waiting` once when the radio first hosts or scans, then
+`[link] joined` and `[link] left` on each station or link change (`pokeldn.ldn.show_link`, only in a
+run the app started; a radio plugin prints none).
+
+### When a run fails
+
+`pokeldn.app.failure` reads the run's lines and names one cause, with the page that fixes it:
+
+| cause | what it matches | button |
+|---|---|---|
+| the board dropped | `[esp32] The board's USB connection failed`, `the board left USB` | Board |
+| port in use | `Resource busy`, `Access is denied`, errno 13 | Board |
+| firmware mismatch | `board speaks protocol N, host speaks M` | Board |
+| board silent | no reply to HELLO, the port's device gone | Board |
+| a key missing | `prod.keys has no NAME` (`ldn.MissingKey`) | Settings |
+| the join failed | `the board could not join` | |
+| no console | `[link] waiting` and never `[link] joined`, no trade done | |
+| anything else | a traceback and a non-zero exit | Copy the log |
+
+The first matching line names the cause. A run the player stopped, or one that completed a trade,
+reports nothing. A Mystery Gift beacon (`Tool.joins` false) is never blamed on the console.
+
+### Retry failed trades
+
+With Settings, Retry failed trades on, a trade run that ends with a cause marked retryable (the
+board dropped, the join failed, no console) starts again after 15 s with the queued Pokemon it has
+not traded, up to three times in a row; a run that completes a trade resets the count. Do not retry
+cancels the wait; Start or picking another tool does too.
+
+## Keyboard shortcuts
+
+Cmd on macOS, Ctrl elsewhere:
+
+| keys | action |
+|---|---|
+| 1 to 6 | Games, Board, Bank, GTS, Control, Docs |
+| , | Settings |
+| Enter | the Session panel's Start, or Stop and start, when it can be pressed |
+| . | Stop |
+
+## Larger text
+
+Settings, Larger text draws every text 15 % larger (`gui/theme.py`, `text_scale`), read at launch.
+The faintest text colour, `#98989D`, keeps 4.8:1 contrast on the lightest surface it sits on.
 
 ## Progress
 

@@ -82,20 +82,45 @@ ChannelBands = {
 }
 
 
+# The prod.keys entries each LDN protocol's key derivation reads.
+KEYS_NEEDED = {
+    1: ("aes_kek_generation_source", "aes_key_generation_source", "master_key_00"),
+    3: ("aes_kek_generation_source", "aes_key_generation_source", "master_key_12"),
+}
+
+
+class MissingKey(ValueError):
+    def __init__(self, name: str):
+        super().__init__(f"prod.keys has no {name}; dump the keys again from a console on a "
+                         "recent system version")
+        self.name = name
+
+
 def load_keys(path: str) -> dict[str, bytes]:
-    """Loads keys from a prod.keys file (`name = hex` per line)."""
+    """Loads keys from a prod.keys file (`name = hex` per line). A line that is not a 16- or 32-byte
+    key (a comment, a 34-digit typo) is skipped; hactool aborts on one."""
     path = os.path.expanduser(path)
 
-    with open(path) as f:
+    with open(path, encoding="utf-8-sig", errors="replace") as f:
         lines = f.readlines()
 
     keys = {}
     for line in lines:
-        line = line.strip()
-        if line:
-            name, key = line.split("=")
-            keys[name.strip()] = bytes.fromhex(key)
+        name, sep, value = line.partition("=")
+        value = value.strip()
+        if not sep or not name.strip() or len(value) not in (32, 64):
+            continue
+        try:
+            keys[name.strip()] = bytes.fromhex(value)
+        except ValueError:
+            continue
     return keys
+
+
+def missing_keys(keys: dict[str, bytes], protocols=tuple(KEYS_NEEDED)) -> list[str]:
+    """The entries `protocols`' key derivation needs that `keys` lacks, in KEYS_NEEDED order."""
+    names = dict.fromkeys(n for p in protocols for n in KEYS_NEEDED[p])
+    return [n for n in names if len(keys.get(n, b"")) != 16]
 
 
 class AuthenticationError(Exception):
@@ -133,20 +158,26 @@ class KeyDerivation:
         aes = AES.new(kek, AES.MODE_ECB)
         return aes.decrypt(key)
     
+    def _key(self, name: str) -> bytes:
+        try:
+            return self._keys[name]
+        except KeyError:
+            raise MissingKey(name) from None
+
     def _select_master_key(self) -> bytes:
         if self._protocol == 1:
-            return self._keys["master_key_00"]
+            return self._key("master_key_00")
         elif self._protocol == 3:
-            return self._keys["master_key_12"]
-    
+            return self._key("master_key_12")
+
         raise ValueError(
             f"Key derivation for protocol version {self._protocol} is not " \
             "supported"
         )
     
     def _derive_key(self, data: bytes, source: bytes) -> bytes:
-        aes_kek_generation_source = self._keys["aes_kek_generation_source"]
-        aes_key_generation_source = self._keys["aes_key_generation_source"]
+        aes_kek_generation_source = self._key("aes_kek_generation_source")
+        aes_key_generation_source = self._key("aes_key_generation_source")
 
         key = self._select_master_key()
         key = self._decrypt_key(aes_kek_generation_source, key)

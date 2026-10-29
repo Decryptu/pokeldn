@@ -14,8 +14,13 @@ from gui.localization import SERVICE as DISPLAY_SERVICE
 from gui.views import pokemon
 from gui.views.games import GamesView
 from gui.views.pokemon import OfferOptions, OfferQueue
+from pokeldn.app import failure
 from pokeldn.app.catalog import Field, offer
 
+
+# Every entry the radio's key derivation reads (ldn.KEYS_NEEDED), as dummy values.
+FAKE_KEYS = "".join(f"{name} = {'00' * 16}\n" for name in (
+    "aes_kek_generation_source", "aes_key_generation_source", "master_key_00", "master_key_12"))
 
 def test_saved_pokemon_offer_keeps_its_card_description():
     field = offer()
@@ -206,6 +211,7 @@ def test_a_board_unplugged_is_checked_again_when_it_returns(monkeypatch, platfor
     (CURRENT, False, True, True),
     (CURRENT, True, None, False),       # empty: Start builds a random legal one
     (CURRENT, True, False, True),       # picked, but its file is gone
+    (CURRENT, "master_key_00 = " + "00" * 16 + "\n", True, True),   # a file without master_key_12
 ])
 def test_start_waits_for_keys_and_a_built_offer_but_not_for_a_doubtful_board(tmp_path, monkeypatch, ident,
                                                                               keys, offer, blocked):
@@ -213,7 +219,7 @@ def test_start_waits_for_keys_and_a_built_offer_but_not_for_a_doubtful_board(tmp
     app = _app(UART, ident)
     keyfile = tmp_path / "prod.keys"
     if keys:
-        keyfile.write_text("")
+        keyfile.write_text(FAKE_KEYS if keys is True else keys)
     app.settings.keys = str(keyfile)
     pk = tmp_path / "offer.pk9"
     pk.write_bytes(b"")
@@ -515,7 +521,7 @@ def test_start_on_another_tool_stops_the_running_session_then_starts(tmp_path, m
 
         def ui(self, fn):
             fn()
-    (tmp_path / "prod.keys").write_text("")
+    (tmp_path / "prod.keys").write_text(FAKE_KEYS)
     monkeypatch.setattr(games.runner, "Process", Process)
     monkeypatch.setattr(games.runner, "base_env", lambda *a: {})
     monkeypatch.setattr(games, "SESSION", tmp_path)
@@ -526,7 +532,7 @@ def test_start_on_another_tool_stops_the_running_session_then_starts(tmp_path, m
     panel.__dict__.update(app=FakeApp(), games=SimpleNamespace(values={}, extra={}, visible=False, show_run_cards=lambda: None, panes=SimpleNamespace(show=lambda *a, **k: None), game=SimpleNamespace(
         name="game", key="swsh")), log=SimpleNamespace(add=lambda line: None, clear=lambda: None),
         received=SimpleNamespace(), transfer=SimpleNamespace(), partner=SimpleNamespace(), run=None,
-        running_tool=None, restart=False, stopping=False, traded=0)
+        running_tool=None, restart=False, stopping=False, traded=0, notice=ft.Container(), elapsed=0)
     panel.set_status = panel.refresh = lambda *a, **k: None
     panel.tool = first
     panel._start(None)
@@ -592,7 +598,8 @@ def test_a_runs_progress_lines_draw_a_bar_with_rate_and_time_left_and_stay_out_o
     panel = SessionPanel.__new__(SessionPanel)
     panel.board_screen = types.SimpleNamespace(take=lambda line: False)
     panel.__dict__.update(app=SimpleNamespace(ui=lambda fn: fn()), log=SimpleNamespace(add=logged.append),
-                          transfer=ft.Container(visible=False), rates={}, partner_state=None, traded=0)
+                          transfer=ft.Container(visible=False), rates={}, partner_state=None, traded=0,
+                          watch=failure.Watch(False))
     panel.transfer.update = lambda: None
     panel._line("[progress] 1000000000 5200000000 bytes Sending the update")
     panel._line("[progress] 1047000000 5200000000 bytes Sending the update")
@@ -621,7 +628,7 @@ def test_a_runs_panel_lines_are_kept_for_its_plugin_and_drawn_on_its_page(monkey
     session.board_screen = types.SimpleNamespace(take=lambda line: False)
     session.__dict__.update(app=SimpleNamespace(ui=lambda fn: fn()), log=SimpleNamespace(add=logged.append),
                             running_tool=SimpleNamespace(key="updates-tool"),
-                            games=SimpleNamespace(plugin_changed=changed.append))
+                            games=SimpleNamespace(plugin_changed=changed.append), watch=failure.Watch(False))
     session._line(cards.PREFIX + '{"id":"console","title":"Let\'s Go, Pikachu!","lines":[["System version","23.0.1"]],'
                   '"chips":[["Version","1.0.2"]],"tone":"ok"}')
     session._line(cards.PREFIX + '{"file":"Game 1.0.2.nsp","state":"bad","text":"A signature does not check"}')
@@ -1589,7 +1596,7 @@ def test_a_gifts_form_reaches_its_browser_queue_and_session_preview(monkeypatch)
     gift_tile(control, "Palafin").on_click(None)
     run()
     assert saved[-1][0]["form_id"] == 1 and "423-east" in asked
-    panel = SimpleNamespace(offered_entries=lambda: saved[-1], offered=None, traded=0,
+    panel = SimpleNamespace(offered_entries=lambda: saved[-1], offered=None, traded=0, skip=0,
                             offering=ft.Container(), app=SimpleNamespace(settings=SimpleNamespace(sprites=False)))
     for entries in (saved[-1], saved[-1] * 2):
         panel.offered_entries = lambda: entries
@@ -1947,3 +1954,68 @@ def test_the_cartridge_replacement_page_never_shows_in_the_app(monkeypatch):
         stack.extend(page.children)
     assert "rse.md" in files and "rse_link.md" in files
     assert "rse_switch_build.md" not in files
+
+
+def test_a_failed_trade_run_retries_on_the_offers_it_has_not_traded(tmp_path, monkeypatch):
+    """Settings, Retry failed trades: trade 1 completes, the board drops, and the retry offers trades 2 and 3
+    only; a run whose keys are wrong never retries."""
+    import threading
+    from gui.views import games
+    from pokeldn.app.settings import Settings
+    runs = []
+
+    class Process:
+        def __init__(self, argv, cwd, env, on_line, on_exit, popups=None, label=""):
+            self.argv, self.on_line, self.on_exit, self.running = argv, on_line, on_exit, True
+            runs.append(self)
+
+        def end(self, *lines, code=1):
+            for line in lines:
+                self.on_line(line)
+            self.running = False
+            self.on_exit(code)
+
+        def stop(self):
+            self.end(code=0)
+
+    retried = threading.Event()
+
+    class FakeApp:
+        process, process_label, popups = None, "", None
+        settings = Settings(keys=str(tmp_path / "prod.keys"), received=str(tmp_path), board_trace=False,
+                            retry_trades=True)
+        busy = property(lambda self: bool(self.process and self.process.running))
+        radio_port = staticmethod(lambda: "/dev/cu.usbserial-1")
+        ui = staticmethod(lambda fn: (fn(), retried.set() if len(runs) > 1 else None))
+    (tmp_path / "prod.keys").write_text(FAKE_KEYS)
+    monkeypatch.setattr(games.runner, "Process", Process)
+    monkeypatch.setattr(games.runner, "base_env", lambda *a: {})
+    monkeypatch.setattr(games, "SESSION", tmp_path)
+    monkeypatch.setattr(games, "RETRY_DELAY", 0)
+    monkeypatch.setattr(SessionPanel, "_tick", lambda self: None)
+    tool = next(t for t in TOOLS if t.key == "swsh-host")
+    offers = []
+    for n in (1, 2, 3):
+        (tmp_path / f"offer{n}.pk8").write_bytes(b"pk8")
+        offers.append({"file": str(tmp_path / f"offer{n}.pk8"), "summary": f"Mon {n}", "species": n})
+    panel = SessionPanel.__new__(SessionPanel)
+    panel.board_screen = types.SimpleNamespace(take=lambda line: False)
+    panel.__dict__.update(app=FakeApp(), games=SimpleNamespace(
+        values={"--offer-file": offers}, extra={}, visible=False, show_run_cards=lambda: None,
+        panes=SimpleNamespace(show=lambda *a, **k: None), game=SimpleNamespace(name="game", key="swsh")),
+        log=SimpleNamespace(add=lambda line: None, clear=lambda: None), received=SimpleNamespace(),
+        transfer=SimpleNamespace(), partner=SimpleNamespace(), run=None, running_tool=None, restart=False,
+        stopping=False, traded=0, notice=ft.Container(), elapsed=0, skip=0, retries=0, retry_at=None,
+        offering=SimpleNamespace(update=lambda: None), offered=None)
+    panel.set_status = panel.refresh = panel.render_offering = lambda *a, **k: None
+    panel.tool = tool
+    panel._start(None)
+    runs[0].end("[link] waiting", "[link] joined", "[done] trade 1 complete",
+                "[esp32] The board's USB connection failed (gone). Unplug it and plug it back in.")
+    assert retried.wait(5) and len(runs) == 2
+    offered = [a for a in runs[1].argv if os.path.basename(a).startswith("offer")]
+    assert [os.path.basename(a) for a in offered] == ["offer2.pk8", "offer3.pk8"]
+    assert panel.skip == 1 and panel.retries == 1
+
+    runs[1].end("prod.keys has no master_key_12; dump the keys again")
+    assert panel.retry_at is None and len(runs) == 2

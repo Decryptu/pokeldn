@@ -31,6 +31,7 @@ from pokeldn.bdsp.host import (APP_VERSION, MAX_PARTICIPANTS, SCENE_UNION_ROOM,
                                HostSession, TradePartner)
 from pokeldn.bdsp.session import COMM_ID, PASSPHRASE
 from pokeldn.host_support import resolve_keys, needs_root
+from pokeldn import launcher
 from pokeldn.ldn.transport import HostTransport, find_ap_phy
 
 SHOWN = {"seat", "left", "session_ack", "connection_request", "request_not_ours",
@@ -45,8 +46,7 @@ def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seconds", type=float, default=600.0, help="how long to host")
-    ap.add_argument("--keys", default=None)
-    ap.add_argument("--capture", default=None, help="every datagram and event, one JSON line each")
+    launcher.add_radio_arguments(ap, capture="every datagram and event, one JSON line each")
     ap.add_argument("--channel", type=int, default=6)
     ap.add_argument("--ldn-protocol", type=int, default=1, choices=(1, 3),
                     help="the LDN protocol the advertisement is encrypted for")
@@ -82,10 +82,7 @@ def build_parser():
                     help="write the Pokemon the console offers in trade N to PREFIX_N.pb8")
     ap.add_argument("--approach-delay", type=float, default=0.0,
                     help="seconds after the player's trade emote before our character approaches (no walk)")
-    ap.add_argument("--phy", default="auto")
-    ap.add_argument("--ifname", default="ldn-tap")
-    ap.add_argument("--ap-ifname", default="ldn")
-    ap.add_argument("--mon-ifname", default="ldn-mon")
+    launcher.add_linux_arguments(ap, host=True)
     online.add_arguments(ap)
     receiver_gift.add_arguments(ap, "--offer")
     trade_back.add_arguments(ap)

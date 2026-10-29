@@ -19,6 +19,7 @@ formats and timing, and shared components live outside any game directory.
 | `pokeldn/gba/` | GBA wireless link protocols |
 | `pokeldn/gen8.py`, `pokeldn/gen9.py` | Shared Pokémon record codecs |
 | `pokeldn/<game>/` | Game identities, messages, state machines and protocol variations |
+| `pokeldn/launcher.py` | The flags every `bin/` launcher shares (`--keys`, `--phy`, `--capture`, the Linux interface names, `--ip-host`/`--our-ip`) and a scanned network's one-line description |
 | `bin/` | Parsers and session orchestration |
 | `gui/` | Views, widgets, theme and board controls |
 

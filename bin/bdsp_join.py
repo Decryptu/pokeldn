@@ -19,6 +19,7 @@ from pokeldn.ldn import api as ldn
 from pokeldn.host_support import open_output
 from pokeldn.ldn.transport import find_ap_phy, cleanup_stale_vifs as cleanup_stale
 from pokeldn.host_support import resolve_keys, needs_root
+from pokeldn import launcher
 
 # NintendoClients wiki, "LDN Passphrases", row "Pokemon Brilliant Diamond"; Shining Pearl shares its
 # local_communication_id and so its passphrase.
@@ -37,9 +38,7 @@ def pw_variants(base, mode):
 
 
 def describe(net):
-    return (f"comm_id=0x{net.local_communication_id:016x} scene={net.scene_id} "
-            f"version={net.version} app_version={net.app_version} ch={net.channel} "
-            f"{net.num_participants}/{net.max_participants}")
+    return launcher.describe_network(net)
 
 
 def build_parser():
@@ -47,9 +46,8 @@ def build_parser():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--comm-id", default="0100000011d90000",
                     help="local_communication_id to join, hex (default: BDSP)")
-    ap.add_argument("--keys", default=None)
-    ap.add_argument("--phy", default="auto")
-    ap.add_argument("--ifname", default="ldnclient")
+    launcher.add_radio_arguments(ap, capture=None)
+    launcher.add_linux_arguments(ap)
     ap.add_argument("--channels", default="1,6,11,36,40,44,48")
     ap.add_argument("--dwell", type=float, default=0.8)
     ap.add_argument("--name", default="POKELDN", help="our display name in the session")

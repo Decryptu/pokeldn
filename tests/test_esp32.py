@@ -17,6 +17,16 @@ from ldn import wlan
 from pokeldn.ldn import esp32, esp32_sim, esp32_wlan
 
 
+def wait_until(predicate, timeout=10.0):
+    """Poll a condition at 1 ms until it holds; False when the timeout passes first."""
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.001)
+    return True
+
+
 def test_cobs_round_trip():
     for n in (0, 1, 253, 254, 255, 256, 509, 1600):
         for data in (bytes(n), os.urandom(n), b"\x01" * n):
@@ -41,10 +51,7 @@ def test_the_usbwatch_report_every_hello_repeats_is_logged_once_per_link():
 
     lines = []
     radio = esp32.Radio(Stream(), log=lines.append)
-    deadline = time.monotonic() + 2
-    while frames and time.monotonic() < deadline:
-        time.sleep(0.01)
-    time.sleep(0.05)
+    assert wait_until(lambda: not frames and len(lines) == 3, 2)
     radio.close()
     assert lines == ["[esp32] usbwatch: reset reason 11, up 812 ms", "[esp32] joined", "[esp32] joined"]
 
@@ -149,7 +156,7 @@ def test_a_flood_of_eth_tx_never_overflows_the_boards_ring():
     radio = esp32.Radio(board)
     try:
         radio.send(esp32.CMD_HELLO)
-        time.sleep(0.1)
+        assert wait_until(lambda: radio._flow, 5)
         frame = b"\xff" * 6 + bytes(6) + b"\x08\x00" + bytes(range(200))
         for i in range(2000):
             radio.send_ethernet(frame)
@@ -244,7 +251,7 @@ def test_bytes_lost_on_the_line_close_the_window_once_each():
     radio = esp32.Radio(board)
     try:
         radio.send(esp32.CMD_HELLO)
-        time.sleep(0.1)
+        assert wait_until(lambda: radio._flow, 5)
         frame = b"\xff" * 6 + bytes(6) + b"\x08\x00" + bytes(range(200))
         for i in range(2000):
             radio.send_ethernet(frame)
@@ -269,7 +276,7 @@ def test_a_trace_reconciles_the_commands_and_bytes_the_line_lost(tmp_path, monke
     radio = esp32.Radio(board)
     try:
         radio.send(esp32.CMD_HELLO)
-        time.sleep(0.1)
+        assert wait_until(lambda: radio._flow, 5)
         frame = b"\xff" * 6 + bytes(6) + b"\x08\x00" + bytes(range(200))
         for i in range(600):
             radio.send_ethernet(frame)
@@ -282,7 +289,8 @@ def test_a_trace_reconciles_the_commands_and_bytes_the_line_lost(tmp_path, monke
         deadline = time.monotonic() + 5
         while (board.ring or radio._credited + 3000 > radio._written) and time.monotonic() < deadline:
             time.sleep(0.01)
-        time.sleep(0.2)
+        # both STATUS replies (MSG_STATUS 0x89) are in the trace the reader writes
+        assert wait_until(lambda: trace.read_text().count(" < 89 ") >= 2, 5)
     finally:
         radio.close()
         board.close()
@@ -299,7 +307,7 @@ def test_a_reader_held_silent_is_waited_for_not_overrun():
     radio = esp32.Radio(board)
     try:
         radio.send(esp32.CMD_HELLO)
-        time.sleep(0.1)
+        assert wait_until(lambda: radio._flow, 5)
         frame = b"\xff" * 6 + bytes(6) + b"\x08\x00" + bytes(range(200))
         for i in range(600):
             radio.send_ethernet(frame)
@@ -323,7 +331,7 @@ def test_a_hello_mid_session_does_not_open_the_window():
     radio = esp32.Radio(board)
     try:
         radio.send(esp32.CMD_HELLO)
-        time.sleep(0.1)
+        assert wait_until(lambda: radio._flow, 5)
         for i in range(400):
             radio.send_ethernet(frame)
             if i % 200 == 199:
@@ -332,10 +340,7 @@ def test_a_hello_mid_session_does_not_open_the_window():
         for _ in range(400):
             radio.send_ethernet(frame)
         assert radio.drain(30)
-        deadline = time.monotonic() + 10
-        while board.ring and time.monotonic() < deadline:
-            time.sleep(0.01)
-        time.sleep(0.3)
+        assert wait_until(lambda: not board.ring and board.frames == 800, 10)
     finally:
         radio.close()
         board.close()
@@ -885,7 +890,8 @@ def test_the_arceus_joiner_takes_the_host_role_a_console_hands_it(tmp_path, monk
     keys_file = tmp_path / "prod.keys"
     keys_file.write_text("".join(f"{k} = {v.hex()}\n" for k, v in KEYS.items()))
     air = esp32_sim.Air()
-    console_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+    console_board = esp32_sim.SimulatedBoard(air)
+    console_radio = esp32.Radio(console_board.host_stream())
     join_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
     console_thread = {}
 
@@ -951,7 +957,7 @@ def test_the_arceus_joiner_takes_the_host_role_a_console_hands_it(tmp_path, monk
     wlan.set_factory(factory)
     try:
         console_thread["t"].start()
-        time.sleep(1)
+        assert wait_until(lambda: console_board.mode == esp32_sim.AP, 10)
         result = pla_join.main_radio(args, offer, exchange, lambda **row: None)
     finally:
         stop.set()
@@ -1038,7 +1044,8 @@ def test_the_firered_gift_host_comes_up_and_advertises_on_a_simulated_board(tmp_
     keys_file = tmp_path / "prod.keys"
     keys_file.write_text("".join(f"{k} = {v.hex()}\n" for k, v in KEYS.items()))
     air = esp32_sim.Air()
-    host_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+    host_board = esp32_sim.SimulatedBoard(air)
+    host_radio = esp32.Radio(host_board.host_stream())
     probe_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
 
     @contextlib.asynccontextmanager
@@ -1052,12 +1059,12 @@ def test_the_firered_gift_host_comes_up_and_advertises_on_a_simulated_board(tmp_
     wlan.set_factory(host_factory)
     result = {}
     host = threading.Thread(target=lambda: result.setdefault("code", frlg_mg_host.main(
-        ["--live", "--keys", str(keys_file), "--channel", "6", "--idle-timeout", "6"])),
+        ["--live", "--keys", str(keys_file), "--channel", "6", "--idle-timeout", "4"])),
         daemon=True)
     networks = []
     try:
         host.start()
-        time.sleep(3)
+        assert wait_until(lambda: host_board.mode == esp32_sim.AP, 10)
         esp32_wlan.use(radio=probe_radio)
         deadline = time.time() + 10
         while not networks and time.time() < deadline:
@@ -1088,7 +1095,8 @@ def test_the_lets_go_joiner_reaches_the_game_on_simulated_boards(tmp_path, monke
     identity = pb7.build_message(pb7.FIRST_MESSAGE, pb7.set_trainer_id(bytes(360), 41234, 12345))
     (tmp_path / "identity.bin").write_bytes(identity)
     air = esp32_sim.Air()
-    host_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+    host_board = esp32_sim.SimulatedBoard(air)
+    host_radio = esp32.Radio(host_board.host_stream())
     join_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
     threads = {}
 
@@ -1116,7 +1124,7 @@ def test_the_lets_go_joiner_reaches_the_game_on_simulated_boards(tmp_path, monke
     wlan.set_factory(factory)
     try:
         threads["host"].start()
-        time.sleep(2)
+        assert wait_until(lambda: host_board.mode == esp32_sim.AP, 10)
         threads["join"].start()
         threads["join"].join(40)
         threads["host"].join(40)
@@ -1160,7 +1168,8 @@ def test_the_lets_go_joiner_trades_its_queue_on_one_seat_on_simulated_boards(tmp
     host_offers = [record("pikachu.pb7", 25, 0x11111111), record("onix.pb7", 95, 0x22222222)]
     join_offers = [record("eevee.pb7", 133, 0x33333333), record("bulbasaur.pb7", 1, 0x44444444)]
     air = esp32_sim.Air()
-    host_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
+    host_board = esp32_sim.SimulatedBoard(air)
+    host_radio = esp32.Radio(host_board.host_stream())
     join_radio = esp32.Radio(esp32_sim.SimulatedBoard(air).host_stream())
     threads = {}
 
@@ -1193,7 +1202,7 @@ def test_the_lets_go_joiner_trades_its_queue_on_one_seat_on_simulated_boards(tmp
     wlan.set_factory(factory)
     try:
         threads["host"].start()
-        time.sleep(2)
+        assert wait_until(lambda: host_board.mode == esp32_sim.AP, 10)
         threads["join"].start()
         threads["join"].join(60 * scale)
         threads["host"].join(60 * scale)
@@ -1678,7 +1687,6 @@ def test_sword_host_and_joiner_trade_on_simulated_boards(tmp_path, monkeypatch):
     wlan.set_factory(factory)
     try:
         threads["join"].start()          # before the host: the joiner rescans until it appears
-        time.sleep(1.5)
         threads["host"].start()
         threads["join"].join(120)
         threads["host"].join(120)

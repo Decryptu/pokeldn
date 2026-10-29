@@ -31,6 +31,7 @@ from pokeldn.pla import pokemon as pla_pokemon
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
+from pokeldn import launcher
 
 PROTOCOL_NAMES = {
     0x08: "keep alive", 0x2C: "net", 0x30: "turn", 0x58: "rtt", 0x65: "sync",
@@ -149,15 +150,11 @@ def build_parser():
     online.add_arguments(ap)
     receiver_gift.add_arguments(ap, "--trade-box-record")
     trade_back.add_arguments(ap)
-    ap.add_argument("--phy", default="auto")
+    launcher.add_radio_arguments(ap)
     ap.add_argument("--channel", type=int, default=None)
-    ap.add_argument("--keys", default=None)
-    ap.add_argument("--capture", default=None, help="write every datagram here as JSON lines")
     ap.add_argument("--app-version", type=int, default=0,
                     help="the LDN application version; the console's own is unread")
     ap.add_argument("--ssid", default=None, help="hex, 16 bytes; default lets the LDN layer pick")
-    ap.add_argument("--ip-host", action="store_true",
-                    help="host over ldn_mitm on the LAN for an emulator; no radio and no root")
     ap.add_argument("--net-protocol", type=lambda v: int(v, 0), default=PROTO_NET,
                     help="the Net protocol id to send the connection request under")
     ap.add_argument("--player-name", default="POKELDN",
@@ -167,8 +164,7 @@ def build_parser():
     ap.add_argument("--rtt-version", type=int, default=5, help="the RTT protocol version byte")
     ap.add_argument("--no-net-probe", action="store_true",
                     help="stay silent after a join, to measure what the joiner does unprompted")
-    ap.add_argument("--our-ip", default=None,
-                    help="with --ip-host, the address to advertise and serve on")
+    launcher.add_ip_host_arguments(ap, our_ip_help="with --ip-host, the address to advertise and serve on")
     ap.add_argument("--no-session-ack", action="store_true",
                     help="do not answer a join request with the type-1 ack (buys 8 s, completes nothing)")
     ap.add_argument("--no-session-response", action="store_true",

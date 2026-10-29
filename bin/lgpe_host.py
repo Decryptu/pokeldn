@@ -20,6 +20,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.host_support import open_output
+from pokeldn import launcher
 from pokeldn import pokemon as pokemon_service
 from pokeldn.ldn import clone, pia3, pia4, reliable3, station4, station9, sync_clock
 from pokeldn.lgpe import pb7
@@ -70,10 +71,7 @@ def build_parser():
     ap.add_argument("--seconds", type=float, default=180.0, help="how long to host")
     ap.add_argument("--player-name", default="POKELDN",
                     help="the nickname our connection response carries")
-    ap.add_argument("--phy", default="auto")
-    ap.add_argument("--ifname", default="ldn-tap")
-    ap.add_argument("--ap-ifname", default="ldn")
-    ap.add_argument("--mon-ifname", default="ldn-mon")
+    launcher.add_linux_arguments(ap, host=True)
     ap.add_argument("--channel", default="code",
                     help="1, 6, 11; code (default): the channel the link code puts a searching "
                          "console on, the only one it joins on; auto: scan for the console's own "
@@ -87,8 +85,7 @@ def build_parser():
     ap.add_argument("--no-accept-decrypted-ccmp", action="store_true",
                     help="do not accept the frames rtw88 has already decrypted. With this the "
                          "host reads nothing on that adapter")
-    ap.add_argument("--keys", default=None)
-    ap.add_argument("--capture", default=None, help="every datagram, one JSON line each")
+    launcher.add_radio_arguments(ap)
     ap.add_argument("--variable-id", type=lambda s: int(s, 0), default=0x0C0C0C0C,
                     help="our own variable id, any nonzero value")
     ap.add_argument("--protocol", type=int, default=1,
@@ -153,9 +150,7 @@ def build_parser():
     ap.add_argument("--agree-withdrawn-vote", action="store_true",
                     help="test only: carry the drive on through a withdrawn vote, as the host did "
                          "before it answered state 2 (docs/lgpe_session.md). Locks a console's save")
-    ap.add_argument("--ip-host", action="store_true",
-                    help="host over ldn_mitm for an emulator instead of the radio (docs/ldn.md)")
-    ap.add_argument("--our-ip", default=None, help="with --ip-host, the address to advertise")
+    launcher.add_ip_host_arguments(ap)
     online.add_arguments(ap)
     receiver_gift.add_arguments(ap, "--offer and --next-offer")
     trade_back.add_arguments(ap)

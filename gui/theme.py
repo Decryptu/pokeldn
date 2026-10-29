@@ -19,7 +19,7 @@ DIVIDER = "#252528"
 TEXT = "#F5F5F7"
 SOFT = "#D1D1D6"
 MUTED = "#A1A1A6"
-FAINT = "#86868B"
+FAINT = "#98989D"   # 4.8:1 on HOVER, the lightest surface it sits on (WCAG AA for small text)
 BLUE = "#47AEFA"
 RED = "#FD474D"
 GREEN = "#3DD68C"
@@ -45,6 +45,12 @@ COMPACT_WIDTH = 760
 READABLE_WIDTH = 720   # the options column's widest: a wider form spreads a field's label far from its value
 compact = False
 window_width = 0.0   # the page's width, kept by gui/main.py: a pane built later starts in the right layout
+text_scale = 1.0     # Settings, Larger text: read once at launch by gui/main.py
+
+
+def scaled(value: float) -> float:
+    """A text size in points, scaled by the player's Larger text setting."""
+    return round(value * text_scale, 1)
 
 
 def app_theme() -> ft.Theme:
@@ -68,7 +74,7 @@ def app_theme() -> ft.Theme:
 
 def text(value: str, size: float = 13, color: str = TEXT, weight=None, **kwargs) -> ft.Text:
     kwargs.setdefault("style", ft.TextStyle(height=1.4, font_family_fallback=FALLBACK_FONTS))
-    return ft.Text(value, size=size, color=color, weight=weight, **kwargs)
+    return ft.Text(value, size=scaled(size), color=color, weight=weight, **kwargs)
 
 
 def backdrop(content: ft.Control) -> ft.Container:

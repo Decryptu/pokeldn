@@ -7,9 +7,10 @@ from pathlib import Path
 
 import flet as ft
 
-from gui.app import keys_found
+from gui.app import keys_found, keys_problem
 from pokeldn import console_trainer, panel, progress
-from pokeldn.app import bank, command, panels, events_gallery, gift_builder, online, received, runner
+from pokeldn.app import bank, command, failure, panels, events_gallery, gift_builder, online, received, runner
+from pokeldn.ldn import LINK_PREFIX
 from pokeldn.swsh import raid_event as swsh_raid_event
 from pokeldn.sv import raid_event as raid_events
 from gui import theme as t
@@ -35,6 +36,8 @@ from gui.localization import SERVICE, summary as pokemon_summary, summary_lines,
 from pokeldn.app.i18n import help_text, t as tr
 
 EMPTY = "-"   # a dropdown option cannot carry an empty key
+WAIT_HINT = 60   # seconds of waiting for the console before the panel asks whether it is on the right screen
+RETRY_DELAY, RETRIES = 15, 3   # Settings, Retry failed trades: the wait before each retry, and how many in a row
 # The Tera Raid host's event fields (pokeldn/app/catalog.py) and the context fields an event narrows.
 RAID_EVENT, RAID_DEN, RAID_CATCH = "--raid-event", "--raid-event-group", "--raid-catch-normal"
 REWARD_DEN_KEYS = ("--raid-boss", "--raid-gigantamax")   # a Max Raid's den follows its boss
@@ -727,6 +730,11 @@ def time_left(seconds: float | None) -> str:
 
 
 class SessionPanel:
+    watch = None      # the run's failure.Watch, from _start; None before any run
+    failure = None    # a failure.Failure once a run ended without doing its job
+    elapsed = skip = retries = 0
+    retry_at = None
+
     def __init__(self, app, games: GamesView):
         self.app, self.games = app, games
         self.tool: Tool | None = None
@@ -752,6 +760,13 @@ class SessionPanel:
         self.running_tool: Tool | None = None
         self.restart = False               # Start on another tool: stop this run, then start that one
         self.received = ft.Container(visible=False)
+        self.notice = ft.Container(visible=False)    # the run's state, then why it failed (render_notice)
+        self.watch = failure.Watch(False)
+        self.failure = None
+        self.elapsed = 0
+        self.skip = 0              # offers a retried chain traded in its earlier runs; this run offers the rest
+        self.retries = 0           # retries since the last run that completed a trade
+        self.retry_at = None       # time.monotonic() of the scheduled retry, None when none waits
         self.board_screen = BoardScreen(app)
         self.run = None                    # (process, stamp, game) of the last run started
         self.seen: dict[str, tuple] = {}   # a received file -> (size, mtime, what PKHeX read, or None)
@@ -772,7 +787,7 @@ class SessionPanel:
         self.control = t.panel(ft.Column([
             t.panel_header(tr('games.session_6959b4', 'Session'), self.status),
             # The checklist and the steps scroll; Start stays in view below them.
-            ft.Container(t.fade(ft.Column([self.board_screen.control, self.board_line, self.partner, self.offering, self.transfer, self.received,
+            ft.Container(t.fade(ft.Column([self.notice, self.board_screen.control, self.board_line, self.partner, self.offering, self.transfer, self.received,
                                                      self.steps],
                                           spacing=24,
                                           scroll=ft.ScrollMode.AUTO)),
@@ -814,6 +829,9 @@ class SessionPanel:
             self.partner.content, self.partner.visible, self.partner_state = None, False, None
             self.run_cards = {}
             self.traded = 0
+            self.failure, self.watch = None, failure.Watch(False)
+            self.notice.visible = False
+            self.retry_at = None
         self.tool, self.shown_steps = tool, None
         self.refresh(update=False)
 
@@ -828,8 +846,10 @@ class SessionPanel:
         """(state, what, how to fix it, the page that fixes it) for each thing Start needs.
         state is ok, wait, warn (Start still allowed) or block."""
         items = [
-            ("ok", tr('games.switch_keys_added_0e91df', 'Switch keys added'), "", "") if keys_found(self.app.settings.keys) else
-            ("block", tr('games.add_your_switch_keys_c4f190', 'Add your Switch keys'), tr('games.choose_prod_keys_in_settings_259956', 'Choose prod.keys in Settings.'), "settings"),
+            ("ok", tr('games.switch_keys_added_0e91df', 'Switch keys added'), "", "") if not (keys := keys_problem(self.app.settings.keys)) else
+            ("block", tr('games.add_your_switch_keys_c4f190', 'Add your Switch keys'), tr('games.choose_prod_keys_in_settings_259956', 'Choose prod.keys in Settings.'), "settings")
+            if not os.path.isfile(os.path.expanduser(self.app.settings.keys)) else
+            ("block", tr('games.fix_your_switch_keys', 'Your Switch keys are incomplete'), keys, "settings"),
         ]
         if not self.tool.radio:
             items = [("ok", tr('games.no_board_needed_lan', 'No board needed: this computer\'s network'), "", "")]
@@ -899,22 +919,45 @@ class SessionPanel:
         if update:
             self.control.update()
 
-    def offered_entries(self) -> list[dict]:
+    def shortcut(self, stop: bool) -> None:
+        """Cmd/Ctrl+Enter and Cmd/Ctrl+. (gui/main.py): press the panel's own button when it would take the click,
+        Start (or Stop and start) for one and Stop for the other."""
+        row = self.action.content
+        button = row.controls[0] if isinstance(row, ft.Row) and row.controls else None
+        if button is None or button.disabled or (button.on_click == self._stop) != stop:
+            return
+        button.on_click(None)
+
+    def offered_entries(self, values: dict | None = None) -> list[dict]:
         """The queued offers in the order the launcher trades them."""
+        values = self.games.values if values is None else values
         return [entry for field in self.tool.fields
-                if field.kind == "pokemon" and command.applies(field, self.tool, self.games.values)
-                for entry in command.offers(command.value_of(field, self.games.values))[:field.queue]
+                if field.kind == "pokemon" and command.applies(field, self.tool, values)
+                for entry in command.offers(command.value_of(field, values))[:field.queue]
                 if entry.get("file")]
+
+    def remaining(self, skip: int) -> dict | None:
+        """The tool's values with the first `skip` queued offers left out, for a retry; None when none is left."""
+        values = dict(self.games.values)
+        for field in self.tool.fields:
+            if field.kind == "pokemon" and skip and command.applies(field, self.tool, values):
+                entries = command.offers(command.value_of(field, values))[:field.queue]
+                if entries:
+                    if skip >= len(entries):
+                        return None
+                    values[field.key] = entries[skip:]
+        return values
 
     def render_offering(self) -> None:
         entries = self.offered_entries()
         shown = [(int(e.get("species") or 0), bool(e.get("shiny")), e.get("summary", ""),
                   int(e.get("form_id", e.get("options", {}).get("form", 0)))) for e in entries]
-        if (shown, self.traded) == self.offered:
+        traded = self.skip + self.traded
+        if (shown, traded) == self.offered:
             return
-        self.offered = (shown, self.traded)
+        self.offered = (shown, traded)
         self.offering.visible = bool(shown)
-        done = t.text(tr('games.traded_55a859', '{value0} traded', value0=self.traded), 12, t.GREEN) if self.traded else None
+        done = t.text(tr('games.traded_55a859', '{value0} traded', value0=traded), 12, t.GREEN) if traded else None
         if not shown:
             self.offering.content = None
         elif len(shown) == 1:
@@ -925,14 +968,14 @@ class SessionPanel:
             tiles = []
             for n, (species, shiny, summary, form) in enumerate(shown, start=1):
                 sprite = Sprite(self.app, species, shiny, size=MINI, form=form)
-                traded = n <= self.traded
-                sprite.frame.tooltip = tr('games.trade_f2b1e2', 'Trade {value0}{value1}: {value2}', value0=n, value1=tr('games.done_28c78e', ' (done)') if traded else '', value2=summary_text(summary))
+                done_n = n <= traded
+                sprite.frame.tooltip = tr('games.trade_f2b1e2', 'Trade {value0}{value1}: {value2}', value0=n, value1=tr('games.done_28c78e', ' (done)') if done_n else '', value2=summary_text(summary))
                 tiles.append(ft.Stack([sprite.control, ft.Container(
-                    t.pixel_icon("checkbox-on", color=t.GREEN), right=0, bottom=0, visible=traded)]))
-            progress = (tr('games.of_traded_639878', '{value0} of {value1} traded', value0=min(self.traded, len(shown)), value1=len(shown)) if self.traded
+                    t.pixel_icon("checkbox-on", color=t.GREEN), right=0, bottom=0, visible=done_n)]))
+            progress = (tr('games.of_traded_639878', '{value0} of {value1} traded', value0=min(traded, len(shown)), value1=len(shown)) if traded
                         else tr('games.trades_in_order_398ee7', '{value0} trades, in order', value0=len(shown)))
             self.offering.content = t.section(tr('games.offering_300e2b', 'Offering'), ft.Row(tiles, spacing=6, run_spacing=6, wrap=True),
-                                              trailing=t.text(progress, 12, t.GREEN if self.traded else t.MUTED))
+                                              trailing=t.text(progress, 12, t.GREEN if traded else t.MUTED))
 
     def show_transfer(self, what: str, done: int, total: int) -> None:
         unit = tr('games.kb_59281a', 'KB') if what == "backup" else tr('games.parts', 'parts')
@@ -1077,8 +1120,14 @@ class SessionPanel:
     def _open_received(self, e) -> None:
         open_folder(os.path.expanduser(self.app.settings.received))
 
-    def _start(self, e) -> None:
+    def _start(self, e, retry: bool = False) -> None:
         tool, s = self.tool, self.app.settings
+        self.retry_at = None       # a manual Start, or the retry itself, ends the wait
+        if not retry:
+            self.skip = self.retries = 0
+        run_values = self.remaining(self.skip) if retry else self.games.values
+        if run_values is None:
+            return
         process = self.app.process
         if (process and process.running and self.run is not None and self.run[0] is process
                 and self.running_tool is not tool):
@@ -1091,11 +1140,14 @@ class SessionPanel:
             return
         radio = self.app.plugin_radio() if s.radio and tool.radio else None
         port = (radio.scheme if radio else "" if s.radio else self.app.radio_port()) if tool.radio else "lan"
+        keys = keys_problem(s.keys) if tool.radio else ""
         problems = [p for p in (
             "" if port else tr('games.the_radio_plugin_is_not_loaded_3f5a2c', 'The radio plugin is not loaded.') if s.radio else
             tr('games.no_board_found_plug_it_in_or_pick_one_on_the_board_page_39a182', 'No board found. Plug it in, or pick one on the Board page.'),
-            "" if not tool.radio or os.path.isfile(os.path.expanduser(s.keys)) else tr('games.choose_your_prod_keys_in_settings_eb3db2', 'Choose your prod.keys in Settings.'),
-            command.missing_offer(tool, self.games.values), *command.problems(tool, self.games.values)) if p]
+            "" if not keys else
+            tr('games.choose_your_prod_keys_in_settings_eb3db2', 'Choose your prod.keys in Settings.')
+            if not os.path.isfile(os.path.expanduser(s.keys)) else keys,
+            command.missing_offer(tool, run_values), *command.problems(tool, run_values)) if p]
         self.log.clear()
         if problems:
             for p in problems:
@@ -1105,8 +1157,8 @@ class SessionPanel:
             return
         try:
             game = self.games.game.key
-            values = command.prepare(tool, self.games.values, game, s.trainer(game),
-                                     VERSIONS.get(str(self.games.values.get("--version", "")), ""))
+            values = command.prepare(tool, run_values, game, s.trainer(game),
+                                     VERSIONS.get(str(run_values.get("--version", "")), ""))
         except (OSError, ValueError) as error:
             self.log.add(f'[app] {error}')
             self.set_status(tr('games.not_started_ba35f0', 'Not started'), t.RED)
@@ -1119,7 +1171,7 @@ class SessionPanel:
         trace = f"captures/{tool.key}-{stamp}_esp32.trace" if s.board_trace else None
         self.log.add(f'[app] {tool.name} · {self.games.game.name} · radio {port}')
         for field in tool.fields:
-            if field.random and values.get(field.key) is not self.games.values.get(field.key):
+            if field.random and values.get(field.key) is not run_values.get(field.key):
                 self.log.add(f'[app] {tr("games.random_offer", "Random offer")}: '
                              f'{command.offers(values[field.key])[0]["summary"]}')
         self.seen, self.received.content, self.received.visible = {}, None, False
@@ -1128,7 +1180,10 @@ class SessionPanel:
         self.run_cards = {}
         self.traded = 0
         self.last_trainer = None
-        self.bank_trades = bank.TradeSession(self.offered_entries())
+        self.bank_trades = bank.TradeSession(self.offered_entries(run_values))
+        self.watch = failure.Watch(tool.radio and tool.joins and not s.radio)
+        self.failure, self.elapsed = None, 0
+        self.render_notice(update=False)
         self.stopping = False
         self.app.process_label = tool.name
         self.running_tool = tool
@@ -1144,6 +1199,11 @@ class SessionPanel:
         self.refresh()
 
     def _line(self, line: str) -> None:
+        if self.watch is not None:
+            self.watch.line(line)
+        if line.startswith(LINK_PREFIX):
+            self.app.ui(self.render_notice)
+            return
         if self.board_screen.take(line):
             return
         if moved := progress.read(line):
@@ -1184,17 +1244,87 @@ class SessionPanel:
                 self.offering.update()
             self.app.ui(mark)
 
+    def render_notice(self, update: bool = True) -> None:
+        """One line over the panel: the run's state while it runs (waiting for the console, connected, with a
+        hint once the wait is long), then why it failed, with the button that fixes it."""
+        def running():
+            return bool(self.app.process and self.app.process.running and self.run and self.run[0] is self.app.process)
+        watch, clock = self.watch or failure.Watch(False), f"{self.elapsed // 60}:{self.elapsed % 60:02d}"
+        hint, button = "", None
+        if self.failure is not None:
+            icon, color = "warning-diamond", t.RED
+            what = self.failure.text
+            pages = {"board": (tr('games.board_4816cb', 'Board'), "cpu"), "settings": (tr('games.settings_74a883', 'Settings'), "gear")}
+            if self.failure.action in pages:
+                label, glyph = pages[self.failure.action]
+                button = t.secondary_button(label, lambda e, k=self.failure.action: self.app.navigate(k), glyph)
+            elif self.failure.action == "copy":
+                button = t.secondary_button(tr('games.copy_the_log_e01862', 'Copy the log'), self._copy_log, "copy")
+            if self.retry_at is not None:
+                left = max(0, round(self.retry_at - time.monotonic()))
+                hint = tr('games.retrying', 'Trying again in {value0} s, attempt {value1} of {value2}.',
+                          value0=left, value1=self.retries, value2=RETRIES)
+                button = t.secondary_button(tr('games.cancel_retry', 'Do not retry'), self._cancel_retry, "close")
+        elif watch.linking and watch.present and running():
+            icon, color = "checkbox-on", t.GREEN
+            what = tr('games.console_connected', 'Console connected · {value0}', value0=clock)
+        elif watch.linking and watch.waited and running():
+            icon, color = "clock", t.AMBER if self.elapsed >= WAIT_HINT else t.BLUE
+            what = (tr('games.console_left', 'The console left · {value0}', value0=clock) if watch.linked else
+                    tr('games.waiting_for_the_console', 'Waiting for the console · {value0}', value0=clock))
+            if self.elapsed >= WAIT_HINT and not watch.linked:
+                hint = tr('games.waiting_hint', 'Is the console on the screen the console steps below name?')
+        else:
+            self.notice.visible = False
+            self._update_notice(update)
+            return
+        self.notice.content = ft.Column([ft.Row([
+            ft.Container(t.pixel_icon(icon, color=color), padding=ft.Padding(0, 1, 0, 0)),
+            ft.Column([t.text(what, 13, t.TEXT, weight=ft.FontWeight.W_600)] + ([t.text(hint, 12, t.MUTED)] if hint else []),
+                      spacing=2, expand=True)], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START),
+            *([ft.Row([button], alignment=ft.MainAxisAlignment.END)] if button else [])], spacing=8)
+        self.notice.visible = True
+        self._update_notice(update)
+
+    def _update_notice(self, update: bool) -> None:
+        if update:
+            try:
+                self.notice.update()
+            except RuntimeError:    # not on the page yet: the panel's next update draws it
+                pass
+
     def _tick(self) -> None:
         run = self.run
         process = run[0]
         while process.running:
             elapsed = int(time.monotonic() - process.started)
-            self.app.ui(lambda e=elapsed: (self.set_status(tr('games.running_f261eb', 'Running {value0:02d}:{value1:02d}', value0=e // 60, value1=e % 60), t.BLUE),
-                                           self.status.update())
-                        if self.app.process is process and process.running else None)
+
+            def show(e=elapsed):
+                if self.app.process is not process or not process.running:
+                    return
+                self.elapsed = e
+                self.set_status(tr('games.running_f261eb', 'Running {value0:02d}:{value1:02d}', value0=e // 60, value1=e % 60), t.BLUE)
+                self.status.update()
+                self.render_notice()
+            self.app.ui(show)
             self.scan_received(run)
             time.sleep(1)
         self.scan_received(run)   # a launcher may write its last file as it closes
+
+    def _schedule_retry(self) -> None:
+        at = self.retry_at = time.monotonic() + RETRY_DELAY
+
+        def wait():
+            while self.retry_at == at and time.monotonic() < at:
+                self.app.ui(lambda: self.render_notice() if self.retry_at == at else None)
+                time.sleep(1)
+            if self.retry_at == at:
+                self.app.ui(lambda: self._start(None, retry=True) if self.retry_at == at else None)
+        threading.Thread(target=wait, daemon=True).start()
+
+    def _cancel_retry(self, e=None) -> None:
+        self.retry_at = None
+        self.render_notice()
 
     def _stop(self, e) -> None:
         self.stopping = True
@@ -1203,13 +1333,24 @@ class SessionPanel:
 
     def _exited(self, code: int) -> None:
         def done():
-            if self.stopping:
-                self.set_status(tr('games.stopped_1a4f63', 'Stopped'), t.MUTED)
-            elif code == 0:
-                self.set_status(tr('games.finished_7804f7', 'Finished'), t.GREEN)
-            else:
+            self.failure = self.watch.verdict(code, self.stopping) if self.watch else None
+            if self.failure is not None or (code and not self.stopping):
                 self.set_status(tr('games.failed_1df702', 'Failed ({value0})', value0=code), t.RED)
+            elif self.stopping:
+                self.set_status(tr('games.stopped_1a4f63', 'Stopped'), t.MUTED)
+            else:
+                self.set_status(tr('games.finished_7804f7', 'Finished'), t.GREEN)
             self.log.add(f'[app] Exited with code {code}.')
+            if self.traded:
+                self.retries = 0
+            if (self.failure is not None and self.failure.retry and self.app.settings.retry_trades
+                    and self.running_tool is self.tool and self.tool.activity == "trade"
+                    and self.retries < RETRIES and not self.restart
+                    and self.remaining(self.skip + self.traded) is not None):
+                self.skip += self.traded
+                self.retries += 1
+                self._schedule_retry()
+            self.render_notice()
             self.run_cards = {}
             self.games.show_run_cards()
             bank.prune(self.app.settings)     # the traded ones leave the queue too

@@ -40,6 +40,7 @@ from pokeldn.sv import circle, pokemon, port2, raid, reference, streams, trade, 
 from pokeldn.ldn import channel_table, game_channel
 from pokeldn.ldn.transport import board_radio, find_ap_phy, cleanup_stale_vifs as cleanup_stale
 from pokeldn.host_support import resolve_keys, needs_root
+from pokeldn import launcher
 from pokeldn.ldn import show_done, trades_done
 from pokeldn.app import screen
 
@@ -131,10 +132,7 @@ def ip_comm_id(network_info):
 
 def describe(net):
     known = {sv.COMM_ID_SCARLET: "Scarlet", sv.COMM_ID_VIOLET: "Violet"}
-    tag = known.get(net.local_communication_id, "")
-    return (f"comm_id=0x{net.local_communication_id:016x}{' (' + tag + ')' if tag else ''} "
-            f"scene={net.scene_id} version={net.version} app_version={net.app_version} "
-            f"ch={net.channel} {net.num_participants}/{net.max_participants}")
+    return launcher.describe_network(net, known.get(net.local_communication_id, ""))
 
 
 def build_out(keys, our_ip, body, dst_var, *, protocol, port=0, flags=0, src_var=OUR_VAR):
@@ -171,7 +169,7 @@ def build_parser():
                     help="join only a console searching with this Link Code; empty takes any")
     ap.add_argument("--comm-id", default=None,
                     help="local communication id to join, hex; default is either cartridge's")
-    ap.add_argument("--keys", default=None)
+    launcher.add_radio_arguments(ap)
     ap.add_argument("--ip-join", action="store_true",
                     help="join an emulated console over the LAN through ldn_mitm instead of the "
                          "radio: no root, no phy, no prod.keys")
@@ -179,8 +177,7 @@ def build_parser():
     ap.add_argument("--our-ip", default="172.16.86.128", help="--ip-join: our own address")
     ap.add_argument("--scan-timeout", type=float, default=1.0,
                     help="--ip-join: seconds to wait for one ldn_mitm scan answer")
-    ap.add_argument("--phy", default="auto")
-    ap.add_argument("--ifname", default="ldnclient")
+    launcher.add_linux_arguments(ap)
     ap.add_argument("--channels", default="1,6,11")
     ap.add_argument("--dwell", type=float, default=0.35,
                     help="seconds per channel in the scan; the console's hosting window is a few "
@@ -419,7 +416,6 @@ def build_parser():
     ap.add_argument("--verbose-circle", action="store_true",
                     help="with --union-circle: print each circle message we send and each step of "
                          "the area search too; the --capture file keeps the steps either way")
-    ap.add_argument("--capture", default=None, help="write every datagram here as JSON lines")
     return ap
 
 

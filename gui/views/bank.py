@@ -23,6 +23,8 @@ DEX = "dex"   # the Pokedex: every species a bank game holds, and whether the ba
 STATS = ["HP", "Atk", "Def", "SpA", "SpD", "Spe"]
 SORTS = {"newest": lambda e: (-e.created, e.id), "oldest": lambda e: (e.created, e.id),
          "dex": lambda e: (e.species_id, -e.created), "name": lambda e: (e.summary.split(" · ")[0].casefold(), -e.created)}
+ONLY = ("any", "shiny", "queued", "illegal")
+DEX_ONLY = ("all", "have", "missing", "shiny")
 
 
 def trade_tools(game_key: str) -> list:
@@ -75,9 +77,12 @@ class BankView:
         self.picked: set[str] = set()
         self.picked_target = ""           # the game chosen to send the picked Pokemon to
         self.checking: set[str] = set()   # Entry.ids whose destinations PKHeX is reading
-        self.query, self.sort, self.only = "", "newest", "any"
+        kept = app.settings.bank_view
+        self.query = ""
+        self.sort = kept.get("sort") if kept.get("sort") in SORTS else "newest"
+        self.only = kept.get("only") if kept.get("only") in ONLY else "any"
         self.dex_names: dict[int, str] = {}   # species id -> name, every species one of the bank's games holds
-        self.dex_only = "all"
+        self.dex_only = kept.get("dex_only") if kept.get("dex_only") in DEX_ONLY else "all"
         self.queued: set[str] = set()       # bank.queued_ids, read once per render
         self.boxes = ft.ListView(spacing=2, padding=ft.Padding(8, 8, 8, 8), expand=True)
         # A lazy grid: only the tiles on screen are laid out and their sprites decoded.
@@ -197,8 +202,13 @@ class BankView:
         if key == DEX and not self.dex_names:
             threading.Thread(target=self._load_dex, daemon=True).start()
 
+    def _keep(self, name: str, key: str) -> None:
+        setattr(self, name, key)
+        self.app.settings.bank_view[name] = key
+        self.app.settings.save()
+
     def _only(self, key: str) -> None:
-        self.only = key
+        self._keep("only", key)
         self.render_grid()
         self.control.update()
 
@@ -208,7 +218,7 @@ class BankView:
         self.control.update()
 
     def _sorted(self, key: str) -> None:
-        self.sort = key
+        self._keep("sort", key)
         self.render_grid()
         self.control.update()
 
@@ -217,8 +227,12 @@ class BankView:
             return False
         if self.only == "queued" and entry.id not in self.queued:
             return False
-        return (self.shown in (ALL, entry.game)
-                and (not self.query or self.query in summary_text(entry.summary).casefold()))
+        return self.shown in (ALL, entry.game) and (not self.query or self.query in self._haystack(entry))
+
+    def _haystack(self, entry: bank.Entry) -> str:
+        """What the search reads: the summary as shown and in English (species, nickname, nature, ability, ball),
+        and the game it is in."""
+        return " ".join((summary_text(entry.summary), entry.summary, NAMES.get(entry.game, entry.game))).casefold()
 
     def _shown(self) -> list[bank.Entry]:
         return [e for e in self.items if self._matches(e)]
@@ -298,7 +312,7 @@ class BankView:
         ]), padding=4, border_radius=14, tooltip=tip, on_click=lambda e: self._find(name))
 
     def _dex_only(self, key: str) -> None:
-        self.dex_only = key
+        self._keep("dex_only", key)
         self.render_grid()
         self.control.update()
 

@@ -26,6 +26,7 @@ if os.path.isdir(BUNDLED_LDN):
 import trio
 from pokeldn.ldn import api as ldn
 from pokeldn.host_support import open_output
+from pokeldn import launcher
 from pokeldn import pokemon as pokemon_service
 from pokeldn import receiver_gift, trade_back
 from pokeldn.ldn import pia3, pia4, station9, station4
@@ -82,10 +83,7 @@ KNOWN = {0x0100000011D90000: "BDSP", 0x0100ABF008968000: "Sword",
 
 
 def describe(net):
-    tag = KNOWN.get(net.local_communication_id, "")
-    return (f"comm_id=0x{net.local_communication_id:016x}{' (' + tag + ')' if tag else ''} "
-            f"scene={net.scene_id} version={net.version} app_version={net.app_version} "
-            f"ch={net.channel} {net.num_participants}/{net.max_participants}")
+    return launcher.describe_network(net, KNOWN.get(net.local_communication_id, ""))
 
 
 def app_header(app):
@@ -202,9 +200,9 @@ def build_parser():
                     help="print every packet in and out; the --capture file keeps them either way")
     ap.add_argument("--comm-id", default=None,
                     help="local_communication_id to join, hex. Omit to join the only unknown one")
-    ap.add_argument("--keys", default=None)
-    ap.add_argument("--phy", default="auto")
-    ap.add_argument("--ifname", default="ldnclient")
+    launcher.add_radio_arguments(
+        ap, capture="jsonl of every datagram seen while seated, hex, with its verdict")
+    launcher.add_linux_arguments(ap)
     ap.add_argument("--channels", default="1,6,11,36,40,44,48")
     ap.add_argument("--dwell", type=float, default=0.8)
     ap.add_argument("--scan-seconds", type=float, default=300.0,
@@ -214,8 +212,6 @@ def build_parser():
     ap.add_argument("--hold", type=float, default=60.0)
     ap.add_argument("--scan-only", action="store_true")
     ap.add_argument("--facts", default="lgpe_net_facts.json")
-    ap.add_argument("--capture", default=None,
-                    help="jsonl of every datagram seen while seated, hex, with its verdict")
     ap.add_argument("--connect", action="store_true",
                     help="send a version-9 station connection request to the host and classify the "
                          "reply, retransmitting every 0.5 s the way Pia does. Without it, listen only")

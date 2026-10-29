@@ -29,6 +29,7 @@ from pokeldn import pokemon as pokemon_service
 from pokeldn.host_support import write_file
 from pokeldn import config, gen8
 from pokeldn.host_support import resolve_keys, needs_root
+from pokeldn import launcher
 from pokeldn.ldn import host4, left_after_trade, mesh_protocol as mesh
 from pokeldn.ldn import pia_lan
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
@@ -158,14 +159,11 @@ def prepare_snapshot(source, args, app_data, offer_file=None, renew=False):
 def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--keys", default=None)
-    ap.add_argument("--phy", default="auto")
+    launcher.add_radio_arguments(ap)
     ap.add_argument("--channel", type=int, default=None)
-    ap.add_argument("--ip-host", action="store_true",
-                    help="host over ldn_mitm on the LAN for an emulator; no radio and no root")
-    ap.add_argument("--our-ip", default=None,
-                    help="with --ip-host or --lan, the address to advertise; --lan without it "
-                         "takes the address on the subnet the console browses from")
+    launcher.add_ip_host_arguments(
+        ap, our_ip_help="with --ip-host or --lan, the address to advertise; --lan without it "
+                        "takes the address on the subnet the console browses from")
     ap.add_argument("--lan", action="store_true",
                     help="host a session for a console in Sword's LAN mode on this IP network "
                          "(docs/swsh_session.md, LAN mode); no radio, no root, no keys")
@@ -221,7 +219,6 @@ def build_parser():
                     help="advertise 0x00, hex; a searching Sword joins only a larger one than its "
                          "own; default 0xFFFF and two random bytes")
     ap.add_argument("--seconds", type=float, default=300)
-    ap.add_argument("--capture", default=None)
     ap.add_argument("--raid-boss", default=None, metavar="PK8",
                     help="host a Max Raid den lobby with this boss instead of a Link Trade "
                          "(docs/swsh_raid.md)")

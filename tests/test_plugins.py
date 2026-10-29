@@ -534,7 +534,7 @@ def test_an_update_address_offers_the_newer_version_and_the_download_installs_th
         def log_message(self, *a):
             pass
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Quiet)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=lambda: server.serve_forever(poll_interval=0.01), daemon=True).start()
     base = f"http://127.0.0.1:{server.server_address[1]}"
     try:
         (source / "plugin.toml").write_text(toml + f'updates = "{base}/latest.json"\n')
@@ -624,7 +624,7 @@ def test_a_source_lists_plugins_that_install_update_and_stay_when_the_source_goe
         def log_message(self, *a):
             pass
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Quiet)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=lambda: server.serve_forever(poll_interval=0.01), daemon=True).start()
     base = f"http://127.0.0.1:{server.server_address[1]}"
     listing = served / plugin_sources.FILE
 

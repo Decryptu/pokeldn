@@ -24,6 +24,7 @@ import trio, ldn
 from pokeldn.host_support import open_output, write_file
 from pokeldn import pokemon as pokemon_service
 from pokeldn.host_support import resolve_keys, needs_root
+from pokeldn import launcher
 from pokeldn.ldn import pia_lan
 from pokeldn.ldn import (broadcast4, ldn_mitm, ldn_mitm_host, local_protocol as lp,
                         mesh_protocol as mesh, pia4, reliable4,
@@ -2177,8 +2178,7 @@ def build_parser():
                          "'trade' needs --send-snapshot, 'raid' a Max Raid den guest, 'lair' a "
                          "Dynamax Adventure guest")
     ap.add_argument("--comm-id", default=None, help="hex; defaults to Sword's 0x0100abf008968000")
-    ap.add_argument("--keys", default=None)
-    ap.add_argument("--phy", default="auto")
+    launcher.add_radio_arguments(ap)
     ap.add_argument("--ip-join", action="store_true",
                     help="join an emulated console hosting over ldn_mitm on the LAN; no radio, "
                          "no root, no keys. Each of --scans waits --dwell seconds for an answer")
@@ -2201,7 +2201,7 @@ def build_parser():
                     help="--lan: seconds to repeat the host request before the station handshake")
     ap.add_argument("--lan-quiet", type=float, default=3.0,
                     help="--lan: seconds of silence that mean the console left")
-    ap.add_argument("--ifname", default="ldnclient")
+    launcher.add_linux_arguments(ap)
     ap.add_argument("--channels", default="1,6,11")
     ap.add_argument("--dwell", type=float, default=1.5)
     ap.add_argument("--scans", type=int, default=8,
@@ -2641,7 +2641,6 @@ def build_parser():
     ap.add_argument("--grace", type=float, default=300.0,
                     help="seconds past --hold to keep a session whose trade is under way: the "
                          "console has offered and the ladder has not finished")
-    ap.add_argument("--capture", default=None)
     return ap
 
 

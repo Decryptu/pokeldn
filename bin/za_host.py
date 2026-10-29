@@ -25,6 +25,7 @@ from pokeldn import receiver_gift, trade_back
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
+from pokeldn import launcher
 
 
 # The departure's longest path (docs/za.md, A host leaving), plus a second.
@@ -35,12 +36,10 @@ def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seconds", type=float, default=600.0)
-    ap.add_argument("--phy", default="auto")
+    launcher.add_radio_arguments(ap)
     ap.add_argument("--channel", type=int, default=6,
                     help="a searching console put both of its measured sessions on channel 6")
-    ap.add_argument("--keys", default=None)
     ap.add_argument("--code", default="00000000", help="the link code the player types")
-    ap.add_argument("--capture", default=None, help="every datagram as one JSON line")
     ap.add_argument("--player-name", default=" ",
                     help="the LDN node name; a searching console advertises one space")
     ap.add_argument("--trainer-name", default="POKELDN",
@@ -60,9 +59,7 @@ def build_parser():
     ap.add_argument("--offer-out", default=None,
                     help="write the Pokemon the console picks here; trade N > 1 writes FILE-N. "
                          "A preview, the console's cursor on its box, is not written")
-    ap.add_argument("--ip-host", action="store_true",
-                    help="host an emulated console over ldn_mitm, with no radio")
-    ap.add_argument("--our-ip", default=None)
+    launcher.add_ip_host_arguments(ap)
     ap.add_argument("--comm-id", default=None,
                     help="hex; the default is the title's. An emulated Z-A advertises and scans "
                          "for ffffffffffffffff over ldn_mitm")

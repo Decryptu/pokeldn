@@ -30,6 +30,7 @@ from pokeldn.ldn import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, find_ap_phy
 from pokeldn.host_support import resolve_keys, needs_root
+from pokeldn import launcher
 from pokeldn.ldn import left_after_trade, show_done
 from pokeldn.online import session as online
 from pokeldn.app import screen
@@ -206,10 +207,8 @@ def build_parser():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seconds", type=float, default=240.0)
     online.add_arguments(ap)
-    ap.add_argument("--phy", default="auto")
+    launcher.add_radio_arguments(ap)
     ap.add_argument("--channel", type=int, default=None)
-    ap.add_argument("--keys", default=None)
-    ap.add_argument("--capture", default=None, help="write every datagram here as JSON lines")
     ap.add_argument("--violet", action="store_true",
                     help="advertise Violet's local communication id instead of Scarlet's")
     ap.add_argument("--comm-id", type=lambda v: int(v, 0), default=None,
@@ -223,9 +222,7 @@ def build_parser():
                     help="the station platform byte: 1 is a Switch 2, which is what both retail "
                          "consoles advertise; 0 is a Switch and what the LDN layer defaults to")
     ap.add_argument("--ssid", default=None, help="hex, 16 bytes; default lets the LDN layer pick")
-    ap.add_argument("--ip-host", action="store_true",
-                    help="host over ldn_mitm on the LAN for an emulator; no radio and no root")
-    ap.add_argument("--our-ip", default=None)
+    launcher.add_ip_host_arguments(ap)
     ap.add_argument("--player-name", default="POKELDN", help="the LDN node name")
     ap.add_argument("--no-net-probe", action="store_true")
     ap.add_argument("--no-session-ack", action="store_true")

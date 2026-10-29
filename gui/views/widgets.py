@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+import sys
 import threading
 import time
 from collections import deque
@@ -172,16 +173,16 @@ class MarkdownDocument:
             value, selectable=True, extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
             code_theme=ft.MarkdownCodeTheme.ATOM_ONE_DARK, on_tap_link=self.on_link,
             md_style_sheet=ft.MarkdownStyleSheet(
-                p_text_style=ft.TextStyle(size=14, color=t.SOFT, height=1.55),
-                h1_text_style=ft.TextStyle(size=26, weight=ft.FontWeight.W_600, color=t.TEXT),
-                h2_text_style=ft.TextStyle(size=19, weight=ft.FontWeight.W_600, color=t.TEXT),
-                h3_text_style=ft.TextStyle(size=16, weight=ft.FontWeight.W_600, color=t.TEXT),
+                p_text_style=ft.TextStyle(size=t.scaled(14), color=t.SOFT, height=1.55),
+                h1_text_style=ft.TextStyle(size=t.scaled(26), weight=ft.FontWeight.W_600, color=t.TEXT),
+                h2_text_style=ft.TextStyle(size=t.scaled(19), weight=ft.FontWeight.W_600, color=t.TEXT),
+                h3_text_style=ft.TextStyle(size=t.scaled(16), weight=ft.FontWeight.W_600, color=t.TEXT),
                 a_text_style=ft.TextStyle(color=t.BLUE),
-                code_text_style=ft.TextStyle(font_family=t.MONO, size=12, color=t.TEXT, bgcolor=t.FIELD),
+                code_text_style=ft.TextStyle(font_family=t.MONO, size=t.scaled(12), color=t.TEXT, bgcolor=t.FIELD),
                 codeblock_decoration=ft.BoxDecoration(bgcolor=t.BG, border_radius=10),
                 codeblock_padding=0,
-                table_head_text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_600, color=t.TEXT),
-                table_body_text_style=ft.TextStyle(size=13, color=t.SOFT),
+                table_head_text_style=ft.TextStyle(size=t.scaled(13), weight=ft.FontWeight.W_600, color=t.TEXT),
+                table_body_text_style=ft.TextStyle(size=t.scaled(13), color=t.SOFT),
                 table_cells_padding=ft.Padding(8, 6, 8, 6),
                 block_spacing=14,
             ))
@@ -236,7 +237,7 @@ class Log:
             t.GREEN if ("complete" in lower or "success" in lower) else \
             t.BLUE if line.startswith("[app]") else t.SOFT
         from gui.localization import app_log
-        return ft.Text(app_log(line), size=11, color=color, font_family=t.MONO, selectable=True)
+        return ft.Text(app_log(line), size=t.scaled(11), color=color, font_family=t.MONO, selectable=True)
 
     def add(self, line: str) -> None:
         if self.redactor is not None:
@@ -427,11 +428,15 @@ class DigitCode:
 
 
 KEY_TARGET: list = [None]    # the shown view that takes keys, such as the controller
+SHORTCUTS: list = [None]     # gui/main.py's handler for Cmd (macOS) or Ctrl shortcuts: (key) -> True if taken
 
 
 def page_key(e) -> None:
-    """The page's key handler (gui/main.py): Backspace and arrows reach the focused code, the rest the
-    view in KEY_TARGET."""
+    """The page's key handler (gui/main.py): Cmd or Ctrl shortcuts first, then Backspace and arrows reach the
+    focused code, the rest the view in KEY_TARGET."""
+    command = e.meta if sys.platform == "darwin" else e.ctrl
+    if command and not e.alt and SHORTCUTS[0] is not None and SHORTCUTS[0](e.key):
+        return
     if DigitCode.focused is not None:
         DigitCode.focused.key(e.key)
     elif KEY_TARGET[0] is not None:

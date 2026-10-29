@@ -74,6 +74,7 @@ class Tool:
     doc: str = ""
     unavailable: str = ""         # why the tool cannot run yet; it is shown greyed out
     radio: bool = True            # False: it runs over this computer's own network, no board, no keys
+    joins: bool = True            # False: the console only scans the board's beacon, it never joins
     activity: str = ""            # an ACTIVITIES key: the one list row it shares; empty, a row of its own
     variant: tuple[tuple[str, str], ...] = ()   # (AXES key, option) pairs telling it from its row's others
 
@@ -427,7 +428,7 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           Field("--save-to-board", tr('catalog.keep_it_on_the_board_a36969', 'Keep it on the board'), "switch",
                 help=tr('catalog.start_saves_the_gift_on_the_board_and_stops_unplugged_a_a436f2', 'Start saves the gift on the board and stops. Unplugged and powered from any USB charger, the board then hands the gift to every Sword and Shield nearby, with no computer. It stops when the app opens it again.'))),
          doc="swsh_gift.md",
-         activity="gift"),
+         activity="gift", joins=False),
     Tool("swsh-raid-host", tr('catalog.max_raid_host_5d0e1a', 'Max Raid (Host)'), "bin/swsh_host.py",
          tr('catalog.host_a_max_raid_the_console_joins_you_choose_the_boss_i_7c2f41', 'Host a Max Raid the console joins: you choose the boss, its rewards and the Pokemon we bring.'),
          (tr('catalog.choose_the_boss_the_pokemon_our_player_brings_and_if_yo_3b8e90', 'Choose the boss, the Pokemon our player brings and, if you like, the rewards.'),

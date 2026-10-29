@@ -73,7 +73,7 @@ def github():
             pass
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=lambda: server.serve_forever(poll_interval=0.01), daemon=True).start()
     server.url = f"http://127.0.0.1:{server.server_port}/releases/latest"
     yield server
     server.shutdown()
@@ -148,7 +148,7 @@ def files():
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     server.files = {}
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=lambda: server.serve_forever(poll_interval=0.01), daemon=True).start()
     server.base = f"http://127.0.0.1:{server.server_port}"
     yield server
     server.shutdown()
@@ -406,7 +406,7 @@ def test_download_redirects_cannot_downgrade_to_external_http(files):
             pass
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=lambda: server.serve_forever(poll_interval=0.01), daemon=True).start()
     try:
         with pytest.raises(OSError, match="unsafe address"):
             update._open(f"http://127.0.0.1:{server.server_port}/redirect")

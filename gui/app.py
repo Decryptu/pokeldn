@@ -278,5 +278,31 @@ class App:
         self.page.show_dialog(ft.SnackBar(ft.Text(tr('app.copied_8d525e', 'Copied')), duration=1500))
 
 
+_checked: dict = {}   # (path, size, mtime) -> keys_problem's answer
+
+
+def keys_problem(path: str) -> str:
+    """Why `path` cannot serve a run, in the player's words, or "" when it holds every key the radio
+    needs (ldn.KEYS_NEEDED)."""
+    path = os.path.expanduser(path)
+    try:
+        info = os.stat(path)
+    except OSError:
+        return tr('app.no_keys_file', 'No file at this path.')
+    stamp = (path, info.st_size, info.st_mtime_ns)
+    if stamp not in _checked:
+        import ldn
+        try:
+            missing = ldn.missing_keys(ldn.load_keys(path))
+        except OSError as error:
+            missing = None
+            _checked[stamp] = tr('app.keys_unreadable', 'The file cannot be read: {value0}', value0=error.strerror)
+        if missing is not None:
+            _checked[stamp] = "" if not missing else tr(
+                'app.keys_missing', 'This file is missing {value0}. Choose a prod.keys dumped from your console.',
+                value0=", ".join(missing))
+    return _checked[stamp]
+
+
 def keys_found(path: str) -> bool:
-    return os.path.isfile(os.path.expanduser(path))
+    return not keys_problem(path)

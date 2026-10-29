@@ -34,6 +34,7 @@ from pokeldn.za.host import (MSG_CANCEL, OFFER_PICK, OFFER_PREVIEW,  # noqa: F40
 from pokeldn.ldn import crypto, host_pia, ldn_mitm, pia_connect, reliable
 from pokeldn.ldn.transport import board_radio, find_ap_phy, cleanup_stale_vifs as cleanup_stale
 from pokeldn.host_support import resolve_keys, needs_root
+from pokeldn import launcher
 from pokeldn.ldn import show_done
 from pokeldn.app import screen
 
@@ -57,9 +58,7 @@ def describe(net):
         code = f" code={za.parse_advertise_data(app)['code']}"
     except (ValueError, IndexError):
         pass
-    return (f"comm_id=0x{net.local_communication_id:016x} scene={net.scene_id} "
-            f"version={net.version} app_version={net.app_version} ch={net.channel} "
-            f"{net.num_participants}/{net.max_participants}{code}")
+    return launcher.describe_network(net, suffix=code)
 
 
 def describe_msg(msg):
@@ -325,9 +324,8 @@ def build_parser():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--print-packets", action="store_true",
                     help="print every packet in and out; the --capture file keeps them either way")
-    ap.add_argument("--phy", default="auto")
-    ap.add_argument("--ifname", default="ldnclient")
-    ap.add_argument("--keys", default=None)
+    launcher.add_radio_arguments(ap)
+    launcher.add_linux_arguments(ap)
     ap.add_argument("--channels", default="1,6,11")
     ap.add_argument("--dwell", type=float, default=1.0, help="seconds per channel in a scan")
     ap.add_argument("--seconds", type=float, default=600.0, help="the whole run")
@@ -347,7 +345,6 @@ def build_parser():
     ap.add_argument("--code", default=None,
                     help="only join a console waiting on this link code")
     ap.add_argument("--scan-only", action="store_true")
-    ap.add_argument("--capture", default=None, help="every datagram as one JSON line")
     ap.add_argument("--net-probe", action="store_true",
                     help="send the band's Net connection request once seated")
     ap.add_argument("--no-answer", action="store_true",

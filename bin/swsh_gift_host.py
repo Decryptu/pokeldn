@@ -20,7 +20,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn import config, gifts, pokemon
 from pokeldn.app import screen
-from pokeldn.host_support import write_file
+from pokeldn.host_support import resolve_keys, write_file
+from pokeldn import launcher
 from pokeldn.ldn import esp32, transport
 from pokeldn.ldn.transport import HostTransport
 from pokeldn.swsh import COMM_ID, PASSPHRASE, beacon, wc8
@@ -132,9 +133,8 @@ def build_parser():
                    help="seconds each fragment stays on the air")
     p.add_argument("--seconds", type=float, default=300)
     p.add_argument("--channel", type=int, default=None)
-    p.add_argument("--phy", default="auto", help="the phy renumbers on every driver reload")
+    launcher.add_radio_arguments(p, capture=None)
     p.add_argument("--nickname-host", default="POKELDN", help="the network's own name")
-    p.add_argument("--keys", default=None, help="prod.keys; default from config/host.toml")
     p.add_argument("--scene-id", type=int, default=SCENE_ID)
     p.add_argument("--app-version", type=int, default=APP_VERSION)
     p.add_argument("--protocol", type=int, default=LDN_PROTOCOL, choices=(1, 3),
@@ -187,8 +187,7 @@ def main(argv=None):
     machine = config.load_project_host_file_config()
     if args.save_to_board:
         try:
-            return save_to_board(args, record, fragments,
-                                 os.path.expanduser(args.keys or machine.keys_path))
+            return save_to_board(args, record, fragments, resolve_keys(args.keys))
         except (OSError, ValueError, RuntimeError, esp32.RadioError) as exc:
             print(str(exc), file=sys.stderr)
             return 1
@@ -196,8 +195,7 @@ def main(argv=None):
     if phy is None:
         print("no AP-capable phy found", file=sys.stderr)
         return 1
-    host = make_host(args, fragments, os.path.expanduser(args.keys or machine.keys_path), phy,
-                     machine)
+    host = make_host(args, fragments, resolve_keys(args.keys), phy, machine)
     host.start()  # raises when the AP does not come up
     show_card(args, record)
     print(f"advertising comm id {COMM_ID:#018x}, scene {args.scene_id}, protocol {args.protocol}, "

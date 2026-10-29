@@ -17,6 +17,7 @@ import trio
 
 from ldn import wlan
 
+import pokeldn.ldn
 from pokeldn.ldn import esp32, userspace_ip
 
 ETH_P_LDN = 0x88B7
@@ -401,6 +402,7 @@ class EspFactory:
     async def create_monitor(self, phyname: str, ifname: str, channel: int | None = None):
         address = self._ap_address or wlan.MACAddress(bytes(self.radio.hello().sta_mac))
         monitor = EspMonitor(self, address)
+        pokeldn.ldn.show_link("waiting")
         if channel is not None:
             await monitor.set_channel(channel)
         yield monitor
@@ -421,6 +423,7 @@ class EspFactory:
                         key: bytes | None, max_stations: int):
         self._ap_address = _random_mac()
         access_point = EspAccessPoint(self, self._ap_address, ssid, channel, key, max_stations)
+        pokeldn.ldn.show_link("waiting")
         async with access_point.create():
             yield access_point
 
@@ -506,6 +509,15 @@ def _mirror(radio: esp32.Radio) -> None:
     threading.Thread(target=poll, name="esp32-mirror", daemon=True).start()
 
 
+def _link_message(msg_type: int, payload: bytes) -> None:
+    if msg_type == esp32.MSG_STA_JOINED:
+        pokeldn.ldn.show_link("joined")
+    elif msg_type == esp32.MSG_STA_LEFT:
+        pokeldn.ldn.show_link("left")
+    elif msg_type == esp32.MSG_LINK:
+        pokeldn.ldn.show_link("joined" if esp32.Link.parse(payload).up else "left")
+
+
 def set_station_mac(mac) -> None:
     """The address the board's station joins with, in place of a random one (`--mac`)."""
     global station_mac
@@ -534,6 +546,9 @@ def use(port: str | None = None, *, radio: esp32.Radio | None = None, port_facto
         radio = _radio
     else:
         _radio = radio
+    if not getattr(radio, "_linked", False):
+        radio._linked = True          # as _mirrored below
+        radio.subscribe(_link_message)
     if mirroring() and not getattr(radio, "_mirrored", False):
         radio._mirrored = True        # an in-process run keeps the board across runs
         _mirror(radio)

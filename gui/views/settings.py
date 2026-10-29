@@ -6,7 +6,7 @@ import time
 import flet as ft
 
 from gui import theme as t
-from gui.app import keys_found
+from gui.app import keys_problem
 from pokeldn import __version__, console_trainer, pokemon, plugins
 from pokeldn.app.paths import SESSION
 from pokeldn.app.sprites import CACHE
@@ -149,6 +149,10 @@ class SettingsView:
                    tr('settings.prod_keys_dumped_from_your_own_console_needed_to_talk_t_26673c', 'prod.keys dumped from your own console. Needed to talk to the games; it never leaves this computer.')),
             t.card(tr('settings.your_trainer_d70afb', 'Your trainer'), trainer,
                    tr('settings.your_trainer_detail', 'The original trainer of every Pokemon the app builds for you. Put your own name, gender and IDs to make them yours, so a traded Pokemon keeps its friendship: FireRed and LeafGreen show a five-digit ID, the Switch games a six-digit one. The IDs were drawn at random on first launch; Find mine takes the ones of the last game you traded with.')),
+            switch("retry_trades", tr('settings.retry_trades', 'Retry failed trades'),
+                   tr('settings.retry_trades_detail', 'When a trade run fails because the console never joined, the board dropped or the join failed, start it again after 15 seconds with the Pokemon not yet traded, up to 3 times in a row.')),
+            switch("larger_text", tr('settings.larger_text', 'Larger text'),
+                   tr('settings.larger_text_detail', 'Makes the text across the app larger. Restart pokeldn to apply it.')),
             switch("board_screen", tr('settings.board_screen', "Show the board's screen"),
                    tr('settings.board_screen_detail', "Draws what the board's pixel screen shows at the top of the Session panel: the link's traffic, each trade's Pokemon, the Mystery Gift card and a raid's lobby. No screen needs to be plugged into the board.")),
             t.card(tr('settings.received_pokemon_1d657d', 'Received Pokemon'), ft.Row([ft.Container(received.control, expand=True),
@@ -323,10 +327,11 @@ class SettingsView:
 
     def _keys(self, value: str, update: bool = True) -> None:
         self.save("keys", value)
-        ok = keys_found(value)
+        problem = keys_problem(value)
         self.keys_state.content = ft.Row([
-            t.pixel_icon("checkbox-on" if ok else "warning-diamond",
-                    color=t.GREEN if ok else t.RED),
-            t.text(tr('settings.found_b0ee31', 'Found') if ok else tr('settings.no_file_at_this_path_f6f154', 'No file at this path'), 12, t.GREEN if ok else t.RED)], spacing=6)
+            t.pixel_icon("warning-diamond" if problem else "checkbox-on",
+                    color=t.RED if problem else t.GREEN),
+            t.text(problem or tr('settings.found_b0ee31', 'Found'), 12, t.RED if problem else t.GREEN,
+                   expand=True)], spacing=6)
         if update:
             self.keys_state.update()

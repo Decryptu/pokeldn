@@ -21,16 +21,14 @@ from pokeldn.ldn import api as ldn
 from pokeldn.host_support import open_output
 from pokeldn.ldn.transport import find_ap_phy, cleanup_stale_vifs as cleanup_stale
 from pokeldn.host_support import resolve_keys, needs_root
+from pokeldn import launcher
 from pokeldn.swsh import PASSPHRASE
 
 KNOWN = {0x0100000011D90000: "BDSP"}
 
 
 def describe(net):
-    tag = KNOWN.get(net.local_communication_id, "")
-    return (f"comm_id=0x{net.local_communication_id:016x}{' (' + tag + ')' if tag else ''} "
-            f"scene={net.scene_id} version={net.version} app_version={net.app_version} "
-            f"ch={net.channel} {net.num_participants}/{net.max_participants}")
+    return launcher.describe_network(net, KNOWN.get(net.local_communication_id, ""))
 
 
 def facts_of(net):
@@ -58,9 +56,8 @@ def build_parser():
     ap.add_argument("--comm-id", default=None,
                     help="local_communication_id to join, hex. Omit to report every network seen "
                          "and join the only unknown one, which is what a first run wants")
-    ap.add_argument("--keys", default=None)
-    ap.add_argument("--phy", default="auto")
-    ap.add_argument("--ifname", default="ldnclient")
+    launcher.add_radio_arguments(ap, capture=None)
+    launcher.add_linux_arguments(ap)
     ap.add_argument("--channels", default="1,6,11,36,40,44,48")
     ap.add_argument("--dwell", type=float, default=1.5)
     ap.add_argument("--name", default="POKELDN", help="our display name in the session")

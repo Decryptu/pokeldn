@@ -27,6 +27,7 @@ from pokeldn.ldn.transport import board_radio, find_ap_phy
 
 UNRELIABLE_PROTOCOL = 0x68  # its payload is the game's live state
 from pokeldn.host_support import resolve_keys, needs_root
+from pokeldn import launcher
 from pokeldn.ldn import show_done
 from pokeldn.app import screen
 
@@ -1535,9 +1536,8 @@ def build_parser():
     ap.add_argument("--print-packets", action="store_true",
                     help="print every packet in and out; the --capture file keeps them either way")
     ap.add_argument("--comm-id", default=None)
-    ap.add_argument("--keys", default=None)
-    ap.add_argument("--phy", default="auto")
-    ap.add_argument("--ifname", default="ldnclient")
+    launcher.add_radio_arguments(ap)
+    launcher.add_linux_arguments(ap)
     ap.add_argument("--channels", default="1,6,11")
     ap.add_argument("--scans", type=int, default=12,
                     help="scans for the console's room before giving up; it may not exist yet")
@@ -1773,7 +1773,6 @@ def build_parser():
                     help="only the broadcast pass, the framing the ack proved")
     ap.add_argument("--stop-on-reply", action="store_true", default=True)
     ap.add_argument("--no-stop-on-reply", dest="stop_on_reply", action="store_false")
-    ap.add_argument("--capture", default=None)
     return ap
 
 

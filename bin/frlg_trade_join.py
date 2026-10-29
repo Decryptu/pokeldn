@@ -17,6 +17,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn import pokemon as pokemon_service
+from pokeldn import launcher
+from pokeldn.host_support import resolve_keys
 from pokeldn.frlg.link import beacon
 from pokeldn.frlg import config as configmod, host_cli  # noqa
 from pokeldn.frlg.link import sim as simmod, trade  # noqa
@@ -439,14 +441,11 @@ def build_parser():
     mode.add_argument("--replay", metavar="capture", help="offline: replay a capture's host stream")
     ap.add_argument("--password", default="", help="LDN passphrase as hex (live); default = "
                     "the built-in 64-byte emulator passphrase (shared by frlg/rse)")
-    ap.add_argument("--phy", default="phy0", help="wifi phy for the LDN join (live)")
-    ap.add_argument("--keys", default=None,
-                    help="Switch prod.keys (live); default: keys_path from config/host*.toml")
+    launcher.add_radio_arguments(
+        ap, phy="phy0", capture="(live) record every Pia datagram both directions to a .jsonl "
+                                "(incl. the SSID), so a live attempt can be decrypted offline")
     ap.add_argument("--comm-id", help="LDN local_communication_id (hex) to join (live); "
                     "if omitted, joins the only available network (scan logs candidates)")
-    ap.add_argument("--capture", metavar="FILE", help="(live) record every Pia datagram both "
-                    "directions to a .jsonl (incl. the SSID), so a live attempt can be "
-                    "decrypted/analysed offline")
     return ap
 
 
@@ -471,7 +470,7 @@ def _build_run_config(ap, args):
         ldn = configmod.LdnConfig(
             password=host_cli.parse_hex_bytes(ap, "--password", args.password),
             phy=args.phy,
-            keys_path=args.keys or configmod.load_project_host_file_config().keys_path,
+            keys_path=resolve_keys(args.keys),
             local_comm_id=int(args.comm_id, 16) if args.comm_id else None,
             capture_path=args.capture)
         role = configmod.JoinerOptions(

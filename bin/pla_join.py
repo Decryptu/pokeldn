@@ -34,6 +34,7 @@ from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
 from pokeldn import gen8, pla, trade_back
 from pokeldn.host_support import resolve_keys, needs_root
+from pokeldn import launcher
 from pokeldn.ldn import ldn_mitm, pia6
 from pokeldn.ldn.transport import board_radio, find_ap_phy, cleanup_stale_vifs
 from pokeldn.pla import data_exchange, joiner, trade_box
@@ -373,9 +374,8 @@ def build_parser():
                     help="--ip-join: hold one scan socket and connect the instant a fresh network "
                          "appears, to land before the host latches its node list")
     ap.add_argument("--scan-interval", type=float, default=0.02)
-    ap.add_argument("--phy", default="auto")
-    ap.add_argument("--ifname", default="ldnclient")
-    ap.add_argument("--keys", default=None)
+    launcher.add_radio_arguments(ap)
+    launcher.add_linux_arguments(ap)
     ap.add_argument("--channels", default="1,6,11")
     ap.add_argument("--dwell", type=float, default=0.4, help="seconds per channel in a scan")
     ap.add_argument("--connect-timeout", type=float, default=6.0)
@@ -410,7 +410,6 @@ def build_parser():
     ap.add_argument("--drive", action="store_true",
                     help="act as the player too: offer once the host shows, confirm once it "
                          "offers, then selector 7; without it the console's player leads")
-    ap.add_argument("--capture", default=None, help="every datagram as one JSON line")
     ap.add_argument("--no-net-answer", action="store_true",
                     help="send the Session join request with no Net 0x12 answer to the host's 0x11; "
                          "the 0x12 is what a console answers by asking for host migration")

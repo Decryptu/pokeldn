@@ -7,6 +7,7 @@ bktr.c), docs/switch_re.md "Reading a game update's RomFS".
 import struct
 
 from Crypto.Cipher import AES
+from ldn import load_keys  # noqa: F401  re-exported for tools/switch
 
 from pokeldn.switch.romfs import RomFs
 
@@ -15,20 +16,6 @@ FS_TYPES = {0: "RomFS", 1: "PartitionFS"}
 HASH_TYPES = {0: "auto", 1: "none", 2: "sha256(pfs0)", 3: "ivfc(romfs)"}
 CRYPT_TYPES = {0: "auto", 1: "none", 2: "XTS", 3: "CTR", 4: "BKTR"}
 SECTOR = 0x10
-
-
-def load_keys(path):
-    keys = {}
-    with open(path) as fh:
-        for line in fh:
-            if "=" not in line:
-                continue
-            name, _, value = line.partition("=")
-            value = value.strip()
-            # A malformed line (34 hex digits) aborts hactool; skip it rather than die.
-            if len(value) in (32, 64) and all(c in "0123456789abcdefABCDEF" for c in value):
-                keys[name.strip()] = bytes.fromhex(value)
-    return keys
 
 
 def _gf_mul(t):

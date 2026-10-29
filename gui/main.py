@@ -29,16 +29,18 @@ os.environ.pop("POKELDN_RADIO", None)
 
 from pokeldn.app.i18n import select, t as tr  # noqa: E402
 from pokeldn.app.settings import load as load_settings  # noqa: E402
-select(load_settings().app_language)
+_launch_settings = load_settings()
+select(_launch_settings.app_language)
 
 import flet as ft  # noqa: E402
 
-from gui import drop, flet_client, screen, theme as t  # noqa: E402
-from gui.app import App  # noqa: E402
+from gui import board, drop, flet_client, screen, theme as t  # noqa: E402
+t.text_scale = 1.15 if _launch_settings.larger_text else 1.0
+from gui.app import App, keys_found  # noqa: E402
 from gui.localization import flet_locale  # noqa: E402
-from gui.views.widgets import page_key  # noqa: E402
+from gui.views.widgets import SHORTCUTS, page_key  # noqa: E402
 from pokeldn import __version__, popup  # noqa: E402
-from pokeldn.app import update  # noqa: E402
+from pokeldn.app import settings, update  # noqa: E402
 from pokeldn.app.paths import ROOT  # noqa: E402
 
 PAGES = (
@@ -160,6 +162,20 @@ def main(page: ft.Page) -> None:
         page.update()
 
     app.navigate = navigate
+
+    def shortcut(key: str) -> bool:
+        """Cmd (macOS) or Ctrl with 1 to 6: the rail's pages in order; comma: Settings; Enter: Start; period: Stop
+        (docs/gui.md, Keyboard shortcuts)."""
+        if key.isdigit() and 1 <= int(key) <= len(PAGES):
+            navigate(PAGES[int(key) - 1][0])
+        elif key in (",", "Comma"):
+            navigate("settings")
+        elif key in ("Enter", "Numpad Enter", ".", "Period") and current["key"] == "games":
+            views["games"].session.shortcut(stop=key in (".", "Period"))
+        else:
+            return False
+        return True
+    SHORTCUTS[0] = shortcut
     page.on_keyboard_event = page_key     # set once, before a code box takes the focus
     tabs = ft.Row(spacing=2)
     side = t.panel(ft.Column([
@@ -210,7 +226,8 @@ def main(page: ft.Page) -> None:
     if not page.web:
         page.run_task(page.window.center)
     outcome = update.finish(update.install_root())
-    if not os.path.isfile(os.path.expanduser(app.settings.keys)):
+    settings_notice(app)
+    if not keys_found(app.settings.keys):
         welcome(app)
     elif outcome:
         updated_notice(app, outcome)
@@ -233,7 +250,8 @@ def main(page: ft.Page) -> None:
 
 def compact_start(app: App) -> None:
     """The phone's start: the same first-run notices, without the desktop's update and viewer housekeeping."""
-    if not os.path.isfile(os.path.expanduser(app.settings.keys)):
+    settings_notice(app)
+    if not keys_found(app.settings.keys):
         welcome(app)
     elif app.plugin_stopped:
         plugin_stopped_notice(app)
@@ -373,6 +391,19 @@ def updated_notice(app: App, outcome: dict) -> None:
                       tr('main.pokeldn_could_not_replace_this_app_this_app_is_unchange_23fff0', 'pokeldn {value0} could not replace this app: {value1}. This app is unchanged.', value0=version, value1=error or tr('main.it_opened_the_old_version_6f6d59', 'it opened the old version')), id="update-failed", label=tr('main.close_7d9eb7', 'Close'), tone="error")
 
 
+def settings_notice(app: App) -> None:
+    """The settings file did not load whole last launch; pokeldn.app.settings kept a copy of it."""
+    damaged = settings.damaged
+    if not damaged:
+        return
+    text = (tr('main.settings_fields_reset', 'These settings held values pokeldn could not read and are back to their defaults: {value0}. The old file is kept at {value1}.', value0=", ".join(damaged["fields"]), value1=damaged["path"])
+            if damaged["fields"] else
+            tr('main.settings_file_reset', 'The settings file could not be read, so pokeldn started with fresh settings: check your trainer and keys in Settings. The old file is kept at {value0}.', value0=damaged["path"]))
+    popup.confirm(tr('main.settings_were_reset', 'Some settings were reset'), text,
+                  tr('main.open_settings', 'Open Settings'), tr('main.not_now_a0e63d', 'Not now'),
+                  id="settings-damaged", tone="warning", on_agree=lambda: app.ui(lambda: app.navigate("settings")))
+
+
 def plugin_stopped_notice(app: App) -> None:
     """A plugin froze or closed the app last time while it started; App turned it off."""
     popup.confirm(tr('main.a_plugin_was_turned_off_ed25fc', 'A plugin was turned off'),
@@ -391,6 +422,8 @@ def welcome(app: App) -> None:
         app.settings.save()
         app.page.pop_dialog()
         app.navigate("games")
+        if not (ANDROID or IOS):     # a phone's board is set up on its own (docs/gui.md, Android setup)
+            board_step(app)
 
     async def choose(e):
         files = await app.picker.pick_files(allowed_extensions=["keys"], file_type=ft.FilePickerFileType.CUSTOM)
@@ -428,7 +461,7 @@ def welcome(app: App) -> None:
     footer = (ft.Column([note, ft.Row(buttons, spacing=8, alignment=ft.MainAxisAlignment.END)], spacing=10) if t.compact
               else ft.Row([note, *buttons], spacing=8))
     app.page.show_dialog(t.dialog(
-        modal=True, content_padding=0, actions_padding=0, inset_padding=14 if t.compact else 32,
+        content_padding=0, actions_padding=0, inset_padding=14 if t.compact else 32,   # Esc is Later
         clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         semantics_label=tr('main.welcome_to_pokeldn_319d9e', 'Welcome to pokeldn'),
         content=drop.target(ft.Container(ft.Column([
@@ -436,6 +469,66 @@ def welcome(app: App) -> None:
             ft.Container(footer, padding=ft.Padding(28, 12, 24, 24)),
         ], spacing=0, tight=True), width=500, border_radius=20), dropped),
     ))
+
+
+def board_step(app: App) -> None:
+    """The welcome's second step: watches for the board and says what it needs, the firmware on the Board page or
+    nothing. It checks the port as the Games page would, so it never opens one a run holds."""
+    shown = {"open": True, "status": None}
+    line = ft.Container()
+    buttons = ft.Row(spacing=8, alignment=ft.MainAxisAlignment.END)
+
+    def close(e=None):
+        shown["open"] = False
+        app.page.pop_dialog()
+
+    def go(page: str):
+        close()
+        app.navigate(page)
+
+    def render():
+        if not shown["open"]:
+            return
+        status = app.board_status()
+        if status == shown["status"]:
+            return
+        shown["status"] = status
+        ok = status.state == "ready"
+        icon, color = ("checkbox-on", t.GREEN) if ok else ("refresh", t.BLUE) if status.state == "checking" else (
+            "warning-diamond", t.AMBER)
+        line.content = ft.Row([
+            ft.Container(t.pixel_icon(icon, color=color), padding=ft.Padding(0, 1, 0, 0)),
+            ft.Column([t.text(status.title, 14, weight=ft.FontWeight.W_600), t.text(status.detail, 13, t.MUTED)],
+                      spacing=2, expand=True)], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START)
+        needs_page = status.state in ("flash", "controller", "wrong-port", "choose")
+        buttons.controls = [t.secondary_button(tr('main.later_73b6e4', 'Later'), close)] if not ok else []
+        if ok:
+            buttons.controls.append(t.button(tr('main.pick_a_game', 'Pick a game'), close, "gamepad"))
+        elif needs_page:
+            buttons.controls.append(t.button(tr('main.open_the_board_page', 'Open the Board page'), lambda e: go("board"), "cpu"))
+        try:
+            dialog.update()
+        except RuntimeError:     # closed meanwhile
+            pass
+
+    def watch():
+        while shown["open"]:
+            app.check_if_unknown(board.ports())
+            app.ui(render)
+            time.sleep(1.5)
+
+    dialog = t.dialog(
+        content_padding=0, actions_padding=0, inset_padding=32,
+        semantics_label=tr('main.connect_your_board', 'Connect your board'),
+        content=ft.Container(ft.Column([
+            t.text(tr('main.connect_your_board', 'Connect your board'), 22, weight=ft.FontWeight.W_600),
+            t.text(tr('main.connect_your_board_detail', 'Plug the ESP32 in with a USB data cable. Charge-only cables show nothing.'), 13, t.MUTED),
+            ft.Container(height=4), line, ft.Container(height=4), buttons,
+        ], spacing=8, tight=True), width=500, padding=ft.Padding(28, 22, 24, 24), border_radius=20),
+        on_dismiss=lambda e: shown.update(open=False))
+    app.page.show_dialog(dialog)
+    render()
+    threading.Thread(target=watch, daemon=True).start()
 
 
 def window_header(page: ft.Page) -> ft.Control:

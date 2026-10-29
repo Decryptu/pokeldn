@@ -25,6 +25,21 @@ def show_done(kind: str = "trade") -> bool:
     return esp32_wlan.show_done()
 
 
+LINK_PREFIX = "[link] "
+_waiting = False
+
+
+def show_link(state: str) -> None:
+    """Prints `[link] STATE` for the app's run status (pokeldn.app.failure): `waiting` once, when the radio
+    first hosts or scans for a console, then `joined` and `left` as one joins and leaves. Only a run the
+    app started prints it."""
+    global _waiting
+    if _os.environ.get("POKELDN_MANAGED_RUN") != "1" or (state == "waiting" and _waiting):
+        return
+    _waiting = _waiting or state == "waiting"
+    print(f"{LINK_PREFIX}{state}", flush=True)
+
+
 def trades_done() -> int:
     """Trades this process completed, as show_done counted them."""
     return _done.get("trade", 0)

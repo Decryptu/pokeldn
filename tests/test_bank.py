@@ -9,7 +9,7 @@ import pytest
 import types
 
 from pokeldn import pokemon
-from pokeldn.app import bank, command
+from pokeldn.app import bank, command, failure
 from pokeldn.app.catalog import GAMES
 from pokeldn.app.settings import Settings
 from test_pokemon_service import TRAINER, service  # noqa: F401  (the PKHeX helper, built once)
@@ -127,7 +127,7 @@ def test_a_banked_offer_keeps_its_pid_and_the_launcher_still_parses_the_line(tmp
 def test_a_completed_trade_takes_the_pokemon_out_of_the_bank_and_its_queue(vault, monkeypatch):
     """Trade 1 is a built offer, trade 2 the banked one: only trade 2's completion empties the bank, and
     the queue keeps the built offer for the next run."""
-    pytest.importorskip("flet")
+    ft = pytest.importorskip("flet")
     from gui.views import games
     source = vault / "received.pk8"
     source.write_bytes(b"record")
@@ -143,7 +143,7 @@ def test_a_completed_trade_takes_the_pokemon_out_of_the_bank_and_its_queue(vault
         app=SimpleNamespace(settings=settings, ui=lambda fn: fn()), tool=tool, traded=0, stopping=False,
         restart=False, games=SimpleNamespace(values=values, visible=False, show_run_cards=lambda: None),
         log=SimpleNamespace(add=lambda line: None), offering=SimpleNamespace(update=lambda: None),
-        partner_state=None)
+        partner_state=None, watch=failure.Watch(False), notice=ft.Container(), elapsed=0)
     panel.render_offering = panel.refresh = panel.set_status = lambda *a, **k: None
     panel.bank_trades = bank.TradeSession(panel.offered_entries())
     assert bank.queued(settings, entry.id) == [tool.key]

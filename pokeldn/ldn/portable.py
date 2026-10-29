@@ -120,9 +120,9 @@ def _generation_key(derivation: ldn.KeyDerivation, source: bytes) -> bytes:
     """The key `KeyDerivation._derive_key` decrypts its data hash with: a key derived for this LDN
     protocol, never one of `prod.keys`'."""
     key = derivation._select_master_key()
-    key = derivation._decrypt_key(derivation._keys["aes_kek_generation_source"], key)
+    key = derivation._decrypt_key(derivation._key("aes_kek_generation_source"), key)
     key = derivation._decrypt_key(source, key)
-    return derivation._decrypt_key(derivation._keys["aes_key_generation_source"], key)
+    return derivation._decrypt_key(derivation._key("aes_key_generation_source"), key)
 
 
 def record(tag: int, data: bytes) -> bytes:

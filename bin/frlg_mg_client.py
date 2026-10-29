@@ -17,6 +17,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn.host_support import open_output, resolve_keys
+from pokeldn import launcher
 from pokeldn.frlg.link import beacon
 from pokeldn.frlg import config as configmod, host_cli  # noqa: E402
 from pokeldn.frlg.link import sim as simmod  # noqa: E402
@@ -208,10 +209,9 @@ def build_parser():
     ap.add_argument("--pace-ms", type=int, default=0)
     ap.add_argument("--connect-id", default="", help="override the 2-byte emulator connect id (hex)")
     ap.add_argument("--password", default="", help="LDN passphrase as hex (default: the built-in one)")
-    ap.add_argument("--phy", default="phy0")
-    ap.add_argument("--keys", default=None)
+    launcher.add_radio_arguments(ap, phy="phy0",
+                                 capture="record every Pia datagram both ways (.jsonl)")
     ap.add_argument("--comm-id", help="LDN local_communication_id (hex) to join")
-    ap.add_argument("--capture", metavar="FILE", help="record every Pia datagram both ways (.jsonl)")
     ap.add_argument("--out", metavar="PREFIX", default="", help="write PREFIX_card.bin etc.")
     ap.add_argument("--verbose", action="store_true", help="NEVER on a live run (floods the link)")
     return ap

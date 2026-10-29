@@ -53,7 +53,6 @@ def test_the_sword_joiner_returns_the_consoles_pokemon_in_the_next_trade(tmp_pat
     wlan.set_factory(factory)
     try:
         threads["join"].start()
-        time.sleep(1.5)
         threads["host"].start()
         threads["join"].join(120)
         threads["host"].join(120)
