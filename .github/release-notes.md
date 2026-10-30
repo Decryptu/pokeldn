@@ -1,24 +1,13 @@
-# pokeldn 0.49.0
+# pokeldn 0.49.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Choose the encounter: More options lists every place and way PKHeX knows the species can be met
-  (route, raid den, egg, gift card, with its levels), and the Pokemon is built from the one you pick.
-  The result shows where it was met.
-- Forms sit right under the species, and Alcremie has a Sweet choice; the picture follows the cream
-  and sweet.
-- Max IVs, Max EVs and Max friendship buttons. Max EVs puts 252 in the two highest base stats.
-- Sword and Shield: choose the Gigantamax factor and the Dynamax level. Scarlet and Violet: choose
-  the Tera Type, Stellar included. A Showdown set's Tera Type, Gigantamax and Dynamax level are now
-  applied.
-- A different trainer for each game (Settings, Your trainer): each game gets its own name, gender,
-  language and IDs; a game left unchanged keeps the shared trainer. Find mine fills one game at a
-  time, and private logs hide every game's trainer name.
-- The Level field refuses values outside 1 to 100, and a text field keeps its focus when its error
-  appears (the Tera Raid seed).
+- Sword and Shield: a Pokemon whose encryption constant is 0, such as the Zeraora gift HOME gave,
+  is no longer taken for an empty party slot. The host stopped before the trade, and a Max Raid
+  dropped when the battle began.
 
 The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 
