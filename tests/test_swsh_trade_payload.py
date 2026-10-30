@@ -2,6 +2,7 @@
 compressed."""
 import struct
 import zlib
+from pathlib import Path
 
 import pytest
 
@@ -226,3 +227,20 @@ def test_the_records_are_named_in_the_order_the_game_writes_them():
     assert len(trade_payload.RECORD_NAMES) == 16
     assert trade_payload.TAIL_RECORDS + 32 == trade_payload.TAIL_OPTIONAL_U64
     assert trade_payload.EXTRA_BLOCK_OFFSET == 0xBF6
+
+
+# PKHeX's Zeraora HOME gift (WC8 9011): encryption constant 0, as HOME gave it before 3.0.0.
+ZERAORA = bytes.fromhex((Path(__file__).parent / "data" / "swsh_zeraora_home_gift.hex").read_text())
+RAID_SNAPSHOT = Path(trade_payload.__file__).with_name("data") / "raid_snapshot.bin"
+
+
+def test_a_pokemon_with_encryption_constant_zero_is_not_an_empty_slot():
+    captured = trade_payload.inflate_short(RAID_SNAPSHOT.read_bytes())
+    at = 2 * gen8.SIZE_PARTY
+    assert ZERAORA[:4] == captured[at:at + 4] == bytes(4)
+    snapshot = captured[:at] + ZERAORA + captured[at + gen8.SIZE_PARTY:]
+    party = trade_payload.read(snapshot)["party"]
+    assert [p and p["species"] for p in party[2:]] == [807, None, None, None]
+    rewritten = trade_payload.rewrite(snapshot, trainer_name="POKELDN")
+    assert pokemon.read(rewritten[at:at + gen8.SIZE_PARTY])["ot_name"] == "POKELDN"
+    assert rewritten[at + gen8.SIZE_PARTY:pokemon.PARTY_BLOCK] == snapshot[at + gen8.SIZE_PARTY:pokemon.PARTY_BLOCK]

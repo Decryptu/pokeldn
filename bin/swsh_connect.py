@@ -1527,7 +1527,7 @@ async def main_async(args):
                     print(f"[tx] slot {args.offer_slot} is {args.offer_file[0]}")
                 else:
                     raw = original_party[at:at + swsh_pokemon.SIZE_PARTY]
-                if struct.unpack_from("<I", raw, 0)[0] == 0:
+                if gen8.is_empty(raw):
                     raise ValueError(f"slot {args.offer_slot} of the snapshot is empty")
                 built = swsh_pokemon.build_from(raw, **edits) if edits else raw
                 payload = payload[:at] + built + payload[at + swsh_pokemon.SIZE_PARTY:]

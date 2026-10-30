@@ -226,7 +226,7 @@ def rewrite(payload, *, trainer_name=None, trainer_id=None, secret_id=None, old_
         for slot in range(pokemon.PARTY_SLOTS):
             at = slot * gen8.SIZE_PARTY
             raw = bytes(out[at:at + gen8.SIZE_PARTY])
-            if struct.unpack_from("<I", raw, 0)[0] == 0:        # an empty slot stays empty
+            if gen8.is_empty(raw):        # an empty slot stays empty
                 continue
             out[at:at + gen8.SIZE_PARTY] = pokemon.build_from(raw, **edits)
     return bytes(out)

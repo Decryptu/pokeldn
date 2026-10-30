@@ -110,7 +110,7 @@ def offer_record(args, offer_file, renew, slot_record):
         raw = swsh_pokemon.encrypt(gen8.load(Path(offer_file).read_bytes()))
     else:
         raw = slot_record
-    if struct.unpack_from("<I", raw)[0] == 0:
+    if gen8.is_empty(raw):
         raise ValueError(f"offer slot {args.offer_slot} is empty; pass --offer-file")
     fresh = bool(args.fresh_pid or renew)
     # PKHeX keeps the PID of a record that is legal only with it (an event, a correlated encounter).

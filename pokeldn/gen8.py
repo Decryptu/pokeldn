@@ -128,6 +128,12 @@ def decrypt(raw, block=BLOCK_SIZE):
     return plain
 
 
+def is_empty(raw, block=BLOCK_SIZE):
+    """-> whether a slot holds no Pokemon: zero bytes, or a zero record encrypted, as a console sends one.
+    Encryption constant 0 is no evidence: HOME gave gifts before 3.0.0 the card's zero (Zeraora) [PKHeX WC8.cs]."""
+    return not any(raw) or not any(decrypt(raw, block))
+
+
 def is_plain(raw, block=BLOCK_SIZE):
     """-> whether a record is PKHeX's decrypted export: its raw body matches the checksum."""
     if len(raw) not in _sizes(block):

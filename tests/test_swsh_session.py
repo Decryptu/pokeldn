@@ -114,3 +114,18 @@ def test_the_host_uses_the_live_snapshot_and_replaces_the_offered_slot(tmp_path,
     assert pokemon.read(offer)["pid"] != pokemon.read(chosen)["pid"]
     assert profile["device_id"] == advert[0x1F:0x2F]
     assert profile["account_uid"] == advert[0x2F:0x3F]
+
+
+def test_the_host_offers_a_pokemon_whose_encryption_constant_is_zero(tmp_path):
+    import swsh_host
+    from test_swsh_trade_payload import RAID_SNAPSHOT, ZERAORA
+    from pokeldn import gen8
+    from pokeldn.swsh import pokemon, trade_payload
+
+    offer_path = tmp_path / "zeraora.pk8"
+    offer_path.write_bytes(ZERAORA)
+    args = swsh_host.build_parser().parse_args(["--offer-file", str(offer_path)])
+    assert pokemon.read(swsh_host.offer_record(args, str(offer_path), False, None))["species"] == 807
+    captured = trade_payload.inflate_short(RAID_SNAPSHOT.read_bytes())
+    with pytest.raises(ValueError, match="empty"):
+        swsh_host.offer_record(args, None, False, captured[2 * gen8.SIZE_PARTY:3 * gen8.SIZE_PARTY])

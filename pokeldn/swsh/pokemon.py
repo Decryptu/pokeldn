@@ -1,7 +1,6 @@
 """A Sword/Shield Pokemon on the wire: the 0x158-byte party-form PK8 (`pokeldn.gen8`), and the
 fixed six-slot party protocol 0x84 carries in its first 0x810 bytes (docs/swsh_protocol.md).
 """
-import struct
 
 from pokeldn import gen8
 from pokeldn.gen8 import OFF_DYNAMAX_TYPE, SIZE_PARTY, SIZE_STORED   # noqa: F401 - the PK8 view
@@ -32,13 +31,13 @@ def build_from(template_raw, **fields):
 
 def party(blob, slots=PARTY_SLOTS):
     """-> one entry per party slot of a 0x84 payload: the read fields, or None for an empty slot.
-    An empty slot is an encryption constant of zero; a species of 0 is no evidence of one."""
+    An empty slot is `gen8.is_empty`."""
     if len(blob) < slots * SIZE_PARTY:
         raise ValueError(f"{len(blob)} bytes, need {slots * SIZE_PARTY} for {slots} slots")
     out = []
     for slot in range(slots):
         raw = blob[slot * SIZE_PARTY:(slot + 1) * SIZE_PARTY]
-        if struct.unpack_from("<I", raw, 0)[0] == 0:
+        if gen8.is_empty(raw):
             out.append(None)
             continue
         fields = read(raw)

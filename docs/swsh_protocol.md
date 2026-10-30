@@ -289,8 +289,11 @@ communication mode 2 (`SetMode` `0x01096d10`,
 table at `0x2066c40`.
 
 The trainer name appears four times (MyStatus, trainer card, party records, profile);
-`pokeldn/swsh/trade_payload.rewrite` moves all four, and the trade screen names that trainer. Empty
-party slots are zero; the count at 0x810 agrees.
+`pokeldn/swsh/trade_payload.rewrite` moves all four, and the trade screen names that trainer. An empty
+party slot is a zero record, sent either as zero bytes or encrypted under encryption constant 0; both
+decrypt to zeros, and the count at 0x810 agrees. Encryption constant 0 alone does not mark a slot empty:
+HOME gave its gifts before HOME 3.0.0 the card's zero constant (the Zeraora gift, WC8 9011)
+[PKHeX `WC8.cs`]. `pokeldn.gen8.is_empty` tests the decrypted record.
 
 ## The PK8
 
