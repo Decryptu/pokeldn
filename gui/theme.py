@@ -46,6 +46,9 @@ READABLE_WIDTH = 720   # the options column's widest: a wider form spreads a fie
 compact = False
 window_width = 0.0   # the page's width, kept by gui/main.py: a pane built later starts in the right layout
 text_scale = 1.0     # Settings, Larger text: read once at launch by gui/main.py
+# Flutter's default density on a desktop is compact, which takes 8 px off a text field (VisualDensity
+# .defaultDensityForPlatform); gui/main.py sets it from the page's platform.
+field_density = 8.0
 
 
 def scaled(value: float) -> float:
@@ -345,14 +348,6 @@ def mark_invalid(control: ft.TextField, invalid: bool) -> None:
     control.border = _border(RED if invalid else "")
 
 
-class _Field(ft.TextField):
-    def before_update(self):
-        super().before_update()
-        details = self.error or self.helper or self.counter
-        self.height = None if details else CONTROL_HEIGHT
-        self.fit_parent_size = not bool(details)
-
-
 def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, digits: bool = False,
           limit: int = 0, **kwargs) -> ft.TextField:
     """`digits` takes 0-9 only; `limit` caps the length. Both are one regex over the whole value:
@@ -364,18 +359,18 @@ def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, 
         kwargs.setdefault("keyboard_type", ft.KeyboardType.NUMBER)
     style = ft.TextStyle(size=13, color=TEXT, font_family=MONO if mono else None,
                          font_family_fallback=FALLBACK_FONTS)
-    uniform = not kwargs.get("multiline") and not label and "height" not in kwargs
-    if uniform:
-        kwargs.setdefault("height", CONTROL_HEIGHT)
-        kwargs.setdefault("fit_parent_size", True)
     kwargs.setdefault("size_constraints", ft.BoxConstraints(min_height=CONTROL_HEIGHT))
     kwargs.setdefault("content_padding", CONTROL_PADDING)
-    control = _Field if uniform else ft.TextField
-    return control(value=value, label=label or None, hint_text=hint or None, text_style=style,
-                   label_style=ft.TextStyle(size=12, color=MUTED), dense=True,
-                   hint_style=ft.TextStyle(size=13, color=FAINT), bgcolor=FIELD, filled=True,
-                   border=_border(), cursor_color=BLUE,
-                   text_vertical_align=ft.VerticalAlignment.CENTER, **kwargs)
+    if not kwargs.get("multiline") and not label and "height" not in kwargs:
+        # A forced line height, never a height: Flet wraps a sized field in a SizedBox, and an error that
+        # adds or drops it rebuilds the input, which then loses focus mid-word.
+        line = CONTROL_HEIGHT - kwargs["content_padding"].top - kwargs["content_padding"].bottom + field_density
+        kwargs.setdefault("strut_style", ft.StrutStyle(size=13, height=line / 13, force_strut_height=True))
+    return ft.TextField(value=value, label=label or None, hint_text=hint or None, text_style=style,
+                        label_style=ft.TextStyle(size=12, color=MUTED), dense=True,
+                        hint_style=ft.TextStyle(size=13, color=FAINT), bgcolor=FIELD, filled=True,
+                        border=_border(), cursor_color=BLUE,
+                        text_vertical_align=ft.VerticalAlignment.CENTER, **kwargs)
 
 
 def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, **kwargs) -> ft.Dropdown:

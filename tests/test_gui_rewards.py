@@ -78,7 +78,7 @@ def test_invalid_bulk_quantity_blocks_launch_and_keeps_the_item_controls(picker,
     assert picker.problem.visible
     for field in [picker.quantity, *picker.quantities]:
         field.before_update()
-        assert field.height == t.CONTROL_HEIGHT and field.error is None
+        assert field.error is None and field.helper is None   # the row stays one field line tall
         assert field.border[ft.ControlState.DEFAULT].side.color == t.RED
     assert all(a is b for a, b in zip(item_rows, picker.rows.controls))
     assert all(row["quantity"] == text for row in picker.saved[-1])

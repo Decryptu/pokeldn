@@ -26,3 +26,18 @@ def _wrapped_at_a_fixed_height(tree: ast.AST):
                          ids=lambda p: p.name)
 def test_no_control_is_boxed_at_a_hard_coded_height(path):
     assert list(_wrapped_at_a_fixed_height(ast.parse(path.read_text(encoding="utf-8")))) == []
+
+
+@pytest.mark.parametrize("kwargs", [{}, {"mono": True, "expand": True}, {"digits": True, "limit": 5}])
+def test_a_field_keeps_its_box_when_an_error_comes_and_goes(kwargs):
+    """Flet wraps a field that has a height in a SizedBox; adding or dropping it rebuilds the input, which loses
+    focus after one typed character (issue 45: the raid seed). An error or helper must leave the box alone."""
+    from gui import theme as t
+    field = t.field(**kwargs)
+    shapes = []
+    for details in ({}, {"error": "Eight hexadecimal digits."}, {"helper": "Help."}, {"error": None, "helper": None}):
+        for name, value in details.items():
+            setattr(field, name, value)
+        field.before_update()
+        shapes.append((field.height, field.fit_parent_size, field.expand))
+    assert len(set(shapes)) == 1

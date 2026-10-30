@@ -67,6 +67,8 @@ if ANDROID or IOS:   # no Bluetooth controller and no self-update on a phone (ex
 def main(page: ft.Page) -> None:
     t.window_width = page.width or 0.0
     t.compact = bool(page.width) and page.width < t.COMPACT_WIDTH
+    t.field_density = 8.0 if page.platform in (ft.PagePlatform.MACOS, ft.PagePlatform.WINDOWS,
+                                               ft.PagePlatform.LINUX) else 0.0
     page.title = "pokeldn"
     page.theme_mode = ft.ThemeMode.DARK
     page.theme = page.dark_theme = t.app_theme()
