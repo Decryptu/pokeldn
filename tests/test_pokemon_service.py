@@ -332,7 +332,7 @@ def test_variants_and_the_sv_tera_type_land_in_the_record(service):
 ])
 def test_the_max_buttons_build_a_legal_record_with_their_values(service, monkeypatch, game, species, evs):
     """More options' Max IVs, Max EVs and Max friendship (gui/views/pokemon.py), as the record carries them."""
-    import flet as ft
+    ft = pytest.importorskip("flet")
     from types import SimpleNamespace
     from gui.views.pokemon import OfferOptions
     monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
