@@ -65,7 +65,6 @@ def test_the_console_hosts_first_message_names_its_trainer_to_the_app(monkeypatc
     from pokeldn import console_trainer
     from pokeldn.ldn import reliable3
     from pokeldn.lgpe import reference
-    monkeypatch.setattr(console_trainer, "_shown", set())
     mod = _join()
     args = mod.build_parser().parse_args([])
     console = pb7.parse_message(Path(reference.IDENTITY).read_bytes())["body"]

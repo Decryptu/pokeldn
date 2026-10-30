@@ -223,7 +223,6 @@ def test_the_joiner_tells_the_app_the_console_hosts_trainer(proto, name, capsys,
     from pokeldn.app.settings import Settings
     from pokeldn.ldn import reliable
 
-    monkeypatch.setattr(console_trainer, "_shown", set())
     tool = _za_tool("za-join")
     args = parser_of(tool.script).parse_args(build(tool, {}, {}, Settings(ot="ASH"), stamp="t"))
     streams = za_join.GameStreams(args, lambda proto, body, **kw: None, lambda bundle, **kw: None,

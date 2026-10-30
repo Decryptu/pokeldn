@@ -152,7 +152,6 @@ def test_the_joiner_names_the_console_trainer_its_trade_record_carries(monkeypat
     """The joiner's TRADE_TRANER branch tells the app whose save the console holds."""
     import bdsp_connect
     from pokeldn import console_trainer
-    monkeypatch.setattr(console_trainer, "_shown", set())
     bdsp_connect.show_their_trainer(TRADE_TRANER_SP82)
     bdsp_connect.show_their_trainer(TRADE_TRANER_SP82[:-1])
     lines = [console_trainer.read(line) for line in capsys.readouterr().out.splitlines()]

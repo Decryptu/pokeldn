@@ -31,9 +31,12 @@ def pytest_configure(config):
 
 
 @pytest.fixture(autouse=True)
-def _fresh_trade_count():
-    """A run is one process; each test starts with no completed trade (pokeldn.ldn.trades_done)."""
+def _fresh_run_state():
+    """A run is one process; each test starts with no completed trade (pokeldn.ldn.trades_done) and no
+    trainer already printed (pokeldn.console_trainer.show prints each once per process)."""
     import pokeldn.ldn
+    from pokeldn import console_trainer
     pokeldn.ldn._done.clear()
     pokeldn.ldn._done_at = None
+    console_trainer._shown.clear()
     yield

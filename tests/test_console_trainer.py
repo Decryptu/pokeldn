@@ -7,7 +7,6 @@ from pokeldn.app import settings as settings_mod
 
 @pytest.fixture
 def fresh(monkeypatch, tmp_path):
-    monkeypatch.setattr(console_trainer, "_shown", set())
     monkeypatch.setattr(settings_mod, "PATH", tmp_path / "settings.json")
     return settings_mod.Settings()
 

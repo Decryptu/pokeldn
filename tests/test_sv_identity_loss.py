@@ -178,7 +178,6 @@ def test_host_identity_survives_loss(monkeypatch, tmp_path, lost):
 def test_joiner_tells_the_app_the_host_consoles_trainer(monkeypatch, tmp_path, capsys):
     from pokeldn import console_trainer
 
-    monkeypatch.setattr(console_trainer, '_shown', set())
     clock = Clock()
     peer = Peer(clock, 1, None)
     _record_set(tmp_path, [1])
