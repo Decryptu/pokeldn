@@ -183,11 +183,12 @@ def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = N
     stamp = stamp or time.strftime("%Y%m%d-%H%M%S")
     game = tool.key.split("-")[0]
     tid, sid = settings.ids(game)
+    trainer = settings.own(game)
     tokens = {"{received}": os.path.expanduser(settings.received), "{stamp}": stamp,
               "{src_var}": f"0x{random.getrandbits(32):08x}",
               "{ot}": settings.name(game), "{tid}": str(tid), "{sid}": str(sid),
-              "{language}": str(settings.language), "{gender}": str(settings.gender),
-              "{gba_language}": GBA_LANGUAGES.get(settings.language, "english"),
+              "{language}": str(trainer["language"]), "{gender}": str(trainer["gender"]),
+              "{gba_language}": GBA_LANGUAGES.get(trainer["language"], "english"),
               "{keys}": os.path.expanduser(settings.keys)}
     # A banked Pokemon keeps its PID and encryption constant: they are who it is [docs/gui.md, The bank].
     banked = any(entry.get("bank") for field in tool.fields if field.kind == "pokemon"

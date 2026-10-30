@@ -333,7 +333,7 @@ class SaveEditor:
     def _add(self, e) -> None:
         info = self.info
         owner = {"ot": info["name"], "tid": info["trainer_id"], "sid": info["secret_id"],
-                 "language": self.entry.language or self.app.settings.language, "gender": info["gender"]}
+                 "language": self.entry.language or self.app.settings.own("frlg")["language"], "gender": info["gender"]}
         version = {"BPG": "leafgreen"}.get(self.entry.game_code[:3], "firered")
 
         def built(value: dict) -> None:

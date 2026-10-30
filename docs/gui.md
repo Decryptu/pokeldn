@@ -152,9 +152,19 @@ trainer a run read off a console. The Switch games never display the secret ID; 
 | Switch | the console's session data in a Let's Go, BDSP, Legends Arceus, Scarlet/Violet or Legends Z-A trade, both roles ([Whose save it is](gift_simulated.md#whose-save-it-is)); in Sword/Shield, and in any title, a Pokemon the console traded that its save caught (handler 0, the game's own version, not an egg) |
 
 A launcher prints `[trainer] {json}` once per trainer (`pokeldn.console_trainer`); the app keeps the
-newest per row in `settings.json` `found_trainers` and logs it under the private-log masks. The Switch
-row serves every Switch title, so it takes the last one traded with. With nothing found, Find mine
-asks for a trade.
+newest per row, and per game, in `settings.json` `found_trainers` and logs it under the private-log
+masks. The Switch row serves every Switch title, so it takes the last one traded with. With nothing
+found, Find mine asks for a trade.
+
+### A trainer per game
+
+A different trainer for each game gives each title its own name, gender, language, ID and secret ID,
+edited one game at a time; the IDs are as that game shows them. A game never edited keeps the shared
+trainer. `settings.json` holds the switch as `per_game_trainer` and the values as `game_trainers`,
+game key to the fields that differ. `Settings.own(game)` is the trainer a game sees; `Settings.ids`,
+`Settings.name`, `Settings.trainer` and the launch tokens `{ot}`, `{tid}`, `{sid}`, `{language}`,
+`{gender}` read through it (`tests/test_gui_catalog.py`). Find mine on a game takes the newest trainer
+read off that game.
 
 ## Windows USB drivers
 

@@ -778,7 +778,7 @@ class SessionPanel:
         self.command_box = command_block.control
         self.command_box.visible = False
         self.log = Log(app.page, tr('games.the_session_s_output_appears_here_07c340', "The session's output appears here."),
-                       private=lambda: [app.settings.ot] if app.settings.private_logs else None)
+                       private=lambda: app.settings.names() if app.settings.private_logs else None)
         tools = ft.Row([
             t.icon_button("code", self._toggle_command, tr('games.show_the_command_324bde', 'Show the command')),
             t.icon_button("copy", self._copy_log, tr('games.copy_the_log_e01862', 'Copy the log')),

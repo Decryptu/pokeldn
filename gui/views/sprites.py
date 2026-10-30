@@ -28,12 +28,13 @@ class Sprite:
         self.control = self.frame
         self.show(species, shiny, update=False, form=form)
 
-    def show(self, species: int, shiny: bool = False, update: bool = True, form: int = 0) -> None:
+    def show(self, species: int, shiny: bool = False, update: bool = True, form: int = 0,
+             sweet: int | None = None) -> None:
         """Cached sprites appear at once; the rest load on a worker thread, and a stale answer is dropped."""
         self.token += 1
         token = self.token
         CACHE.online = bool(self.app.settings.sprites)
-        species = sprite_key(species, form)
+        species = sprite_key(species, form, sweet=sweet)
         if not species:
             self._set(self._placeholder(tr('sprites.no_sprite_for_this_form_0f3039', 'No sprite for this form.') if form else ""), update)
             return

@@ -1,3 +1,4 @@
+import re
 import threading
 from pathlib import Path
 from collections.abc import Callable
@@ -42,7 +43,7 @@ class PokemonPicker:
         self.species.trailing_icon = PixelActivity(tr('pokemon.loading_species_90a6a5', 'Loading species'))
         self.level = t.field(value=str(self.value.get("level") or ""), hint=tr("pokemon.level_auto", "auto"), mono=True, width=90,
                              digits=True, limit=3,
-                             on_change=lambda e: self._set("level", e.control.value))
+                             on_change=self._level)
         self.sprite = Sprite(app, int(self.value.get("species") or 0), bool(self.value.get("shiny")),
                              form=int(self.value.get("options", {}).get("form") or 0))
         self.shiny = t.switch(bool(self.value.get("shiny")), self._shiny)
@@ -51,6 +52,9 @@ class PokemonPicker:
                                 on_change=lambda e: self._set("nickname", e.control.value))
         self.build_button = t.button(tr('pokemon.build_bdd254', 'Build'), self._build, disabled=True)
         self.options = OfferOptions(self)
+        self.show_sprite(update=False)     # with the sweet the options hold
+        self.variants = ft.Row(spacing=10, visible=False)    # the form and, for Alcremie, the sweet
+        self.variants_token = 0
         self.result = ft.Container()
         species = t.labeled_control(tr('pokemon.species_56205e', 'Species'), self.species, expand=True)
         level_shiny = [t.labeled_control(tr('pokemon.level_170930', 'Level'), self.level),
@@ -61,6 +65,7 @@ class PokemonPicker:
         form = pokemon_header(self.sprite.control, [ft.Row([species]), ft.Row(level_shiny, spacing=10)], spacing=10)
         self.body = ft.Container(ft.Column([
             form,
+            self.variants,
             ft.Row([self.nickname, self.build_button], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             self.options.control,
             self.result,
@@ -76,17 +81,90 @@ class PokemonPicker:
     def _set(self, key, value) -> None:
         self.value[key] = value
 
+    def _level(self, e) -> None:
+        raw = e.control.value.strip()
+        self.value["level"] = raw
+        t.mark_invalid(e.control, bool(raw) and not 1 <= int(raw) <= 100)
+        e.control.update()
+
+    def owner(self) -> dict:
+        return self.trainer or self.app.settings.trainer(self.game)
+
+    def load_variants(self) -> None:
+        """The form and sweet choices beside the species, from what PKHeX lists for it."""
+        self.variants_token += 1
+        token, species = self.variants_token, int(self.value.get("species") or 0)
+        if not species:
+            self.variants.visible = False
+            return
+        form = int(self.options.chosen.get("form") or 0)
+
+        def work():
+            try:
+                found = SERVICE.options(self.game, species, self.owner(), VERSIONS.get(self.version, ""), form)
+            except Exception:
+                found = None
+
+            def show():
+                if token == self.variants_token:
+                    self._draw_variants(found)
+                    self.control.update()
+            self.app.ui(show)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _draw_variants(self, found: dict | None) -> None:
+        chosen, controls = self.options.chosen, []
+        forms = found["forms"] if found else []
+        if len(forms) > 1:
+            controls.append(t.labeled_control(tr('pokemon.form_2e0e96', 'Form'), t.dropdown(
+                [(ANY, tr('pokemon.form_any', 'Any'))] + [(str(f["id"]), f["name"]) for f in forms],
+                str(chosen["form"]) if chosen.get("form") is not None else ANY,
+                on_select=self._form, enable_filter=len(forms) > 8, editable=len(forms) > 8, menu_height=320),
+                expand=True))
+        if found and found.get("sweets"):
+            controls.append(t.labeled_control(tr('pokemon.sweet', 'Sweet'), t.dropdown(
+                [(ANY, tr('pokemon.random_67bc48', 'Random'))] + list(enumerate_names(SWEETS[:found["sweets"]])),
+                str(chosen["sweet"]) if chosen.get("sweet") is not None else ANY, on_select=self._sweet),
+                expand=True))
+        elif found is not None:
+            chosen.pop("sweet", None)
+        self.variants.controls = controls
+        self.variants.visible = bool(controls)
+
+    def _form(self, e) -> None:
+        chosen = self.options.chosen
+        if e.control.value == ANY:
+            chosen.pop("form", None)
+        else:
+            chosen["form"] = int(e.control.value)
+        chosen.pop("encounter", None)       # a form has its own encounters, abilities and types
+        self.show_sprite()
+        self.options._label()
+        self.options.species_changed()
+        self.options.label.update()
+
+    def _sweet(self, e) -> None:
+        if e.control.value == ANY:
+            self.options.chosen.pop("sweet", None)
+        else:
+            self.options.chosen["sweet"] = int(e.control.value)
+        self.show_sprite()
+        self.options._label()
+        self.options.label.update()
+
     def show_sprite(self, update=True) -> None:
         self.sprite.show(int(self.value.get("species") or 0), bool(self.value.get("shiny")),
-                         update=update, form=int(self.options.chosen.get("form") or 0))
+                         update=update, form=int(self.options.chosen.get("form") or 0),
+                         sweet=self.options.chosen.get("sweet"))
 
     def _pick(self, e) -> None:
         self.value["species"] = int(e.control.value)
         # A form or moveset chosen for the previous species rarely fits this one.
-        self.options.chosen.pop("form", None)
-        self.options.chosen.pop("moves", None)
+        for key in ("form", "moves", "encounter", "sweet"):
+            self.options.chosen.pop(key, None)
         self.show_sprite()
         self.options.species_changed()
+        self.load_variants()
 
     def _shiny(self, e) -> None:
         self._set("shiny", e.control.value)
@@ -109,12 +187,18 @@ class PokemonPicker:
                 self.species.value = str(self.value["species"]) if self.value.get("species") else None
                 self.species.hint_text = tr('pokemon.search_a_species_1ea995', 'Search a species')
                 self.species.disabled = self.build_button.disabled = False
+                self.load_variants()
             self.control.update()
         self.app.ui(show)
 
     def _build(self, e) -> None:
         if not self.value.get("species"):
             self._message(tr('pokemon.pick_a_species_first_48ebb5', 'Pick a species first.'), t.RED)
+            self.control.update()
+            return
+        level = str(self.value.get("level") or "")
+        if level and not (level.isdigit() and 1 <= int(level) <= 100):
+            self._message(tr('pokemon.level_range', 'The level is 1 to 100, or empty for the lowest legal one.'), t.RED)
             self.control.update()
             return
         if problem := self.options.problem():
@@ -131,14 +215,12 @@ class PokemonPicker:
 
         def work():
             try:
-                info = SERVICE.make(self.game, self.value["species"],
-                                            self.trainer or self.app.settings.trainer(self.game),
-                                            level, bool(self.value.get("shiny")),
+                info = SERVICE.make(self.game, self.value["species"], self.owner(), level, bool(self.value.get("shiny")),
                                             self.value.get("nickname", ""), VERSIONS.get(self.version, ""),
                                             self.value.get("options"))
                 self.value.update(file=info["file"], summary=builder.summary(info), legal=info["legal"],
                                   encounter=info.get("canonical", info)["encounter"], moves=info.get("canonical", info)["moves"],
-                                  home_tracker=info.get("home_tracker", ""))
+                                  place=info.get("encounter_place", ""), home_tracker=info.get("home_tracker", ""))
                 self.on_change(dict(self.value))
                 done = self._show_result
             except Exception as exc:
@@ -183,6 +265,7 @@ class PokemonPicker:
             return
         self.value.update(file=info["file"], summary=builder.summary(info), legal=info["legal"],
                           encounter=info.get("canonical", info)["encounter"], moves=info.get("canonical", info)["moves"],
+                          place=info.get("encounter_place", ""),
                           report="" if info["legal"] else info["report"], home_tracker=info.get("home_tracker", ""),
                           species=info["species_id"], shiny=info["shiny"])
         if self.species.options:
@@ -192,6 +275,7 @@ class PokemonPicker:
         self.options._label()
         self.show_sprite(update=False)
         self.options.species_changed()
+        self.load_variants()
         self.on_change(dict(self.value))
         self._show_result()
         self.control.update()
@@ -224,8 +308,7 @@ class PokemonPicker:
 
             def work():
                 try:
-                    sets, error = SERVICE.paste(self.game, text, self.app.settings.trainer(self.game),
-                                                        VERSIONS.get(self.version, "")), ""
+                    sets, error = SERVICE.paste(self.game, text, self.owner(), VERSIONS.get(self.version, "")), ""
                 except Exception as exc:
                     sets, error = [], error_message(exc)
 
@@ -262,7 +345,7 @@ class PokemonPicker:
             submit(None)
 
     def _apply_set(self, found: dict, notes: list[str]) -> None:
-        for key in ("file", "summary", "legal", "encounter", "moves", "report", "home_tracker"):
+        for key in ("file", "summary", "legal", "encounter", "place", "moves", "report", "home_tracker"):
             self.value.pop(key, None)
         self.value.update(species=found["species_id"], level=str(found["level"]), shiny=found["shiny"],
                           nickname=found["nickname"])
@@ -275,6 +358,7 @@ class PokemonPicker:
         self.nickname.value = found["nickname"]
         self.show_sprite(update=False)
         self.options.reveal()
+        self.load_variants()
         self.on_change(dict(self.value))
         name = f"{found['species']}-{found['form']}" if found["form"] else found["species"]
         lines = [t.text(tr('pokemon.imported_check_the_options_below_then_press_build_62320d', 'Imported {value0}. Check the options below, then press Build.', value0=name), 12, t.MUTED)]
@@ -299,7 +383,7 @@ class PokemonPicker:
             t.badge(tr('pokemon.legal_4787ea', 'Legal') if legal else tr('pokemon.not_legal_c66729', 'Not legal'), t.GREEN if legal else t.RED,
                     "check" if legal else "warning-diamond"),
         ], spacing=8)]
-        detail = " · ".join(x for x in (translate(self.value.get("encounter", "")),
+        detail = " · ".join(x for x in (translate(self.value.get("encounter", "")), self.value.get("place", ""),
             tr("presentation.list_separator", ", ").join(translate(move) for move in self.value.get("moves", []))) if x)
         if detail:
             lines.append(t.text(detail, 12, t.MUTED))
@@ -440,6 +524,33 @@ STATS = (("hp", tr('pokemon.hp_9449a7', 'HP')), ("atk", tr('pokemon.atk_f231c4',
 EFFORT = {"evs": tr('pokemon.evs_3f8987', 'EVs'), "avs": tr('pokemon.avs_a495d3', 'AVs'), "gvs": tr('pokemon.effort_levels_9996e7', 'Effort levels')}
 GENDERS = (("0", tr('pokemon.male_03f8c1', 'Male')), ("1", tr('pokemon.female_e8cca8', 'Female')))
 ANY = "-"
+# Alcremie's sweets, its form argument 0 to 6 (services/pkhex Wish.Sweets).
+SWEETS = (tr('pokemon.sweet_strawberry', 'Strawberry'), tr('pokemon.sweet_berry', 'Berry'), tr('pokemon.sweet_love', 'Love'),
+          tr('pokemon.sweet_star', 'Star'), tr('pokemon.sweet_clover', 'Clover'), tr('pokemon.sweet_flower', 'Flower'),
+          tr('pokemon.sweet_ribbon', 'Ribbon'))
+# PKHeX's GameVersion names, as an encounter lists them.
+VERSION_NAMES = {"FR": "FireRed", "LG": "LeafGreen", "E": "Emerald", "R": "Ruby", "S": "Sapphire",
+                 "GP": "Let's Go Pikachu", "GE": "Let's Go Eevee", "SW": "Sword", "SH": "Shield",
+                 "BD": "Brilliant Diamond", "SP": "Shining Pearl", "PLA": "Legends Arceus", "SL": "Scarlet",
+                 "VL": "Violet", "ZA": "Legends Z-A"}
+
+
+def enumerate_names(names) -> list[tuple[str, str]]:
+    return [(str(n), name) for n, name in enumerate(names)]
+
+
+def encounter_label(found: dict, versions: bool) -> str:
+    """One encounters() group as a line: where, what kind, its levels and what sets it apart."""
+    kind = re.sub(r"\s*\([A-Z0-9]{1,5}\)", "", translate(found["kind"])).strip()   # the version or card format
+    low, high = found["level_min"], found["level_max"]
+    parts = [found["place"], kind, tr('pokemon.encounter_level', 'Lv {value0}', value0=low if low == high else f"{low}-{high}")]
+    if versions and found["version"] in VERSION_NAMES:
+        parts.append(VERSION_NAMES[found["version"]])
+    if found["species"]:
+        parts.append(tr('pokemon.encounter_as', 'as {value0}', value0=found["species"]))
+    if not found["shiny"]:
+        parts.append(tr('pokemon.encounter_never_shiny', 'never shiny'))
+    return " · ".join(p for p in parts if p)
 
 
 class OfferOptions:
@@ -455,6 +566,7 @@ class OfferOptions:
         self.open = False
         self.loaded_for = None
         self.total = None    # the game's cap on all six effort values together, once the options are read
+        self.found = None    # what the options were last drawn from
         self.body = ft.Column([], spacing=10, visible=False)
         self.chevron = t.pixel_icon("chevron-right", color=t.FAINT)
         self.label = t.text("", 12, t.MUTED)
@@ -465,7 +577,9 @@ class OfferOptions:
         self._label()
 
     def _label(self) -> None:
-        count = sum(1 for k, v in self.chosen.items() if (v if isinstance(v, dict) else v is not None))
+        # The form and sweet show beside the species.
+        count = sum(1 for k, v in self.chosen.items()
+                    if k not in ("form", "sweet") and (v if isinstance(v, dict) else v is not None))
         self.label.value = tr('pokemon.set_f4c8f3', '{value0} set', value0=count) if count else tr('pokemon.random_67bc48', 'Random')
 
     def _toggle(self, e) -> None:
@@ -506,8 +620,10 @@ class OfferOptions:
 
         def work():
             try:
-                found = SERVICE.options(self.picker.game, species, app.settings.trainer(self.picker.game),
-                                                VERSIONS.get(self.picker.version, ""), target[1])
+                version = VERSIONS.get(self.picker.version, "")
+                found = dict(SERVICE.options(self.picker.game, species, self.picker.owner(), version, target[1]))
+                found["encounters"] = SERVICE.encounters(self.picker.game, species, self.picker.owner(), version,
+                                                         target[1])
                 found["move_names"], error = SERVICE.names(self.picker.game, "moves"), ""
             except Exception as exc:
                 found, error = None, error_message(exc)
@@ -515,6 +631,7 @@ class OfferOptions:
             def show():
                 if self.loaded_for != target:
                     return
+                self.found = found
                 self.body.controls = [t.text(error, 12, t.RED)] if error else self._form(found)
                 self._label()
                 self.control.update()
@@ -530,13 +647,19 @@ class OfferOptions:
             self.chosen.pop("gender", None)
         if not found.get("alpha"):     # None: the game has no Alphas; False: the species is never one
             self.chosen.pop("alpha", None)
+        for key, offered in (("gigantamax", found.get("gigantamax")), ("dynamax_level", found.get("dynamax")),
+                             ("tera", found.get("tera"))):
+            if not offered:
+                self.chosen.pop(key, None)
+        if self.chosen.get("tera") is not None and all(n["id"] != self.chosen["tera"] for n in found["tera"]):
+            self.chosen.pop("tera")
         if "form" in self.chosen and all(f["id"] != self.chosen["form"] for f in found["forms"]):
             self.chosen.pop("form")
             self.picker.show_sprite()
+        encounters = found.get("encounters") or []
+        if self.chosen.get("encounter") and all(n["key"] != self.chosen["encounter"] for n in encounters):
+            self.chosen.pop("encounter")
         first = [t.labeled_control(tr('pokemon.nature_c71ce8', 'Nature'), self._choice("nature", found["natures"]), expand=True)]
-        if len(found["forms"]) > 1:
-            first.insert(0, t.labeled_control(tr('pokemon.form_2e0e96', 'Form'), self._choice("form", found["forms"], reload=True),
-                                              expand=True))
         if len(found["abilities"]) > 1:
             first.append(t.labeled_control(tr('pokemon.ability_9c40ae', 'Ability'), self._choice("ability", found["abilities"]), expand=True))
         if found["gendered"]:
@@ -544,8 +667,16 @@ class OfferOptions:
                 "gender", [{"id": int(k), "name": n} for k, n in GENDERS]), expand=True))
         second = [t.labeled_control(tr('pokemon.ball_ae5859', 'Ball'), self._choice("ball", found["balls"]), expand=True),
                   t.labeled_control(tr('pokemon.friendship_0_255_30186d', 'Friendship (0-255)'), self._number("friendship", 255), width=130)]
+        if found.get("tera"):
+            second.append(t.labeled_control(tr('pokemon.tera_type', 'Tera Type'), self._choice(
+                "tera", found["tera"], any_label=tr('pokemon.tera_own', 'Its own')), expand=True))
+        if found.get("gigantamax"):
+            second.append(t.labeled_control(tr('pokemon.gigantamax', 'Gigantamax'), self._yes_no("gigantamax"), expand=True))
+        if found.get("dynamax"):
+            second.append(t.labeled_control(tr('pokemon.dynamax_level', 'Dynamax level (0-10)'),
+                                            self._number("dynamax_level", 10), width=130))
         if found.get("alpha"):
-            second.append(t.labeled_control(tr('pokemon.alpha_b1a96d', 'Alpha'), self._alpha(), expand=True))
+            second.append(t.labeled_control(tr('pokemon.alpha_b1a96d', 'Alpha'), self._yes_no("alpha"), expand=True))
         elif found.get("alpha") is False:
             second.append(t.labeled_control(tr('pokemon.alpha_b1a96d', 'Alpha'), t.field_line(t.text(
                 tr('pokemon.never_an_alpha_in_this_game_883ade', 'Never an Alpha in this game'), 12, t.MUTED),
@@ -556,7 +687,15 @@ class OfferOptions:
         effort = found["effort"]
         self.total = effort.get("total")
         limit = f"0-{effort['max']}" + (tr('pokemon.in_all_09ffde', ', {value0} in all', value0=effort['total']) if effort.get("total") else "")
+        quick = [t.secondary_button(tr('pokemon.max_ivs', 'Max IVs'), lambda e: self._max("ivs")),
+                 t.secondary_button(tr('pokemon.max_effort', 'Max {value0}', value0=EFFORT[effort["kind"]]),
+                                    lambda e: self._max("effort"),
+                                    tooltip=tr('pokemon.max_evs_tip', '252 in the two highest base stats, the rest in the third')
+                                    if effort.get("total") else None),
+                 t.secondary_button(tr('pokemon.max_friendship', 'Max friendship'), lambda e: self._max("friendship"))]
         return [
+            ft.Row(quick, spacing=8, wrap=True, run_spacing=8),
+            self._encounter(encounters),
             t.field_grid(first + second, 150),
             self._moves(found["move_names"]),
             self._stats("ivs", tr('pokemon.ivs_39e3d6', 'IVs'), 31, "0-31"),
@@ -566,7 +705,7 @@ class OfferOptions:
                     t.link_button(tr('pokemon.clear_83b12c', 'Clear'), self._clear)]),
         ]
 
-    def _choice(self, key: str, names: list[dict], search: bool = False, reload: bool = False) -> ft.Dropdown:
+    def _choice(self, key: str, names: list[dict], search: bool = False, any_label: str = "") -> ft.Dropdown:
         current = self.chosen.get(key)
 
         def picked(e):
@@ -574,28 +713,61 @@ class OfferOptions:
                 self.chosen.pop(key, None)
             else:
                 self.chosen[key] = int(e.control.value)
-            if key == "form":
-                self.picker.show_sprite()
             self._label()
-            if reload:      # a form has its own abilities
-                self._load()
-                self.control.update()
-            else:
-                self.label.update()
-        options = [(ANY, tr('pokemon.random_67bc48', 'Random'))] + [(str(n["id"]), n["name"]) for n in
+            self.label.update()
+        options = [(ANY, any_label or tr('pokemon.random_67bc48', 'Random'))] + [(str(n["id"]), n["name"]) for n in
                                        (sorted(names, key=lambda n: n["name"]) if search else names)]
         return t.dropdown(options, ANY if current is None else str(current), on_select=picked,
                           enable_filter=search, editable=search, menu_height=320)
 
-    def _alpha(self) -> ft.Dropdown:
+    def _encounter(self, encounters: list[dict]) -> ft.Control:
+        """Where the Pokemon comes from: any legal encounter, or one PKHeX lists for the species."""
         def picked(e):
             if e.control.value == ANY:
-                self.chosen.pop("alpha", None)
+                self.chosen.pop("encounter", None)
             else:
-                self.chosen["alpha"] = e.control.value == "yes"
+                self.chosen["encounter"] = e.control.value
             self._label()
             self.label.update()
-        current = self.chosen.get("alpha")
+        versions = len({n["version"] for n in encounters}) > 1
+        options = [(ANY, tr('pokemon.encounter_any', 'Any legal encounter'))] + [
+            (n["key"], encounter_label(n, versions)) for n in encounters]
+        box = t.dropdown(options, self.chosen.get("encounter") or ANY, on_select=picked, enable_filter=True,
+                         editable=True, menu_height=320)
+        box.expand = True
+        return t.labeled_control(tr('pokemon.encounter_count', 'Encounter ({value0} listed)', value0=len(encounters)),
+                                 ft.Row([box]))
+
+    def _max(self, group: str) -> None:
+        """Fills a group at its top: IVs 31, friendship 255, effort at each stat's cap or, under a total, in the
+        species' highest base stats."""
+        found = self.found
+        keys = [stat for stat, _ in STATS]
+        if group == "ivs":
+            self.chosen["ivs"] = dict.fromkeys(keys, 31)
+        elif group == "friendship":
+            self.chosen["friendship"] = 255
+        else:
+            effort = found["effort"]
+            left = effort.get("total") or effort["max"] * 6
+            values = {}
+            for at in sorted(range(6), key=lambda at: -found["base"][at]):
+                values[keys[at]] = give = min(effort["max"], left)
+                left -= give
+            self.chosen["effort"] = {k: v for k, v in values.items() if v}
+        self.body.controls = self._form(found)
+        self._label()
+        self.control.update()
+
+    def _yes_no(self, key: str) -> ft.Dropdown:
+        def picked(e):
+            if e.control.value == ANY:
+                self.chosen.pop(key, None)
+            else:
+                self.chosen[key] = e.control.value == "yes"
+            self._label()
+            self.label.update()
+        current = self.chosen.get(key)
         return t.dropdown([(ANY, tr('pokemon.random_67bc48', 'Random')), ("yes", tr('pokemon.yes_85a39a', 'Yes')),
                            ("no", tr('pokemon.no_1ea442', 'No'))],
                           ANY if current is None else "yes" if current else "no", on_select=picked)
@@ -664,6 +836,7 @@ class OfferOptions:
     def _clear(self, e) -> None:
         self.chosen.clear()
         self.picker.show_sprite()
+        self.picker.load_variants()
         species, self.loaded_for = self.loaded_for, None
         if species:
             self._load()

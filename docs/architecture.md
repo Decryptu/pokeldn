@@ -90,8 +90,9 @@ legal level. Hydrapple in Scarlet/Violet is legal only at scattered levels.
 ### Offer options
 
 A build can ask for a form, nature, ability, gender, held item, ball, friendship, up to four moves, IVs
-and effort values, and in Legends Arceus and Legends Z-A whether it is an Alpha. Moves, form and Alpha
-narrow the encounter search; nature, ability, gender and IVs go into
+and effort values, an encounter, in Legends Arceus and Legends Z-A whether it is an Alpha, Alcremie's
+sweet, in Sword/Shield the Gigantamax factor and Dynamax level, and in Scarlet/Violet the Tera Type.
+Moves, form, encounter and Alpha narrow the encounter search; nature, ability, gender and IVs go into
 the encounter criteria. When the encounter rolls something else, the record is changed as a player
 would:
 
@@ -102,7 +103,10 @@ would:
 | an IV asked to be 31 | hyper training, at level 100 (Generations 7, 8) or 50 (Generation 9) |
 | form | set on species whose form the player changes, such as Rotom |
 
-Held item, ball, friendship and effort values are set after the build. A Generation 3 or 4 EV above 100
+Held item, ball, friendship, effort values, sweet, Gigantamax factor, Dynamax level and Tera Type are
+set after the build, as Max Soup, Dynamax Candy and a Tera Shard would. A sweet is Alcremie's form
+argument, 0 Strawberry to 6 Ribbon; a Tera Type is the override byte, Stellar 99
+(`TeraTypeUtil.SetTeraType`). A Generation 3 or 4 EV above 100
 needs experience gained since meeting, so the record gets one experience point. A Legends Arceus
 effort level is taken as shown in game, and the IV bias (1 from IV 20, 2 from 26, 3 at 31) is
 subtracted before storing.
@@ -119,6 +123,22 @@ trade page says what a trade rewrites. FireRed/LeafGreen set 70 on every receive
 | ability | a legal build carrying it exists; Legends Z-A lists none |
 | held item | a released held item for the game; Let's Go and Legends Arceus have none |
 | effort | EVs 252 each, 510 in all; AVs in Let's Go, 200 each; effort levels in Legends Arceus, 10 each |
+| sweet | Alcremie, in a game whose record keeps a form argument |
+| Gigantamax | `Gigantamax.CanToggle` for the species and form |
+| Dynamax level | Sword/Shield, except Zacian, Zamazenta and Eternatus |
+| Tera Type | Scarlet/Violet, a species whose Tera Type changes (`TeraTypeUtil.CanChangeTeraType`); the 18 types and Stellar |
+
+Max IVs sets all six to 31, Max friendship 255. Max EVs fills each stat to its cap; under a total of
+510 the species' two highest base stats get 252 and the third the remaining 6.
+
+### Choosing the encounter
+
+`encounters` lists every encounter a build of the species and form can come from, in the
+[encounter order](#encounter-order), grouped: one kind of encounter at one location in one version,
+every slot and level of it together, or one Mystery Gift card (`EncounterKey`). Each group carries
+its location name (`ILocation.GetEncounterLocation`, a card's title for a gift), its level range,
+the species it was met as when that is a pre-evolution, and whether it can be shiny. A build given a
+group's key tries that group alone; a build's reply names its `encounter_place`.
 
 The first encounter in the [encounter order](#encounter-order) carrying every request legally is kept;
 otherwise the refusal names the first request none can carry.
@@ -132,7 +152,8 @@ language PKHeX exports and in PKHeX's spelling. No `Level:` line means 100; an I
 | the set names | result |
 |---|---|
 | an unreadable line, or a species, form, ability, item or move the game lacks, EVs over 510 | refused; nothing is filled |
-| Tera Type, Gigantamax, Dynamax level, Hidden Power type; EVs in Let's Go or Legends Arceus; an ability in Legends Z-A | left out, with a note |
+| Tera Type in Scarlet/Violet; Gigantamax and a Dynamax level other than 10 in Sword/Shield | set ([offer options](#offer-options)) |
+| Tera Type, Gigantamax or Dynamax level in any other game, Hidden Power type; EVs in Let's Go or Legends Arceus; an ability in Legends Z-A | left out, with a note |
 | no `IVs:` or `Friendship:` line | the encounter's own values |
 | several sets in a trade queue | one trade each from the pasted picker, up to the queue's limit; any refusal refuses the paste |
 | several sets outside a queue | the first fills the form |

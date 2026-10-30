@@ -67,6 +67,7 @@ static partial class Program
                     "species" => Species(game),
                     "names" => Names(game, (string)request["list"]!),
                     "options" => Options(game, request),
+                    "encounters" => EncounterList(game, request),
                     "gender_ratio" => GenderRatio(game, request),
                     "make" => Make(game, request),
                     "paste" => Paste(game, request),
@@ -288,9 +289,23 @@ static partial class Program
             for (byte f = 0; f < game.Table[species].FormCount; f++)
                 if (game.Table.IsPresentInGame(species, f))
                     forms.Add(new JsonObject { ["id"] = f, ["name"] = f < formNames.Length && formNames[f].Length > 0 ? formNames[f] : $"Form {f}" });
+            var teras = new JsonArray();
+            if (blank is ITeraType && TeraTypeUtil.CanChangeTeraType(species))
+            {
+                for (var y = 0; y <= TeraTypeUtil.MaxType; y++)
+                    teras.Add(new JsonObject { ["id"] = y, ["name"] = strings.types[y] });
+                teras.Add(new JsonObject { ["id"] = TeraTypeUtil.Stellar, ["name"] = strings.types[TeraTypeUtil.StellarTypeDisplayStringIndex] });
+            }
             return new JsonObject
             {
                 ["forms"] = forms,
+                // Alcremie's sweets; the names are the app's.
+                ["sweets"] = species == (ushort)PKHeX.Core.Species.Alcremie && blank is IFormArgument ? Wish.Sweets : 0,
+                ["gigantamax"] = blank is IGigantamax && Gigantamax.CanToggle(species, form),
+                // Zacian, Zamazenta and Eternatus never Dynamax [DynamaxLevelExtensions].
+                ["dynamax"] = blank is IDynamaxLevel d && d.CanHaveDynamaxLevel(blank),
+                ["tera"] = teras,
+                ["base"] = new JsonArray(detail.HP, detail.ATK, detail.DEF, detail.SPA, detail.SPD, detail.SPE),
                 ["natures"] = natures,
                 ["abilities"] = abilities,
                 ["gendered"] = !detail.Genderless && !detail.OnlyFemale && !detail.OnlyMale,
@@ -302,6 +317,70 @@ static partial class Program
         }
 
         static bool IsAlpha(IEncounterable encounter) => encounter is IAlphaReadOnly { IsAlpha: true };
+
+        // A choice of encounter is a group: one kind of encounter at one place in one version, every slot and level
+        // of it, or one Mystery Gift card.
+        static string EncounterKey(IEncounterable e) => e switch
+        {
+            MysteryGift gift => $"gift|{gift.Generation}|{gift.CardID}|{gift.Species}|{gift.Form}",
+            _ => $"{e.GetType().Name}|{e.Version}|{e.Species}|{e.Form}|{e.Location}|{e.LongName}",
+        };
+
+        string EncounterPlace(IEncounterable e)
+        {
+            if (e is MysteryGift gift)
+                return gift.CardTitle is { Length: > 0 } title ? title : $"#{gift.CardID:0000}";
+            return e is ILocation place ? place.GetEncounterLocation(e.Generation, e.Version) ?? "" : "";
+        }
+
+        // The encounters a build of the species and form can come from, grouped (EncounterKey), in the build's order.
+        JsonObject EncounterList(Game game, JsonObject request)
+        {
+            var species = checked((ushort)(int)request["species"]!);
+            var first = FirstForm(game, species) ?? throw new ArgumentException("This species is absent from the selected game.");
+            var form = checked((byte)((int?)request["form"] ?? first));
+            if (!game.Table.IsPresentInGame(species, form))
+                form = first;
+            var (versions, trainer) = Trainer(game, request);
+            var blank = game.Blank();
+            blank.Species = species;
+            blank.Form = form;
+            var groups = new Dictionary<string, (IEncounterable Encounter, int Low, int High, bool Shiny)>();
+            var order = new List<string>();
+            foreach (var encounter in Encounters(blank, trainer, ReadOnlyMemory<ushort>.Empty, versions))
+            {
+                if (encounter is not IEncounterConvertible)
+                    continue;
+                var key = EncounterKey(encounter);
+                var shiny = encounter.Shiny != Shiny.Never;
+                if (groups.TryGetValue(key, out var seen))
+                    groups[key] = (seen.Encounter, Math.Min(seen.Low, encounter.LevelMin), Math.Max(seen.High, encounter.LevelMax), seen.Shiny || shiny);
+                else
+                {
+                    groups[key] = (encounter, encounter.LevelMin, encounter.LevelMax, shiny);
+                    order.Add(key);
+                }
+            }
+            var list = new JsonArray();
+            foreach (var key in order)
+            {
+                var (encounter, low, high, shiny) = groups[key];
+                list.Add(new JsonObject
+                {
+                    ["key"] = key,
+                    ["kind"] = encounter.LongName,
+                    ["place"] = EncounterPlace(encounter),
+                    ["version"] = encounter.Version.ToString(),
+                    ["species"] = encounter.Species == species ? "" : strings.specieslist[encounter.Species],
+                    ["egg"] = encounter.IsEgg,
+                    ["gift"] = encounter is MysteryGift,
+                    ["level_min"] = low,
+                    ["level_max"] = high,
+                    ["shiny"] = shiny,
+                });
+            }
+            return new JsonObject { ["encounters"] = list };
+        }
 
         (GameVersion[], SimpleTrainerInfo) Trainer(Game game, JsonObject request)
         {
@@ -377,8 +456,9 @@ static partial class Program
             var lowest = int.MaxValue;
             var shinyLocked = false;
             // An Alpha is one from its encounter: the flag, size, moves and IVs come with it [EncounterSlot8a, EncounterSlot9a].
+            // A chosen encounter keeps only its group (EncounterList).
             var encounters = Encounters(blank, trainer, wish.Moves, versions,
-                wish.Alpha is { } alpha ? e => IsAlpha(e) == alpha : null);
+                e => (wish.Alpha is not { } alpha || IsAlpha(e) == alpha) && (wish.Encounter is null || EncounterKey(e) == wish.Encounter));
             // The first encounter that stays legal with the requested level, shininess and nickname wins.
             // The first pass takes encounters as they come; the second lets an evolved Pokemon climb to its evolution level.
             foreach (var climb in new[] { false, true })
@@ -495,6 +575,8 @@ static partial class Program
                     ? $"{name} cannot be lower than level {lowest} in this game."
                     : shinyLocked
                         ? $"{name} cannot be shiny in this game."
+                    : encounters.Count == 0 && wish.Encounter is not null
+                        ? $"This encounter cannot give {name} with these moves."
                     : encounters.Count == 0 && wish.Alpha is { } asked
                         ? asked ? $"{name} cannot be an Alpha in this game." : $"{name} is always an Alpha in this game."
                         : wish.Moves.Length > 1
@@ -1115,9 +1197,27 @@ static partial class Program
                         options["effort"] = new JsonObject(stats.Select((s, i) => KeyValuePair.Create(s, (JsonNode?)Math.Min(set.EVs[i], EffortValues.Max252))));
                 }
                 if (set.TeraType != MoveType.Any)
-                    notes.Add("The Tera Type is not set; the Pokemon keeps its own.");
-                if (set.CanGigantamax || set.DynamaxLevel != 10)
-                    notes.Add("Gigantamax and Dynamax level are not set.");
+                {
+                    if (blank is ITeraType && TeraTypeUtil.CanChangeTeraType(species))
+                        options["tera"] = (int)set.TeraType;
+                    else
+                        notes.Add("The Tera Type is not set; the Pokemon keeps its own.");
+                }
+                if (set.CanGigantamax)
+                {
+                    if (blank is IGigantamax && Gigantamax.CanToggle(species, form))
+                        options["gigantamax"] = true;
+                    else
+                        notes.Add("This Pokemon cannot Gigantamax in this game.");
+                }
+                // Showdown leaves out a Dynamax level of 10, its default.
+                if (set.DynamaxLevel != 10)
+                {
+                    if (blank is IDynamaxLevel)
+                        options["dynamax_level"] = (int)set.DynamaxLevel;
+                    else
+                        notes.Add("The Dynamax level is not set.");
+                }
                 if (set.HiddenPowerType >= 0 && blank.Format < 8)
                     notes.Add("Hidden Power follows the IVs; its type is not set.");
                 // Showdown leaves out a friendship of 255, its default; a set asks for one only by naming it, so an
@@ -1674,6 +1774,7 @@ static partial class Program
                 ["encryption_constant"] = pk.EncryptionConstant,
                 ["tracker"] = (pk is IHomeTrack home ? home.Tracker : 0).ToString(),
                 ["encounter"] = la.EncounterOriginal.LongName,
+                ["encounter_place"] = la.EncounterOriginal is IEncounterable met ? EncounterPlace(met) : "",
                 ["parsed"] = la.Parsed,
                 ["home_tracker"] = TrackerState(pk, la),
                 ["legal"] = accepted,
@@ -1758,10 +1859,13 @@ static partial class Program
 
 // The offer options a request asks for; a stat array is HP, Atk, Def, SpA, SpD, Spe and -1 leaves a stat alone.
 record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effort, int? Item, byte? Ball,
-            byte? Form, byte? Friendship, ushort[] Moves, bool? Alpha)
+            byte? Form, byte? Friendship, ushort[] Moves, bool? Alpha, string? Encounter, byte? Sweet,
+            bool? Gigantamax, byte? DynamaxLevel, byte? Tera)
 {
     static readonly string[] Stats = ["hp", "atk", "def", "spa", "spd", "spe"];
     static readonly string[] StatNames = ["HP", "Attack", "Defense", "Sp. Atk", "Sp. Def", "Speed"];
+    // Alcremie's sweet is its form argument, Strawberry to Ribbon [FormArgumentVerifier].
+    public const int Sweets = 7;
 
     public static Wish From(JsonObject? o)
     {
@@ -1779,6 +1883,12 @@ record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effor
             throw new ArgumentException("Unknown nature.");
         if (Number("friendship") is < 0 or > 255)
             throw new ArgumentException("Friendship is at most 255.");
+        if (Number("sweet") is < 0 or > Sweets - 1)
+            throw new ArgumentException("Unknown sweet.");
+        if (Number("dynamax_level") is < 0 or > 10)
+            throw new ArgumentException("The Dynamax level is 0 to 10.");
+        if (Number("tera") is { } tera && !TeraTypeUtil.IsOverrideValid((byte)tera))
+            throw new ArgumentException("Unknown Tera Type.");
         ushort[] moves = o?["moves"] is JsonArray list
             ? [.. list.Select(m => checked((ushort)(int)m!)).Where(m => m != 0).Distinct()] : [];
         if (moves.Length > 4)
@@ -1786,7 +1896,9 @@ record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effor
         return new Wish(Number("nature") is { } n ? (Nature)n : null, Number("ability"),
             Number("gender") is { } g ? (Gender)g : null, ivs, effort,
             Number("held_item"), Number("ball") is { } b ? checked((byte)b) : null,
-            Number("form") is { } f ? checked((byte)f) : null, (byte?)Number("friendship"), moves, (bool?)o?["alpha"]);
+            Number("form") is { } f ? checked((byte)f) : null, (byte?)Number("friendship"), moves, (bool?)o?["alpha"],
+            (string?)o?["encounter"] is { Length: > 0 } encounter ? encounter : null, (byte?)Number("sweet"),
+            (bool?)o?["gigantamax"], (byte?)Number("dynamax_level"), (byte?)Number("tera"));
     }
 
     public ushort[] Moveset() => [.. Moves, .. new ushort[4 - Moves.Length]];
@@ -1837,6 +1949,15 @@ record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effor
         // as the species' base friendship (docs/architecture.md, Offer options).
         if (Friendship is { } friendship)
             pk.OriginalTrainerFriendship = friendship;
+        if (Sweet is { } sweet && pk is IFormArgument argument && pk.Species == (ushort)PKHeX.Core.Species.Alcremie)
+            argument.FormArgument = sweet;
+        // Max Soup and Dynamax Candy, Sword/Shield's; a Tera Shard, Scarlet/Violet's.
+        if (Gigantamax is { } gmax && pk is IGigantamax g)
+            g.CanGigantamax = gmax;
+        if (DynamaxLevel is { } dynamax && pk is IDynamaxLevel d)
+            d.DynamaxLevel = dynamax;
+        if (Tera is { } tera && pk is ITeraType t)
+            TeraTypeUtil.SetTeraType(t, (MoveType)tera);
         ApplyEffort(pk);
         // Gen 3 and 4 raise an EV past 100 (the vitamin cap) only in battle, so the record must have gained
         // experience since it was met; one point stays below the next level.
@@ -1890,6 +2011,14 @@ record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effor
             return "this form";
         if (Friendship is { } friendship && pk.OriginalTrainerFriendship != friendship)
             return $"friendship {friendship}";
+        if (Sweet is { } sweet && pk is IFormArgument argument && argument.FormArgument != sweet)
+            return "this sweet";
+        if (Gigantamax is { } gmax && pk is IGigantamax g && g.CanGigantamax != gmax)
+            return gmax ? "the Gigantamax factor" : "no Gigantamax factor";
+        if (DynamaxLevel is { } dynamax && pk is IDynamaxLevel d && d.DynamaxLevel != dynamax)
+            return $"Dynamax level {dynamax}";
+        if (Tera is { } tera && pk is ITeraType tt && TeraTypeUtil.GetTeraType(tt) != (MoveType)tera)
+            return "this Tera Type";
         if (Alpha is { } alpha && pk is IAlphaReadOnly a && a.IsAlpha != alpha)
             return alpha ? "an Alpha" : "a Pokemon that is not an Alpha";
         foreach (var move in Moves)

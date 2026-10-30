@@ -170,6 +170,16 @@ class Service:
                                                  "form": form, "trainer": trainer, "version": version})
         return self.species_cache[key]
 
+    def encounters(self, game: str, species: int, trainer: dict, version: str = "", form: int = 0) -> list[dict]:
+        """The encounters a build can come from, one per group: key (make's options["encounter"]), kind, place,
+        version, species when a pre-evolution's, egg, gift, level_min, level_max, shiny (it can be)."""
+        key = f"{game}:encounters:{species}:{form}:{version}"
+        if key not in self.species_cache:
+            self.species_cache[key] = self._ask({"cmd": "encounters", "game": game, "species": species,
+                                                 "form": form, "trainer": trainer,
+                                                 "version": version})["encounters"]
+        return self.species_cache[key]
+
     def gender_ratio(self, game: str, species: int, form: int = 0) -> int:
         """The species' personal gender byte: 0 male only, 254 female only, 255 genderless."""
         return self._ask({"cmd": "gender_ratio", "game": game, "species": species, "form": form})["ratio"]
@@ -177,7 +187,9 @@ class Service:
     def make(self, game: str, species: int, trainer: dict, level: int = 0, shiny: bool = False,
              nickname: str = "", version: str = "", options: dict | None = None) -> dict:
         """options: form, nature, ability, gender, held_item, ball (ids), friendship (0-255), moves (up to four
-        ids), alpha (Legends Arceus and Z-A; true or false), and ivs / effort as {hp, atk, def, spa, spd, spe}."""
+        ids), alpha (Legends Arceus and Z-A; true or false), ivs / effort as {hp, atk, def, spa, spd, spe},
+        encounter (an encounters() key), sweet (Alcremie, 0-6), gigantamax and dynamax_level (Sword/Shield),
+        tera (Scarlet/Violet, a type id or 99 for Stellar)."""
         reply = self._ask({"cmd": "make", "game": game, "species": species, "level": level, "shiny": shiny,
                            "nickname": nickname, "trainer": trainer, "version": version,
                            "options": options or {}})

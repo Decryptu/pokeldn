@@ -42,6 +42,20 @@ def test_every_linked_tool_presents_the_apps_trainer(tool):
     assert "ASH" in args or any(a.startswith("ASH:") for a in args)
 
 
+@pytest.mark.parametrize("tool", LINKED, ids=[t.key for t in LINKED])
+def test_a_trainer_per_game_reaches_only_its_own_games_tools(tool):
+    """Settings, A trainer per game (docs/gui.md): a tool presents its game's trainer, never another game's."""
+    game, other = tool.key.split("-")[0], "frlg" if tool.key.startswith("sv") else "sv"
+    settings = Settings(ot="ASH", per_game_trainer=True,
+                        game_trainers={game: {"ot": "MISTY", "language": 5}, other: {"ot": "BROCK"}})
+    args = build(tool, {f.key: {"file": "/tmp/offer.bin"} for f in tool.fields if f.kind == "pokemon"},
+                 {}, settings)
+    parsed = parser_of(tool.script).parse_args(args)
+    assert "MISTY" in args or any(a.startswith("MISTY:") for a in args)
+    assert not any("ASH" in a or "BROCK" in a for a in args)
+    assert getattr(parsed, "language", 5) in (5, "german")
+
+
 def test_sword_host_uses_the_apps_trainer_and_a_built_offer():
     tool = next(t for game in GAMES for t in game.tools if t.key == "swsh-host")
     settings = Settings(ot="POKELDN", tid=41234, sid=12345)

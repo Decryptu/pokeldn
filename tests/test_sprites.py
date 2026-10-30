@@ -206,6 +206,16 @@ def test_game_forms_resolve_to_their_own_sprite(species, form, key):
     assert sprite_key(species, form) == key
 
 
+@pytest.mark.parametrize("form,sweet,key", [
+    (7, 4, "869-caramel-swirl-clover-sweet"), (0, 6, "869-vanilla-cream-ribbon-sweet"),
+    (8, 2, "869-rainbow-swirl-love-sweet"), (7, None, "869-caramel-swirl-strawberry-sweet"),
+])
+def test_an_alcremie_sweet_shows_its_own_sprite(form, sweet, key):
+    """PokeAPI keeps one sprite per cream and sweet, each answered 200 from its sprites repository."""
+    from pokeldn.app.sprite_forms import sprite_key
+    assert sprite_key(869, form, sweet=sweet) == key
+
+
 def test_every_gigantamax_den_boss_has_its_own_gigantamax_sprite():
     """The den tables' Gigantamax bosses (pokeldn/swsh/data), each drawn in its own shape, and an
     Alcremie of any cream in the one shape."""

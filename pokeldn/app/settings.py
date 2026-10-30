@@ -49,6 +49,10 @@ class Settings:
     # 0 male, 1 female. Legends Z-A checks it before taking a Pokemon back as its trainer's, and Legends
     # Arceus's data exchange record carries it.
     gender: int = 0
+    # With per_game_trainer, game -> the fields of the trainer above it replaces for that game: ot, gender, language,
+    # and tid and sid as that game shows them (docs/gui.md, A trainer per game).
+    per_game_trainer: bool = False
+    game_trainers: dict = field(default_factory=dict)
     # "gba" or "switch" -> the newest console trainer a run reported (pokeldn.console_trainer), for Find mine.
     found_trainers: dict = field(default_factory=dict)
     board_names: dict = field(default_factory=dict)   # MAC -> name the user gave the board
@@ -65,53 +69,88 @@ class Settings:
         tmp.write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
         os.replace(tmp, PATH)
 
+    def own(self, game: str) -> dict:
+        """`game`'s trainer as the player sees it: ot, gender, language, and tid and sid as the game shows them."""
+        shown = {"ot": self.ot, "gender": self.gender, "language": self.language,
+                 "tid": self.tid if game in GEN3 else self.switch_tid,
+                 "sid": self.sid if game in GEN3 else self.switch_sid}
+        if self.per_game_trainer:
+            own = self.game_trainers.get(game)
+            for key, value in (own.items() if isinstance(own, dict) else ()):
+                if key in shown and type(value) is type(shown[key]):
+                    shown[key] = value
+        return shown
+
+    def names(self) -> list[str]:
+        """Every trainer name a run can present, the shared one and each game's own: the private-log masks."""
+        own = [g.get("ot") for g in self.game_trainers.values() if isinstance(g, dict)] if self.per_game_trainer else []
+        return list(dict.fromkeys(n for n in [self.ot, *own] if isinstance(n, str) and n))
+
+    def set_own(self, game: str, key: str, value) -> None:
+        """Sets one field of `game`'s own trainer; the others start as the shared trainer's."""
+        self.game_trainers[game] = {**self.own(game), key: value}
+        self.save()
+
     def ids(self, game: str) -> tuple[int, int]:
         """The 16-bit TID and SID a record of `game` stores."""
+        shown = self.own(game)
         if game in GEN3:
-            return self.tid, self.sid
-        whole = self.switch_sid * SWITCH_TID_LIMIT + self.switch_tid
+            return shown["tid"], shown["sid"]
+        whole = shown["sid"] * SWITCH_TID_LIMIT + shown["tid"]
         return whole & 0xFFFF, whole >> 16
 
     def name(self, game: str) -> str:
         """The trainer name `game` can hold: Japanese FRLG takes five Gen III characters."""
+        shown = self.own(game)
         if game not in GEN3:
-            return self.ot
+            return shown["ot"]
         from pokeldn.frlg.text import charmap
-        limit = 5 if int(self.language) == 1 else 7
-        for name in (self.ot, self.ot[:limit]):
-            encoded = charmap.encode(name, language=int(self.language))
-            if name and charmap.decode(encoded, language=int(self.language)) == name and len(encoded) <= limit:
+        language = int(shown["language"])
+        limit = 5 if language == 1 else 7
+        for name in (shown["ot"], shown["ot"][:limit]):
+            encoded = charmap.encode(name, language=language)
+            if name and charmap.decode(encoded, language=language) == name and len(encoded) <= limit:
                 return name
         return Settings.ot[:limit]
 
     def found(self, message: dict) -> None:
-        """Keeps a run's `[trainer]` message as the newest of its row."""
+        """Keeps a run's `[trainer]` message as the newest of its row ("gba" or "switch") and of its game."""
         row = "gba" if message["game"] in GEN3 else "switch"
-        self.found_trainers[row] = {**message, "when": time.time()}
+        self.found_trainers[row] = self.found_trainers[message["game"]] = {**message, "when": time.time()}
         self.save()
 
     def take_found(self, row: str) -> dict | None:
-        """Takes `row`'s ("gba" or "switch") newest found trainer as this trainer: its IDs, and its name, gender
-        and language where known. -> what it took, None when no run reported one."""
+        """Takes the newest found trainer of `row` ("gba", "switch", or a game for a trainer per game) as this
+        trainer: its IDs, and its name, gender and language where known. -> what it took, None when no run
+        reported one."""
         found = self.found_trainers.get(row)
+        if not found and row not in ("gba", "switch"):     # a run before trainers were kept per game
+            found = next((f for f in self.found_trainers.values() if isinstance(f, dict) and f.get("game") == row), None)
         if not found:
             return None
-        ids = console_trainer.shown(found["game"], found["tid"], found["sid"])
-        if row == "gba":
-            self.tid, self.sid = ids
-        else:
-            self.switch_tid, self.switch_sid = ids
-        self.ot = str(found["ot"])[:12] or self.ot
+        tid, sid = console_trainer.shown(found["game"], found["tid"], found["sid"])
+        taken = {"tid": tid, "sid": sid, "ot": str(found["ot"])[:12] or self.ot}
         if found.get("gender") in (0, 1):
-            self.gender = found["gender"]
+            taken["gender"] = found["gender"]
         if found.get("language") in TRAINER_LANGUAGES:
-            self.language = found["language"]
+            taken["language"] = found["language"]
+        if row not in ("gba", "switch"):
+            self.game_trainers[row] = {**self.own(row), **taken}
+        else:
+            if row == "gba":
+                self.tid, self.sid = taken.pop("tid"), taken.pop("sid")
+            else:
+                self.switch_tid, self.switch_sid = taken.pop("tid"), taken.pop("sid")
+            for key, value in taken.items():
+                setattr(self, key, value)
         self.save()
         return found
 
     def trainer(self, game: str) -> dict:
         tid, sid = self.ids(game)
-        return {"ot": self.name(game), "tid": tid, "sid": sid, "language": self.language, "gender": self.gender}
+        shown = self.own(game)
+        return {"ot": self.name(game), "tid": tid, "sid": sid, "language": shown["language"],
+                "gender": shown["gender"]}
 
 
 def switch_ids_valid(tid: int, sid: int) -> bool:

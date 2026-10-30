@@ -2,6 +2,10 @@
 PKHeX.Core/PKM/Util/Conversion/FormConverter.cs defines the indices; docs/gui.md, Pokemon sprites.
 """
 
+ALCREMIE_CREAMS = ("vanilla-cream", "ruby-cream", "matcha-cream", "mint-cream", "lemon-cream", "salted-cream",
+                   "ruby-swirl", "caramel-swirl", "rainbow-swirl")
+ALCREMIE_SWEETS = ("strawberry", "berry", "love", "star", "clover", "flower", "ribbon")   # its form argument
+
 # PokeAPI's ids for the Gigantamax shapes, by (species, form).
 GIGANTAMAX_SPRITES = {
     (3, 0): 10195,       # Venusaur
@@ -96,14 +100,14 @@ FORM_SPRITES = {
     **{(s, n): f"{s}-{name}" for s in (585, 586)
        for n, name in enumerate(("summer", "autumn", "winter"), start=1)},
     # The gift builder leaves Alcremie's decoration at its default Strawberry Sweet.
-    **{(869, n): f"869-{name}-strawberry-sweet" for n, name in enumerate((
-        "ruby-cream", "matcha-cream", "mint-cream", "lemon-cream", "salted-cream",
-        "ruby-swirl", "caramel-swirl", "rainbow-swirl"), start=1)},
+    **{(869, n): f"869-{name}-strawberry-sweet" for n, name in enumerate(ALCREMIE_CREAMS[1:], start=1)},
 }
 
 
-def sprite_key(species: int, form: int = 0, gigantamax: bool = False) -> int | str | None:
+def sprite_key(species: int, form: int = 0, gigantamax: bool = False, sweet: int | None = None) -> int | str | None:
     # Every cream of Alcremie Gigantamaxes into the one shape.
     if gigantamax and (key := GIGANTAMAX_SPRITES.get((species, 0 if species == 869 else form))):
         return key
+    if species == 869 and sweet is not None and 0 <= sweet < len(ALCREMIE_SWEETS) and form < len(ALCREMIE_CREAMS):
+        return f"869-{ALCREMIE_CREAMS[form]}-{ALCREMIE_SWEETS[sweet]}-sweet"
     return FORM_SPRITES.get((species, form), None if form else species)

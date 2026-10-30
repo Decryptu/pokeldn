@@ -7,7 +7,7 @@ from pokeldn.app.redact import Redactor
 
 @pytest.mark.parametrize("line,shown", [
     # Legends Z-A host, the console's offer: the player's name as handler, the program's as trainer.
-    ("[za-host] the console offers {'species': 133, 'nickname': 'Eevee', 'ht_name': 'Gurvan', 'ot_name': 'PKLDN', 'level': 20}",
+    ("[za-host] the console offers {'species': 133, 'nickname': 'Eevee', 'ht_name': 'Brendan', 'ot_name': 'PKLDN', 'level': 20}",
      "[za-host] the console offers {'species': 133, 'nickname': '***', 'ht_name': '***', 'ot_name': 'PKLDN', 'level': 20}"),
     ("[    0.0s] Host identity: OT='POKELDN', TID=0x8822, SID=0x47ed",
      "[    0.0s] Host identity: OT='POKELDN', TID=***, SID=***"),
@@ -19,7 +19,7 @@ from pokeldn.app.redact import Redactor
      "PermissionError: [Errno 1] Operation not permitted: '<app>'"),
     ("[   78.8s] Received: PIKACHU (#25)", "[   78.8s] Received: PIKACHU (#25)"),
     # Legends Z-A joiner, the seat's participants as Python prints them.
-    ("[za]   participant 0: ip=169.254.45.1 mac=48f1eb209b22 name=b'Gurvan'",
+    ("[za]   participant 0: ip=169.254.45.1 mac=48f1eb209b22 name=b'Brendan'",
      "[za]   participant 0: ip=169.254.45.1 mac=48f1eb****** name=b'***'"),
     ("[za]   participant 1: ip=169.254.45.2 mac=021132547698 name=b'pokeldn'",
      "[za]   participant 1: ip=169.254.45.2 mac=021132****** name=b'pokeldn'"),
@@ -33,12 +33,22 @@ def test_a_line_shows_what_a_report_needs_and_masks_the_player(line, shown):
 
 def test_a_name_seen_once_is_masked_in_later_lines_as_a_whole_word():
     redact = Redactor(["Sacha"])
-    redact("{'ot_name': 'Gurvan'}")
-    assert redact("Trade with Gurvan complete; Sacha left; Crash Gurvanesque") == \
-        "Trade with *** complete; *** left; Crash Gurvanesque"
+    redact("{'ot_name': 'Brendan'}")
+    assert redact("Trade with Brendan complete; Sacha left; Crash Brendanesque") == \
+        "Trade with *** complete; *** left; Crash Brendanesque"
 
 
 def test_a_nickname_is_masked_where_it_stands_and_nowhere_else():
     redact = Redactor()
     redact("{'nickname': 'Eevee'}")
     assert redact("Received: Eevee (#133)") == "Received: Eevee (#133)"
+
+
+def test_every_games_own_trainer_name_is_masked():
+    """A trainer per game (docs/gui.md): a run presents its game's name, which the log masks too."""
+    from pokeldn.app.settings import Settings
+    settings = Settings(ot="Ash", per_game_trainer=True, game_trainers={"sv": {"ot": "Misty"}, "za": {"tid": 5}})
+    line = Redactor(settings.names())("[sv] offered to Misty, then Ash")
+    assert "Misty" not in line and "Ash" not in line
+    settings.per_game_trainer = False
+    assert settings.names() == ["Ash"]

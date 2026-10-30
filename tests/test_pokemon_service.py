@@ -299,6 +299,65 @@ def test_offer_options_land_in_the_record_the_launcher_sends(service, game):
     assert f["evs"] == (252, 0, 0, 4, 0, 0)
 
 
+def test_a_chosen_encounter_is_the_one_the_record_was_met_at(service):
+    """Settings' builder lists encounter groups (services/pkhex EncounterList); one chosen is where the build comes
+    from, not the first legal one."""
+    listed = service.encounters("sv", 25, TRAINER)
+    first = service.make("sv", 25, TRAINER)
+    chosen = [n for n in listed if not (n["species"] or n["egg"] or n["gift"])][-1]
+    location = int(chosen["key"].split("|")[4])
+    built = service.make("sv", 25, TRAINER, options={"encounter": chosen["key"]})
+    f = gen9.read(gen9.load(Path(pokemon.prepare_file("sv", built["file"])).read_bytes()))
+    assert built["legal"] and f["met_location"] == location != gen9.read(gen9.load(
+        Path(pokemon.prepare_file("sv", first["file"])).read_bytes()))["met_location"]
+    assert chosen["level_min"] <= f["met_level"] <= chosen["level_max"] and built["encounter_place"] == chosen["place"]
+    with pytest.raises(pokemon.BuilderError, match="lower than level"):
+        service.make("sv", 25, TRAINER, level=chosen["level_min"] - 1, options={"encounter": chosen["key"]})
+
+
+def test_variants_and_the_sv_tera_type_land_in_the_record(service):
+    """Alcremie's sweet is its form argument; a Tera Shard's type is the override byte, Stellar 99 [TeraTypeUtil]."""
+    listed = service.options("sv", 869, TRAINER, form=7)
+    assert listed["sweets"] == 7 and listed["tera"][-1] == {"id": 99, "name": "Stellar"} and not listed["gigantamax"]
+    built = service.make("sv", 869, TRAINER, options={"form": 7, "sweet": 4, "tera": 99})
+    f = gen9.read(gen9.load(Path(pokemon.prepare_file("sv", built["file"])).read_bytes()))
+    assert built["legal"] and (f["form"], f["form_argument"], f["tera_type_override"]) == (7, 4, 99)
+    with pytest.raises(pokemon.BuilderError, match="sweet"):
+        service.make("sv", 869, TRAINER, options={"sweet": 7})
+
+
+@pytest.mark.parametrize("game, species, evs", [
+    ("swsh", 869, (0, 0, 6, 0, 252, 252)),     # Alcremie: SpD 121, SpA 110, Def 75; record order HP Atk Def Spe SpA SpD
+    ("swsh", 448, (0, 252, 0, 6, 252, 0)),     # Lucario: SpA 115, Atk 110, Spe 90
+])
+def test_the_max_buttons_build_a_legal_record_with_their_values(service, monkeypatch, game, species, evs):
+    """More options' Max IVs, Max EVs and Max friendship (gui/views/pokemon.py), as the record carries them."""
+    import flet as ft
+    from types import SimpleNamespace
+    from gui.views.pokemon import OfferOptions
+    monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
+    picker = SimpleNamespace(value={"species": species}, game=game, version="", show_sprite=lambda: None,
+                             load_variants=lambda: None)
+    options = OfferOptions(picker)
+    options.found = {**service.options(game, species, TRAINER), "encounters": [], "move_names": []}
+    for group in ("ivs", "effort", "friendship"):
+        options._max(group)
+    built = service.make(game, species, TRAINER, options=options.chosen)
+    f = gen8.read(gen8.load(Path(pokemon.prepare_file(game, built["file"])).read_bytes()))
+    assert built["legal"] and f["evs"] == evs and f["ot_friendship"] == 255
+    assert all(iv == 31 or trained for iv, trained in zip(f["ivs"], f["hyper_trained"]))
+
+
+def test_sword_gigantamax_and_dynamax_level_land_in_the_record(service):
+    """PK8 keeps the Gigantamax factor at 0x16 bit 4 and the Dynamax level at 0x90 [PKHeX G8PKM]."""
+    listed = service.options("swsh", 6, TRAINER)
+    assert listed["gigantamax"] and listed["dynamax"] and not listed["tera"]
+    assert not service.options("swsh", 888, TRAINER)["dynamax"]      # Zacian never Dynamaxes
+    built = service.make("swsh", 6, TRAINER, options={"gigantamax": True, "dynamax_level": 10})
+    plain = gen8.load(Path(pokemon.prepare_file("swsh", built["file"])).read_bytes())
+    assert built["legal"] and plain[0x16] & 0x10 and plain[0x90] == 10
+
+
 @pytest.mark.parametrize("game, species, handled", [
     ("swsh", 447, 0),      # Riolu, evolved at friendship 160 on level-up
     ("sv", 447, 0),
@@ -639,6 +698,7 @@ def test_a_paste_reads_stats_in_the_order_its_text_names_them(service):
     """PKHeX's parser holds Speed fourth; the text says 252 Spe and 4 SpD."""
     found, = service.paste("sv", GARCHOMP, TRAINER)
     assert found["options"]["effort"] == {"hp": 0, "atk": 252, "def": 0, "spe": 252, "spa": 0, "spd": 4}
+    assert found["options"]["tera"] == 8     # Tera Type: Steel, PKHeX's type 8
     rotom, = service.paste("swsh", ROTOM, TRAINER)
     assert rotom["options"]["ivs"]["atk"] == 0 and rotom["options"]["ivs"]["spe"] == 31
 
@@ -655,7 +715,7 @@ def test_a_set_the_game_cannot_take_is_refused_with_the_reason(service, game, te
 
 
 @pytest.mark.parametrize("game, text, note", [
-    ("sv", GARCHOMP, "Tera Type"),
+    ("swsh", GARCHOMP, "Tera Type"),
     ("lgpe", "Pikachu\nEVs: 252 Spe\n- Thunderbolt", "no EVs"),
 ])
 def test_a_value_the_builder_does_not_set_is_reported(service, game, text, note):

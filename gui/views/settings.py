@@ -10,8 +10,8 @@ from gui.app import keys_problem
 from pokeldn import __version__, console_trainer, pokemon, plugins
 from pokeldn.app.paths import SESSION
 from pokeldn.app.sprites import CACHE
-from pokeldn.app.settings import switch_ids_valid
-from pokeldn.app import storage
+from pokeldn.app.settings import GEN3, switch_ids_valid
+from pokeldn.app import preview, storage
 from gui.views.widgets import PathField, open_folder
 from pokeldn.app.i18n import t as tr
 
@@ -24,6 +24,16 @@ LANGUAGES = (("2", tr("settings.language_english", "English")),
              ("8", tr("settings.language_korean", "Korean")),
              ("9", tr("settings.language_simplified_chinese", "Simplified Chinese")),
              ("10", tr("settings.language_traditional_chinese", "Traditional Chinese")))
+
+# The games a trainer per game names, in the app's order; Ruby, Sapphire and Emerald only where they show.
+TRAINER_GAMES = (("frlg", tr("settings.game_frlg", "FireRed and LeafGreen")),
+                 ("rse", tr("settings.game_rse", "Ruby, Sapphire and Emerald")),
+                 ("lgpe", tr("settings.game_lgpe", "Let's Go Pikachu and Eevee")),
+                 ("swsh", tr("settings.game_swsh", "Sword and Shield")),
+                 ("bdsp", tr("settings.game_bdsp", "Brilliant Diamond and Shining Pearl")),
+                 ("pla", tr("settings.game_pla", "Legends Arceus")),
+                 ("sv", tr("settings.game_sv", "Scarlet and Violet")),
+                 ("za", tr("settings.game_za", "Legends Z-A")))
 
 LINKS = ((tr('settings.documentation_c20592', 'Documentation'), "https://decryptu.github.io/pokeldn/"),
          (tr('settings.github_f911e4', 'GitHub'), "https://github.com/Decryptu/pokeldn"),
@@ -47,6 +57,7 @@ class SettingsView:
         app.update_listeners.append(self._update_shown)
         self._update_text()
         self.show_advanced = False
+        self.trainer_game = "frlg"     # the game a trainer per game edits
         self.column = ft.Column(spacing=t.GAP)
         self.scroll = t.readable(self.column, 760)
         self.control = self.scroll
@@ -72,46 +83,7 @@ class SettingsView:
         speed = t.dropdown([("921600", tr('settings.921600_default_1702d5', '921600 (default)')), ("1500000", tr('settings.1500000_faster_needs_a_good_cable_f5b9b7', '1500000 (faster, needs a good cable)'))],
                            str(s.baud), on_select=lambda e: self.save("baud", int(e.control.value)))
 
-        def number(name, label, valid, size):
-            def store(e):
-                try:
-                    value = int(e.control.value)
-                except ValueError:
-                    return
-                if valid(value):
-                    self.save(name, value)
-            return ft.Column([t.text(label, 11, t.MUTED),
-                              t.field(value=str(getattr(s, name)), mono=True, digits=True, limit=size,
-                                      on_change=store)],
-                             spacing=4, expand=True, alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-
-        gba = lambda v: 0 <= v <= 65535   # noqa: E731
-        trainer = ft.Column([
-            ft.Row([
-                ft.Column([t.text(tr('settings.name_dcd1d5', 'Name'), 11, t.MUTED),
-                           t.field(value=s.ot, limit=12, on_change=lambda e: self.save("ot", e.control.value[:12]))],
-                          spacing=4, expand=True, alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                ft.Column([t.text(tr('settings.gender_a04630', 'Gender'), 11, t.MUTED),
-                           t.dropdown([("0", tr('settings.male_03f8c1', 'Male')), ("1", tr('settings.female_e8cca8', 'Female'))], str(s.gender),
-                                      on_select=lambda e: self.save("gender", int(e.control.value)))],
-                          spacing=4, expand=True, alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                ft.Column([t.text(tr('settings.language_a4fe65', 'Language'), 11, t.MUTED),
-                           t.dropdown(list(LANGUAGES), str(s.language),
-                                      on_select=lambda e: self.save("language", int(e.control.value)))],
-                          spacing=4, expand=True, alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            ], spacing=10, intrinsic_height=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH),
-            ft.Row([
-                number("tid", tr('settings.id_firered_and_leafgreen_d6b2c2', 'ID, FireRed and LeafGreen'), gba, 5),
-                number("sid", tr('settings.secret_id_795924', 'Secret ID'), gba, 5),
-                self._find_button("gba"),
-            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.END),
-            ft.Row([
-                number("switch_tid", tr('settings.id_switch_games_296c3a', 'ID, Switch games'), lambda v: switch_ids_valid(v, s.switch_sid), 6),
-                number("switch_sid", tr('settings.secret_id_795924', 'Secret ID'), lambda v: switch_ids_valid(s.switch_tid, v), 4),
-                self._find_button("switch"),
-            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.END),
-            self.trainer_state,
-        ], spacing=10)
+        trainer = self._trainer()
 
         def switch(name, label, help_):
             return t.card(label, None, help_,
@@ -148,7 +120,7 @@ class SettingsView:
             t.card(tr('settings.switch_keys_f1b42d', 'Switch keys'), ft.Column([keys.control, self.keys_state], spacing=8),
                    tr('settings.prod_keys_dumped_from_your_own_console_needed_to_talk_t_26673c', 'prod.keys dumped from your own console. Needed to talk to the games; it never leaves this computer.')),
             t.card(tr('settings.your_trainer_d70afb', 'Your trainer'), trainer,
-                   tr('settings.your_trainer_detail', 'The original trainer of every Pokemon the app builds for you. Put your own name, gender and IDs to make them yours, so a traded Pokemon keeps its friendship: FireRed and LeafGreen show a five-digit ID, the Switch games a six-digit one. The IDs were drawn at random on first launch; Find mine takes the ones of the last game you traded with.')),
+                   tr('settings.your_trainer_detail', 'The original trainer of every Pokemon the app builds for you. Put your own name, gender and IDs to make them yours, so a traded Pokemon keeps its friendship: FireRed and LeafGreen show a five-digit ID, the Switch games a six-digit one. The IDs were drawn at random on first launch; Find mine takes the ones of the last game you traded with. Play several games with different saves? Give each game its own trainer; a game you leave unchanged keeps the shared one.')),
             switch("retry_trades", tr('settings.retry_trades', 'Retry failed trades'),
                    tr('settings.retry_trades_detail', 'When a trade run fails because the console never joined, the board dropped or the join failed, start it again after 15 seconds with the Pokemon not yet traded, up to 3 times in a row.')),
             switch("larger_text", tr('settings.larger_text', 'Larger text'),
@@ -185,6 +157,80 @@ class SettingsView:
                    tr('settings.pokeldn_is_agplv3_pokemon_are_checked_with_pkhex_core_g_689838', 'pokeldn is AGPLv3. Pokemon are checked with PKHeX.Core (GPLv3).')),
         ]
 
+    def _trainer(self) -> ft.Control:
+        """Name, gender, language and IDs, shared by every game or, with a trainer per game, the chosen game's."""
+        s = self.app.settings
+        game = self.trainer_game if s.per_game_trainer else None
+        shown = s.own(game) if game else {"ot": s.ot, "gender": s.gender, "language": s.language}
+
+        def store(key, value):
+            if game:
+                s.set_own(game, key, value)
+            else:
+                self.save(key, value)
+
+        def column(label, control):
+            return ft.Column([t.text(label, 11, t.MUTED), control], spacing=4, expand=True,
+                             alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+
+        def number(key, label, valid, size, value):
+            def changed(e):
+                good = e.control.value.isdigit() and valid(int(e.control.value))
+                if good:
+                    store(key, int(e.control.value))
+                t.mark_invalid(e.control, not good)
+                e.control.update()
+            return column(label, t.field(value=str(value), mono=True, digits=True, limit=size, on_change=changed))
+
+        def ids(row, tid_key, sid_key, label, tid, sid):
+            if row == "gba":
+                gba = lambda v: 0 <= v <= 65535   # noqa: E731
+                boxes = [number(tid_key, label, gba, 5, tid), number(sid_key, tr('settings.secret_id_795924', 'Secret ID'), gba, 5, sid)]
+            else:
+                current = lambda key: (s.own(game) if game else {"tid": s.switch_tid, "sid": s.switch_sid})[key]   # noqa: E731
+                boxes = [number(tid_key, label, lambda v: switch_ids_valid(v, current("sid")), 6, tid),
+                         number(sid_key, tr('settings.secret_id_795924', 'Secret ID'), lambda v: switch_ids_valid(current("tid"), v), 4, sid)]
+            return ft.Row([*boxes, self._find_button(game or row)], spacing=10, vertical_alignment=ft.CrossAxisAlignment.END)
+
+        rows = []
+        games = [(key, name) for key, name in TRAINER_GAMES if key != "rse" or preview.enabled()]
+        per_game = ft.Row([t.text(tr('settings.trainer_per_game', 'A different trainer for each game'), 13, expand=True),
+                           t.switch(s.per_game_trainer, self._per_game)],
+                          vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        rows.append(per_game)
+        if game:
+            rows.append(column(tr('settings.trainer_game', 'Game'), t.dropdown(games, game, on_select=self._trainer_game)))
+        rows.append(ft.Row([
+            column(tr('settings.name_dcd1d5', 'Name'), t.field(value=shown["ot"], limit=12,
+                                                              on_change=lambda e: store("ot", e.control.value[:12]))),
+            column(tr('settings.gender_a04630', 'Gender'), t.dropdown(
+                [("0", tr('settings.male_03f8c1', 'Male')), ("1", tr('settings.female_e8cca8', 'Female'))], str(shown["gender"]),
+                on_select=lambda e: store("gender", int(e.control.value)))),
+            column(tr('settings.language_a4fe65', 'Language'), t.dropdown(
+                list(LANGUAGES), str(shown["language"]), on_select=lambda e: store("language", int(e.control.value)))),
+        ], spacing=10, intrinsic_height=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH))
+        if game:
+            rows.append(ids("gba" if game in GEN3 else "switch", "tid", "sid", tr('settings.id_c5d6a4', 'ID'),
+                            s.own(game)["tid"], s.own(game)["sid"]))
+        else:
+            rows.append(ids("gba", "tid", "sid", tr('settings.id_firered_and_leafgreen_d6b2c2', 'ID, FireRed and LeafGreen'), s.tid, s.sid))
+            rows.append(ids("switch", "switch_tid", "switch_sid", tr('settings.id_switch_games_296c3a', 'ID, Switch games'),
+                            s.switch_tid, s.switch_sid))
+        rows.append(self.trainer_state)
+        return ft.Column(rows, spacing=10)
+
+    def _per_game(self, e) -> None:
+        self.save("per_game_trainer", bool(e.control.value))
+        self.trainer_state.visible = False
+        self.render()
+        self.column.update()
+
+    def _trainer_game(self, e) -> None:
+        self.trainer_game = e.control.value
+        self.trainer_state.visible = False
+        self.render()
+        self.column.update()
+
     def _find_button(self, row: str) -> ft.Control:
         return t.button(tr('settings.find_mine', 'Find mine'), lambda e: self._find_trainer(row), "search", filled=False)
 
@@ -193,7 +239,7 @@ class SettingsView:
         found = self.app.settings.take_found(row)
         if found is None:
             text = (tr('settings.find_mine_none_gba', 'No FireRed or LeafGreen trainer read yet. Trade with your game, or open Mystery Gift with it, then press Find mine again.')
-                    if row == "gba" else
+                    if row in ("gba", *GEN3) else
                     tr('settings.find_mine_none_switch', 'No Switch trainer read yet. Do one trade with your game, offering a Pokemon you caught yourself, then press Find mine again.'))
             color = t.MUTED
         else:

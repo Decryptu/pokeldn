@@ -390,10 +390,12 @@ def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch, form):
     picker.species.options = [object()]
     picker.control = SimpleNamespace(update=lambda: None)
     shown = []
-    picker.sprite.show = lambda species, shiny, update=True, form=0: shown.append((species, shiny, form))
+    picker.sprite.show = lambda species, shiny, update=True, form=0, sweet=None: shown.append((species, shiny, form))
+    picker.load_variants = lambda: None
     asyncio.run(picker._use_file(None))
     assert shown == [(6, True, form)]
-    assert picker.options.label.value == "1 set"
+    # The form shows beside the species, not among the options folded under it.
+    assert picker.options.chosen["form"] == form and picker.options.label.value == "Random"
     assert (saved[-1]["species"], saved[-1]["shiny"], picker.species.value, picker.shiny.value) == (6, True, "6", True)
 
 
@@ -779,7 +781,7 @@ def test_settings_keep_a_six_digit_switch_id_beside_the_five_digit_one(tmp_path,
             fields.setdefault(column.controls[0].value, []).append(column.controls[1])
 
     def type_into(label, text, at=0):
-        fields[label][at].on_change(SimpleNamespace(control=SimpleNamespace(value=text)))
+        fields[label][at].on_change(SimpleNamespace(control=SimpleNamespace(value=text, update=lambda: None)))
 
     type_into("ID, Switch games", "967295")
     type_into("Secret ID", "4294", at=1)
@@ -789,6 +791,48 @@ def test_settings_keep_a_six_digit_switch_id_beside_the_five_digit_one(tmp_path,
     saved = settings_module.load()
     assert (saved.tid, saved.sid, saved.switch_tid, saved.switch_sid) == (1, 2, 967295, 4294)
     assert saved.ids("frlg") == (1, 2) and saved.ids("za") == (0xFFFF, 0xFFFF)
+
+
+def test_a_trainer_per_game_edits_only_the_chosen_games_trainer(tmp_path, monkeypatch):
+    """Settings, A trainer per game (docs/gui.md): each game's IDs as that game shows them."""
+    import flet as ft
+    from gui.views.settings import SettingsView
+    from pokeldn.app import settings as settings_module
+
+    monkeypatch.setattr(settings_module, "PATH", tmp_path / "settings.json")
+    monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
+    app = SimpleNamespace(settings=settings_module.Settings(ot="Ash", tid=1, sid=2, switch_tid=3, switch_sid=4,
+                                                            per_game_trainer=True),
+                          update=None, update_state="", update_listeners=[], picker=None, page=None,
+                          ui=lambda fn: fn())
+    view = SettingsView(app)
+
+    def fields():
+        found = {}
+        stack = [view.column]
+        while stack:
+            control = stack.pop(0)
+            if isinstance(control, ft.Column) and len(control.controls) == 2 \
+                    and isinstance(control.controls[1], (ft.TextField, ft.Dropdown)):
+                found[control.controls[0].value] = control.controls[1]
+            stack += [c for c in (getattr(control, "controls", None) or [getattr(control, "content", None)])
+                      if isinstance(c, ft.Control)]
+        return found
+
+    def type_into(label, text):
+        fields()[label].on_change(SimpleNamespace(control=SimpleNamespace(value=text, update=lambda: None)))
+
+    fields()["Game"].on_select(SimpleNamespace(control=SimpleNamespace(value="sv")))
+    type_into("ID", "123456")
+    type_into("Secret ID", "4295")          # past 32 bits with that ID: refused
+    type_into("Name", "Misty")
+    fields()["Game"].on_select(SimpleNamespace(control=SimpleNamespace(value="frlg")))
+    assert fields()["ID"].value == "1" and fields()["Name"].value == "Ash"
+    type_into("ID", "65536")                # a FireRed ID is five digits, at most 65535
+    saved = settings_module.load()
+    assert saved.own("sv") == {"ot": "Misty", "gender": 0, "language": 2, "tid": 123456, "sid": 4}
+    assert (saved.ot, saved.switch_tid, saved.tid) == ("Ash", 3, 1) and "frlg" not in saved.game_trainers
+    assert saved.ids("sv") == ((4 * 10**6 + 123456) & 0xFFFF, (4 * 10**6 + 123456) >> 16)
 
 
 def test_the_boost_settings_leave_with_the_last_unticked_boost(monkeypatch):
@@ -918,8 +962,8 @@ def test_trade_preview_keeps_the_selected_form_when_shiny_changes_and_resets_on_
     shown = []
     picker.sprite = SimpleNamespace(show=lambda species, shiny, **kw: shown.append((species, shiny, kw["form"])))
     picker.options = OfferOptions(picker)
-    choice = picker.options._choice("form", [{"id": 0, "name": "Normal"}, {"id": 9, "name": "World"}])
-    choice.on_select(SimpleNamespace(control=SimpleNamespace(value="9")))
+    picker.load_variants = lambda: None
+    picker._form(SimpleNamespace(control=SimpleNamespace(value="9")))
     picker._shiny(SimpleNamespace(control=SimpleNamespace(value=True)))
     picker.options._clear(None)
     assert shown == [(25, False, 9), (25, True, 9), (25, True, 0)]

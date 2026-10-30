@@ -68,7 +68,7 @@ class BoardView:
         self.list = ft.ListView(spacing=4, padding=8, expand=True)
         self.detail = ft.Column(spacing=t.GAP)
         self.log = Log(app.page, tr('boards.checks_and_installs_show_their_output_here_effc3a', 'Checks and installs show their output here.'),
-                       private=lambda: [app.settings.ot] if app.settings.private_logs else None)
+                       private=lambda: app.settings.names() if app.settings.private_logs else None)
         self.progress = ft.ProgressBar(value=None, color=t.BLUE, bgcolor=t.FIELD, height=4, border_radius=2)
         self.progress_text = t.text("", 12, t.MUTED)
         self.panes = t.Panes(
