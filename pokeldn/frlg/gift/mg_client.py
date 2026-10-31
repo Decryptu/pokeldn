@@ -182,6 +182,11 @@ class MysteryGiftClientEngine:
         self.done = False
         self.error = None
         self.rebooted = False            # a payload ran swi 0x00
+        # A payload called over N frames keeps the client off its script for N - 1 more; a host block
+        # that completes while an earlier one waits unconsumed is lost, as the console ignores
+        # SEND_BLOCK_INIT unless its slot is RECV_STATE_READY [decomp:src/link_rfu_2.c:1146].
+        self._busy = 0
+        self.dropped_blocks = 0
         self.messages = []
         self.trace = []
         self.host_ops = {}
@@ -286,6 +291,11 @@ class MysteryGiftClientEngine:
                 self.info(f"Console identified as {lp.name!r} (version 0x{lp.version:04x}, "
                           f"language {lp.language}); LinkPlayer exchange complete.")
                 return
+        if self.state == C_GIFT and self._host_blocks:
+            self.dropped_blocks += 1
+            self.trace.append((self._tick, "host_block_dropped", count))
+            self.info("[mg] a host block arrived while the last one was unread: dropped, as the console does")
+            return
         if self.state in (C_LINK, C_GIFT):
             self._host_blocks.append(bytes(data))
             self.trace.append((self._tick, "host_block", count, len(self._host_blocks)))
@@ -498,10 +508,12 @@ class MysteryGiftClientEngine:
             return
         self.param = run.param
         self.sav2 = run.sav2        # what a later payload in the session finds there
-        if repeated.calls > 1:
-            self.info(f"[mg] buffer script ran over {repeated.calls} calls "
+        frames = repeated.frames or repeated.calls
+        self._busy = max(0, frames - 1)
+        if frames > 1:
+            self.info(f"[mg] buffer script ran over {frames} calls "
                       f"({repeated.instructions} instructions): on the console that is "
-                      f"{repeated.calls} frames, about {repeated.calls / 60:.1f} s")
+                      f"{frames} frames, about {frames / 60:.1f} s")
         if run.client.send_changed:
             # What goes out is read from sendBuffer/sendSize at send time, CRC included
             # [decomp:src/mystery_gift_link.c:166].
@@ -526,13 +538,13 @@ class MysteryGiftClientEngine:
         else:
             self.machine.load(code, param=self.param or 0, send_size=armed_size, send_ident=armed_ident)
         instructions = 0
-        for _ in range(buffer_script.MAX_SCAN_CALLS):
+        for frames in range(1, buffer_script.MAX_SCAN_CALLS + 1):
             run = self.machine.call()
             instructions += run.instructions
             if run.done:
                 self.flash = bytes(self.machine.flash)
                 return buffer_script.RepeatedRun(calls=self.machine.calls, final=run,
-                                                 instructions=instructions)
+                                                 instructions=instructions, frames=frames)
         raise buffer_script.BufferScriptError("the payload never returned 1")
 
     def _copy_recv_script(self):
@@ -577,7 +589,9 @@ class MysteryGiftClientEngine:
                 self.info("Mystery Gift client started; waiting for the console's client script.")
         if self.barrier.active and self.barrier.mode == barriermod.STANDBY:
             return self.barrier.want_emit() or [0] * 7
-        if self.state == C_GIFT:
+        if self.state == C_GIFT and self._busy:
+            self._busy -= 1
+        elif self.state == C_GIFT:
             if self.func == F_RUN:
                 self._run_one()
             elif self.func == F_RECV:

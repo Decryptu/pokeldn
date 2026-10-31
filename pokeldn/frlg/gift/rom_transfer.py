@@ -30,9 +30,9 @@ SURVEY_PER_RUN = 32                    # 128 KB hashed per frame; 32 words answe
 DECODER_BLOCK = 0xFFF                  # asm/rom-lzma.c runs from here; the boot's fill clears it
 LZ_DATA_HEADER = 10
 LZ_PIECE = MG_LINK_BUFFER_SIZE - LZ_DATA_HEADER
-# The decoding a data message may cause: 10 frames. The console drops a message's second link block
-# when it arrives, about 20 frames after the last message, before the decoding ends.
-LZ_MESSAGE_FRAMES = 10
+# The console drops a link block that arrives while it still runs the last message: after a data
+# message the host stays quiet for the frames its decoding takes, and this many more.
+LZ_QUIET_MARGIN = 6
 # asm/rom-lzma.c decodes a symbol only with LOOKAHEAD (20) bytes past its read position, which runs
 # 5 bytes ahead of the encoder's output count.
 LOOKAHEAD = 25
@@ -162,48 +162,29 @@ def lz_cost(marks, at, end):
     return (upto[-1] if upto else 0) - (before[-1] if before else 0)
 
 
-def lz_cuts(length, marks):
-    """-> where each data message of a chunk ends: at most LZ_PIECE bytes, and at most about
-    LZ_MESSAGE_FRAMES * rom_lzma.BUDGET of decoding, as the encoder's marks give it."""
-    cuts, at, k = [], 0, 0
-    while at < length:
-        end = min(length, at + LZ_PIECE)
-        while k < len(marks) and marks[k][0] <= at:
-            k += 1
-        base = marks[k - 1][1] if k else 0
-        j = k
-        while j < len(marks) and marks[j][0] < end:
-            if marks[j][1] - base > LZ_MESSAGE_FRAMES * rom_lzma.BUDGET:
-                end = max(at + 1, marks[j][0] - 1)       # before the byte that brings the mark in
-                break
-            j += 1
-        cuts.append(end)
-        at = end
-    return cuts
-
-
 def lz_plan(length, marks):
-    """-> [(start, end, heavy)] for a chunk's data messages. A symbol decodes once LOOKAHEAD more
-    bytes are in, so its work falls on the message holding those; a heavy message decodes for longer
-    than the next one may wait, and its batch ends after it."""
+    """-> [(start, end, frames)] for a chunk's data messages: frames is how long the console decodes
+    after it. A symbol decodes once LOOKAHEAD more bytes are in, so its work falls on the message
+    holding those."""
     marks = [(byte + LOOKAHEAD, cost) for byte, cost in marks]
-    limit, plan, at = LZ_MESSAGE_FRAMES * rom_lzma.BUDGET, [], 0
-    for end in lz_cuts(length, marks):
-        plan.append((at, end, lz_cost(marks, at, 1 << 30 if end >= length else end) > limit))
-        at = end
+    plan = []
+    for at in range(0, length, LZ_PIECE):
+        end = min(length, at + LZ_PIECE)
+        cost = lz_cost(marks, at, 1 << 30 if end >= length else end)
+        plan.append((at, end, -(-cost // rom_lzma.BUDGET)))
     return plan
 
 
 def lz_messages(chunks, start, staging, live):
-    """[(emitted, blocks, data, marks)] -> [(message, blocks it completes, heavy)]."""
+    """[(emitted, blocks, data, marks)] -> [(message, blocks it completes, quiet frames after it)]."""
     out, seq = [], 0
     for emitted, count, data, marks in chunks:
         out.append((lz_start_message(start, count, staging, rom_lzma.BASE, emitted, live), 0))
-        for at, end, heavy in lz_plan(len(data), marks):
+        for at, end, frames in lz_plan(len(data), marks):
             piece, last = data[at:end], end >= len(data)
             out.append((save_transfer._branch_word().to_bytes(4, "little") + bytes((7, last))
                         + (seq & 0xFFFF).to_bytes(2, "little") + len(piece).to_bytes(2, "little") + piece,
-                        count if last else 0, heavy))
+                        count if last else 0, frames + LZ_QUIET_MARGIN))
             seq += 1
     return out
 
@@ -259,22 +240,18 @@ def boot_message(targets, staged, fill, fill_count):
 
 
 def batches(items):
-    """[(message, blocks it completes)] -> batches of at most MAX_BATCH_MESSAGES; a block's messages
-    stay in one batch when it fits."""
+    """[(message, blocks it completes[, quiet frames])] -> batches of at most MAX_BATCH_MESSAGES; a
+    block's messages stay in one batch when it fits."""
     out, batch, group = [], [], []
     for item in items:
-        group.append(item[:2])
-        heavy = len(item) > 2 and item[2]
-        if not item[1] and not heavy and len(group) < save_transfer.MAX_BATCH_MESSAGES:
+        group.append(item)
+        if not item[1] and len(group) < save_transfer.MAX_BATCH_MESSAGES:
             continue
         if batch and len(batch) + len(group) > save_transfer.MAX_BATCH_MESSAGES:
             out.append(batch)
             batch = []
         batch += group
         group = []
-        if heavy:
-            out.append(batch)
-            batch = []
     if batch and len(batch) + len(group) > save_transfer.MAX_BATCH_MESSAGES:
         out.append(batch)
         batch = []
@@ -342,8 +319,8 @@ class RomTransferServer(save_transfer._Server):
         block that failed."""
         for batch in batches(items):
             yield self.send(MG_LINKID_CLIENT_SCRIPT, save_transfer.batch_script(len(batch)))
-            for message, blocks in batch:
-                yield self.send(MG_LINKID_NEWS, message)
+            for message, blocks, *quiet in batch:
+                yield self.send(MG_LINKID_NEWS, message, after=quiet[0] if quiet else 0)
                 if blocks:
                     self.written += blocks
                     self.progress(self.written, total)

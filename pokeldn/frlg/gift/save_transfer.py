@@ -170,8 +170,8 @@ class _Server:
         self.action = None
 
     @staticmethod
-    def send(ident, payload, size=None):
-        return ("send", ident, bytes(payload), len(payload) if size is None else size)
+    def send(ident, payload, size=None, after=0):
+        return ("send", ident, bytes(payload), len(payload) if size is None else size, after)
 
     def _game_data(self):
         """Ask for the console's game data; -> its Build, or None after ending the exchange."""

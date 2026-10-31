@@ -3073,6 +3073,7 @@ class RepeatedRun:
     calls: int
     final: BufferScriptRun
     instructions: int  # summed over the calls
+    frames: int = 0    # calls this run took; 0: as calls
 
     @property
     def done(self):

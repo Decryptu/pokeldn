@@ -177,7 +177,7 @@ def test_with_the_cartridge_rom_the_stream_is_lzma_and_the_console_boots_the_sam
     base[0xAC:0xB0] = b"BPRF"                       # the console the scripted session plays
     server = rom_transfer.RomTransferServer(NEW, live=LIVE, base=bytes(base), encoder_process=False)
     real = server.send
-    server.send = lambda ident, payload, size=None: sent.append(bytes(payload)) or real(ident, payload, size)
+    server.send = lambda ident, payload, size=None, after=0: sent.append(bytes(payload)) or real(ident, payload, size, after)
     client = run(server, OLD)
     assert server.outcome == "booted" and client.rebooted
     assert rom_of(client) == NEW_COPY.ljust(len(rom_of(client)), b"\xff")
@@ -194,3 +194,25 @@ def test_the_host_counts_the_decoders_work_with_the_decoders_own_numbers():
     source = (pathlib.Path(__file__).parent.parent / "asm" / "rom-lzma.c").read_text()
     assert int(re.search(r"#define BUDGET (\d+)", source)[1]) == rom_lzma.BUDGET
     assert int(re.search(r"#define SYMBOL_COST (\d+)", source)[1]) == rom_lzma.SYMBOL_COST
+
+
+def test_after_a_long_decode_the_host_waits_so_the_console_drops_no_block():
+    """Zero blocks are a few stream bytes and many frames of decoding; at the emulated runs' pacing
+    (gap 8, each fragment once) the next message would land while the console still decodes."""
+    from pokeldn.frlg.gift import host_mystery_gift, mg_client
+    from pokeldn.frlg.link import linkplayer
+    blocks = rom_transfer.blocks_of(NEW)
+    new = b"".join(blocks[:20]) + bytes(48 * 4096) + b"".join(blocks[20:])
+    base = bytearray(image(1, 300, 1))
+    base[0xAC:0xB0] = b"BPRF"
+    server = rom_transfer.RomTransferServer(new, live=LIVE, base=bytes(base), encoder_process=False)
+    host = host_mystery_gift.HostMysteryGiftEngine(
+        server=server, link_player=linkplayer.LinkPlayer(name="EMU", version=linkplayer.VERSION_FIRE_RED),
+        timing=host_mystery_gift.MysteryGiftTiming(client_ready_idle_frames=10, inter_block_gap_frames=8,
+                                                   block_repeat=1))
+    client = mg_client.MysteryGiftClientEngine(
+        linkplayer.LinkPlayer(name="POKELDN", version=linkplayer.VERSION_FIRE_RED),
+        version="firered", game_code=b"BPRF", flash=b"\xff" * 0x20000)
+    client.rom_stubs = {buffer_script.ROM_BASE: OLD.ljust(rom_transfer.BLOCKS * rom_transfer.BLOCK, b"\xff")}
+    drive(host, client, ticks=3_000_000, stop=lambda: client.rebooted)
+    assert client.dropped_blocks == 0 and server.outcome == "booted"

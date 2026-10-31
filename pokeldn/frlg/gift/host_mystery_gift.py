@@ -132,6 +132,7 @@ class HostMysteryGiftEngine:
         self._receiver = mg_link.MysteryGiftLinkReceiver()
         self._recv_blocks = deque()
         self._message_label = None
+        self._after = 0
 
         self._link_player_block = linkplayer.build_block(
             self.lp, name_pad=HOST_NAME_PAD).ljust(200, b"\x00")
@@ -227,7 +228,10 @@ class HostMysteryGiftEngine:
                 self._finish_gift(action[1])
                 return
 
-    def _queue_message(self, ident, payload, size):
+    def _queue_message(self, ident, payload, size, after=0):
+        """`after`: frames to stay quiet once the message's last block is out, for a payload the
+        console runs for longer than the usual gap."""
+        self._after = after
         blocks = mg_link.build_message(ident, payload, size)
         self._message_label = f"ident{ident}"
         for index, data in enumerate(blocks):
@@ -448,6 +452,8 @@ class HostMysteryGiftEngine:
                             self._pending_standby_count)
                 self._sender = None
                 self._gap = self.timing.inter_block_gap_frames
+                if not self._blocks:
+                    self._gap = max(self._gap, self._after)
                 if not self._blocks and self.state == MG_GIFT:
                     self.server.on_sent()
                     self._pump_server()
