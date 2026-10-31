@@ -160,7 +160,11 @@ intro to the recoloured title screen.
 The whole Emerald build for BPRE has streamed and booted on emulated English FireRed: 3073 blocks in
 place and 157 live blocks staged at `0xE3D`, 3,691,122 bytes of LZMA in 4268 messages (`--block-repeat
 1 --inter-block-gap-frames 8`, messages cut at 10 frames of decoding), the check pass whole, the boot
-op sent at 3 h 12 min, then Emerald's intro and its title screen in the FireRed application.
+op sent at 3 h 12 min, then Emerald's intro and its title screen in the FireRed application. Past
+the title Emerald printed "The internal battery has run dry. The game can be played." and "However,
+clock-based events will no longer occur.", then a main menu offering CONTINUE on FireRed's save file
+(player name and play time read back, 0 badges). Emerald loaded at launch through LayeredFS showed
+no battery message; which of the application's launch steps sets up the clock is unknown.
 
 The ROM copy carries the application's three librfu patches ([The breakpoint
 hooks](frlg_rom.md#the-breakpoint-hooks)), which the cartridge file lacks. The image is written with
@@ -264,10 +268,10 @@ the boot into the new game.
 
 ## Unresolved
 
-- Whether the application emulates the GPIO real-time clock Emerald reads. Emerald's main menu showed
-  no dead-battery message on an emulated console.
+- Whether the application emulates the GPIO real-time clock Emerald reads: loaded at launch, Emerald's
+  main menu showed no dead-battery message; streamed in, it did.
 - Whether a retail console runs the build: the emulated-console measurements are the only ones.
-- Emerald booted this way past its title screen: the main menu reads FireRed's save file.
+- The real-time clock after a streamed boot, and what Emerald does continuing FireRed's save file.
 - The stream over the board on a retail console, and its pacing there.
 - The live blocks of the error path: a session cut short returns to the menu through code outside
   the measured set.
