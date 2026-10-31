@@ -38,6 +38,10 @@ class BufferScriptError(ValueError):
     refusal rather than a traceback."""
 
 
+class ConsoleRebooted(BufferScriptError):
+    """The payload ran swi 0x00: the console left the session for the ROM's reset vector."""
+
+
 def payload(name):
     """The committed machine code for asm/<name>.s."""
     try:
@@ -98,6 +102,8 @@ FLASH_BASE, FLASH_SIZE = 0x0E000000, 0x00020000
 FLASH_SECTOR_SIZE = 0x1000
 # 0x48 writes a sector; 0x56 writes and then voids the destination's signature at +0xFF8.
 SWI_WRITE_SECTOR = 0x48
+SWI_SOFT_RESET = 0x00
+CARTRIDGE_SIZE = 0x01000000
 SWI_REPLACE_SECTOR = 0x56
 SECTOR_SIGNATURE_OFFSET_IN_SECTOR = 0xFF8
 
@@ -2819,6 +2825,8 @@ class _Machine:
         uc.mmio_map(FLASH_WINDOW_BASE, FLASH_WINDOW_SIZE, self._on_flash_load, None,
                     self._on_flash_store, None)
         self.flash_writes = []          # (number, sector, source, accepted, why)
+        self.rom_writes = []            # (ROM copy block n, source): swi 0x48 through the ROM fold
+        self.soft_resets = 0            # swi 0x00: the console reboots into 0x08000000
         self.flash_reads = []           # (sector, offset, dest, length)
         self.bkpts = []                 # the immediate of each bkpt executed
         uc.hook_add(unicorn.UC_HOOK_INTR, self._on_swi)
@@ -2943,10 +2951,21 @@ class _Machine:
             number = int.from_bytes(uc.mem_read(pc - 2, 2), "little") & 0xFF
         else:
             number = int.from_bytes(uc.mem_read(pc - 4, 4), "little") & 0xFFFFFF
+        if number == SWI_SOFT_RESET:
+            self.soft_resets += 1
+            uc.emu_stop()
+            return
         if number not in (SWI_WRITE_SECTOR, SWI_REPLACE_SECTOR):
             return
         sector = uc.reg_read(arm.UC_ARM_REG_R0)
         source = uc.reg_read(arm.UC_ARM_REG_R1)
+        destination = (FLASH_BASE + ((sector & 0xFFFFF) << 12)) & 0xFFFFFFFF
+        if number == SWI_WRITE_SECTOR and destination >> 24 in (0x08, 0x09):
+            # The ROM fold: one object over 0x08 and 0x09, masked to the 16 MB cartridge.
+            block = (destination & (CARTRIDGE_SIZE - 1)) >> 12
+            uc.mem_write(ROM_BASE + block * FLASH_SECTOR_SIZE, bytes(uc.mem_read(source, FLASH_SECTOR_SIZE)))
+            self.rom_writes.append((block, source))
+            return
         offset = (sector * FLASH_SECTOR_SIZE) & 0xFFFFFFFF
         why = None
         if offset >= FLASH_SIZE or FLASH_SIZE - offset < FLASH_SECTOR_SIZE:
@@ -2992,6 +3011,8 @@ class _Machine:
         finally:
             uc.hook_del(handle)
         pc = uc.reg_read(arm_const.UC_ARM_REG_PC)
+        if self.soft_resets:
+            raise ConsoleRebooted("the payload soft-reset the console into 0x08000000")
         if pc != _RETURN_ADDRESS:
             raise BufferScriptError(
                 f"the payload never returned: stopped at pc=0x{pc:08X} after {executed[0]} "

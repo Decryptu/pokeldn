@@ -181,6 +181,7 @@ class MysteryGiftClientEngine:
         self.close_confirmed = False
         self.done = False
         self.error = None
+        self.rebooted = False            # a payload ran swi 0x00
         self.messages = []
         self.trace = []
         self.host_ops = {}
@@ -486,6 +487,10 @@ class MysteryGiftClientEngine:
                     send_size=armed_size, send_ident=armed_ident,
                     memory=self.rom_stubs or None)
             run = repeated.final
+        except buffer_script.ConsoleRebooted:
+            self.rebooted = True
+            self.info("[mg] the buffer script soft-reset the console; it left the session")
+            return
         except buffer_script.BufferScriptError as exc:
             # On the console this hangs the Mystery Gift menu with no way back.
             self.error = f"buffer script would not run on the console: {exc}"
@@ -547,6 +552,8 @@ class MysteryGiftClientEngine:
 
     def tick(self):
         self._tick += 1
+        if self.rebooted:
+            return [0] * 7
         if self.sender is not None:
             host_rx = self.rx.peers[0]
             peer_sending = bool(host_rx.receiving and not host_rx.done)
