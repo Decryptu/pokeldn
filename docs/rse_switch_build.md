@@ -152,6 +152,11 @@ because the ROM copy is reloaded from RomFS at each application launch.
 The hash pass makes a cut session resumable within one application launch: the next session writes
 only the blocks still different.
 
+Measured on emulated English FireRed over the IP host: an image of FireRed with its three title
+screen palettes recoloured (blocks `0xEAB`, `0xEAD`, `0xEAE`) wrote those 3 blocks in place, staged
+151 live blocks at `0xEB1`, passed the check, and after the boot op the console restarted through the
+intro to the recoloured title screen.
+
 The ROM copy carries the application's three librfu patches ([The breakpoint
 hooks](frlg_rom.md#the-breakpoint-hooks)), which the cartridge file lacks. The image is written with
 the same patches applied at the cartridge's `librfu_sio32id.o` (`builds.SIO32ID`, offsets `+0x12E`,
@@ -227,8 +232,8 @@ the boot into the new game.
 - Whether the application emulates the GPIO real-time clock Emerald reads. Emerald's main menu showed
   no dead-battery message on an emulated console.
 - Whether a retail console runs the build: the emulated-console measurements are the only ones.
-- The whole-ROM stream, its message rate and the boot into the streamed ROM. Only a one-block write
-  followed by `swi 0x00` has run, and it wrote the `0xFF` tail.
+- The whole Emerald stream and the boot into it. The boot op has moved FireRed's own live blocks and
+  restarted the game; Emerald has not been streamed.
 - The live blocks of the error path: a session cut short returns to the menu through code outside
   the measured set.
 - The live blocks of the eleven other cartridges.
