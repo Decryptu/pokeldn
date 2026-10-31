@@ -1,13 +1,18 @@
-# pokeldn 0.49.1
+# pokeldn 0.50.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Sword and Shield: a Pokemon whose encryption constant is 0, such as the Zeraora gift HOME gave,
-  is no longer taken for an empty party slot. The host stopped before the trade, and a Max Raid
-  dropped when the battle began.
+- A Pokemon file can be offered as your own: the offer card's "Make me its original trainer" switch
+  replaces the file's trainer name, IDs and gender with yours. A shiny stays shiny unless its
+  encounter fixes its PID, and the card says so; a Pokemon legal only with its own trainer is refused.
+- Sword and Shield: a shiny Max Raid boss you host now shows as shiny.
+- Sword and Shield: a Max Raid boss no den holds is refused before the start, with the reason. The
+  console listed such a raid and left at Ready.
+- The app no longer floods the terminal with "dropped a patch for unknown control" after a list
+  loads, and no longer prints a traceback when a window closes while centring.
 
 The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 
