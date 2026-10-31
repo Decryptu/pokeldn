@@ -217,3 +217,22 @@ def test_after_a_long_decode_the_host_waits_so_the_console_drops_no_block():
     client.rom_stubs = {buffer_script.ROM_BASE: OLD.ljust(rom_transfer.BLOCKS * rom_transfer.BLOCK, b"\xff")}
     drive(host, client, ticks=3_000_000, stop=lambda: client.rebooted)
     assert client.dropped_blocks == 0 and server.outcome == "booted"
+
+
+def test_a_block_that_copies_from_a_higher_one_is_emitted_before_it_and_still_lands():
+    """Block 10 of the new image is block 30 of the old: in descending order block 30 is gone by
+    the time block 10 decodes; the reference order emits 10 first, and the stream is smaller."""
+    old = bytearray(OLD)
+    new_blocks = list(rom_transfer.blocks_of(NEW))
+    new_blocks[10] = bytes(old[30 * 4096:31 * 4096])
+    new = b"".join(new_blocks)
+    base = bytearray(image(1, 300, 1))
+    base[0xAC:0xB0] = b"BPRF"
+    base[30 * 4096:31 * 4096] = old[30 * 4096:31 * 4096]
+    server = rom_transfer.RomTransferServer(new, live=LIVE, base=bytes(base), encoder_process=False)
+    client = run(server, OLD)
+    assert server.outcome == "booted"
+    assert server.order.index(10) < server.order.index(30)
+    expected = bytearray(NEW_COPY.ljust(len(rom_of(client)), b"\xff"))
+    expected[10 * 4096:11 * 4096] = old[30 * 4096:31 * 4096]
+    assert rom_of(client) == bytes(expected)

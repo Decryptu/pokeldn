@@ -384,6 +384,7 @@ class RomTransferServer(save_transfer._Server):
             yield ("recv", MG_LINKID_RESPONSE)
             tag = next(self._tags)
         order, chunks = job.result()
+        self.order = order
         self._pool.shutdown(wait=False)
         table = b"".join(b.to_bytes(2, "little") for b in order).ljust(len(ORDER_BLOCKS) * BLOCK, b"\xff")
         writes = [(n, table[k * BLOCK:(k + 1) * BLOCK]) for k, n in enumerate(ORDER_BLOCKS)]
