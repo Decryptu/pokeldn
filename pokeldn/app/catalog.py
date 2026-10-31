@@ -442,7 +442,7 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
                 "raideventboss", requires="--raid-event",
                 help=tr('catalog.the_event_s_bosses_a_den_can_show_with_their_stars_leve_0c58e2', "The event's bosses a den can show, with their stars, level and game; the event's rewards that fit the den go with it.")),
           Field("--raid-boss", tr('catalog.boss_8f6c1d', 'Boss'), "pokemon", required=True, unless="--raid-event",
-                help=tr('catalog.the_raid_s_boss_a_boss_a_den_can_hold_shows_in_every_co_e2a7b9', "The raid's boss. A boss a den can hold shows in every console's list; its level sets the stars.")),
+                help=tr('catalog.the_raid_s_boss_a_pokemon_a_max_raid_den_holds_4b9d10', "The raid's boss: a Pokemon a Max Raid den holds, in that form and Gigantamax state. Its level sets the stars.")),
           Field("--raid-gigantamax", tr('catalog.gigantamax_boss_0a7e52', 'Gigantamax boss'), "switch", unless="--raid-event",
                 help=tr('catalog.for_a_pokemon_a_den_holds_as_gigantamax_charizard_snorl_6b1d40', 'For a Pokemon a den holds as Gigantamax: Charizard, Snorlax, Toxtricity and the other Gigantamax Pokemon.')),
           Field("--offer-file", tr('catalog.our_pokemon_14a66b', 'Our Pokemon'), "pokemon", required=True,

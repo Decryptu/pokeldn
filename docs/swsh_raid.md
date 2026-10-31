@@ -147,7 +147,12 @@ event's Gigantamax Toxtricity) leaves with 2-ALZAA-0016 although the raid is lis
 record with only the species changed, and a boss built by `raid.boss_record`, are accepted. Base dens
 hold no legendary or mythical Pokemon, so a hosted boss is a species, form and Gigantamax state
 `nest_slots.json` lists; `raid.den_advert` switches the advertised version when only the other holds
-the boss, and shows an event boss as the base den slot holding its species. `raid.reward_choices`
+the boss, and shows an event boss as the base den slot holding its species. `bin/swsh_host.py` and the
+app's Max Raid host tools refuse a boss no base den holds.
+
+`raid.boss_record` keeps the den boss's TID 28222 and SID 36500. Shininess is the PID against them, so
+`raid.same_shine` moves the PID's high half to keep the boss's own square, star or plain shine from its
+file's trainer; a boss made shiny for the player and sent with its PID unchanged was drawn plain. `raid.reward_choices`
 lists what the slot allows at a rank; `raid.den_rewards` builds the slot's own rows.
 
 In den bosses the party HP stat and current HP are the plain HP stat times

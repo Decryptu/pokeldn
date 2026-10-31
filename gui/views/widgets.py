@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import os
 import re
 import sys
@@ -31,10 +32,24 @@ class PixelActivity(ft.Container):
         if self._task:
             self._task.cancel()
 
+    def _attached(self) -> bool:
+        """Whether every parent up to the page still holds its child. Flet 1.0.2 never unmounts a control
+        replaced in a one-control property (a dropdown's trailing_icon, a container's content): its parent
+        link survives, so update() keeps patching a control the client dropped ("unknown control")."""
+        child, parent = self, self.parent
+        while parent is not None:
+            if not any(value is child or isinstance(value, list) and any(x is child for x in value)
+                       for value in (getattr(parent, f.name, None) for f in dataclasses.fields(parent))):
+                return False
+            child, parent = parent, parent.parent
+        return isinstance(child, ft.Page)
+
     async def _animate(self):
         phase = 0
         while True:
             await asyncio.sleep(0.14)
+            if not self._attached():
+                return
             phase = (phase + 1) % len(self._pixels)
             for i, pixel in enumerate(self._pixels):
                 pixel.opacity = max(0.18, 1 - ((phase - i) % 8) * 0.22)

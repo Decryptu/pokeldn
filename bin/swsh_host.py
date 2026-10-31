@@ -439,8 +439,9 @@ def main(argv=None):
             print(f"[raid] boss edited: {os.environ['POKELDN_RAID_BOSS_EDIT']}")
         app_data = raid_advert(app_data, boss_pk8, args.player_name, rank)
         if app_data[raid.ADVERT_DEN:raid.ADVERT_DEN + 8] == bytes(8):
-            print("[raid] no den of this version holds the boss: a retail console lists the raid and "
-                  "leaves at Ready (docs/swsh_raid.md, The boss record)")
+            print("[raid] no Max Raid den holds this boss in this form and Gigantamax state: a retail console "
+                  "lists the raid and leaves at Ready (docs/swsh_raid.md, The boss record); pick one a den holds")
+            return 1
         args.scene_id = RAID_SCENE_ID
         if args.raid_reward:
             bag = {entry["id"] for entry in pokemon_service.SERVICE.names("swsh", "bag")}

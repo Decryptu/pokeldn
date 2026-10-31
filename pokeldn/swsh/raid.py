@@ -206,6 +206,15 @@ BOSS_FIELDS = ("species", "form", "ability", "nature", "gender", "ivs", "evs", "
 WILD_BOSS = Path(__file__).with_name("data") / "raid_boss_template.ek8"
 
 
+def same_shine(pid, ids, new_ids):
+    """-> `pid` with its high half moved so that under TID ^ SID `new_ids` it keeps the shine it has under
+    `ids`: square (xor 0), star (1 to 15) or none. A PID that is not shiny under either stays as it is."""
+    xor = ids ^ (pid >> 16) ^ (pid & 0xFFFF)
+    if xor >= 16 and (new_ids ^ (pid >> 16) ^ (pid & 0xFFFF)) >= 16:
+        return pid
+    return (new_ids ^ (pid & 0xFFFF) ^ xor) << 16 | pid & 0xFFFF
+
+
 def boss_record(pk8, template=None):
     """-> the encrypted party record a den host sends as BossPokemon for the Pokemon in `pk8`."""
     plain = gen8.decrypt(bytes(pk8))
@@ -213,6 +222,9 @@ def boss_record(pk8, template=None):
     got = gen8.read(plain)
     fields = {k: got[k] for k in BOSS_FIELDS if k in got}
     fields["encryption_constant"] = struct.unpack_from("<I", plain, 0)[0]
+    # Shininess is the PID against the record's own TID/SID, and the record keeps the den boss's.
+    den = gen8.read(wild)
+    fields["pid"] = same_shine(got["pid"], got["trainer_id"] ^ got["secret_id"], den["trainer_id"] ^ den["secret_id"])
     out = bytearray(gen8.write(wild, **fields))
     out[PK8_GIGANTAMAX] = (out[PK8_GIGANTAMAX] & ~0x10) | (plain[PK8_GIGANTAMAX] & 0x10)
     out[DYNAMAX_KIND] = 2 if plain[PK8_GIGANTAMAX] & 0x10 else 1

@@ -376,7 +376,7 @@ def test_the_released_firmware_lands_only_when_every_image_matches_its_checksum(
 def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch, form):
     import asyncio
     monkeypatch.setattr(pokemon.SERVICE, "species", lambda game: [{"id": 25, "name": "Pikachu"}])
-    monkeypatch.setattr(pokemon.SERVICE, "import_file", lambda game, path: {
+    monkeypatch.setattr(pokemon.SERVICE, "import_file", lambda game, path, trainer=None: {
         "file": path, "species": "Charizard", "species_id": 6, "form_id": form,
         "level": 50, "shiny": True, "legal": True,
         "encounter": "", "moves": [], "report": ""})

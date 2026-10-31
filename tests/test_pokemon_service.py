@@ -154,6 +154,27 @@ def test_a_built_pokemon_shows_the_trainer_typed_in_settings(service, game):
     assert (built["trainer_id"], built["secret_id"], built["ot_gender"]) == (*shown, 1) and built["legal"]
 
 
+@pytest.mark.parametrize("game", FORMATS)
+def test_a_file_imported_with_the_players_trainer_keeps_its_shine(service, game):
+    """A file someone else made, offered as the player's own (the offer card's original trainer switch):
+    their name, IDs and gender replace the file's, and from Gen 7 the PID moves so a shiny stays shiny.
+    A PID the encounter fixes (Gen 3's nature, ability and gender; a Sword overworld seed) stays, with a note."""
+    settings = Settings(tid=4321, sid=8765, switch_tid=123456, switch_sid=789, gender=1, ot="PKLDN")
+    built = service.make(game, 25, TRAINER, shiny=True)
+    assert built["shiny"]
+    retrained = service.import_file(game, built["file"], settings.trainer(game))
+    shown = (4321, 8765) if game == "frlg" else (123456, 789)
+    assert (retrained["ot"], retrained["trainer_id"], retrained["secret_id"], retrained["ot_gender"]) == \
+        ("PKLDN", *shown, 1) and retrained["legal"]
+    before, after = (base64.b64decode(r["data"]) for r in (built, retrained))
+    if game == "frlg":
+        assert after[:4] == before[:4]                     # the personality value
+    elif game == "swsh":                                   # a wild Pikachu's PID comes from its overworld seed
+        assert not retrained["shiny"] and "no longer shiny" in retrained["note"]
+    else:
+        assert retrained["shiny"] and "note" not in retrained
+
+
 def test_an_event_pokemon_offered_under_a_new_pid_keeps_its_own(service, capsys):
     """Melmetal reaches Sword only as an event; its PID is part of the event."""
     built = service.make("swsh", 809, TRAINER)

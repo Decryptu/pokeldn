@@ -141,6 +141,13 @@ player's own only when gender, IDs and name match
 ([the received record](za.md#what-the-trade-writes-into-a-received-record)); Legends Arceus's record
 carries the gender ([the record](pla.md#the-games-reader-and-the-pre-handler-phase)).
 
+A Pokemon file keeps its own original trainer unless the offer card's "Make me its original trainer"
+switch is on: PKHeX's `check` with the `trainer` field writes this trainer's name, IDs and gender
+(`Retrain`). Shininess is the PID against those IDs. From Gen 7 the PID's high half moves to keep a
+square, star or plain shine; a PID the encounter fixes (Gen 3's nature, ability and gender, a Sword
+overworld or raid seed) stays, and the card says the shine changed. A Pokemon legal only with its own
+trainer, an event with a fixed one, is refused with PKHeX's reason.
+
 ### Find your trainer
 
 Find mine fills one row's ID and secret ID, with the name, gender and language, from the newest

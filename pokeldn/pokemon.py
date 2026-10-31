@@ -213,8 +213,8 @@ class Service:
         return self._ask({"cmd": "check", "game": game, "data": base64.b64encode(data).decode(),
                           "fresh": fresh, "fields": fields or {}})
 
-    def check(self, game: str, path: str) -> dict:
-        return self.check_bytes(game, Path(path).expanduser().read_bytes())
+    def check(self, game: str, path: str, fields=None) -> dict:
+        return self.check_bytes(game, Path(path).expanduser().read_bytes(), fields=fields)
 
     def owner(self, game: str, data: bytes) -> dict:
         """The owner of the Pokemon in `data`, as a console sends it, read with no legality check: species,
@@ -224,8 +224,10 @@ class Service:
         data = entity_bytes(game, data)
         return self._ask({"cmd": "owner", "game": game, "data": base64.b64encode(data).decode()})
 
-    def import_file(self, game: str, path: str) -> dict:
-        reply = self.check(game, path)
+    def import_file(self, game: str, path: str, trainer: dict | None = None) -> dict:
+        """The Pokemon in the file at `path`, kept, or BuilderError; `trainer` ({ot, tid, sid, gender}, as
+        settings.trainer gives it) replaces its original trainer and keeps its shine (services/pkhex Retrain)."""
+        reply = self.check(game, path, {"trainer": trainer} if trainer else None)
         if not reply["legal"]:
             raise BuilderError(reply["report"])
         reply["file"] = self.keep(game, reply)

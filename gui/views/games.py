@@ -555,7 +555,7 @@ class GamesView:
                                  lambda v: self.set_value(field, v),
                                  version=str(self.values.get("--version", ""))).control
         if field.kind == "rewards":
-            den = (lambda: command.reward_den(self.tool, self.values)) if self.tool.key == "swsh-raid-host" else None
+            den = (lambda: command.reward_den(self.tool, self.values)) if self.tool.key in command.SWSH_RAID_HOSTS else None
             self.reward_picker = RewardPicker(self.app, self.game.key, value, lambda v: self.set_value(field, v), den=den)
             return self.reward_picker.control
         if field.kind == "raidseed":

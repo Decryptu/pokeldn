@@ -226,7 +226,7 @@ def main(page: ft.Page) -> None:
         compact_start(app)
         return
     if not page.web:
-        page.run_task(page.window.center)
+        page.run_task(t.center_window, page)
     outcome = update.finish(update.install_root())
     settings_notice(app)
     if not keys_found(app.settings.keys):

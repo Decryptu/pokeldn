@@ -2,6 +2,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from pokeldn.swsh import raid, raid_battle
 
 DATA = json.loads((Path(__file__).parent / "data" / "swsh_raid_emulated.json").read_text())
@@ -191,3 +193,19 @@ def test_two_consoles_start_together_and_both_must_mirror_the_barrier():
     assert m.receive(1, step, a) == []
     out = m.receive(1, raid_battle.framework(raid_battle.BATTLE, b, 909, bytes.fromhex("00000100")), b)
     assert [raid_battle.parse_framework(p)["body"].hex() for _, p, _ in out] == ["0100", "01000100"]
+
+
+@pytest.mark.parametrize("shine", [0, 7, None])
+def test_boss_record_keeps_the_bosss_shine_under_the_den_bosss_trainer(shine):
+    """A boss made shiny for the player's TID/SID went out with the den boss's TID/SID (28222/36500) and
+    its own PID, and a retail guest drew it plain. Square stays square, star stays star, plain stays plain."""
+    from pokeldn import gen8
+    from pokeldn.swsh import pokemon
+    ads = json.loads((Path(__file__).parent / "data" / "swsh_raid_adverts.json").read_text())
+    tid, sid, low = 12345, 54321, 0x2C73
+    pid = (tid ^ sid ^ low ^ (0x4000 if shine is None else shine)) << 16 | low
+    mine = gen8.write(gen8.decrypt(bytes.fromhex(ads["boss_hoothoot"])), trainer_id=tid, secret_id=sid, pid=pid)
+    built = gen8.read(gen8.decrypt(raid.boss_record(pokemon.encrypt(mine))))
+    assert (built["trainer_id"], built["secret_id"]) == (28222, 36500)
+    xor = built["trainer_id"] ^ built["secret_id"] ^ built["pid"] >> 16 ^ built["pid"] & 0xFFFF
+    assert (xor if xor < 16 else None) == shine and built["pid"] & 0xFFFF == low

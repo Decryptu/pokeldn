@@ -56,6 +56,11 @@ class PokemonPicker:
         self.variants = ft.Row(spacing=10, visible=False)    # the form and, for Alcremie, the sweet
         self.variants_token = 0
         self.result = ft.Container()
+        # A file someone else made carries their trainer; this switch makes the player its original trainer.
+        self.retrain = t.switch(bool(self.value.get("retrain")), self._retrain)
+        self.retrain_row = ft.Row([self.retrain, t.text(tr('pokemon.use_my_trainer', 'Make me its original trainer'), 13, t.SOFT)],
+                                  spacing=6, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                                  visible=bool(self.value.get("source")))
         species = t.labeled_control(tr('pokemon.species_56205e', 'Species'), self.species, expand=True)
         level_shiny = [t.labeled_control(tr('pokemon.level_170930', 'Level'), self.level),
                        t.labeled_control(tr('pokemon.shiny_039a0a', 'Shiny'), ft.Container(
@@ -69,6 +74,7 @@ class PokemonPicker:
             ft.Row([self.nickname, self.build_button], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             self.options.control,
             self.result,
+            self.retrain_row,
             ft.Row([t.secondary_button(tr('pokemon.or_use_a_pokemon_file_26272a', 'Or use a Pokemon file'), self._use_file, "file"),
                     t.secondary_button(tr('pokemon.import_paste_1632a4', 'Import paste'), self._paste, "bulletlist"),
                     *([t.text(tr('pokemon.or_drop_either_here_a8b5ba', 'or drop either here'), 12, t.FAINT)] if drop.AVAILABLE else [])],
@@ -221,6 +227,7 @@ class PokemonPicker:
                 self.value.update(file=info["file"], summary=builder.summary(info), legal=info["legal"],
                                   encounter=info.get("canonical", info)["encounter"], moves=info.get("canonical", info)["moves"],
                                   place=info.get("encounter_place", ""), home_tracker=info.get("home_tracker", ""))
+                self.value.pop("source", None)    # built for the player: nobody else's trainer to replace
                 self.on_change(dict(self.value))
                 done = self._show_result
             except Exception as exc:
@@ -257,12 +264,19 @@ class PokemonPicker:
                 return
             self._paste(None, text)
             return
+        retrain = bool(self.value.get("retrain"))
         try:
-            info = SERVICE.import_file(self.game, path)
+            info = SERVICE.import_file(self.game, path, self.owner() if retrain else None)
         except Exception as exc:
-            self._message(tr('pokemon.not_a_pokemon_this_game_can_take_cbe79a', 'Not a Pokemon this game can take: {value0}', value0=exc), t.RED)
+            self._message(tr('pokemon.not_legal_with_my_trainer', 'Not legal with you as its original trainer: {value0}', value0=exc)
+                          if retrain else
+                          tr('pokemon.not_a_pokemon_this_game_can_take_cbe79a', 'Not a Pokemon this game can take: {value0}', value0=exc), t.RED)
+            self.value["retrain"] = self.retrain.value = False
             self.control.update()
             return
+        self.value["source"] = path
+        self.value["note"] = tr('pokemon.retrain_note', 'With you as its original trainer it {value0}.', value0=info["note"]) \
+            if retrain and info.get("note") else ""
         self.value.update(file=info["file"], summary=builder.summary(info), legal=info["legal"],
                           encounter=info.get("canonical", info)["encounter"], moves=info.get("canonical", info)["moves"],
                           place=info.get("encounter_place", ""),
@@ -279,6 +293,13 @@ class PokemonPicker:
         self.on_change(dict(self.value))
         self._show_result()
         self.control.update()
+
+    def _retrain(self, e) -> None:
+        self.value["retrain"] = e.control.value
+        if self.value.get("source"):
+            self.load(self.value["source"])
+        else:
+            self.on_change(dict(self.value))
 
     def _paste(self, e, text: str = "") -> None:
         """A Showdown or Smogon set fills the form; Build then makes it. In a queue a team fills the trades
@@ -372,6 +393,7 @@ class PokemonPicker:
                                if busy else message)
 
     def _show_result(self) -> None:
+        self.retrain_row.visible = bool(self.value.get("file") and self.value.get("source"))
         if not self.value.get("file"):
             self.result.content = None
             return
@@ -391,6 +413,8 @@ class PokemonPicker:
             lines.append(t.badge(warning, t.AMBER, "warning-diamond"))
         if self.value.get("report"):
             lines.append(t.text(self.value["report"], 12, t.RED, selectable=True))
+        if self.value.get("note") and self.value.get("source"):
+            lines.append(t.text(self.value["note"], 12, t.AMBER))
         self.result.content = ft.Column(lines, spacing=4)
 
 

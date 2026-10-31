@@ -595,3 +595,13 @@ def image_src(data: bytes) -> bytes | str:
     if os.environ.get("POKELDN_PLATFORM") == "ios":
         return "data:image/png;base64," + base64.b64encode(data).decode()
     return data
+
+
+async def center_window(page: ft.Page) -> None:
+    """Centre a desktop window; a window closed before the call answers raises "Session closed" in Flet's
+    completion callback, a traceback with nothing to act on (seen on Linux when the window failed to draw)."""
+    try:
+        await page.window.center()
+    except RuntimeError as error:
+        if "Session closed" not in str(error):
+            raise

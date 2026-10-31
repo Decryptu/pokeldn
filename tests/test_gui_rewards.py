@@ -122,11 +122,26 @@ def test_an_incomplete_saved_item_can_be_opened_and_corrected(picker, item):
     assert not problems(tool, launch(picker.saved[-1])[1])
 
 
+def mounted_activity():
+    """-> (activity, the dropdown holding it as its trailing icon, their page), parented as Flet mounts them;
+    a parent is a weak reference, so the caller keeps the page."""
+    import weakref
+    from unittest import mock
+    page = ft.Page(mock.MagicMock())
+    activity = PixelActivity()
+    dropdown = ft.Dropdown(trailing_icon=activity)
+    row = ft.Row([dropdown])
+    page.views[0].controls.append(row)
+    for child, parent in ((activity, dropdown), (dropdown, row), (row, page.views[0]), (page.views[0], page)):
+        child._parent = weakref.ref(parent)
+    return activity, dropdown, page
+
+
 def test_the_activity_only_swallows_the_unmounted_control_race(monkeypatch):
     async def wake(_):
         pass
     monkeypatch.setattr(asyncio, "sleep", wake)
-    activity = PixelActivity()
+    activity, _, page = mounted_activity()
     def detached():
         raise RuntimeError("PixelActivity must be added to the page first")
     activity.update = detached
@@ -138,11 +153,29 @@ def test_the_activity_only_swallows_the_unmounted_control_race(monkeypatch):
         asyncio.run(activity._animate())
 
 
-def swsh_raid(tmp_path, name, boss):
-    """The Max Raid (Host) form with `boss` (an encrypted party PK8) as its boss."""
+def test_an_activity_swapped_out_of_its_parent_stops_patching(monkeypatch):
+    """Flet 1.0.2 leaves a control replaced in a one-control property mounted; its updates reached a client
+    that had dropped it ("dropped a patch for unknown control", every 0.14 s)."""
+    async def wake(_):
+        pass
+    monkeypatch.setattr(asyncio, "sleep", wake)
+    activity, dropdown, page = mounted_activity()
+    updates = []
+    def update():
+        updates.append(1)
+        assert len(updates) <= 3, "still patching a control its parent no longer holds"
+        if len(updates) == 3:
+            dropdown.trailing_icon = ft.Icon(ft.Icons.EXPAND_MORE)
+    activity.update = update
+    asyncio.run(activity._animate())
+    assert len(updates) == 3
+
+
+def swsh_raid(tmp_path, name, boss, key="swsh-raid-host"):
+    """The Max Raid (Host) form, or the tool `key`, with `boss` (an encrypted party PK8) as its boss."""
     path = tmp_path / f"{name}.pk8"
     path.write_bytes(boss)
-    tool = next(t for game in GAMES for t in game.tools if t.key == "swsh-raid-host")
+    tool = next(t for game in GAMES for t in game.tools if t.key == key)
     return tool, {"--raid-boss": {"file": str(path)}, "--offer-file": {"file": str(path)}}
 
 
@@ -151,6 +184,21 @@ def hoothoot():
     from pathlib import Path
     ads = json.loads((Path(__file__).parent / "data" / "swsh_raid_adverts.json").read_text())
     return bytes.fromhex(ads["boss_hoothoot"])
+
+
+@pytest.mark.parametrize("key", ["swsh-raid-host", "swsh-lan-raid-host"])
+def test_a_boss_no_den_holds_is_refused_before_start(tmp_path, key):
+    """A retail Sword guest lists a raid of a boss no base den holds (Mew) and leaves at Ready
+    (docs/swsh_raid.md, The boss record); the den's own Hoothoot passes."""
+    from pokeldn import gen8
+    from pokeldn.swsh import pokemon as swsh_pokemon
+    plain = bytearray(gen8.decrypt(hoothoot()))
+    plain[gen8.OFF_SPECIES:gen8.OFF_SPECIES + 2] = (151).to_bytes(2, "little")
+    refused = "No Max Raid den holds this boss"
+    tool, values = swsh_raid(tmp_path, "mew", swsh_pokemon.encrypt(bytes(plain)), key)
+    assert any(refused in error for error in problems(tool, values))
+    tool, values = swsh_raid(tmp_path, "hoothoot", hoothoot(), key)
+    assert not any(refused in error for error in problems(tool, values))
 
 
 def test_a_den_s_rewards_are_what_the_picker_offers_and_what_the_host_sends(picker, tmp_path):

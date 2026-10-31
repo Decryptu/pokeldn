@@ -234,10 +234,13 @@ def limit_error(field: Field, value) -> str:
     return ""
 
 
+SWSH_RAID_HOSTS = ("swsh-raid-host", "swsh-lan-raid-host")
+
+
 def reward_den(tool: Tool, values: dict):
     """-> raid_rewards.swsh_den for the boss a Max Raid (Host) form names: {item: count or None}, or
     None; also None for every other tool."""
-    if tool.key != "swsh-raid-host":
+    if tool.key not in SWSH_RAID_HOSTS:
         return None
     event = values.get("--raid-event") or ""
     boss = "" if event else next((v.get("file", "") for v in offers(values.get("--raid-boss"))), "")
@@ -261,7 +264,7 @@ def _reward_den(boss, _stamp, gigantamax, event, event_boss):
 
 def reward_problem(tool: Tool, values: dict, rows) -> str:
     """A Sword/Shield guest refuses a raid whose rewards are not its den's (docs/swsh_raid.md)."""
-    if tool.key != "swsh-raid-host" or not rows:
+    if tool.key not in SWSH_RAID_HOSTS or not rows:
         return ""
     den = reward_den(tool, values)
     if den is None:
@@ -276,10 +279,24 @@ def reward_problem(tool: Tool, values: dict, rows) -> str:
     return ""
 
 
+def boss_problem(tool: Tool, values: dict) -> str:
+    """A Sword/Shield guest lists a raid whose boss no base den holds and leaves at Ready
+    (docs/swsh_raid.md, The boss record)."""
+    if tool.key not in SWSH_RAID_HOSTS or values.get("--raid-event") \
+            or not any(v.get("file") for v in offers(values.get("--raid-boss"))):
+        return ""
+    if reward_den(tool, values) is None:
+        return tr("command.boss_no_den", "No Max Raid den holds this boss in this form: a console would list "
+                  "the raid and leave at Ready. Choose a Pokemon a den holds.")
+    return ""
+
+
 def problems(tool: Tool, values: dict) -> list[str]:
     errors = [error for f in tool.fields if applies(f, tool, values)
             if (error := limit_error(f, value_of(f, values)) if f.limits
                 else code_error(f, value_of(f, values), tool.key.split("-")[0]))]
+    if error := boss_problem(tool, values):
+        errors.append(error)
     for field in tool.fields:
         if field.kind == "builder" and (error := gift_builder.problem(tool, value_of(field, values))):
             errors.append(error)

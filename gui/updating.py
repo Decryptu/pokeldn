@@ -52,7 +52,7 @@ def run(new: Path, target: Path, pid: int, version: str) -> int:
                 ft.Column([t.text(tr('updating.updating_pokeldn_to_79e623', 'Updating pokeldn to {value0}', value0=version), 15, weight=ft.FontWeight.W_600),
                            t.text(tr('updating.pokeldn_opens_again_in_a_moment_b63bb9', 'pokeldn opens again in a moment.'), 12, t.MUTED)], spacing=4, tight=True),
             ], spacing=18, vertical_alignment=ft.CrossAxisAlignment.CENTER, expand=True))
-            page.run_task(page.window.center)
+            page.run_task(t.center_window, page)
             shown.append(page)
             ready.touch()
 

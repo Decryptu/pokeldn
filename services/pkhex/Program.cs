@@ -794,6 +794,32 @@ static partial class Program
             };
         }
 
+        // Shininess is the PID against the trainer's IDs. From Gen 7 the PID fixes nothing else, so its high half moves
+        // to keep square, star or none, unless the encounter fixes the PID (an overworld or raid seed, a Gen 3 PID's
+        // nature, ability and gender): then the PID stays and the shine follows the IDs. -> a note when it was lost.
+        string? Retrain(PKM pk, JsonObject trainer)
+        {
+            var (shiny, xor, pid) = (pk.IsShiny, (uint)pk.ShinyXor, pk.PID);
+            pk.OriginalTrainerTrash.Clear();
+            pk.OriginalTrainerName = (string)trainer["ot"]!;
+            pk.TID16 = checked((ushort)(int)trainer["tid"]!);
+            pk.SID16 = checked((ushort)(int)trainer["sid"]!);
+            pk.OriginalTrainerGender = (byte)(int)trainer["gender"]!;
+            if (pk.IsShiny == shiny)
+                return null;
+            if (pk.Format >= 7)
+            {
+                var low = pid & 0xFFFF;
+                pk.PID = shiny ? ((uint)(pk.TID16 ^ pk.SID16) ^ low ^ xor) << 16 | low : pid ^ 0x10000000;
+                pk.RefreshChecksum();
+                if (Accepted(pk, new LegalityAnalysis(pk)))
+                    return null;
+                pk.PID = pid;
+            }
+            return shiny ? "is no longer shiny: its encounter fixes its PID, and the PID is shiny only for its first trainer"
+                         : "is shiny for you: its encounter fixes its PID";
+        }
+
         JsonObject Check(Game game, byte[] data, JsonObject request)
         {
             var pk = Parse(game, data);
@@ -801,6 +827,7 @@ static partial class Program
                 throw new InvalidDataException("This species or form is absent from the selected game.");
             if (!pk.ChecksumValid)
                 throw new InvalidDataException("The Pokemon checksum is invalid.");
+            string? note = null;
             if (request["fields"] is JsonObject fields)
                 foreach (var (name, value) in fields)
                 {
@@ -827,10 +854,11 @@ static partial class Program
                             Permit(pk);
                             break;
                         case "held_item": pk.HeldItem = (int)value!; break;
+                        // A file someone else made, as the player's own catch: their name, IDs and gender as original trainer.
+                        case "trainer": note = Retrain(pk, value!.AsObject()); break;
                         default: throw new ArgumentException($"Unsupported edit {name}.");
                     }
                 }
-            string? note = null;
             if ((bool?)request["fresh"] == true)
             {
                 var (pid, ec) = (pk.PID, pk.EncryptionConstant);
