@@ -164,9 +164,40 @@ def lz_messages(chunks, start, staging, live):
     return out
 
 
-def _encode(copy, known, targets, start, slots):
+_WORKER = {}
+
+
+class _Inline:
+    """An executor that runs the job in place, for a caller with no link to keep alive."""
+
+    @staticmethod
+    def submit(fn, *args):
+        future = concurrent.futures.Future()
+        future.set_result(fn(*args))
+        return future
+
+    @staticmethod
+    def shutdown(wait=True):
+        pass
+
+
+def _worker_load(image, base, code):
+    """The encoder process's copy of both images, sent once at its start, before any session."""
+    _WORKER.update(blocks=with_wrapper_patches(blocks_of(image), code),
+                   base=with_wrapper_patches(blocks_of(base), code))
+
+
+def _worker_encode(sources, top, slots):
+    """sources[m]: ("target", n), ("base", m), ("ff",) or None: what block m of the copy holds."""
     from pokeldn.frlg.gift import rom_lzma
-    return rom_lzma.Stream(copy, known, targets, start, slots).chunks()
+    blocks, base = _WORKER["blocks"], _WORKER["base"]
+    copy, known = bytearray(BLOCKS * BLOCK), [False] * BLOCKS
+    for m, source in enumerate(sources):
+        if source is not None:
+            raw = _EMPTY if source[0] == "ff" else (blocks if source[0] == "target" else base)[source[1]]
+            copy[m * BLOCK:(m + 1) * BLOCK] = raw
+            known[m] = True
+    return rom_lzma.Stream(copy, known, {b: blocks[b] for b in range(top + 1)}, top, slots).chunks()
 
 
 def survey_message(first, count, tag):
@@ -211,10 +242,22 @@ class RomTransferServer(save_transfer._Server):
     runs from, or {game code: blocks}, picked once the console names its cartridge; `boot=False`
     stops before the boot op, with everything written and checked."""
 
-    def __init__(self, image, *, live=(), boot=True, base=None, **kwargs):
-        self.blocks = blocks_of(image)
-        self.base = None if base is None else bytes(base)
-        self.hashes = [block_hash(raw) for raw in self.blocks]
+    def __init__(self, image, *, live=(), boot=True, base=None, encoder_process=True, **kwargs):
+        # Every hash is taken here, before the link: the session's loop cannot stop for seconds.
+        self.blocks = self._raw = blocks_of(image)
+        self.hashes = self._raw_hashes = [block_hash(raw) for raw in self.blocks]
+        self.base, self._pool = None, None
+        if base is not None:
+            self.base = blocks_of(base)
+            self._base_hashes = [block_hash(raw) for raw in self.base]
+            self.base_code = bytes(base[0xAC:0xB0]).decode("ascii", "replace")
+            if encoder_process:
+                self._pool = concurrent.futures.ProcessPoolExecutor(
+                    max_workers=1, initializer=_worker_load, initargs=(bytes(image), bytes(base), self.base_code))
+                self._pool.submit(int).result()
+            else:
+                _worker_load(bytes(image), bytes(base), self.base_code)
+                self._pool = _Inline()
         self.live_by_code = live if isinstance(live, dict) else None
         self.live = frozenset(() if self.live_by_code is not None else live)
         self.boot = boot
@@ -268,19 +311,28 @@ class RomTransferServer(save_transfer._Server):
                 return False
         return True
 
-    def _model(self, hashes, start, moved, code):
-        """-> (copy, known): the console's copy as the survey shows it, block by block."""
-        base = with_wrapper_patches(blocks_of(self.base), code)
-        staged = {start + i: self.blocks[n] for i, n in enumerate(moved)}
-        copy, known = bytearray(BLOCKS * BLOCK), [False] * BLOCKS
+    @staticmethod
+    def _patched(raw, raw_hashes, code):
+        """-> (blocks, hashes) with the application's patches; only the patched blocks are rehashed."""
+        blocks = with_wrapper_patches(raw, code)
+        return blocks, [h if b is r else block_hash(b) for b, r, h in zip(blocks, raw, raw_hashes)]
+
+    def _sources(self, hashes, start, moved):
+        """What each block of the console's copy holds, as the survey shows it."""
+        staged = {start + i: n for i, n in enumerate(moved)}
+        empty, out = block_hash(_EMPTY), []
         for m in range(BLOCKS):
-            for raw in (self.blocks[m] if m < len(self.blocks) else None, base[m] if m < len(base) else None,
-                        staged.get(m), _EMPTY):
-                if raw is not None and block_hash(raw) == hashes[m]:
-                    copy[m * BLOCK:(m + 1) * BLOCK] = raw
-                    known[m] = True
-                    break
-        return copy, known
+            if m < len(self.blocks) and hashes[m] == self.hashes[m]:
+                out.append(("target", m))
+            elif m < len(self.base) and hashes[m] == self._base_patched_hashes[m]:
+                out.append(("base", m))
+            elif m in staged and hashes[m] == self.hashes[staged[m]]:
+                out.append(("target", staged[m]))
+            elif hashes[m] == empty:
+                out.append(("ff",))
+            else:
+                out.append(None)
+        return out
 
     def _lz_items(self, hashes, direct, staged, start, moved, build):
         """The decoder into block 0xFFF, then the LZMA stream from the highest block still to write
@@ -292,19 +344,17 @@ class RomTransferServer(save_transfer._Server):
                 return None
         slot_of = {n: start + i for i, n in enumerate(moved)}
         top = max([n for n, _ in direct] + [n for n in moved if slot_of[n] in dict(staged)])
-        copy, known = self._model(hashes, start, moved, build.game_code)
-        targets = {b: self.blocks[b] for b in range(top + 1)}
         slots = {n: s for n, s in slot_of.items() if n <= top}
         self.info(f"Encoding blocks 0x{top:03X} to 0 as LZMA against the console's copy.")
-        with concurrent.futures.ProcessPoolExecutor(max_workers=1) as pool:
-            job = pool.submit(_encode, bytes(copy), known, targets, top, slots)
+        job = self._pool.submit(_worker_encode, self._sources(hashes, start, moved), top, slots)
+        tag = next(self._tags)
+        while not job.done():
+            yield self.send(MG_LINKID_CLIENT_SCRIPT, save_transfer.passes_script(1))
+            yield self.send(MG_LINKID_RAM_SCRIPT, survey_message(DECODER_BLOCK, 1, tag))
+            yield ("recv", MG_LINKID_RESPONSE)
             tag = next(self._tags)
-            while not job.done():
-                yield self.send(MG_LINKID_CLIENT_SCRIPT, save_transfer.passes_script(1))
-                yield self.send(MG_LINKID_RAM_SCRIPT, survey_message(DECODER_BLOCK, 1, tag))
-                yield ("recv", MG_LINKID_RESPONSE)
-                tag = next(self._tags)
-            chunks = job.result()
+        chunks = job.result()
+        self._pool.shutdown(wait=False)
         self.info(f"LZMA stream: {sum(len(c[2]) for c in chunks)} bytes in {len(chunks)} chunks.")
         return lz_messages(chunks, top, start, sorted(slots))
 
@@ -321,13 +371,16 @@ class RomTransferServer(save_transfer._Server):
                 yield from self._finished()
             self.live = frozenset(self.live_by_code[build.game_code])
         try:
-            self.blocks = with_wrapper_patches(self.blocks, build.game_code)
+            self.blocks, self.hashes = self._patched(self._raw, self._raw_hashes, build.game_code)
+            if self.base is not None:
+                if build.game_code != self.base_code:
+                    raise ValueError(f"the base ROM is {self.base_code} and the console runs {build.game_code}")
+                self.base, self._base_patched_hashes = self._patched(self.base, self._base_hashes, build.game_code)
         except ValueError as exc:
             self.outcome = "refused"
             self.info(f"Nothing was written: {exc}.")
             yield from self._end(NOT_WRITTEN, False, SVR_MSG_NOTHING_SENT)
             yield from self._finished()
-        self.hashes = [block_hash(raw) for raw in self.blocks]
         yield self.send(MG_LINKID_CLIENT_SCRIPT, C.client_script(*save_transfer._reporting(MG_LINKID_RAM_SCRIPT)))
         yield self.send(MG_LINKID_RAM_SCRIPT, code(build))
         yield ("recv", MG_LINKID_RESPONSE)

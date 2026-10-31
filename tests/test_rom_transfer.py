@@ -36,6 +36,7 @@ def image(seed, kb, side):
 
 
 OLD, NEW, NEW_COPY = image(1, 300, 2), image(2, 200, 1), image(2, 200, 2)
+OLD = OLD[:0xAC] + b"BPRF" + OLD[0xB0:]           # as the base image below, header and all
 
 
 def run(server, rom, stop=lambda: False):
@@ -172,7 +173,9 @@ def test_with_the_cartridge_rom_the_stream_is_lzma_and_the_console_boots_the_sam
     """The decoder goes to block 0xFFF, the blocks go as LZMA against the console's copy, the boot
     leaves the ROM the token path leaves."""
     sent = []
-    server = rom_transfer.RomTransferServer(NEW, live=LIVE, base=image(1, 300, 1))
+    base = bytearray(image(1, 300, 1))
+    base[0xAC:0xB0] = b"BPRF"                       # the console the scripted session plays
+    server = rom_transfer.RomTransferServer(NEW, live=LIVE, base=bytes(base), encoder_process=False)
     real = server.send
     server.send = lambda ident, payload, size=None: sent.append(bytes(payload)) or real(ident, payload, size)
     client = run(server, OLD)
