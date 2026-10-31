@@ -166,3 +166,18 @@ def test_blocks_of_one_byte_go_as_fills_and_the_sound_engine_stops_at_install():
     rom = rom_of(client)
     assert rom == expected.rstrip(b"\xff").ljust(len(rom), b"\xff")
     assert client.machine.uc.mem_read(build.sound_info, 4) == bytes(4)
+
+
+def test_with_the_cartridge_rom_the_stream_is_lzma_and_the_console_boots_the_same_rom():
+    """The decoder goes to block 0xFFF, the blocks go as LZMA against the console's copy, the boot
+    leaves the ROM the token path leaves."""
+    sent = []
+    server = rom_transfer.RomTransferServer(NEW, live=LIVE, base=image(1, 300, 1))
+    real = server.send
+    server.send = lambda ident, payload, size=None: sent.append(bytes(payload)) or real(ident, payload, size)
+    client = run(server, OLD)
+    assert server.outcome == "booted" and client.rebooted
+    assert rom_of(client) == NEW_COPY.ljust(len(rom_of(client)), b"\xff")
+    lz = [m for m in sent if len(m) > 4 and m[4] == 7]
+    tokens = [m for m in sent if len(m) > 4 and m[4] == rom_transfer.OP_DATA and m[6:8] != (0xFFF).to_bytes(2, "little")]
+    assert lz and not tokens

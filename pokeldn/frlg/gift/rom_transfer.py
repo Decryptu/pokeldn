@@ -7,6 +7,7 @@ the blocks that code needs (`live`) are written last: their new bytes go to stag
 images, and the boot op moves them into place with interrupts off, fills the tail with 0xFF and
 soft-resets. A cut session resumes: every session starts by hashing the console's blocks."""
 
+import concurrent.futures
 import itertools
 
 from pokeldn.frlg.gift import save_transfer
@@ -16,7 +17,7 @@ from pokeldn.frlg.gift.mystery_gift import (
     MG_LINKID_RESPONSE,
 )
 from pokeldn.frlg.rom import builds
-from pokeldn.frlg.rom.buffer_payloads import PAYLOADS
+from pokeldn.frlg.rom.buffer_payloads import PAYLOADS, THUMB_CODE
 from pokeldn.frlg.save import sav
 
 C = save_transfer.C
@@ -26,6 +27,9 @@ OP_DATA, OP_SURVEY, OP_BOOT, OP_FILL = 1, 3, 4, 5
 DATA_HEADER = 12
 BOOT_HEADER = 16
 SURVEY_PER_RUN = 32                    # 128 KB hashed per frame; 32 words answered
+DECODER_BLOCK = 0xFFF                  # asm/rom-lzma.c runs from here; the boot's fill clears it
+LZ_DATA_HEADER = 10
+LZ_PIECE = MG_LINK_BUFFER_SIZE - LZ_DATA_HEADER
 FILL_PER_MESSAGE = 8                   # a write and a read-back are about 6000 instructions
 SOUND_INFO_AT = 0x008                  # asm/rom-transfer.s: &gSoundInfo, the engine stopped at install
 MAX_BOOT_BLOCKS = (MG_LINK_BUFFER_SIZE - BOOT_HEADER) // 2
@@ -136,6 +140,35 @@ def write_messages(writes):
     return out
 
 
+def lz_start_message(start, blocks, staging, base, emitted, live):
+    """A chunk's model reset: the stream's first block, the chunk's blocks, the first staging block,
+    where the stream begins in the dictionary, the bytes emitted before the chunk, the live blocks."""
+    return (save_transfer._branch_word().to_bytes(4, "little") + bytes((6, 0))
+            + b"".join(v.to_bytes(2, "little") for v in (start, blocks, staging))
+            + base.to_bytes(4, "little") + emitted.to_bytes(4, "little") + len(live).to_bytes(2, "little")
+            + b"".join(n.to_bytes(2, "little") for n in live))
+
+
+def lz_messages(chunks, start, staging, live):
+    """[(emitted, blocks, data)] -> [(message, blocks it completes)]."""
+    from pokeldn.frlg.gift import rom_lzma
+    out, seq = [], 0
+    for emitted, count, data in chunks:
+        out.append((lz_start_message(start, count, staging, rom_lzma.BASE, emitted, live), 0))
+        for at in range(0, len(data), LZ_PIECE):
+            piece, last = data[at:at + LZ_PIECE], at + LZ_PIECE >= len(data)
+            out.append((save_transfer._branch_word().to_bytes(4, "little") + bytes((7, last))
+                        + (seq & 0xFFFF).to_bytes(2, "little") + len(piece).to_bytes(2, "little") + piece,
+                        count if last else 0))
+            seq += 1
+    return out
+
+
+def _encode(copy, known, targets, start, slots):
+    from pokeldn.frlg.gift import rom_lzma
+    return rom_lzma.Stream(copy, known, targets, start, slots).chunks()
+
+
 def survey_message(first, count, tag):
     return (save_transfer._branch_word().to_bytes(4, "little") + bytes((OP_SURVEY, 0))
             + first.to_bytes(2, "little") + count.to_bytes(2, "little")
@@ -151,19 +184,23 @@ def boot_message(targets, staged, fill, fill_count):
             + bytes(2) + b"".join(n.to_bytes(2, "little") for n in targets))
 
 
-def batches(writes):
-    """[(block, raw)] -> [[(message, blocks it completes)]], at most MAX_BATCH_MESSAGES each; a
-    block's messages stay in one batch."""
+def batches(items):
+    """[(message, blocks it completes)] -> batches of at most MAX_BATCH_MESSAGES; a block's messages
+    stay in one batch when it fits."""
     out, batch, group = [], [], []
-    for item in write_messages(writes):
+    for item in items:
         group.append(item)
-        if not item[1]:
+        if not item[1] and len(group) < save_transfer.MAX_BATCH_MESSAGES:
             continue
         if batch and len(batch) + len(group) > save_transfer.MAX_BATCH_MESSAGES:
             out.append(batch)
             batch = []
         batch += group
         group = []
+    if batch and len(batch) + len(group) > save_transfer.MAX_BATCH_MESSAGES:
+        out.append(batch)
+        batch = []
+    batch += group
     if batch:
         out.append(batch)
     return out
@@ -174,8 +211,9 @@ class RomTransferServer(save_transfer._Server):
     runs from, or {game code: blocks}, picked once the console names its cartridge; `boot=False`
     stops before the boot op, with everything written and checked."""
 
-    def __init__(self, image, *, live=(), boot=True, **kwargs):
+    def __init__(self, image, *, live=(), boot=True, base=None, **kwargs):
         self.blocks = blocks_of(image)
+        self.base = None if base is None else bytes(base)
         self.hashes = [block_hash(raw) for raw in self.blocks]
         self.live_by_code = live if isinstance(live, dict) else None
         self.live = frozenset(() if self.live_by_code is not None else live)
@@ -188,7 +226,7 @@ class RomTransferServer(save_transfer._Server):
     def plan(self, hashes):
         """-> (direct writes, staged writes, staging start) given the console's block hashes."""
         moved = sorted(n for n in self.live if n < len(self.blocks))
-        start = staging_start(len(moved), len(self.blocks), self.live)
+        start = staging_start(len(moved), len(self.blocks), self.live | {DECODER_BLOCK})
         direct = [(n, raw) for n, raw in enumerate(self.blocks)
                   if n not in self.live and hashes[n] != self.hashes[n]]
         staged = [(start + i, self.blocks[n]) for i, n in enumerate(moved)
@@ -209,9 +247,10 @@ class RomTransferServer(save_transfer._Server):
             runs -= count
         return hashes
 
-    def _write(self, writes, total):
-        """Send the writes in batches; -> False after ending the session on a block that failed."""
-        for batch in batches(writes):
+    def _write(self, items, total):
+        """Send [(message, blocks it completes)] in batches; -> False after ending the session on a
+        block that failed."""
+        for batch in batches(items):
             yield self.send(MG_LINKID_CLIENT_SCRIPT, save_transfer.batch_script(len(batch)))
             for message, blocks in batch:
                 yield self.send(MG_LINKID_NEWS, message)
@@ -228,6 +267,46 @@ class RomTransferServer(save_transfer._Server):
                 yield from self._end(NOT_WRITTEN, False, SVR_MSG_NOTHING_SENT)
                 return False
         return True
+
+    def _model(self, hashes, start, moved, code):
+        """-> (copy, known): the console's copy as the survey shows it, block by block."""
+        base = with_wrapper_patches(blocks_of(self.base), code)
+        staged = {start + i: self.blocks[n] for i, n in enumerate(moved)}
+        copy, known = bytearray(BLOCKS * BLOCK), [False] * BLOCKS
+        for m in range(BLOCKS):
+            for raw in (self.blocks[m] if m < len(self.blocks) else None, base[m] if m < len(base) else None,
+                        staged.get(m), _EMPTY):
+                if raw is not None and block_hash(raw) == hashes[m]:
+                    copy[m * BLOCK:(m + 1) * BLOCK] = raw
+                    known[m] = True
+                    break
+        return copy, known
+
+    def _lz_items(self, hashes, direct, staged, start, moved, build):
+        """The decoder into block 0xFFF, then the LZMA stream from the highest block still to write
+        down to 0; encoded in another process while survey runs keep the link busy."""
+        decoder = THUMB_CODE["rom-lzma"][0].ljust(BLOCK, b"\xff")
+        if hashes[DECODER_BLOCK] != block_hash(decoder):
+            items = [(message, 0) for message, _ in write_messages([(DECODER_BLOCK, decoder)])]
+            if not (yield from self._write(items, 0)):
+                return None
+        slot_of = {n: start + i for i, n in enumerate(moved)}
+        top = max([n for n, _ in direct] + [n for n in moved if slot_of[n] in dict(staged)])
+        copy, known = self._model(hashes, start, moved, build.game_code)
+        targets = {b: self.blocks[b] for b in range(top + 1)}
+        slots = {n: s for n, s in slot_of.items() if n <= top}
+        self.info(f"Encoding blocks 0x{top:03X} to 0 as LZMA against the console's copy.")
+        with concurrent.futures.ProcessPoolExecutor(max_workers=1) as pool:
+            job = pool.submit(_encode, bytes(copy), known, targets, top, slots)
+            tag = next(self._tags)
+            while not job.done():
+                yield self.send(MG_LINKID_CLIENT_SCRIPT, save_transfer.passes_script(1))
+                yield self.send(MG_LINKID_RAM_SCRIPT, survey_message(DECODER_BLOCK, 1, tag))
+                yield ("recv", MG_LINKID_RESPONSE)
+                tag = next(self._tags)
+            chunks = job.result()
+        self.info(f"LZMA stream: {sum(len(c[2]) for c in chunks)} bytes in {len(chunks)} chunks.")
+        return lz_messages(chunks, top, start, sorted(slots))
 
     def _script(self):
         build = yield from self._game_data()
@@ -260,7 +339,11 @@ class RomTransferServer(save_transfer._Server):
                   f"{len(moved)} live ones to stage at 0x{start:03X}; "
                   f"{len(self.blocks) - len(moved) - len(direct)} already there.")
         self.progress(0, total)
-        if not (yield from self._write(direct + staged, total)):
+        if self.base is not None and total:
+            items = yield from self._lz_items(hashes, direct, staged, start, moved, build)
+        else:
+            items = write_messages(direct + staged)
+        if items is None or not (yield from self._write(items, total)):
             yield from self._finished()
 
         hashes = yield from self._survey()

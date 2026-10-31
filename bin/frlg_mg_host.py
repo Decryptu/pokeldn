@@ -86,6 +86,10 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
         help=("with --rom-transfer: a JSON {game code: [block, ...]} of the ROM blocks the console's "
               "own session runs from, in place of the measured ones the package carries"))
     parser.add_argument(
+        "--rom-base", metavar="ROM",
+        help=("with --rom-transfer: the console's own cartridge ROM (from its RomFS); the stream "
+              "then goes as LZMA against the console's copy, about a third of the bytes"))
+    parser.add_argument(
         "--rom-no-boot", action="store_true",
         help="with --rom-transfer: write and check every block, then end the session without booting")
     parser.add_argument(
@@ -927,12 +931,16 @@ def _rom_session(parser, args, config):
     try:
         with open(args.rom_transfer, "rb") as handle:
             image = handle.read()
+        base = None
+        if args.rom_base:
+            with open(args.rom_base, "rb") as handle:
+                base = handle.read()
         rom_transfer.blocks_of(image)
         live = rom_transfer.live_blocks(args.rom_live)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         parser.error(f"--rom-transfer: {exc}")
     app = RomTransferHostApplication(
-        config, image=image, live=live, boot=not args.rom_no_boot,
+        config, image=image, live=live, boot=not args.rom_no_boot, base=base,
         transport_factory=host_cli.transport_factory(parser, args),
         log=trade_runtime.ConsoleLog(args.verbose))
     app.run()
@@ -961,8 +969,8 @@ def main(argv=None):
         parser.error("hosting only supports live mode; omit --no-live")
     if args.save_resume_dir and not args.save_backup:
         parser.error("--save-resume-dir goes with --save-backup")
-    if (args.rom_live or args.rom_no_boot) and not args.rom_transfer:
-        parser.error("--rom-live and --rom-no-boot go with --rom-transfer")
+    if (args.rom_live or args.rom_no_boot or args.rom_base) and not args.rom_transfer:
+        parser.error("--rom-live, --rom-base and --rom-no-boot go with --rom-transfer")
     config = build_run_config(parser, args)
     if args.rom_transfer:
         return _rom_session(parser, args, config)

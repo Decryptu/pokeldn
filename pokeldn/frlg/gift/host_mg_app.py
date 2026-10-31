@@ -521,9 +521,9 @@ class RomTransferHostApplication(MysteryGiftHostApplication):
 
     ACTIVITY_NOUN = "ROM transfer"
 
-    def __init__(self, config, *, image, live, boot=True, **kwargs):
+    def __init__(self, config, *, image, live, boot=True, base=None, **kwargs):
         super().__init__(config, **kwargs)
-        self.image, self.live, self.boot = image, live, boot
+        self.image, self.live, self.boot, self.base = image, live, boot, base
         self._shown = -1
 
     def _build_plan(self):
@@ -538,7 +538,7 @@ class RomTransferHostApplication(MysteryGiftHostApplication):
     def _build_engine(self, link_player, timing):
         from pokeldn.frlg.gift import rom_transfer
         server = rom_transfer.RomTransferServer(
-            self.image, live=self.live, boot=self.boot, progress=self._progress, log=self.log,
+            self.image, live=self.live, boot=self.boot, base=self.base, progress=self._progress, log=self.log,
             expect_console=getattr(self.config, "expect_console", None))
         return HostMysteryGiftEngine(server=server, link_player=link_player,
                                      trust_pia=self.config.trust_pia, timing=timing, log=self.log)
