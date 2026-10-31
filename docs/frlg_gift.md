@@ -32,7 +32,9 @@ The console's client boots with `{CLI_RECV, MG_LINKID_CLIENT_SCRIPT}, {CLI_COPY_
   messages. The CRC covers the padded buffer.
 - Block pacing has no acknowledgement: `SEND_BLOCK_INIT` is ignored unless the receiver's slot is
   `RECV_STATE_READY` [link_rfu_2.c:1146]. `MysteryGiftTiming.inter_block_gap_frames` is 36; a dropped
-  block leaves the console waiting forever.
+  block leaves the console waiting forever. A payload the client calls over several frames holds the
+  slot that long: a server sends such a message with `after`, the frames the host stays quiet once
+  its last block is out.
 - Stalls while the console sends follow
   [the mirror rule](frlg_link.md#row-one-of-the-parents-table-is-the-consoles-own-command-mirrored-back).
 
