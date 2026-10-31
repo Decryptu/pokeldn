@@ -278,8 +278,11 @@ the boot into the new game.
 - Whether a retail console runs the build: the emulated-console measurements are the only ones.
 - The real-time clock after a streamed boot, and what Emerald does continuing FireRed's save file.
 - The stream over the board on a retail console, and its pacing there.
-- The live blocks of the error path: a session cut short returns to the menu through code outside
-  the measured set.
+- The live blocks of the error path. After a link error 2816 blocks into an emulated stream, A on
+  the error screen gave a black screen: the way back to the title runs from overwritten blocks, so a
+  cut stream restarts from a relaunch.
+- Why an emulated console's link stopped twice mid-stream (after 20 min and after 1 h 49 min) with
+  its frame rate steady until the last second.
 - The live blocks of the eleven other cartridges.
 - Whether a session lasting hours stays up.
 - What FireRed does with the save file after Emerald has saved into it.
