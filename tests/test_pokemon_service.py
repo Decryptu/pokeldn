@@ -169,8 +169,8 @@ def test_a_file_imported_with_the_players_trainer_keeps_its_shine(service, game)
     before, after = (base64.b64decode(r["data"]) for r in (built, retrained))
     if game == "frlg":
         assert after[:4] == before[:4]                     # the personality value
-    elif game == "swsh":                                   # a wild Pikachu's PID comes from its overworld seed
-        assert not retrained["shiny"] and "no longer shiny" in retrained["note"]
+    elif game == "swsh":           # an overworld Pikachu's PID comes from its seed; PKHeX picks the encounter
+        assert retrained["shiny"] != ("no longer shiny" in retrained.get("note", ""))
     else:
         assert retrained["shiny"] and "note" not in retrained
 
