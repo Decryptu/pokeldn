@@ -14,6 +14,9 @@
 @                  answers one word per sector: h = rotl(h, 1) ^ word over the sector's words.
 @   OP_FILL (5):   +5 the byte, +6 u16 first sector, +8 u16 count: each sector written with the
 @                  byte and read back. Answers STATUS.
+@   OP_LZ_START (6), OP_LZ_DATA (7): handed to the LZMA decoder (asm/rom-lzma.c), which the host
+@                  writes to ROM block 0xFFF first; its return value goes back to the client, so a
+@                  message it has not finished is called again next frame. Answers STATUS.
 @   OP_BOOT (4):   +6 u16 count, +8 u16 first staged sector, +10 u16 first fill sector, +12 u16
 @                  fill count, +16 u16 sector[count]. With interrupts and DMA off, staged sector
 @                  first + i goes to sector[i], the fill sectors become 0xFF, then SoftReset into
@@ -43,6 +46,8 @@
     .equ OP_SURVEY, 3
     .equ OP_BOOT, 4
     .equ OP_FILL, 5
+    .equ OP_LZ_START, 6
+    .equ OP_LZ_DATA, 7
     .equ REG_SOUNDCNT_X, 0x84
     .equ LINK_SEND_SIZE, 0x34
     .equ LINK_SEND_BUFFER, 0x3C
@@ -96,6 +101,10 @@ entry:
     beq     boot
     cmp     r1, #OP_FILL
     beq     fill
+    cmp     r1, #OP_LZ_START
+    beq     lz
+    cmp     r1, #OP_LZ_DATA
+    beq     lz
     b       out
 
 data:
@@ -145,6 +154,19 @@ written:
     ldrh    r9, [r8, #6]                    @ the sector
     bl      put
     b       report_status
+
+lz:
+    mov     r0, r8
+    ldr     r3, lz_entry
+    bl      call
+    mov     r5, r0
+    ldr     r4, status
+    str     r4, [r10, #LINK_SEND_BUFFER]
+    mov     r1, #STATUS_SIZE
+    strh    r1, [r10, #LINK_SEND_SIZE]
+    mov     r0, r5
+    pop     {r4-r11, lr}
+    bx      lr
 
 fill:
     ldrb    r0, [r8, #5]
@@ -339,4 +361,6 @@ fold:
     .word   0xFA000
 reset_flag:
     .word   0x03007FFA
+lz_entry:
+    .word   0x08FFF001                      @ the decoder in ROM block 0xFFF, Thumb
 end:

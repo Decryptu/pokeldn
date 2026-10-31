@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assemble every asm/*.s into pokeldn/frlg/rom/buffer_payloads.py.
+"""Assemble every asm/*.s, and build every asm/*.c with clang, into pokeldn/frlg/rom/buffer_payloads.py.
 
     ./scripts/gen_buffer_scripts.py [--check]
 
@@ -10,7 +10,11 @@ re-assembles and compares when arm-none-eabi-as is installed.
 import argparse
 import hashlib
 import pathlib
+import re
+import shutil
+import subprocess
 import sys
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -23,6 +27,58 @@ OUT = ROOT / "pokeldn" / "frlg" / "rom" / "buffer_payloads.py"
 def assemble(source_path):
     """Assemble one ARM source to raw bytes. Raises CodeError without a toolchain."""
     return custom_code.assemble(source_path.read_text())
+
+
+# Thumb C payloads and the address each is linked to run from.
+C_LINK = {"rom-lzma": 0x08FFF000}
+CLANG_FLAGS = ["--target=armv4t-none-eabi", "-mthumb", "-Os", "-ffreestanding", "-fno-builtin",
+               "-nostdlib", "-Wall", "-Werror"]
+
+
+def clang_version():
+    if shutil.which("clang") is None:
+        return None
+    out = subprocess.run(["clang", "--version"], capture_output=True, text=True).stdout
+    match = re.search(r"version (\d+)\.", out)
+    return int(match[1]) if match else None
+
+
+def compile_c(source_path, address):
+    """Thumb C -> raw bytes linked at `address`, entry first (section .text.entry)."""
+    tools = custom_code.toolchain()
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = pathlib.Path(tmp)
+        (tmp / "link.ld").write_text(
+            f"SECTIONS {{ . = 0x{address:08X}; .text : {{ *(.text.entry) *(.text*) *(.rodata*) }} "
+            "/DISCARD/ : { *(.data*) *(.bss*) *(.ARM.*) *(.comment) } }\n")
+        subprocess.run(["clang", *CLANG_FLAGS, "-c", str(source_path), "-o", str(tmp / "a.o")], check=True)
+        ld = pathlib.Path(tools[1]).with_name("arm-none-eabi-ld")
+        subprocess.run([str(ld), "-T", str(tmp / "link.ld"), str(tmp / "a.o"), "-o", str(tmp / "a.elf")],
+                       check=True)
+        subprocess.run([tools[1], "-O", "binary", str(tmp / "a.elf"), str(tmp / "a.bin")], check=True)
+        return (tmp / "a.bin").read_bytes()
+
+
+def render_thumb(current):
+    """The THUMB_CODE block; with no clang of the recorded version, the committed one stands."""
+    version = clang_version()
+    recorded = re.search(r"^CLANG_MAJOR = (\d+)$", current, re.M)
+    if version is None or (recorded and int(recorded[1]) != version):
+        block = re.search(r"^# Thumb C payloads.*?^}\n", current, re.M | re.S)
+        major = re.search(r"^CLANG_MAJOR = .*\n", current, re.M)
+        if block and major:
+            return major[0] + "\n" + block[0]
+        raise SystemExit("building asm/*.c needs clang with the ARM target")
+    lines = [f"CLANG_MAJOR = {version}", "",
+             "# Thumb C payloads: name -> (code, sha256 of the source, the address it is linked to run at)",
+             "THUMB_CODE = {"]
+    for name, address in sorted(C_LINK.items()):
+        source = ASM_DIR / f"{name}.c"
+        code = compile_c(source, address)
+        lines += [f"    {name!r}: (", f"        bytes.fromhex({code.hex()!r}),",
+                  f"        {hashlib.sha256(source.read_bytes()).hexdigest()!r},", f"        0x{address:08X},", "    ),"]
+    lines.append("}")
+    return "\n".join(lines) + "\n"
 
 
 def render():
@@ -41,7 +97,8 @@ def render():
         lines.append("    ),")
     lines.append("}")
     lines.append("")
-    return "\n".join(lines)
+    current = OUT.read_text() if OUT.exists() else ""
+    return "\n".join(lines) + "\n" + render_thumb(current)
 
 
 def main():
