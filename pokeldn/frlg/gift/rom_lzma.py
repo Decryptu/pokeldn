@@ -16,6 +16,9 @@ PB_MASK = 3
 MATCH_MAX = 273
 CHAIN = 24
 HASH_BITS = 22
+# asm/rom-lzma.c's per-frame accounting: a symbol costs SYMBOL_COST, a copied byte 1.
+SYMBOL_COST = 6
+MARK_STEP = 256
 
 NEXT_LIT = (0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 4, 5)
 UNKNOWN, EMITTED, LIVE, SLOT, STILL = range(5)
@@ -180,17 +183,22 @@ class Stream:
         return (m << 12) - src - (m < BLOCKS and self.kind[m] == UNKNOWN)
 
     def chunks(self, size=64):
-        """-> [(bytes emitted before the chunk, blocks in it, its LZMA bytes)]."""
+        """-> [(bytes emitted before the chunk, blocks in it, its LZMA bytes, marks)]; a mark (byte,
+        cost) says decoding needs the stream up to `byte` to have spent `cost` units of the
+        decoder's budget, one mark per MARK_STEP units."""
         out, total = [], self.start + 1
         for first in range(0, total, size):
             count = min(size, total - first)
-            out.append((first * BLOCK, count, self._chunk(BASE + first * BLOCK, BASE + (first + count) * BLOCK)))
+            out.append((first * BLOCK, count, *self._chunk(BASE + first * BLOCK, BASE + (first + count) * BLOCK)))
         return out
 
     def _chunk(self, begin, end):
         enc, model, v, prev = _Encoder(), _Model(), self.v, self.prev
         state, reps, i = 0, [0, 0, 0, 0], begin
+        cost, marks = 0, []
         while i < end:
+            if cost >= (len(marks) + 1) * MARK_STEP:
+                marks.append((len(enc.out) + enc.csize, cost))
             current = self.start - ((i - BASE) >> 12)
             room = min(MATCH_MAX, end - i)
 
@@ -236,6 +244,7 @@ class Stream:
                 _length(enc, model.lens[1], rep_n, ps)
                 state = 8 if state < 7 else 11
                 i += rep_n
+                cost += SYMBOL_COST + rep_n
             elif best_n >= 3 or (best_n == 2 and best_d < 128):
                 enc.bit(model.match, (state << 4) + ps, 1)
                 enc.bit(model.rep, state, 0)
@@ -244,6 +253,7 @@ class Stream:
                 reps = [best_d] + reps[:3]
                 state = 7 if state < 7 else 10
                 i += best_n
+                cost += SYMBOL_COST + best_n
             else:
                 enc.bit(model.match, (state << 4) + ps, 0)
                 byte = v[i]
@@ -259,8 +269,9 @@ class Stream:
                     enc.tree(model.lit, 0, 8, byte)
                 state = NEXT_LIT[state]
                 i += 1
+                cost += SYMBOL_COST
         enc.flush()
-        return bytes(enc.out)
+        return bytes(enc.out), marks
 
     def _held(self, src, current):
         """The byte the console reads at virtual `src`, where the stream may have replaced the copy."""

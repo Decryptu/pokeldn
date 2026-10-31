@@ -30,6 +30,10 @@ SURVEY_PER_RUN = 32                    # 128 KB hashed per frame; 32 words answe
 DECODER_BLOCK = 0xFFF                  # asm/rom-lzma.c runs from here; the boot's fill clears it
 LZ_DATA_HEADER = 10
 LZ_PIECE = MG_LINK_BUFFER_SIZE - LZ_DATA_HEADER
+# The decoding a data message may cause, in the decoder's units (400 a frame): 16 frames. The console
+# drops link blocks that arrive while it is still running the last message [docs/frlg_gift.md].
+LZ_MESSAGE_COST = 16 * 400
+LOOKAHEAD = 20                         # asm/rom-lzma.c leaves this much of a message to the next
 FILL_PER_MESSAGE = 8                   # a write and a read-back are about 6000 instructions
 SOUND_INFO_AT = 0x008                  # asm/rom-transfer.s: &gSoundInfo, the engine stopped at install
 MAX_BOOT_BLOCKS = (MG_LINK_BUFFER_SIZE - BOOT_HEADER) // 2
@@ -149,18 +153,48 @@ def lz_start_message(start, blocks, staging, base, emitted, live):
             + b"".join(n.to_bytes(2, "little") for n in live))
 
 
+def lz_cost(marks, at, end):
+    """The decoding the stream bytes [at, end) cause, from the encoder's marks."""
+    before = [cost for byte, cost in marks if byte <= at]
+    upto = [cost for byte, cost in marks if byte <= end]
+    return (upto[-1] if upto else 0) - (before[-1] if before else 0)
+
+
+def lz_cuts(length, marks):
+    """-> where each data message of a chunk ends: at most LZ_PIECE bytes, and at most about
+    LZ_MESSAGE_COST of decoding, as the encoder's marks give it."""
+    cuts, at, k = [], 0, 0
+    while at < length:
+        end = min(length, at + LZ_PIECE)
+        while k < len(marks) and marks[k][0] <= at:
+            k += 1
+        base = marks[k - 1][1] if k else 0
+        j = k
+        while j < len(marks) and marks[j][0] < end:
+            if marks[j][1] - base > LZ_MESSAGE_COST:
+                end = max(at + 1, marks[j][0])
+                break
+            j += 1
+        cuts.append(end)
+        at = end
+    return cuts
+
+
 def lz_messages(chunks, start, staging, live):
-    """[(emitted, blocks, data)] -> [(message, blocks it completes)]."""
+    """[(emitted, blocks, data, marks)] -> [(message, blocks it completes, heavy)]: a heavy message
+    decodes for longer than the next one may wait, so its batch ends after it."""
     from pokeldn.frlg.gift import rom_lzma
     out, seq = [], 0
-    for emitted, count, data in chunks:
+    for emitted, count, data, marks in chunks:
         out.append((lz_start_message(start, count, staging, rom_lzma.BASE, emitted, live), 0))
-        for at in range(0, len(data), LZ_PIECE):
-            piece, last = data[at:at + LZ_PIECE], at + LZ_PIECE >= len(data)
+        at = 0
+        for end in lz_cuts(len(data), marks):
+            piece, last = data[at:end], end >= len(data)
             out.append((save_transfer._branch_word().to_bytes(4, "little") + bytes((7, last))
                         + (seq & 0xFFFF).to_bytes(2, "little") + len(piece).to_bytes(2, "little") + piece,
-                        count if last else 0))
+                        count if last else 0, lz_cost(marks, at, end + LOOKAHEAD) > LZ_MESSAGE_COST))
             seq += 1
+            at = end
     return out
 
 
@@ -220,14 +254,18 @@ def batches(items):
     stay in one batch when it fits."""
     out, batch, group = [], [], []
     for item in items:
-        group.append(item)
-        if not item[1] and len(group) < save_transfer.MAX_BATCH_MESSAGES:
+        group.append(item[:2])
+        heavy = len(item) > 2 and item[2]
+        if not item[1] and not heavy and len(group) < save_transfer.MAX_BATCH_MESSAGES:
             continue
         if batch and len(batch) + len(group) > save_transfer.MAX_BATCH_MESSAGES:
             out.append(batch)
             batch = []
         batch += group
         group = []
+        if heavy:
+            out.append(batch)
+            batch = []
     if batch and len(batch) + len(group) > save_transfer.MAX_BATCH_MESSAGES:
         out.append(batch)
         batch = []
@@ -355,8 +393,10 @@ class RomTransferServer(save_transfer._Server):
             tag = next(self._tags)
         chunks = job.result()
         self._pool.shutdown(wait=False)
-        self.info(f"LZMA stream: {sum(len(c[2]) for c in chunks)} bytes in {len(chunks)} chunks.")
-        return lz_messages(chunks, top, start, sorted(slots))
+        items = lz_messages(chunks, top, start, sorted(slots))
+        self.info(f"LZMA stream: {sum(len(c[2]) for c in chunks)} bytes in {len(chunks)} chunks, "
+                  f"{len(items)} messages.")
+        return items
 
     def _script(self):
         build = yield from self._game_data()
