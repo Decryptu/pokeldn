@@ -839,6 +839,27 @@ DEFAULT = BPRF
 GAME_CODES = tuple(BUILDS)
 
 
+# librfu_sio32id.o in each cartridge, and the three patches the application writes over it and
+# librfu_intr.o into the ROM copy at load: (offset from it, cartridge bytes, guest bytes)
+# [docs/frlg_rom.md, The breakpoint hooks].
+SIO32ID = MappingProxyType({
+    "BPRD": 0x081E702C, "BPRE": 0x081E2814, "BPRF": 0x081E1568, "BPRI": 0x081E0200,
+    "BPRS": 0x081E28C8, "BPGD": 0x081E7008, "BPGE": 0x081E27F0, "BPGF": 0x081E1544,
+    "BPGI": 0x081E01DC, "BPGS": 0x081E28A4, "BPRJ": 0x081C66EC, "BPGJ": 0x081C66C8,
+})
+WRAPPER_PATCHES = (
+    (0x12E, bytes.fromhex("8c46"), bytes.fromhex("52be")),             # mov ip, r1 -> bkpt #0x52
+    (0x314, bytes.fromhex("50309fe5"), bytes.fromhex("720520e1")),     # ldr r3, [pc, #0x50] -> bkpt #0x52
+    (0xA28, bytes.fromhex("20e7a0e1"), bytes.fromhex("080000ea")),     # mov lr, r0, lsr #14 -> b +0x28
+)
+
+
+def wrapper_patches(code):
+    """-> [(ROM offset, cartridge bytes, guest bytes)] the application writes on cartridge `code`."""
+    base = SIO32ID[resolve(code).game_code] - 0x08000000
+    return [(base + at, original, guest) for at, original, guest in WRAPPER_PATCHES]
+
+
 def for_game_code(code):
     """-> the Build for a header game code (str or bytes). UnknownBuild for any other."""
     if isinstance(code, (bytes, bytearray)):

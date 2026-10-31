@@ -56,6 +56,22 @@ def _seq_lt(a, b):
 _E_FLAGS, _E_INNER, _E_LASTTX, _E_RESENDS, _E_ACKED = range(5)
 
 
+class SeenSequences:
+    """Duplicate filter for a capture reader. Sequence ids are 16 bits and wrap after 65536 messages,
+    about 11 minutes of a GBA link; an id counts as a repeat only within `window` seconds of its
+    last sighting."""
+
+    def __init__(self, window=30.0):
+        self.window = window
+        self._last = {}
+
+    def fresh(self, seq, ts):
+        """-> True the first time `seq` is seen in the window; records the sighting either way."""
+        last = self._last.get(seq)
+        self._last[seq] = ts
+        return last is None or ts - last > self.window
+
+
 class ReliableLink:
     """Selective-repeat window, one per peer. `window_lo` is the header's lowest-pending-ack."""
 

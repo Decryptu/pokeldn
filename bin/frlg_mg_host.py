@@ -25,8 +25,8 @@ from pokeldn.frlg.link import trade_runtime  # noqa: E402
 from pokeldn.frlg.rom import buffer_script, builds, native_script  # noqa: E402
 from pokeldn.frlg.text import easychat  # noqa: E402
 from pokeldn.frlg.gift.host_mg_app import (  # noqa: E402
-    BufferScriptHostApplication, MysteryGiftHostApplication, SaveTransferHostApplication,
-    WonderNewsHostApplication)
+    BufferScriptHostApplication, MysteryGiftHostApplication, RomTransferHostApplication,
+    SaveTransferHostApplication, WonderNewsHostApplication)
 from pokeldn.frlg.gift import wonder_card_events  # noqa: E402
 from pokeldn.frlg.gift.wonder_card import GIFT_BEAST_CUTSCENE  # noqa: E402
 
@@ -77,6 +77,17 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
         "--save-restore", metavar="FILE",
         help=("write the .sav FILE onto the console: beside its newest save, every sector read "
               "back, then the game loads it and saves; anything short of that keeps the old save"))
+    payload_group.add_argument(
+        "--rom-transfer", metavar="ROM",
+        help=("write the .gba ROM into the console's ROM copy, then soft-reset into it; it lasts "
+              "until the game is relaunched [docs/rse_switch_build.md, Delivery without Atmosphere]"))
+    parser.add_argument(
+        "--rom-live", metavar="FILE",
+        help=("with --rom-transfer: a JSON {game code: [block, ...]} of the ROM blocks the console's "
+              "own session runs from, in place of the measured ones the package carries"))
+    parser.add_argument(
+        "--rom-no-boot", action="store_true",
+        help="with --rom-transfer: write and check every block, then end the session without booting")
     parser.add_argument(
         "--save-resume-dir", metavar="DIR",
         help="with --save-backup: keep a backup the link cut short here; the next one goes on from it")
@@ -908,6 +919,30 @@ def _save_session(parser, args, config):
     return 0 if app.delivery_succeeded else 1
 
 
+def _rom_session(parser, args, config):
+    import json
+    from pokeldn.frlg.gift import rom_transfer
+    if args.export_gift or args.save_to_board:
+        parser.error("--rom-transfer writes a ROM; it sends no gift")
+    try:
+        with open(args.rom_transfer, "rb") as handle:
+            image = handle.read()
+        rom_transfer.blocks_of(image)
+        live = rom_transfer.live_blocks(args.rom_live)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        parser.error(f"--rom-transfer: {exc}")
+    app = RomTransferHostApplication(
+        config, image=image, live=live, boot=not args.rom_no_boot,
+        transport_factory=host_cli.transport_factory(parser, args),
+        log=trade_runtime.ConsoleLog(args.verbose))
+    app.run()
+    if app.interrupted:
+        return 130
+    if app.idle_timed_out:
+        return 124
+    return 0 if app.delivery_succeeded else 1
+
+
 def main(argv=None):
     try:
         file_config, shared_path, local_path = \
@@ -926,7 +961,11 @@ def main(argv=None):
         parser.error("hosting only supports live mode; omit --no-live")
     if args.save_resume_dir and not args.save_backup:
         parser.error("--save-resume-dir goes with --save-backup")
+    if (args.rom_live or args.rom_no_boot) and not args.rom_transfer:
+        parser.error("--rom-live and --rom-no-boot go with --rom-transfer")
     config = build_run_config(parser, args)
+    if args.rom_transfer:
+        return _rom_session(parser, args, config)
     if args.save_backup or args.save_restore:
         if args.save_to_board:
             parser.error("--save-to-board keeps a gift; a save session sends none")

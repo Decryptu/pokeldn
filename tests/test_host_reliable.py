@@ -133,3 +133,12 @@ def main():
     test_bootstrap_timeout_then_rtt_driven_timeout()
     test_window_backpressure_and_malformed_input()
     print("host reliable tests passed")
+
+
+def test_a_capture_reader_keeps_the_messages_after_the_sequence_wraps_and_drops_a_resend():
+    """Sequence ids wrap after 65536 messages; a set of ids seen dropped everything after it."""
+    seen, kept = reliable.SeenSequences(), 0
+    for n in range(70_000):
+        kept += seen.fresh(n & 0xFFFF, n * 0.01)
+    assert kept == 70_000
+    assert not seen.fresh(69_999 & 0xFFFF, 700.5)

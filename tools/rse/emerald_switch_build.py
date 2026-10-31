@@ -17,16 +17,17 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
+
+from pokeldn.frlg.rom import builds  # noqa: E402
+
 PATCH = os.path.join(HERE, "pokeemerald_switch.patch")
 UPSTREAM = "https://github.com/pret/pokeemerald.git"
 BASE = "731ad5bfd6e6f265508d0efcca0ba42f9dcf5881"
 
-# librfu_sio32id.o in each Switch cartridge; the application patches it and librfu_intr.o (+0x30C)
-# there at load [docs/frlg_rom.md, The breakpoint hooks]. BPRJ/BPGJ (0x081C66EC/0x081C66C8) fall
-# inside Emerald's .text and are not built.
-CARTS = {"BPRD": 0x081E702C, "BPRE": 0x081E2814, "BPRF": 0x081E1568, "BPRI": 0x081E0200,
-         "BPRS": 0x081E28C8, "BPGD": 0x081E7008, "BPGE": 0x081E27F0, "BPGF": 0x081E1544,
-         "BPGI": 0x081E01DC, "BPGS": 0x081E28A4}
+# librfu_sio32id.o in each Switch cartridge [builds.SIO32ID]. BPRJ/BPGJ fall inside Emerald's .text
+# and are not built.
+CARTS = {code: at for code, at in builds.SIO32ID.items() if not code.endswith("J")}
 
 
 def run(cmd, cwd=None):

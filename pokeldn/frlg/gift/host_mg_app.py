@@ -515,6 +515,60 @@ class BufferScriptHostApplication(MysteryGiftHostApplication):
                 + ", which matched. The console printed our message and saved.")
 
 
+class RomTransferHostApplication(MysteryGiftHostApplication):
+    """Write a ROM image into the console's ROM copy and boot it [rom_transfer.py]: no card is sent
+    and the save is not touched."""
+
+    ACTIVITY_NOUN = "ROM transfer"
+
+    def __init__(self, config, *, image, live, boot=True, **kwargs):
+        super().__init__(config, **kwargs)
+        self.image, self.live, self.boot = image, live, boot
+        self._shown = -1
+
+    def _build_plan(self):
+        return None
+
+    def _progress(self, done, total):
+        if done // 16 == self._shown and done < total:
+            return
+        self._shown = done // 16
+        print(f"[rom] {done} of {total} blocks", flush=True)
+
+    def _build_engine(self, link_player, timing):
+        from pokeldn.frlg.gift import rom_transfer
+        server = rom_transfer.RomTransferServer(
+            self.image, live=self.live, boot=self.boot, progress=self._progress, log=self.log,
+            expect_console=getattr(self.config, "expect_console", None))
+        return HostMysteryGiftEngine(server=server, link_player=link_player,
+                                     trust_pia=self.config.trust_pia, timing=timing, log=self.log)
+
+    def _log_identity(self, link_player):
+        self.info(f"ROM transfer: {len(self.image)} bytes into the console's ROM copy, "
+                  + ("then a soft reset into it." if self.boot else "with no boot."))
+        _log_advertised_activity(self)
+
+    def _hosting_instructions(self):
+        return "Hosting a ROM transfer. On the Switch choose Mystery Gift -> Wonder Cards -> Friend."
+
+    def _screen_card(self):
+        return "Mystery Gift", "ROM transfer", None
+
+    def run(self):
+        HostApplication.run(self)
+        engine = self.session.activity if self.session is not None else None
+        outcome = getattr(getattr(engine, "server", None), "outcome", None)
+        self.delivery_succeeded = outcome in ("booted", "written")
+        print({"booted": "Boot sent: the console restarts into the new ROM.",
+               "written": "Every block is written and checked; nothing was booted.",
+               "not-written": "Not booted: a block did not write. Starting again goes on from the "
+                              "blocks already there, until the game is relaunched.",
+               "refused": "Nothing was written: see the log for why."}.get(
+            outcome, "The link dropped. Starting again goes on from the blocks already written, "
+                     "until the game is relaunched."))
+        return self.delivery_succeeded
+
+
 class SaveTransferHostApplication(MysteryGiftHostApplication):
     """Save backup or restore over Wonder Cards -> Friend [save_transfer.py]: no card is sent and
     none is replaced. `backup` is where the backed-up .sav goes, `restore` the .sav to write."""

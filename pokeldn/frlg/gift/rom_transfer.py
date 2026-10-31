@@ -15,24 +15,47 @@ from pokeldn.frlg.gift.mystery_gift import (
     MG_LINK_BUFFER_SIZE, MG_LINKID_CLIENT_SCRIPT, MG_LINKID_NEWS, MG_LINKID_RAM_SCRIPT,
     MG_LINKID_RESPONSE,
 )
+from pokeldn.frlg.rom import builds
 from pokeldn.frlg.rom.buffer_payloads import PAYLOADS
 from pokeldn.frlg.save import sav
 
 C = save_transfer.C
 BLOCK = 0x1000
 BLOCKS = 0x1000                        # the fold reaches 16 MB [docs/frlg_rom.md, The flash sector path]
-OP_DATA, OP_SURVEY, OP_BOOT = 1, 3, 4
+OP_DATA, OP_SURVEY, OP_BOOT, OP_FILL = 1, 3, 4, 5
 DATA_HEADER = 12
 BOOT_HEADER = 16
 SURVEY_PER_RUN = 32                    # 128 KB hashed per frame; 32 words answered
+FILL_PER_MESSAGE = 8                   # a write and a read-back are about 6000 instructions
+SOUND_INFO_AT = 0x008                  # asm/rom-transfer.s: &gSoundInfo, the engine stopped at install
 MAX_BOOT_BLOCKS = (MG_LINK_BUFFER_SIZE - BOOT_HEADER) // 2
 _EMPTY = b"\xff" * BLOCK
 
 NOT_WRITTEN = _encode_message("The ROM could not be written.\nNothing was started.", None)
 
 
-def code():
-    return PAYLOADS["rom-transfer"][0]
+def live_blocks(path=None):
+    """-> {game code: [block]} from `path`, or the measured ones in pokeldn/frlg/data."""
+    import json
+    if path is None:
+        from importlib import resources
+        source = resources.files("pokeldn.frlg").joinpath("data/rom_live_blocks.json")
+        if not source.is_file():
+            return {}
+        text = source.read_text()
+    else:
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+    return {code: sorted(int(n) for n in blocks) for code, blocks in json.loads(text).items()
+            if not code.startswith("_")}
+
+
+def code(build=None):
+    """The payload image; with a build, it stops that cartridge's sound engine at install."""
+    image = bytearray(PAYLOADS["rom-transfer"][0])
+    if build is not None:
+        image[SOUND_INFO_AT:SOUND_INFO_AT + 4] = build.sound_info.to_bytes(4, "little")
+    return bytes(image)
 
 
 def block_hash(data):
@@ -49,6 +72,20 @@ def blocks_of(image):
     if len(image) > BLOCKS * BLOCK:
         raise ValueError(f"a {len(image)}-byte image does not fit the 16 MB ROM copy")
     return [image[at:at + BLOCK].ljust(BLOCK, b"\xff") for at in range(0, len(image), BLOCK)]
+
+
+def with_wrapper_patches(blocks, code):
+    """-> `blocks` carrying the application's librfu patches for cartridge `code`, as the ROM copy
+    does once loaded; a librfu the patches do not match is refused [builds.wrapper_patches]."""
+    blocks = list(blocks)
+    for at, original, guest in builds.wrapper_patches(code):
+        raw = bytearray(blocks[at // BLOCK]) if at // BLOCK < len(blocks) else None
+        if raw is None or raw[at % BLOCK:at % BLOCK + len(original)] not in (original, guest):
+            raise ValueError(f"the image has no {code} librfu at 0x{0x08000000 + at:08X}: the "
+                             "application's link patches would land on other code")
+        raw[at % BLOCK:at % BLOCK + len(guest)] = guest
+        blocks[at // BLOCK] = bytes(raw)
+    return blocks
 
 
 def staging_start(count, used, live):
@@ -75,6 +112,30 @@ def block_messages(n, raw):
     return messages
 
 
+def fill_message(value, first, count):
+    return (save_transfer._branch_word().to_bytes(4, "little") + bytes((OP_FILL, value))
+            + first.to_bytes(2, "little") + count.to_bytes(2, "little"))
+
+
+def write_messages(writes):
+    """[(block, raw)] -> [(message, blocks it completes)]: a run of blocks of one byte is one fill."""
+    out, i = [], 0
+    while i < len(writes):
+        n, raw = writes[i]
+        if raw == raw[:1] * BLOCK:
+            j = i
+            while (j + 1 < len(writes) and j + 1 - i < FILL_PER_MESSAGE
+                   and writes[j + 1] == (writes[j][0] + 1, raw)):
+                j += 1
+            out.append((fill_message(raw[0], n, j - i + 1), j - i + 1))
+            i = j + 1
+            continue
+        messages = block_messages(n, raw)
+        out += [(message, 0) for message in messages[:-1]] + [(messages[-1], 1)]
+        i += 1
+    return out
+
+
 def survey_message(first, count, tag):
     return (save_transfer._branch_word().to_bytes(4, "little") + bytes((OP_SURVEY, 0))
             + first.to_bytes(2, "little") + count.to_bytes(2, "little")
@@ -91,14 +152,18 @@ def boot_message(targets, staged, fill, fill_count):
 
 
 def batches(writes):
-    """[(block, raw)] -> [[messages]] of at most save_transfer.MAX_BATCH_MESSAGES each."""
-    out, batch = [], []
-    for n, raw in writes:
-        messages = block_messages(n, raw)
-        if batch and len(batch) + len(messages) > save_transfer.MAX_BATCH_MESSAGES:
+    """[(block, raw)] -> [[(message, blocks it completes)]], at most MAX_BATCH_MESSAGES each; a
+    block's messages stay in one batch."""
+    out, batch, group = [], [], []
+    for item in write_messages(writes):
+        group.append(item)
+        if not item[1]:
+            continue
+        if batch and len(batch) + len(group) > save_transfer.MAX_BATCH_MESSAGES:
             out.append(batch)
             batch = []
-        batch += messages
+        batch += group
+        group = []
     if batch:
         out.append(batch)
     return out
@@ -106,12 +171,14 @@ def batches(writes):
 
 class RomTransferServer(save_transfer._Server):
     """Write `image` into the ROM copy, then boot it. `live` are the blocks the console's own session
-    runs from; `boot=False` stops before the boot op, with everything written and checked."""
+    runs from, or {game code: blocks}, picked once the console names its cartridge; `boot=False`
+    stops before the boot op, with everything written and checked."""
 
     def __init__(self, image, *, live=(), boot=True, **kwargs):
         self.blocks = blocks_of(image)
         self.hashes = [block_hash(raw) for raw in self.blocks]
-        self.live = frozenset(live)
+        self.live_by_code = live if isinstance(live, dict) else None
+        self.live = frozenset(() if self.live_by_code is not None else live)
         self.boot = boot
         self.failed = None
         self.written = 0
@@ -146,10 +213,10 @@ class RomTransferServer(save_transfer._Server):
         """Send the writes in batches; -> False after ending the session on a block that failed."""
         for batch in batches(writes):
             yield self.send(MG_LINKID_CLIENT_SCRIPT, save_transfer.batch_script(len(batch)))
-            for message in batch:
+            for message, blocks in batch:
                 yield self.send(MG_LINKID_NEWS, message)
-                if message[5] & 1:
-                    self.written += 1
+                if blocks:
+                    self.written += blocks
                     self.progress(self.written, total)
             status = yield ("recv", MG_LINKID_RESPONSE)
             failed, first, overflowed = (int.from_bytes(status[at:at + 4], "little") for at in (0, 4, 8))
@@ -166,8 +233,24 @@ class RomTransferServer(save_transfer._Server):
         build = yield from self._game_data()
         if build is None:
             yield from self._finished()
+        if self.live_by_code is not None:
+            if build.game_code not in self.live_by_code:
+                self.outcome = "refused"
+                self.info(f"Nothing was written: no live blocks are known for {build.game_code}, "
+                          "and writing over the code the session runs from would end it.")
+                yield from self._end(NOT_WRITTEN, False, SVR_MSG_NOTHING_SENT)
+                yield from self._finished()
+            self.live = frozenset(self.live_by_code[build.game_code])
+        try:
+            self.blocks = with_wrapper_patches(self.blocks, build.game_code)
+        except ValueError as exc:
+            self.outcome = "refused"
+            self.info(f"Nothing was written: {exc}.")
+            yield from self._end(NOT_WRITTEN, False, SVR_MSG_NOTHING_SENT)
+            yield from self._finished()
+        self.hashes = [block_hash(raw) for raw in self.blocks]
         yield self.send(MG_LINKID_CLIENT_SCRIPT, C.client_script(*save_transfer._reporting(MG_LINKID_RAM_SCRIPT)))
-        yield self.send(MG_LINKID_RAM_SCRIPT, code())
+        yield self.send(MG_LINKID_RAM_SCRIPT, code(build))
         yield ("recv", MG_LINKID_RESPONSE)
 
         hashes = yield from self._survey()

@@ -2,7 +2,8 @@
 @ [docs/rse_switch_build.md, Delivery without Atmosphere]. The data path is asm/save-restore.s with
 @ the write target the ROM fold (swi 0x48, r0 = 0xFA000 + n) and the read-back the ROM window.
 @
-@ The first message is this whole image: `install` copies it to RESIDENT and answers STATUS.
+@ The first message is this whole image: `install` copies it to RESIDENT, stops the sound engine
+@ (its song and wave data are ROM the stream overwrites) and answers STATUS.
 @ Every later message starts with a branch to RESIDENT + 4, then holds:
 @   +4  op
 @   OP_DATA (1):   +5 flags (bit 0: write it now), +6 u16 sector n, +8 u16 offset in it, +10 u16
@@ -11,10 +12,14 @@
 @   OP_SURVEY (3): +6 u16 first sector, +8 u16 count, +10 u16 sectors per run, +12 u32 tag. Each
 @                  run hashes the next sectors from where the last run with that tag stopped and
 @                  answers one word per sector: h = rotl(h, 1) ^ word over the sector's words.
+@   OP_FILL (5):   +5 the byte, +6 u16 first sector, +8 u16 count: each sector written with the
+@                  byte and read back. Answers STATUS.
 @   OP_BOOT (4):   +6 u16 count, +8 u16 first staged sector, +10 u16 first fill sector, +12 u16
 @                  fill count, +16 u16 sector[count]. With interrupts and DMA off, staged sector
 @                  first + i goes to sector[i], the fill sectors become 0xFF, then SoftReset into
 @                  0x08000000. It does not return.
+@
+@ Image: 0x000 b install, 0x004 b entry (RESIDENT + 4), 0x008 &gSoundInfo (0: leave the sound).
 @
 @ STATUS: +0 sectors that read back wrong, +4 the first of them (0xFFFFFFFF: none), +8 token runs
 @ that overflowed STAGING. link.sendSize is at param + 0x34, link.sendBuffer at param + 0x3C.
@@ -37,12 +42,16 @@
     .equ OP_DATA, 1
     .equ OP_SURVEY, 3
     .equ OP_BOOT, 4
+    .equ OP_FILL, 5
+    .equ REG_SOUNDCNT_X, 0x84
     .equ LINK_SEND_SIZE, 0x34
     .equ LINK_SEND_BUFFER, 0x3C
 
 _start:
     b       install
     b       entry
+sound_info:
+    .word   0
 
 install:
     push    {r4, lr}
@@ -61,6 +70,11 @@ install:
     str     r1, [r2, #4]
     str     r3, [r2, #8]
     str     r3, [r2, #SURVEY_TAG]           @ the host never uses tag 0
+    ldr     r1, sound_info
+    cmp     r1, #0
+    strne   r3, [r1]                        @ gSoundInfo.ident: SoundMain returns at once [m4a]
+    movne   r1, #0x04000000
+    strneh  r3, [r1, #REG_SOUNDCNT_X]       @ master sound off; m4aSoundInit turns it back on
     str     r2, [r4, #LINK_SEND_BUFFER]
     mov     r1, #STATUS_SIZE
     strh    r1, [r4, #LINK_SEND_SIZE]
@@ -80,6 +94,8 @@ entry:
     beq     survey
     cmp     r1, #OP_BOOT
     beq     boot
+    cmp     r1, #OP_FILL
+    beq     fill
     b       out
 
 data:
@@ -127,13 +143,37 @@ written:
     tst     r1, #1
     beq     out
     ldrh    r9, [r8, #6]                    @ the sector
+    bl      put
+    b       report_status
+
+fill:
+    ldrb    r0, [r8, #5]
+    orr     r0, r0, r0, lsl #8
+    orr     r0, r0, r0, lsl #16
+    ldr     r4, staging
+    mov     r2, #SECTOR
+1:  str     r0, [r4], #4
+    subs    r2, r2, #4
+    bne     1b
+    ldrh    r9, [r8, #6]
+    ldrh    r11, [r8, #8]
+2:  subs    r11, r11, #1
+    bmi     report_status
+    bl      put
+    add     r9, r9, #1
+    b       2b
+
+@ Writes STAGING to sector r9 and reads it back through the ROM window; a mismatch counts in STATUS.
+@ Uses r0-r4 and r6.
+put:
+    push    {lr}
     ldr     r0, fold
     add     r0, r0, r9
     ldr     r1, staging
     adr     r3, write_sector
     orr     r3, r3, #1                      @ Thumb
     bl      call
-    mov     r3, #ROM                        @ read it back through the ROM window
+    mov     r3, #ROM
     add     r3, r3, r9, lsl #12
     ldr     r6, staging
     mov     r2, #SECTOR
@@ -145,7 +185,7 @@ written:
     subs    r2, r2, #4
     bne     5b
     cmp     r4, #0
-    beq     report_status
+    beq     6f
     ldr     r2, status
     ldr     r3, [r2]
     add     r3, r3, #1
@@ -153,6 +193,9 @@ written:
     ldr     r3, [r2, #4]
     cmn     r3, #1
     streq   r9, [r2, #4]
+6:  pop     {lr}
+    bx      lr
+
 report_status:
     ldr     r4, status
     mov     r1, #STATUS_SIZE
