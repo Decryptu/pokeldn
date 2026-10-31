@@ -144,6 +144,29 @@ def test_a_restore_cut_short_leaves_the_console_loading_its_own_save():
     assert loaded_blocks(client.flash) == loaded_blocks(chip)
 
 
+def test_a_sector_that_fails_in_a_batch_keeps_the_new_id_0_off_the_chip(monkeypatch):
+    """A batch reports once; the new id 0 is held back until the rest of its slot read back whole."""
+    chip, wanted = synthetic_save(205, seed=13), synthetic_save(1377, seed=14)
+    target = 1 - sav.describe(chip).newest.index
+    plan = sav.sectors_to_write(wanted, b"".join(sav.sector(chip, n)[0xFF4:] for n in range(28)))
+    bad = next(n for n, raw in plan if raw[0xFF4] != 0 and n // 14 == target)
+    real = buffer_script._Machine._on_swi
+
+    def unreliable(machine, uc, intno, user_data=None):
+        real(machine, uc, intno, user_data)
+        if machine.flash_writes and machine.flash_writes[-1][1] == bad:
+            machine.flash[bad * 4096] ^= 0xFF
+    monkeypatch.setattr(buffer_script._Machine, "_on_swi", unreliable)
+    server = save_transfer.SaveRestoreServer(wanted)
+    host, client = session(server, chip)
+    assert drive(host, client)
+    assert server.outcome == "not-restored" and server.failed == 1 << bad
+    assert client.machine.loads == []
+    footers = [sav.sector(client.flash, n)[0xFF4:] for n in range(target * 14, target * 14 + 14)]
+    assert [f for f in footers if f[:2] == bytes(2) and f[4:8] == (0x08012025).to_bytes(4, "little")] == []
+    assert loaded_blocks(client.flash) == loaded_blocks(chip)
+
+
 @pytest.mark.parametrize("game_code, layout", [(b"BPRF", "japanese"), (b"BPRJ", "latin")])
 def test_a_save_of_the_other_layout_is_refused_with_nothing_written(game_code, layout):
     chip = synthetic_save(7, seed=7, layout="japanese" if layout == "latin" else "latin")

@@ -25,6 +25,8 @@ BACKUP, RESTORE = "save-backup", "save-restore"
 
 # One pass is three commands of 8 bytes; 32 keeps a client script well inside its 1 KiB buffer.
 MAX_PASSES = 32
+# A restore batch: (RECV, RUN) per message and the 6-command report, inside the same 1 KiB buffer.
+MAX_BATCH_MESSAGES = (MG_LINK_BUFFER_SIZE // 8 - 6) // 2 + 1
 DECOMPRESSION_BUFFER = 0x0201C000
 RESIDENT = DECOMPRESSION_BUFFER + 0x400
 RESIDENT_ENTRY = RESIDENT + 4          # asm/save-restore.s 0x004: b entry
@@ -72,6 +74,33 @@ def data_messages(sector, raw):
                         + bytes((OP_DATA, sector, 1 if last else 0, 0))
                         + start.to_bytes(2, "little") + len(body).to_bytes(2, "little") + bytes(body))
     return messages
+
+
+def batch_script(count):
+    """Receive and run `count` data messages, then send STATUS: one round trip for the lot."""
+    if not 1 <= count <= MAX_BATCH_MESSAGES:
+        raise ValueError(f"a batch carries 1..{MAX_BATCH_MESSAGES} messages, asked for {count}")
+    steps = [step for _ in range(count - 1) for step in ((C.CLI_RECV, MG_LINKID_NEWS), C.CLI_RUN_BUFFER_SCRIPT)]
+    return C.client_script(*steps, *_reporting(MG_LINKID_NEWS))
+
+
+def restore_batches(plan):
+    """-> `plan` as batches of (sector, its data messages), at most MAX_BATCH_MESSAGES messages each.
+    The new id-0 sector starts a batch, so it is written only once every other slot sector has read
+    back whole."""
+    batches, batch, count = [], [], 0
+    for sector, raw in plan:
+        messages = data_messages(sector, raw)
+        new_id0 = (raw != b"\xff" * sav.SECTOR_SIZE and sector < 2 * sav.SLOT_SECTORS
+                   and int.from_bytes(raw[sav.SECTOR_ID_OFF:sav.SECTOR_ID_OFF + 2], "little") == 0)
+        if batch and (new_id0 or count + len(messages) > MAX_BATCH_MESSAGES):
+            batches.append(batch)
+            batch, count = [], 0
+        batch.append((sector, messages))
+        count += len(messages)
+    if batch:
+        batches.append(batch)
+    return batches
 
 
 def finish_message():
@@ -292,22 +321,23 @@ class SaveRestoreServer(_Server):
                                                   if newest else "missing") + ".")
         plan = sav.sectors_to_write(self.save, footers)
         self.progress(0, len(plan))
-        for i, (sector, raw) in enumerate(plan):
-            messages = data_messages(sector, raw)
-            steps = [step for _ in messages[1:] for step in ((C.CLI_RECV, MG_LINKID_NEWS), C.CLI_RUN_BUFFER_SCRIPT)]
-            yield self.send(MG_LINKID_CLIENT_SCRIPT, C.client_script(*steps, *_reporting(MG_LINKID_NEWS)))
-            for message in messages:
-                yield self.send(MG_LINKID_NEWS, message)
+        written = 0
+        for batch in restore_batches(plan):
+            yield self.send(MG_LINKID_CLIENT_SCRIPT, batch_script(sum(len(m) for _, m in batch)))
+            for _, messages in batch:
+                for message in messages:
+                    yield self.send(MG_LINKID_NEWS, message)
+                written += 1
+                self.progress(written, len(plan))
             status = yield ("recv", MG_LINKID_RESPONSE)
             failed = int.from_bytes(status[:4], "little")
             if failed:
                 self.failed = failed
                 self.outcome = "not-restored"
-                self.info(f"Sector {sector} did not write (fail mask 0x{failed:08X}); the game keeps "
-                          "the save it had.")
+                self.info(f"A sector did not write (fail mask 0x{failed:08X}); the game keeps the save "
+                          "it had.")
                 yield from self._end(NOT_RESTORED, False, SVR_MSG_NOTHING_SENT)
                 yield from self._finished()
-            self.progress(i + 1, len(plan))
         yield self.send(MG_LINKID_CLIENT_SCRIPT, C.client_script(*_reporting(MG_LINKID_NEWS)))
         yield self.send(MG_LINKID_NEWS, finish_message())
         status = yield ("recv", MG_LINKID_RESPONSE)

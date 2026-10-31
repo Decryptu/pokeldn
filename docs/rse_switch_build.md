@@ -165,10 +165,8 @@ sectors took 107 s for 6182 token bytes and 249 s for 27,421, a 2-point fit, unc
 At that rate the stream is about 22 hours in the save transfer's coding, 16 hours under the
 no-entropy-coding format, 11 hours under LZMA2 and 5 hours with the FireRed dictionary; 3645 sectors at
 3.5 s add 3.5 hours on top of any of them if each sector keeps the restore's one-ack-per-sector round
-trip. `SaveBackupServer` already batches up to 32 passes before an acknowledgement
-(`pokeldn/frlg/gift/save_transfer.py:27,243-245`); `SaveRestoreServer` acks every sector
-(`save_transfer.py:295-310`), so that cost has a cheap, host-only, offline-testable fix the backup path
-already proves out. The longest session measured so far lasted 269 s.
+trip. The restore now sends up to 62 data messages per acknowledgement
+([Restore](frlg_gift.md#restore)), and the ROM transfer uses the same batches. The longest session measured so far lasted 269 s.
 
 The boot writes the GBA SoftReset flag and runs `swi 0x00`: the BIOS jumps to the ROM reset vector at
 `0x08000000` with RAM cleared, so Emerald's own `AgbMain` initialises from the bytes just written. A
