@@ -193,7 +193,8 @@ The console drops a link block that arrives while it is still running the last m
 records the decoder's cost per stream byte (a symbol 6 units, a copied byte 1, 1000 units a frame);
 a symbol decodes once the decoder holds its 20-byte lookahead, 25 bytes past the encoder's count, so
 its work falls on the message that brings those. Each data message carries the frames of decoding it
-causes, and the host stays quiet that long plus 6 frames after its last link block. A few bytes of
+causes plus 6 frames; the next message's header block may arrive during the decoding, its second
+block only after. A few bytes of
 stream for a long run of `0xFF` can decode for over a hundred frames.
 
 | coding of Emerald for BPRE | bytes |

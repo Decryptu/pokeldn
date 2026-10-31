@@ -30,8 +30,8 @@ SURVEY_PER_RUN = 32                    # 128 KB hashed per frame; 32 words answe
 DECODER_BLOCK = 0xFFF                  # asm/rom-lzma.c runs from here; the boot's fill clears it
 LZ_DATA_HEADER = 10
 LZ_PIECE = MG_LINK_BUFFER_SIZE - LZ_DATA_HEADER
-# The console drops a link block that arrives while it still runs the last message: after a data
-# message the host stays quiet for the frames its decoding takes, and this many more.
+# The console drops a link block that arrives while it still runs the last message: a data message
+# tells the host how long its decoding keeps the console busy, plus this margin.
 LZ_QUIET_MARGIN = 6
 # asm/rom-lzma.c decodes a symbol only with LOOKAHEAD (20) bytes past its read position, which runs
 # 5 bytes ahead of the encoder's output count.

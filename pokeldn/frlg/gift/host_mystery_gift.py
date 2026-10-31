@@ -21,6 +21,8 @@ MG_DONE = "MG_DONE"
 
 HOST_NAME_PAD = linkplayer.HOST_NAME_PAD
 
+# A message's header block: SEND_BLOCK_INIT echoed and one fragment.
+HEADER_FRAMES = 3
 # The console's own RFU timeout fires a few seconds after it goes quiet; report twice before.
 STATUS_REPORT_FRAMES = 120
 
@@ -229,8 +231,9 @@ class HostMysteryGiftEngine:
                 return
 
     def _queue_message(self, ident, payload, size, after=0):
-        """`after`: frames to stay quiet once the message's last block is out, for a payload the
-        console runs for longer than the usual gap."""
+        """`after`: frames the console stays busy with this message once its last block is out. The
+        next message's first block may land meanwhile; its second must not, so the host waits until
+        that one would arrive after the console is free."""
         self._after = after
         blocks = mg_link.build_message(ident, payload, size)
         self._message_label = f"ident{ident}"
@@ -453,7 +456,8 @@ class HostMysteryGiftEngine:
                 self._sender = None
                 self._gap = self.timing.inter_block_gap_frames
                 if not self._blocks:
-                    self._gap = max(self._gap, self._after)
+                    # The next first block takes about HEADER_FRAMES, then the usual gap.
+                    self._gap = max(self._gap, self._after - self._gap - HEADER_FRAMES)
                 if not self._blocks and self.state == MG_GIFT:
                     self.server.on_sent()
                     self._pump_server()
