@@ -16,7 +16,7 @@ typedef unsigned int u32;
 #define BLOCK 0x1000
 #define OP_LZ_START 6
 #define OP_LZ_DATA 7
-#define BUDGET 400             /* per frame: a copied byte costs 1, a symbol SYMBOL_COST */
+#define BUDGET 1000            /* per frame: a copied byte costs 1, a symbol SYMBOL_COST */
 #define SYMBOL_COST 6
 #define LOOKAHEAD 20           /* LZMA_REQUIRED_INPUT_MAX */
 #define IN_SIZE 1280

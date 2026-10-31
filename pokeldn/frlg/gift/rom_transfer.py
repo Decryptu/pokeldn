@@ -10,7 +10,7 @@ soft-resets. A cut session resumes: every session starts by hashing the console'
 import concurrent.futures
 import itertools
 
-from pokeldn.frlg.gift import save_transfer
+from pokeldn.frlg.gift import rom_lzma, save_transfer
 from pokeldn.frlg.gift.mg_server import SVR_MSG_NOTHING_SENT, _encode_message
 from pokeldn.frlg.gift.mystery_gift import (
     MG_LINK_BUFFER_SIZE, MG_LINKID_CLIENT_SCRIPT, MG_LINKID_NEWS, MG_LINKID_RAM_SCRIPT,
@@ -30,10 +30,12 @@ SURVEY_PER_RUN = 32                    # 128 KB hashed per frame; 32 words answe
 DECODER_BLOCK = 0xFFF                  # asm/rom-lzma.c runs from here; the boot's fill clears it
 LZ_DATA_HEADER = 10
 LZ_PIECE = MG_LINK_BUFFER_SIZE - LZ_DATA_HEADER
-# The decoding a data message may cause, in the decoder's units (400 a frame): 16 frames. The console
-# drops link blocks that arrive while it is still running the last message [docs/frlg_gift.md].
-LZ_MESSAGE_COST = 16 * 400
-LOOKAHEAD = 20                         # asm/rom-lzma.c leaves this much of a message to the next
+# The decoding a data message may cause: 10 frames. The console drops a message's second link block
+# when it arrives, about 20 frames after the last message, before the decoding ends.
+LZ_MESSAGE_FRAMES = 10
+# asm/rom-lzma.c decodes a symbol only with LOOKAHEAD (20) bytes past its read position, which runs
+# 5 bytes ahead of the encoder's output count.
+LOOKAHEAD = 25
 FILL_PER_MESSAGE = 8                   # a write and a read-back are about 6000 instructions
 SOUND_INFO_AT = 0x008                  # asm/rom-transfer.s: &gSoundInfo, the engine stopped at install
 MAX_BOOT_BLOCKS = (MG_LINK_BUFFER_SIZE - BOOT_HEADER) // 2
@@ -162,7 +164,7 @@ def lz_cost(marks, at, end):
 
 def lz_cuts(length, marks):
     """-> where each data message of a chunk ends: at most LZ_PIECE bytes, and at most about
-    LZ_MESSAGE_COST of decoding, as the encoder's marks give it."""
+    LZ_MESSAGE_FRAMES * rom_lzma.BUDGET of decoding, as the encoder's marks give it."""
     cuts, at, k = [], 0, 0
     while at < length:
         end = min(length, at + LZ_PIECE)
@@ -171,8 +173,8 @@ def lz_cuts(length, marks):
         base = marks[k - 1][1] if k else 0
         j = k
         while j < len(marks) and marks[j][0] < end:
-            if marks[j][1] - base > LZ_MESSAGE_COST:
-                end = max(at + 1, marks[j][0])
+            if marks[j][1] - base > LZ_MESSAGE_FRAMES * rom_lzma.BUDGET:
+                end = max(at + 1, marks[j][0] - 1)       # before the byte that brings the mark in
                 break
             j += 1
         cuts.append(end)
@@ -180,21 +182,29 @@ def lz_cuts(length, marks):
     return cuts
 
 
+def lz_plan(length, marks):
+    """-> [(start, end, heavy)] for a chunk's data messages. A symbol decodes once LOOKAHEAD more
+    bytes are in, so its work falls on the message holding those; a heavy message decodes for longer
+    than the next one may wait, and its batch ends after it."""
+    marks = [(byte + LOOKAHEAD, cost) for byte, cost in marks]
+    limit, plan, at = LZ_MESSAGE_FRAMES * rom_lzma.BUDGET, [], 0
+    for end in lz_cuts(length, marks):
+        plan.append((at, end, lz_cost(marks, at, 1 << 30 if end >= length else end) > limit))
+        at = end
+    return plan
+
+
 def lz_messages(chunks, start, staging, live):
-    """[(emitted, blocks, data, marks)] -> [(message, blocks it completes, heavy)]: a heavy message
-    decodes for longer than the next one may wait, so its batch ends after it."""
-    from pokeldn.frlg.gift import rom_lzma
+    """[(emitted, blocks, data, marks)] -> [(message, blocks it completes, heavy)]."""
     out, seq = [], 0
     for emitted, count, data, marks in chunks:
         out.append((lz_start_message(start, count, staging, rom_lzma.BASE, emitted, live), 0))
-        at = 0
-        for end in lz_cuts(len(data), marks):
+        for at, end, heavy in lz_plan(len(data), marks):
             piece, last = data[at:end], end >= len(data)
             out.append((save_transfer._branch_word().to_bytes(4, "little") + bytes((7, last))
                         + (seq & 0xFFFF).to_bytes(2, "little") + len(piece).to_bytes(2, "little") + piece,
-                        count if last else 0, lz_cost(marks, at, end + LOOKAHEAD) > LZ_MESSAGE_COST))
+                        count if last else 0, heavy))
             seq += 1
-            at = end
     return out
 
 
@@ -223,7 +233,6 @@ def _worker_load(image, base, code):
 
 def _worker_encode(sources, top, slots):
     """sources[m]: ("target", n), ("base", m), ("ff",) or None: what block m of the copy holds."""
-    from pokeldn.frlg.gift import rom_lzma
     blocks, base = _WORKER["blocks"], _WORKER["base"]
     copy, known = bytearray(BLOCKS * BLOCK), [False] * BLOCKS
     for m, source in enumerate(sources):

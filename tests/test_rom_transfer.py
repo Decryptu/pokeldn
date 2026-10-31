@@ -184,3 +184,13 @@ def test_with_the_cartridge_rom_the_stream_is_lzma_and_the_console_boots_the_sam
     lz = [m for m in sent if len(m) > 4 and m[4] == 7]
     tokens = [m for m in sent if len(m) > 4 and m[4] == rom_transfer.OP_DATA and m[6:8] != (0xFFF).to_bytes(2, "little")]
     assert lz and not tokens
+
+
+def test_the_host_counts_the_decoders_work_with_the_decoders_own_numbers():
+    """lz_cuts bounds a message by the decoding it causes, in the units asm/rom-lzma.c spends."""
+    import pathlib
+    import re
+    from pokeldn.frlg.gift import rom_lzma
+    source = (pathlib.Path(__file__).parent.parent / "asm" / "rom-lzma.c").read_text()
+    assert int(re.search(r"#define BUDGET (\d+)", source)[1]) == rom_lzma.BUDGET
+    assert int(re.search(r"#define SYMBOL_COST (\d+)", source)[1]) == rom_lzma.SYMBOL_COST

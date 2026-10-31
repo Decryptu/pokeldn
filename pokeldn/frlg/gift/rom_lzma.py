@@ -16,8 +16,10 @@ PB_MASK = 3
 MATCH_MAX = 273
 CHAIN = 24
 HASH_BITS = 22
-# asm/rom-lzma.c's per-frame accounting: a symbol costs SYMBOL_COST, a copied byte 1.
+# asm/rom-lzma.c's per-frame accounting: a symbol costs SYMBOL_COST, a copied byte 1, BUDGET a frame
+# (tests/test_rom_transfer.py reads both from the source).
 SYMBOL_COST = 6
+BUDGET = 1000
 MARK_STEP = 256
 
 NEXT_LIT = (0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 4, 5)
