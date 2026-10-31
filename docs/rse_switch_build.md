@@ -163,6 +163,29 @@ the same patches applied at the cartridge's `librfu_sio32id.o` (`builds.SIO32ID`
 `+0x314`, `+0xA28`; the cartridge bytes there checked on all twelve cartridges). An image whose bytes
 there are not the cartridge's instructions is refused: the patches would land on other code.
 
+### The LZMA stream
+
+With `--rom-base` naming the console's own cartridge ROM, the blocks go as LZMA (lc 0, lp 0, pb 2,
+`pokeldn.frlg.gift.rom_lzma`) instead of run and literal tokens. The dictionary is the console's
+copy itself: a virtual position below 16 MB is the copy's byte, past it the stream's output, emitted
+from the highest block still to write down to block 0. A match names a copy byte only while that
+block still holds what the survey showed: not yet overwritten by the stream (blocks at or below the
+current one, live blocks, untouched ones). A match stops before a block it may not read, and a
+literal after a match is coded against the byte the console holds there.
+
+The decoder (`asm/rom-lzma.c`, 1768 bytes of Thumb built by clang) runs from ROM block `0xFFF`,
+which the host writes first and the boot's fill clears. Its state, 6.9 KB with 5.2 KB of
+probabilities, sits at `gDecompressionBuffer + 0x2000`. It decodes about a thousand bytes a frame
+(at most 98,000 instructions a call under unicorn) and returns 0 until a message is consumed, so the
+client calls it again the next frame. A finished block is written with `swi 0x48` and read back.
+The host encodes in a worker process while one-block surveys keep the link busy.
+
+| coding of Emerald for BPRE | bytes |
+|---|---|
+| runs and literals | 11,667,649 |
+| runs and literals plus a copy token from any ROM byte still held (offline) | 9,081,120 |
+| LZMA against the console's copy (57 chunks, encoded in 26 s) | 3,691,122 |
+
 ### The live blocks
 
 The session runs FireRed's own link and Mystery Gift code from the copy it overwrites. Those blocks
