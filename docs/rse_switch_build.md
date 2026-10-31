@@ -180,6 +180,14 @@ probabilities, sits at `gDecompressionBuffer + 0x2000`. It decodes about a thous
 client calls it again the next frame. A finished block is written with `swi 0x48` and read back.
 The host encodes in a worker process while one-block surveys keep the link busy.
 
+The console drops a link block that arrives while it is still running the last message, and a small
+message's second block arrives about 20 frames after the previous message. The encoder records the
+decoder's cost per stream byte (a symbol 6 units, a copied byte 1, 1000 units a frame); the host
+places each symbol's work on the message that brings the decoder its 20-byte lookahead, which runs
+25 bytes past the encoder's count, and cuts a message at 10 frames of decoding. A message that
+cannot be cut that small, a few bytes of stream for a long run of `0xFF`, ends its batch: the next
+message waits for the console's status.
+
 | coding of Emerald for BPRE | bytes |
 |---|---|
 | runs and literals | 11,667,649 |
