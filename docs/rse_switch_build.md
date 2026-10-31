@@ -282,7 +282,9 @@ the boot into the new game.
   the error screen gave a black screen: the way back to the title runs from overwritten blocks, so a
   cut stream restarts from a relaunch.
 - Why an emulated console's link stopped twice mid-stream (after 20 min and after 1 h 49 min) with
-  its frame rate steady until the last second.
+  its frame rate steady until the last second. In the later stop the console's own link layer sent
+  the RFU disconnect frame (`0x44`) 0.27 s after the short message that opens a batch, with both
+  directions at full rate until then; what made it give up is unknown.
 - The live blocks of the eleven other cartridges.
 - Whether a session lasting hours stays up.
 - What FireRed does with the save file after Emerald has saved into it.
