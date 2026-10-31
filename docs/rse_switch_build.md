@@ -157,6 +157,11 @@ screen palettes recoloured (blocks `0xEAB`, `0xEAD`, `0xEAE`) wrote those 3 bloc
 151 live blocks at `0xEB1`, passed the check, and after the boot op the console restarted through the
 intro to the recoloured title screen.
 
+The whole Emerald build for BPRE has streamed and booted on emulated English FireRed: 3073 blocks in
+place and 157 live blocks staged at `0xE3D`, 3,691,122 bytes of LZMA in 4268 messages (`--block-repeat
+1 --inter-block-gap-frames 8`, messages cut at 10 frames of decoding), the check pass whole, the boot
+op sent at 3 h 12 min, then Emerald's intro and its title screen in the FireRed application.
+
 The ROM copy carries the application's three librfu patches ([The breakpoint
 hooks](frlg_rom.md#the-breakpoint-hooks)), which the cartridge file lacks. The image is written with
 the same patches applied at the cartridge's `librfu_sio32id.o` (`builds.SIO32ID`, offsets `+0x12E`,
@@ -262,8 +267,8 @@ the boot into the new game.
 - Whether the application emulates the GPIO real-time clock Emerald reads. Emerald's main menu showed
   no dead-battery message on an emulated console.
 - Whether a retail console runs the build: the emulated-console measurements are the only ones.
-- The whole Emerald stream and the boot into it. The boot op has moved FireRed's own live blocks and
-  restarted the game; Emerald has not been streamed.
+- Emerald booted this way past its title screen: the main menu reads FireRed's save file.
+- The stream over the board on a retail console, and its pacing there.
 - The live blocks of the error path: a session cut short returns to the menu through code outside
   the measured set.
 - The live blocks of the eleven other cartridges.
