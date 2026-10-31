@@ -1,7 +1,8 @@
 /* LZMA decoder for asm/rom-transfer.s, built Thumb by scripts/gen_buffer_scripts.py
  * [docs/rse_switch_build.md, The LZMA stream]. The dictionary is the ROM copy itself: virtual
  * position v < base is the console's own byte at 0x08000000 + v; past it, block k of the stream is
- * ROM block start - k (or its staging slot when live), the block being decoded is STAGING.
+ * ROM block ORDER[k] (or its staging slot when live), the block being decoded is STAGING. The host
+ * writes ORDER, a u16 a block, to ROM blocks 0xFFD and 0xFFE before the stream.
  * lc = 0, lp = 0, pb = 2. Entry: lz_call(message) -> 1 when the message is consumed, 0 to be called
  * again next frame. */
 
@@ -11,6 +12,7 @@ typedef unsigned int u32;
 
 #define ROM ((volatile u8 *)0x08000000)
 #define STAGING ((u8 *)0x0201C800)
+#define ORDER ((const volatile u16 *)0x08FFD000)
 #define STATUS ((u32 *)0x0201D800)
 #define S ((struct state *)0x0201E000)
 #define BLOCK 0x1000
@@ -28,7 +30,7 @@ enum { L_CHOICE = 0, L_CHOICE2 = 1, L_LOW = 2, L_MID = 130, L_HIGH = 258 };
 
 struct state {
     u32 range, code, st, rep[4];
-    u32 base, start, e, left;          /* stream base, first block, bytes emitted, bytes left in chunk */
+    u32 base, e, left;                 /* stream base, bytes emitted, bytes left in chunk */
     u32 pending, final, seq, primed;
     u32 in_len, in_pos;
     u32 staging0, nlive;
@@ -60,7 +62,7 @@ static u32 at(u32 v)
     if (v < s->base)
         return ROM[v];
     v -= s->base;
-    return ROM[(slot(s->start - (v >> 12)) << 12) + (v & (BLOCK - 1))];
+    return ROM[(slot(ORDER[v >> 12]) << 12) + (v & (BLOCK - 1))];
 }
 
 static void norm(struct state *s)
@@ -125,7 +127,7 @@ static void sw48(u32 sector, void *source)
 
 static void finish_block(struct state *s)
 {
-    u32 b = s->start - (s->e >> 12) + 1, phys = slot(b), k, diff = 0;
+    u32 b = ORDER[(s->e >> 12) - 1], phys = slot(b), k, diff = 0;
     const u32 *a = (const u32 *)(0x08000000 + (phys << 12)), *c = (const u32 *)STAGING;
     sw48(0xFA000 + phys, STAGING);
     for (k = 0; k < BLOCK / 4; k++)
@@ -245,7 +247,7 @@ static u32 copy(struct state *s, u32 budget)
                 run = s->base - v;
         } else {
             u32 w = v - s->base;
-            src = ROM + (slot(s->start - (w >> 12)) << 12) + (w & (BLOCK - 1));
+            src = ROM + (slot(ORDER[w >> 12]) << 12) + (w & (BLOCK - 1));
             if (BLOCK - (w & (BLOCK - 1)) < run)
                 run = BLOCK - (w & (BLOCK - 1));
         }
@@ -272,7 +274,6 @@ __attribute__((section(".text.entry"))) int lz_call(u8 *msg)
     struct state *s = S;
     u32 done = 0, k;
     if (msg[4] == OP_LZ_START) {
-        s->start = msg[6] | msg[7] << 8;
         s->left = (msg[8] | msg[9] << 8) << 12;
         s->staging0 = msg[10] | msg[11] << 8;
         s->base = msg[12] | msg[13] << 8 | msg[14] << 16 | msg[15] << 24;

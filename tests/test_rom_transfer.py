@@ -170,8 +170,8 @@ def test_blocks_of_one_byte_go_as_fills_and_the_sound_engine_stops_at_install():
 
 
 def test_with_the_cartridge_rom_the_stream_is_lzma_and_the_console_boots_the_same_rom():
-    """The decoder goes to block 0xFFF, the blocks go as LZMA against the console's copy, the boot
-    leaves the ROM the token path leaves."""
+    """The decoder goes to block 0xFFF and the emission order to 0xFFD-0xFFE, the blocks go as LZMA
+    against the console's copy, the boot leaves the ROM the token path leaves."""
     sent = []
     base = bytearray(image(1, 300, 1))
     base[0xAC:0xB0] = b"BPRF"                       # the console the scripted session plays
@@ -182,7 +182,8 @@ def test_with_the_cartridge_rom_the_stream_is_lzma_and_the_console_boots_the_sam
     assert server.outcome == "booted" and client.rebooted
     assert rom_of(client) == NEW_COPY.ljust(len(rom_of(client)), b"\xff")
     lz = [m for m in sent if len(m) > 4 and m[4] == 7]
-    tokens = [m for m in sent if len(m) > 4 and m[4] == rom_transfer.OP_DATA and m[6:8] != (0xFFF).to_bytes(2, "little")]
+    tokens = [m for m in sent if len(m) > 4 and m[4] == rom_transfer.OP_DATA
+              and int.from_bytes(m[6:8], "little") not in rom_transfer.RESERVED]
     assert lz and not tokens
 
 

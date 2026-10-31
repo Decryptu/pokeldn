@@ -3,11 +3,15 @@ stream]. lc = 0, lp = 0, pb = 2, greedy parse, a model reset every chunk.
 
 The dictionary is the console's ROM copy as it stands while the stream decodes: virtual position
 v < BLOCKS * BLOCK is the copy's byte v, and past it the stream's own output, block k of it being ROM
-block start - k (emitted in descending order). A copy block is a source only while it still holds
-what the host knows of it: not yet overwritten by the stream, and known from the survey."""
+block order[k]. A copy block is a source only while it still holds what the host knows of it: not
+yet overwritten by the stream, and known from the survey. The order puts a block before the copy
+blocks it would copy from [order]."""
+
+import heapq
 
 import struct
 from array import array
+
 
 BLOCK = 0x1000
 BLOCKS = 0x1000
@@ -127,13 +131,46 @@ def _distance(enc, model, dist, n):
             enc.rtree(model.align, 0, 4, rest & 15)
 
 
+def order(refs, blocks, live, least=8):
+    """-> an emission order for `blocks`: a block that copies at least `least` bytes from copy block m
+    goes before m (Kahn's sort, the highest block first among the free; a cycle is broken at the
+    highest block left). `refs`: block -> {copy block: bytes}, from Stream.references()."""
+    blocks, live = set(blocks), set(live)
+    after = {b: set() for b in blocks}
+    indeg = dict.fromkeys(blocks, 0)
+    for c, d in refs.items():
+        for m, n in d.items():
+            if n >= least and m != c and c in blocks and m in blocks and m not in live and m not in after[c]:
+                after[c].add(m)
+                indeg[m] += 1
+    ready = [-b for b in blocks if not indeg[b]]
+    heapq.heapify(ready)
+    out, done = [], set()
+    while len(out) < len(blocks):
+        if ready:
+            b = -heapq.heappop(ready)
+            if b in done:
+                continue
+        else:
+            b = max(blocks - done)
+        done.add(b)
+        out.append(b)
+        for m in after[b]:
+            indeg[m] -= 1
+            if not indeg[m] and m not in done:
+                heapq.heappush(ready, -m)
+    return out
+
+
 class Stream:
     """`copy`: the host's model of the console's 16 MB copy; `known[m]`: whether block m of it is
-    what the copy holds. `targets`: block -> its 4 KB; `start`: the first block emitted, then each
-    block down to 0; `slots`: live block -> its staging block."""
+    what the copy holds. `targets`: block -> its 4 KB; `order`: the blocks in emission order;
+    `slots`: live block -> its staging block. `free=True` ignores what the stream overwrites, for
+    references()."""
 
-    def __init__(self, copy, known, targets, start, slots):
-        self.start, self.slots = start, dict(slots)
+    def __init__(self, copy, known, targets, order, slots, free=False):
+        self.order, self.slots, self.free = list(order), dict(slots), free
+        self.pos = {b: k for k, b in enumerate(self.order)}
         self.owner = {slot: block for block, slot in self.slots.items()}
         self.kind = bytearray(BLOCKS)
         for m in range(BLOCKS):
@@ -143,12 +180,12 @@ class Stream:
                 self.kind[m] = SLOT
             elif m in self.slots:
                 self.kind[m] = LIVE
-            elif m <= start:
+            elif m in self.pos:
                 self.kind[m] = EMITTED
             else:
                 self.kind[m] = STILL
-        emitted = b"".join(targets[b] for b in range(start, -1, -1))
-        self.v = bytes(copy) + emitted
+        self.refs = {}
+        self.v = bytes(copy) + b"".join(targets[b] for b in self.order)
         self._index()
 
     def _index(self):
@@ -167,12 +204,24 @@ class Stream:
         self.prev = prev
 
     def _available(self, m, current):
+        """`current`: the emission position being decoded."""
         kind = self.kind[m]
+        if kind == UNKNOWN:
+            return False
+        if self.free:
+            return True
         if kind == EMITTED:
-            return m <= current
+            return self.pos[m] >= current
         if kind == SLOT:
-            return self.owner[m] <= current
-        return kind != UNKNOWN
+            return self.pos[self.owner[m]] >= current
+        return True
+
+    def references(self):
+        """-> {block: {copy block: bytes}} its matches take from the copy, the stream unconstrained."""
+        self.free, self.refs = True, {}
+        self.chunks()
+        self.free = False
+        return self.refs
 
     def _limit(self, src, current):
         """How far a match from copy byte `src` may run before a block it may not read."""
@@ -188,7 +237,7 @@ class Stream:
         """-> [(bytes emitted before the chunk, blocks in it, its LZMA bytes, marks)]; a mark (byte,
         cost) says decoding needs the stream up to `byte` to have spent `cost` units of the
         decoder's budget, one mark per MARK_STEP units."""
-        out, total = [], self.start + 1
+        out, total = [], len(self.order)
         for first in range(0, total, size):
             count = min(size, total - first)
             out.append((first * BLOCK, count, *self._chunk(BASE + first * BLOCK, BASE + (first + count) * BLOCK)))
@@ -201,7 +250,7 @@ class Stream:
         while i < end:
             if cost >= (len(marks) + 1) * MARK_STEP:
                 marks.append((len(enc.out) + enc.csize, cost))
-            current = self.start - ((i - BASE) >> 12)
+            current = (i - BASE) >> 12
             room = min(MATCH_MAX, end - i)
 
             def run(src):
@@ -248,6 +297,10 @@ class Stream:
                 i += rep_n
                 cost += SYMBOL_COST + rep_n
             elif best_n >= 3 or (best_n == 2 and best_d < 128):
+                if self.free and i - best_d - 1 < BASE:
+                    taken = self.refs.setdefault(self.order[current], {})
+                    m = (i - best_d - 1) >> 12
+                    taken[m] = taken.get(m, 0) + best_n
                 enc.bit(model.match, (state << 4) + ps, 1)
                 enc.bit(model.rep, state, 0)
                 _length(enc, model.lens[0], best_n, ps)
@@ -280,6 +333,4 @@ class Stream:
         if src >= BASE or self._available(src >> 12, current):
             return self.v[src]
         m = src >> 12                          # overwritten: by its own target, or a staged block
-        b = self.owner.get(m, m)
-        k = self.start - b
-        return self.v[BASE + k * BLOCK + (src & (BLOCK - 1))]
+        return self.v[BASE + self.pos[self.owner.get(m, m)] * BLOCK + (src & (BLOCK - 1))]

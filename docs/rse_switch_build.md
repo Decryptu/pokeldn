@@ -176,14 +176,16 @@ there are not the cartridge's instructions is refused: the patches would land on
 
 With `--rom-base` naming the console's own cartridge ROM, the blocks go as LZMA (lc 0, lp 0, pb 2,
 `pokeldn.frlg.gift.rom_lzma`) instead of run and literal tokens. The dictionary is the console's
-copy itself: a virtual position below 16 MB is the copy's byte, past it the stream's output, emitted
-from the highest block still to write down to block 0. A match names a copy byte only while that
-block still holds what the survey showed: not yet overwritten by the stream (blocks at or below the
-current one, live blocks, untouched ones). A match stops before a block it may not read, and a
+copy itself: a virtual position below 16 MB is the copy's byte, past it the stream's output. Every
+block from 0 to the highest still to write is emitted, in an order the host writes to ROM blocks
+`0xFFD` and `0xFFE` first: a pass with no availability limit records which copy blocks each block
+copies from, and a block goes before any copy block it takes 8 bytes or more from (a topological
+sort, highest block first). A match names a copy byte only while that block still holds what the
+survey showed: not yet overwritten by the stream, a live block, or an untouched one. A match stops before a block it may not read, and a
 literal after a match is coded against the byte the console holds there.
 
 The decoder (`asm/rom-lzma.c`, 1768 bytes of Thumb built by clang) runs from ROM block `0xFFF`,
-which the host writes first and the boot's fill clears. Its state, 6.9 KB with 5.2 KB of
+which the host writes first and the boot's fill clears with the order table. Its state, 6.9 KB with 5.2 KB of
 probabilities, sits at `gDecompressionBuffer + 0x2000`. It decodes about a thousand bytes a frame
 (at most 98,000 instructions a call under unicorn) and returns 0 until a message is consumed, so the
 client calls it again the next frame. A finished block is written with `swi 0x48` and read back.
@@ -201,7 +203,9 @@ stream for a long run of `0xFF` can decode for over a hundred frames.
 |---|---|
 | runs and literals | 11,667,649 |
 | runs and literals plus a copy token from any ROM byte still held (offline) | 9,081,120 |
-| LZMA against the console's copy (57 chunks, encoded in 26 s) | 3,691,122 |
+| LZMA against the console's copy, descending order (57 chunks, encoded in 26 s) | 3,691,122 |
+| the same in the reference order (offline) | 3,206,459 |
+| LZMA with no availability limit, greedy (offline bound) | 3,027,095 |
 
 ### The live blocks
 

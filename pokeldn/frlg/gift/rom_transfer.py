@@ -28,6 +28,8 @@ DATA_HEADER = 12
 BOOT_HEADER = 16
 SURVEY_PER_RUN = 32                    # 128 KB hashed per frame; 32 words answered
 DECODER_BLOCK = 0xFFF                  # asm/rom-lzma.c runs from here; the boot's fill clears it
+ORDER_BLOCKS = (0xFFD, 0xFFE)          # its emission order, a u16 a block
+RESERVED = {DECODER_BLOCK, *ORDER_BLOCKS}
 LZ_DATA_HEADER = 10
 LZ_PIECE = MG_LINK_BUFFER_SIZE - LZ_DATA_HEADER
 # The console drops a link block that arrives while it still runs the last message: a data message
@@ -221,7 +223,10 @@ def _worker_encode(sources, top, slots):
             raw = _EMPTY if source[0] == "ff" else (blocks if source[0] == "target" else base)[source[1]]
             copy[m * BLOCK:(m + 1) * BLOCK] = raw
             known[m] = True
-    return rom_lzma.Stream(copy, known, {b: blocks[b] for b in range(top + 1)}, top, slots).chunks()
+    targets = {b: blocks[b] for b in range(top + 1)}
+    refs = rom_lzma.Stream(copy, known, targets, range(top, -1, -1), slots, free=True).references()
+    order = rom_lzma.order(refs, targets, slots)
+    return order, rom_lzma.Stream(copy, known, targets, order, slots).chunks()
 
 
 def survey_message(first, count, tag):
@@ -293,7 +298,7 @@ class RomTransferServer(save_transfer._Server):
     def plan(self, hashes):
         """-> (direct writes, staged writes, staging start) given the console's block hashes."""
         moved = sorted(n for n in self.live if n < len(self.blocks))
-        start = staging_start(len(moved), len(self.blocks), self.live | {DECODER_BLOCK})
+        start = staging_start(len(moved), len(self.blocks), self.live | RESERVED)
         direct = [(n, raw) for n, raw in enumerate(self.blocks)
                   if n not in self.live and hashes[n] != self.hashes[n]]
         staged = [(start + i, self.blocks[n]) for i, n in enumerate(moved)
@@ -359,8 +364,9 @@ class RomTransferServer(save_transfer._Server):
         return out
 
     def _lz_items(self, hashes, direct, staged, start, moved, build):
-        """The decoder into block 0xFFF, then the LZMA stream from the highest block still to write
-        down to 0; encoded in another process while survey runs keep the link busy."""
+        """The decoder into block 0xFFF, then every block from 0 to the highest still to write as
+        LZMA, in the order rom_lzma.order picks, written to blocks 0xFFD and 0xFFE before the stream;
+        encoded in another process while survey runs keep the link busy."""
         decoder = THUMB_CODE["rom-lzma"][0].ljust(BLOCK, b"\xff")
         if hashes[DECODER_BLOCK] != block_hash(decoder):
             items = [(message, 0) for message, _ in write_messages([(DECODER_BLOCK, decoder)])]
@@ -369,7 +375,7 @@ class RomTransferServer(save_transfer._Server):
         slot_of = {n: start + i for i, n in enumerate(moved)}
         top = max([n for n, _ in direct] + [n for n in moved if slot_of[n] in dict(staged)])
         slots = {n: s for n, s in slot_of.items() if n <= top}
-        self.info(f"Encoding blocks 0x{top:03X} to 0 as LZMA against the console's copy.")
+        self.info(f"Encoding blocks 0 to 0x{top:03X} as LZMA against the console's copy.")
         job = self._pool.submit(_worker_encode, self._sources(hashes, start, moved), top, slots)
         tag = next(self._tags)
         while not job.done():
@@ -377,9 +383,12 @@ class RomTransferServer(save_transfer._Server):
             yield self.send(MG_LINKID_RAM_SCRIPT, survey_message(DECODER_BLOCK, 1, tag))
             yield ("recv", MG_LINKID_RESPONSE)
             tag = next(self._tags)
-        chunks = job.result()
+        order, chunks = job.result()
         self._pool.shutdown(wait=False)
-        items = lz_messages(chunks, top, start, sorted(slots))
+        table = b"".join(b.to_bytes(2, "little") for b in order).ljust(len(ORDER_BLOCKS) * BLOCK, b"\xff")
+        writes = [(n, table[k * BLOCK:(k + 1) * BLOCK]) for k, n in enumerate(ORDER_BLOCKS)]
+        items = [(message, 0) for message, _ in write_messages(writes)]
+        items += lz_messages(chunks, 0, start, sorted(slots))
         self.info(f"LZMA stream: {sum(len(c[2]) for c in chunks)} bytes in {len(chunks)} chunks, "
                   f"{len(items)} messages.")
         return items
