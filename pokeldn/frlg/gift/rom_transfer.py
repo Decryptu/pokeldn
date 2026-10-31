@@ -422,6 +422,8 @@ class RomTransferServer(save_transfer._Server):
             items = yield from self._lz_items(hashes, direct, staged, start, moved, build)
         else:
             items = write_messages(direct + staged)
+        if items is not None:
+            total = sum(item[1] for item in items)      # the LZMA stream rewrites every block below its top
         if items is None or not (yield from self._write(items, total)):
             yield from self._finished()
 
