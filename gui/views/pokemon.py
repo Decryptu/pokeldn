@@ -591,7 +591,7 @@ def encounter_label(found: dict, versions: bool) -> str:
     low, high = found["level_min"], found["level_max"]
     parts = [found["place"], kind, tr('pokemon.encounter_level', 'Lv {value0}', value0=low if low == high else f"{low}-{high}")]
     if versions and found["version"] in VERSION_NAMES:
-        parts.append(VERSION_NAMES[found["version"]])
+        parts.append(translate(VERSION_NAMES[found["version"]]))
     if found["species"]:
         parts.append(tr('pokemon.encounter_as', 'as {value0}', value0=found["species"]))
     if not found["shiny"]:
