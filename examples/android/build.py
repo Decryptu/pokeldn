@@ -16,9 +16,9 @@ HERE = Path(__file__).resolve().parent
 WHEELS = HERE / 'wheels'
 # Pure-Python wheels the Android build installs from files: sdists it cannot build, and msgpack
 # without its C extension (build.gradle).
-LOCAL = (('python-netlink==0.0.15', {}), ('esptool==5.4.0', {}), ('esp-pylib==1.1.5', {}),
+LOCAL = (('python-netlink==0.0.15', {}), ('esptool==5.6.0', {}), ('esp-pylib==1.2.0', {}),
          ('intelhex==2.3.0', {}), ('reedsolo==1.7.0', {}),
-         ('msgpack==1.2.3', {'MSGPACK_PUREPYTHON': '1'}))
+         ('msgpack==1.2.4', {'MSGPACK_PUREPYTHON': '1'}))
 
 
 def android_home() -> str:

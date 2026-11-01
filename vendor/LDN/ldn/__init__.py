@@ -1745,6 +1745,11 @@ class APNetwork:
     async def _register_participant(
         self, address: MACAddress, name: bytes, app_version: int, platform: int
     ) -> None:
+        # A resent request (its response was lost) keeps the seat it has.
+        for participant in self._network.participants:
+            if participant.connected and participant.mac_address == address:
+                return
+
         for index in range(8):
             if not self._network.participants[index].connected:
                 break

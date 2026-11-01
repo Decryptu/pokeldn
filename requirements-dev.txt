@@ -2,4 +2,4 @@
 pytest
 pytest-xdist==3.8.0
 capstone==5.0.9
-esptool==5.4.0
+esptool==5.6.0

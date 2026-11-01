@@ -9,6 +9,9 @@ so a fresh clone has the exact WLAN implementation tested with the project.
 - Project: <https://github.com/kinnay/LDN>
 - Upstream revision: `39d0b2060c7932ff2766726db7af4fb640cfa9ef`
 - Upstream package version: `0.0.17`
+- Reviewed through: `13edfafa1f7e3d2eda5ce1f5215491e144f3661c` (0.0.20). `0833167b8` is ported (below);
+  the rest reimplements the access point in monitor mode with software CCMP, which this copy hands to
+  mac80211 and the board, and is not taken.
 - License: GPL-3.0-only; the complete upstream license is in `LICENSE`.
 
 The vendored contents are limited to the package source, packaging metadata,
@@ -27,6 +30,7 @@ The vendored package incorporates the following project-specific fixes:
 - Mark a station authorized in mac80211 once custom LDN authentication has
   completed.
 - Emit useful receive-side exceptions instead of silently suppressing them.
+- A resent authentication request keeps the seat its station has (upstream `0833167b8`).
 - `wlan.set_factory` replaces the nl80211 factory, and `connect` passes the host's BSSID to
   `connect_network`, so a radio that is not an nl80211 device (`pokeldn.ldn.esp32_wlan`) can
   stand in.

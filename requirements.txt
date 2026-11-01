@@ -3,11 +3,11 @@
 # compatibility fixes required by our tested Wi-Fi adapters.  Keep this before
 # packages that also appear in vendor/LDN/setup.py so pip resolves one source.
 -e ./vendor/LDN
-pycryptodome==3.23.0
-trio==0.33.0
+pycryptodome==3.24.1
+trio==0.35.0
 zstandard==0.25.0
 pyserial==3.5
 unicorn==2.1.4
-websockets==17.1
-certifi==2026.7.22
+websockets==17.4
+certifi==2026.10.23
 bleak==3.0.2

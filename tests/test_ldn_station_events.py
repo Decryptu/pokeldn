@@ -37,3 +37,37 @@ def test_an_ldn_frame_after_authentication_is_not_taken_for_a_disconnect():
 
     event = trio.run(main)
     assert isinstance(event, ldn.DisconnectEvent) and event.reason == 3
+
+
+class _APInterface:
+    def __init__(self):
+        self.neighbors = []
+
+    async def set_authorized(self, address):
+        pass
+
+    async def add_neighbor(self, ip, mac):
+        self.neighbors.append(ip)
+
+
+def test_a_resent_authentication_request_keeps_one_seat():
+    # A console whose authentication response is lost sends the request again; upstream kinnay/LDN
+    # 0833167b8. Registering it twice gave it two seats and a second JoinEvent.
+    console = wlan.MACAddress(bytes.fromhex("48f1eb209b22"))
+    ap = ldn.APNetwork.__new__(ldn.APNetwork)
+    ap._network = ldn.NetworkInfo(3)
+    ap._network.participants = [ldn.ParticipantInfo() for _ in range(8)]
+    ap._network_id = 7
+    ap._interface = _APInterface()
+    ap._events = ldn.queue.create()
+    ap._peers = []
+    ap._update_nonce = lambda: None
+
+    async def main():
+        for _ in range(2):
+            await ap._register_participant(console, b"POKELDN", 1, 0)
+
+    trio.run(main)
+    seats = [p for p in ap._network.participants if p.connected]
+    assert len(seats) == 1 and ap._network.num_participants == 1
+    assert ap._peers == [console] and ap._interface.neighbors == ["169.254.7.1"]

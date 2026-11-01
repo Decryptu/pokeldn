@@ -118,3 +118,54 @@ def test_spanish_speed_four_installs_and_toggles_its_own_callbacks():
         assert uc.reg_read(a.UC_ARM_REG_PC) == STOP
         assert [entered.count(f) for f in callbacks] == [pairs, pairs, text]
         assert entered.count(build.vblank_intr) == 1
+
+
+NATURE_ROM = ROOT / "scratchpad/frlg_en/FireRed_e.gba"
+
+
+@pytest.mark.skipif(shutil.which("arm-none-eabi-as") is None or not bs.emulation_available(),
+                    reason="needs the GNU Arm binutils and unicorn")
+def test_the_nature_mint_gives_every_nature_and_names_the_one_it_gave(tmp_path):
+    """change_nature [vendor/gblink-cards/nature.s] on a party Pokemon, under unicorn on English
+    FireRed's own GetMonData, SetMonData and CalculateMonStats: each nature, the checksum, the
+    kept low byte and the name in gStringVar2."""
+    from unicorn import arm_const as a
+    from pokeldn.frlg.save import mon as monlib
+    from tests.test_frlg_english_cartridges import STOP, _console
+    if not NATURE_ROM.exists():
+        pytest.skip("no cartridge image on this machine")
+    build, symbols = builds.BPRE, SYMBOLS["BPRE"]["symbols"]
+    code, labels = gen_team_cards.assemble("nature.s", {
+        **symbols, **gen_team_cards.FAMILY_SYMBOLS, "JAPANESE": 0, "GAME_LANGUAGE": 2,
+        "TEXT_BUFFER": gen_team_cards.TEXT_BUFFER, "RELOCATED": gen_team_cards.RELOCATED,
+        "MENU_LIST": gen_team_cards.MENU_LIST, "SCRIPT_IN_SB1": gen_team_cards.SB1_SCRIPT}, tmp_path)
+    pk3 = bytearray(100)
+    pk3[0:4] = (0x5A3C2F10).to_bytes(4, "little")             # nature 0x5A3C2F10 % 25 = 21
+    pk3[4:8] = (0x0AE73039).to_bytes(4, "little")
+    pk3[32:34] = (25).to_bytes(2, "little")                     # growth: Pikachu
+    pk3[36:40] = (1000).to_bytes(4, "little")
+    pk3[44:46] = (84).to_bytes(2, "little")                     # attacks: Thundershock
+    pk3[76:80] = (17 | 9 << 5 | 30 << 10 | 4 << 15 | 22 << 20 | 11 << 25).to_bytes(4, "little")
+    pk3[28:30] = (sum(int.from_bytes(pk3[32 + 2 * i:34 + 2 * i], "little") for i in range(24))
+                  & 0xFFFF).to_bytes(2, "little")
+    pk3[84] = 10
+    machine = _console(b"\x00" * 4, build, NATURE_ROM.read_bytes())
+    uc = machine.uc
+    pointers = [int.from_bytes(uc.mem_read(symbols["NATURE_NAMES"] + 4 * n, 4), "little") for n in range(25)]
+    for nature in range(25):
+        uc.mem_write(symbols["PARTY"], monlib.to_encrypted(bytes(pk3)))
+        uc.mem_write(symbols["STRING_VAR_2"], b"\xFF" * 16)
+        uc.mem_write(symbols["SPECIAL_VAR_8004"], (0).to_bytes(2, "little") + (nature // 5).to_bytes(2, "little"))
+        uc.mem_write(symbols["SPECIAL_VAR_RESULT"], (nature % 5).to_bytes(2, "little"))
+        uc.mem_write(gen_team_cards.RELOCATED, code)
+        uc.reg_write(a.UC_ARM_REG_SP, 0x03007D00)
+        uc.reg_write(a.UC_ARM_REG_LR, STOP | 1)
+        uc.emu_start(gen_team_cards.RELOCATED + labels["change_nature"] | 1, STOP, count=50_000_000)
+        assert uc.reg_read(a.UC_ARM_REG_PC) == STOP
+        out = bytes(uc.mem_read(symbols["PARTY"], 100))
+        mon = monlib.decode_mon(out)
+        assert mon["checksum_ok"] and mon["species"] == 25 and mon["moves"][0] == 84 and mon["exp"] == 1000
+        assert mon["pid"] % 25 == nature, nature
+        assert mon["pid"] & 0xFF == 0x10                       # gender and ability stay
+        name = bytes(uc.mem_read(pointers[nature], 16)).split(b"\xFF")[0]
+        assert bytes(uc.mem_read(symbols["STRING_VAR_2"], 16)).startswith(name + b"\xFF"), nature

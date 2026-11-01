@@ -23,12 +23,12 @@ BUNDLE_ID = 'io.pokeldn.app'
 MIN_IOS = '15.0'
 # Pure-Python packages, pinned as examples/android/build.gradle pins them; fastapi (pydantic-core)
 # has no iOS build and examples/android/src/python/fastapi stands in for it.
-PACKAGES = ('trio==0.33.0', 'attrs==26.1.0', 'outcome==1.3.0.post0', 'sortedcontainers==2.4.0',
-            'sniffio==1.3.1', 'idna==3.20', 'pyserial==3.5', 'websockets==17.1', 'certifi==2026.7.22',
-            'flet==1.0.2', 'flet-web==1.0.2', 'repath==0.9.0', 'six==1.17.0', 'oauthlib==4.0.0',
+PACKAGES = ('trio==0.35.0', 'attrs==26.1.0', 'outcome==1.3.0.post0', 'sortedcontainers==2.4.0',
+            'sniffio==1.3.1', 'idna==3.20', 'pyserial==3.5', 'websockets==17.4', 'certifi==2026.10.23',
+            'flet==1.0.5', 'flet-web==1.0.5', 'repath==0.9.0', 'six==1.17.0', 'oauthlib==4.0.0',
             'httpx==0.28.1', 'httpcore==1.0.9', 'anyio==4.15.1', 'typing_extensions==4.16.0',
             'starlette==1.7.0', 'uvicorn==0.54.0', 'h11==0.16.0', 'click==8.5.0', 'packaging==25.0')
-NATIVE = ('pycryptodome==3.23.0', 'zstandard==0.25.0')
+NATIVE = ('pycryptodome==3.24.1', 'zstandard==0.25.0')
 PRIVATE = ('.keys', '.pk3', '.ek3', '.sav', '.gba')
 
 
@@ -86,7 +86,7 @@ def stage_code(app: Path) -> None:
 
 # Built from sdists as examples/android/build.py builds them: msgpack without its C extension, and
 # python-netlink, which pokeldn.ldn imports for host mode and has no wheel.
-LOCAL = (('msgpack==1.2.3', {'MSGPACK_PUREPYTHON': '1'}), ('python-netlink==0.0.15', {}))
+LOCAL = (('msgpack==1.2.4', {'MSGPACK_PUREPYTHON': '1'}), ('python-netlink==0.0.15', {}))
 
 
 def pure_packages(target: Target, packages: Path) -> None:

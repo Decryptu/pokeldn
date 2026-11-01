@@ -1,4 +1,4 @@
-# zstd 1.5.6's decoder, unmodified (facebook/zstd v1.5.6, lib/): the board decodes a console's
+# zstd 1.5.7's decoder, unmodified (facebook/zstd v1.5.7, lib/): the board decodes a console's
 # compressed Pia datagrams (docs/hardware_esp32.md, Portable beacon). Re-vendor, never edit.
 idf_component_register(
     SRCS "lib/common/debug.c" "lib/common/entropy_common.c" "lib/common/error_private.c"

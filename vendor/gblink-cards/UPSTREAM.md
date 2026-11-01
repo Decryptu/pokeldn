@@ -9,6 +9,12 @@ The ARM sources of the GB-Link Team's custom Wonder Cards for the Switch's FireR
 - Project: <https://github.com/GB-Link/GB-Link-Switch-LDN>, directory `cards/`, itself from
   gblink-wondercards (`tools/native-cards`)
 - Upstream revision: `c1a3a97f3ab5c60e87307089d6b7db10e3fd5993`
+- Reviewed through: `c972db408cf549a00c481f647cf4688c4593206a`, nothing taken. `0a252ba51` lets the
+  Nature Mint reorder the secure data through `GetSubstruct`: the vendored card, which keeps the
+  order, finds every nature for 150 random and 150 shiny personalities on English FireRed
+  (`tests/test_team_cards.py` runs all 25). `walls.s`, `savebackup.s`, `saverestore.s`, `verify.s` and
+  the predicted ROM tables have pokeldn counterparts (noclip, save backup and restore, the measured
+  build tables); `bd644edb5` marks cards shareable in the web server.
 - License: GPL-3.0 (the repository is AGPL-3.0); the license text is in `LICENSE`.
 
 `build.mjs` is not vendored, nor the sources of the cards pokeldn makes its own way (`berries.s`, `starter.s`, `follow.s`): `scripts/gen_team_cards.py` is its port, the same script commands, cards

@@ -264,7 +264,7 @@ The engine is pure C and ports one Python module per layer, line for line:
 | `gift_pia.c` | `crypto.PiaCrypto`, `reliable.parse_messages`, `pia_connect`'s Net, Session and RTT codecs, `host_pia.HostPeerProtocol` |
 | `gift_link.c` | `reliable.HostReliableSession`, `ni.py`, `rfu_leader.RFULeader`, `host_session.HostSession` |
 | `gift_mg.c` | `host_mystery_gift.HostMysteryGiftEngine`, `block.BlockSender` and `RecvBlock`, `mg_link`, the server script |
-| `gift_zstd.c` | zstd 1.5.6's decoder (`vendor/zstd`) |
+| `gift_zstd.c` | zstd 1.5.7's decoder (`vendor/zstd`) |
 
 The beacon task runs it: the driver's frames and associations reach it through a queue, it runs its
 timers at the deadline it returns, and it rebuilds the advertisement every `interval_ms` with the
