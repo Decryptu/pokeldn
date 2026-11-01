@@ -1021,19 +1021,23 @@ def test_an_event_raid_boss_caught_by_a_guest_passes_pkhex(service, tmp_path):
         assert caught["legal"], caught
 
 
-def test_an_emulated_guests_catch_of_a_hosted_boss_keeps_the_roll_and_passes_pkhex(service):
-    """An emulated Shield guest caught a Wooloo hosted from den seed 0xF3D291D263CC680F: the record keeps
-    the roll's encryption constant, PID, IVs, nature, gender and size and the boss's level 17, and takes
-    the catcher's trainer, met location 162 and a Poke Ball. PKHeX takes it."""
+@pytest.mark.parametrize("record,level,pid_high", [("caught_wooloo", 17, None), ("caught_shiny_wooloo", 18, 0x6539)])
+def test_an_emulated_guests_catch_of_a_hosted_boss_keeps_the_roll_and_passes_pkhex(service, record, level, pid_high):
+    """An emulated Shield guest caught Wooloos hosted from two den seeds: the record keeps the roll's
+    encryption constant, IVs, nature, gender and size and the boss's level, and takes the catcher's
+    trainer, met location 162 and a Poke Ball. The plain one keeps the roll's PID; the shiny one's high
+    half moved to shine 1 under the catcher's TID/SID (the roll's was 5 under its own). PKHeX takes both."""
     from pokeldn.swsh import raid
     ads = json.loads((Path(__file__).parent / "data" / "swsh_raid_adverts.json").read_text())
-    caught = bytes.fromhex(ads["caught_wooloo"])
+    caught = bytes.fromhex(ads[record])
     plain = gen8.decrypt(caught)
     got = gen8.read(plain)
-    drawn = raid.roll(int(ads["caught_wooloo_seed"], 16), 1, (0, 1), 127)
-    assert int.from_bytes(plain[:4], "little") == drawn["encryption_constant"] and got["pid"] == drawn["pid"]
+    drawn = raid.roll(int(ads[record + "_seed"], 16), 1, (0, 1), 127)
+    assert int.from_bytes(plain[:4], "little") == drawn["encryption_constant"]
+    assert got["pid"] == (drawn["pid"] if pid_high is None else pid_high << 16 | drawn["pid"] & 0xFFFF)
     assert (got["ivs"], got["nature"], got["gender"]) == (drawn["ivs"], drawn["nature"], drawn["gender"])
     assert (plain[raid.OFF_HEIGHT], plain[raid.OFF_WEIGHT]) == (drawn["height"], drawn["weight"])
-    assert (got["species"], got["level"], got["met_level"], got["met_location"], got["ball"]) == (831, 17, 17, 162, 4)
+    assert (got["species"], got["level"], got["met_level"], got["met_location"], got["ball"]) == (831, level, level, 162, 4)
     assert (got["ot_name"], got["trainer_id"], got["secret_id"]) == ("Guest", 1234, 5678)
-    assert service.check_bytes("swsh", caught)["legal"]
+    checked = service.check_bytes("swsh", caught)
+    assert checked["legal"] and checked["shiny"] == (pid_high is not None)
