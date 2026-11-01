@@ -215,22 +215,74 @@ def same_shine(pid, ids, new_ids):
     return (new_ids ^ (pid & 0xFFFF) ^ xor) << 16 | pid & 0xFFFF
 
 
-def boss_record(pk8, template=None):
-    """-> the encrypted party record a den host sends as BossPokemon for the Pokemon in `pk8`."""
+SHINY_RANDOM, SHINY_NEVER, SHINY_ALWAYS = 0, 1, 2
+OFF_ABILITY_NUMBER = 0x16    # bits 0-2, one bit per ability slot
+OFF_HEIGHT, OFF_WEIGHT = 0x50, 0x51
+OFF_DYNAMAX_LEVEL = 0x90
+OFF_HP_CURRENT = 0x8A
+
+
+def roll(seed, flawless, abilities, ratio, gender=None, nature=None, natures=None, shiny=SHINY_RANDOM):
+    """-> a den boss drawn from `seed` [PKHeX RaidRNG.TryApply]: encryption constant, the trainer id the
+    record keeps (`ids`, SID << 16 | TID), PID, IVs in record order, ability slot, gender, nature,
+    height and weight. `abilities` lists the slots drawn among, `natures` Toxtricity's form table;
+    `gender` and `nature` fix them (docs/swsh_raid.md, A boss a catch keeps legal)."""
+    from pokeldn.sv.raid_encounter import Xoroshiro
+    rand = Xoroshiro(seed)
+    ec, ids, pid = rand.next_int(), rand.next_int(), rand.next_int()
+    xor = (ids >> 16) ^ (ids & 0xFFFF) ^ (pid >> 16) ^ (pid & 0xFFFF)
+    if shiny == SHINY_NEVER and xor < 16:
+        pid ^= 0x10000000
+    elif shiny == SHINY_ALWAYS and xor >= 16:
+        pid = ((ids >> 16) ^ (ids & 0xFFFF) ^ (pid & 0xFFFF)) << 16 | pid & 0xFFFF
+    ivs = [None] * 6                          # HP Atk Def SpA SpD Spe, the draw's order
+    while ivs.count(31) < flawless:
+        k = rand.next_int(6)
+        if ivs[k] is None:
+            ivs[k] = 31
+    ivs = [rand.next_int(32) if iv is None else iv for iv in ivs]
+    slot = abilities[rand.next_int(len(abilities))] if len(abilities) > 1 else abilities[0]
+    if gender is None:
+        gender = (2 if ratio == 0xFF else 1 if ratio == 0xFE else 0 if ratio == 0
+                  else int(rand.next_int(253) + 1 < ratio))
+    if nature is None:
+        nature = natures[rand.next_int(len(natures))] if natures else rand.next_int(25)
+    height = rand.next_int(129) + rand.next_int(128)
+    weight = rand.next_int(129) + rand.next_int(128)
+    return {"encryption_constant": ec, "ids": ids, "pid": pid,
+            "ivs": (ivs[0], ivs[1], ivs[2], ivs[5], ivs[3], ivs[4]), "slot": slot, "gender": gender,
+            "nature": nature, "height": height, "weight": weight}
+
+
+def boss_record(pk8, template=None, rolled=False):
+    """-> the encrypted party record a den host sends as BossPokemon for the Pokemon in `pk8`.
+    `rolled`: `pk8` is a den roll (pokeldn.pokemon.Service.raid_boss), whose trainer id, PID, size,
+    ability slot and Dynamax level the record keeps, with the party HP a den boss carries."""
     plain = gen8.decrypt(bytes(pk8))
     wild = gen8.decrypt(template if template is not None else WILD_BOSS.read_bytes())
     got = gen8.read(plain)
     fields = {k: got[k] for k in BOSS_FIELDS if k in got}
     fields["encryption_constant"] = struct.unpack_from("<I", plain, 0)[0]
-    # Shininess is the PID against the record's own TID/SID, and the record keeps the den boss's.
     den = gen8.read(wild)
-    fields["pid"] = same_shine(got["pid"], got["trainer_id"] ^ got["secret_id"], den["trainer_id"] ^ den["secret_id"])
+    if rolled:
+        fields.update(trainer_id=got["trainer_id"], secret_id=got["secret_id"])
+    else:
+        # Shininess is the PID against the record's own TID/SID, and the record keeps the den boss's.
+        fields["pid"] = same_shine(got["pid"], got["trainer_id"] ^ got["secret_id"],
+                                   den["trainer_id"] ^ den["secret_id"])
     out = bytearray(gen8.write(wild, **fields))
     out[PK8_GIGANTAMAX] = (out[PK8_GIGANTAMAX] & ~0x10) | (plain[PK8_GIGANTAMAX] & 0x10)
     out[DYNAMAX_KIND] = 2 if plain[PK8_GIGANTAMAX] & 0x10 else 1
     if len(plain) == gen8.SIZE_PARTY:
         # The party stats, but not the Dynamax kind (+0x156), which a guest matches with the den slot.
         out[gen8.SIZE_STORED:gen8.OFF_DYNAMAX_TYPE] = plain[gen8.SIZE_STORED:gen8.OFF_DYNAMAX_TYPE]
+    if rolled:
+        out[OFF_ABILITY_NUMBER] = (out[OFF_ABILITY_NUMBER] & ~0x07) | (plain[OFF_ABILITY_NUMBER] & 0x07)
+        for at in (OFF_HEIGHT, OFF_WEIGHT, OFF_DYNAMAX_LEVEL):
+            out[at] = plain[at]
+        hp = struct.unpack_from("<H", out, gen8.OFF_STATS)[0] * (150 + 5 * plain[OFF_DYNAMAX_LEVEL]) // 100
+        struct.pack_into("<H", out, gen8.OFF_STATS, hp)
+        struct.pack_into("<H", out, OFF_HP_CURRENT, hp)
     return gen8.encrypt(bytes(out))
 
 

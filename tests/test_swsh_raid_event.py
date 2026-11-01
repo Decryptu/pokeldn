@@ -121,7 +121,7 @@ def test_a_boss_record_is_the_tables_boss(event, seed):
     assert tuple(got["stats"].values()) == raid_event.party_stats(base, got["ivs"], 60, got["nature"], 10)
     # Everything the den boss record does not take from the boss stays the den host's.
     wild = gen8.read(gen8.decrypt(raid.WILD_BOSS.read_bytes()))
-    assert all(got[k] == wild[k] for k in ("trainer_id", "secret_id", "ot_name", "version", "ball", "language"))
+    assert all(got[k] == wild[k] for k in ("ot_name", "version", "ball", "language"))
     assert gen8.read(gen8.decrypt(raid.boss_record(record)))["species"] == 849
     advert = raid.den_advert(bytes.fromhex(json.loads((DATA / "swsh_raid_adverts.json").read_text())
                                            ["advert_pidove"]), record, 4)
@@ -133,11 +133,11 @@ def test_a_boss_record_is_the_tables_boss(event, seed):
 
 @pytest.mark.parametrize("rule", [raid_event.SHINY_NEVER, raid_event.SHINY_ALWAYS])
 def test_the_shiny_rule_holds_for_the_records_trainer(event, rule):
-    wild = gen8.read(gen8.decrypt(raid.WILD_BOSS.read_bytes()))
     fixed = raid_event._with(boss(event, SWORD, 5, 849), shiny=rule)
     for seed in range(64):
-        pid = gen8.read(gen8.decrypt(raid_event.boss_pk8(fixed, random.Random(seed))))["pid"]
-        sparkles = (wild["trainer_id"] ^ wild["secret_id"] ^ (pid >> 16) ^ (pid & 0xFFFF)) < 16
+        got = gen8.read(gen8.decrypt(raid_event.boss_pk8(fixed, random.Random(seed))))
+        pid = got["pid"]
+        sparkles = (got["trainer_id"] ^ got["secret_id"] ^ (pid >> 16) ^ (pid & 0xFFFF)) < 16
         assert sparkles == (rule == raid_event.SHINY_ALWAYS)
 
 

@@ -150,14 +150,50 @@ hold no legendary or mythical Pokemon, so a hosted boss is a species, form and G
 the boss, and shows an event boss as the base den slot holding its species. `bin/swsh_host.py` and the
 app's Max Raid host tools refuse a boss no base den holds.
 
-`raid.boss_record` keeps the den boss's TID 28222 and SID 36500. Shininess is the PID against them, so
-`raid.same_shine` moves the PID's high half to keep the boss's own square, star or plain shine from its
-file's trainer; a boss made shiny for the player and sent with its PID unchanged was drawn plain. `raid.reward_choices`
+With `--raid-boss-as-is`, `raid.boss_record` keeps the den boss's TID 28222 and SID 36500. Shininess is
+the PID against them, so `raid.same_shine` moves the PID's high half to keep the boss's own square, star
+or plain shine from its file's trainer; a boss made shiny for the player and sent with its PID
+unchanged was drawn plain. `raid.reward_choices`
 lists what the slot allows at a rank; `raid.den_rewards` builds the slot's own rows.
 
 In den bosses the party HP stat and current HP are the plain HP stat times
 `(150 + 5 * Dynamax level) / 100`, rounded down; the other stats are plain. The Dynamax level is at
 `+0x90`, the ability slot bit at `+0x16` bits 0 to 2, and the experience is the level's least.
+
+### A boss a catch keeps legal
+
+A den host's BossPokemon is the raid roll of one seed [PKHeX RaidRNG]. Both den bosses an emulated
+Shield host sent are a roll: Pidove (`raid_boss_template.ek8`) of seed `0xF41D53DF6C576FFD`, Hoothoot
+of `0xBA7E50A969044287`, each found by searching the 32 seed bits the encryption constant leaves open
+(`tests/test_swsh_raid.py`). The draws of a xoroshiro128+ seeded with it and `0x82A2B175229D6A5B`,
+in order:
+
+| draw | field |
+|---|---|
+| u32 | encryption constant |
+| u32 | the record's TID (low half) and SID (high half) |
+| u32 | PID; its shine is judged against that TID and SID |
+| rand(6), until a stat without one | each of the den's perfect IVs |
+| rand(32) | each other IV, in the order HP, Atk, Def, SpA, SpD, Spe |
+| rand(3) or rand(2) | the ability slot, where the den draws one |
+| rand(253) + 1 < gender ratio | female, for a species of both genders |
+| rand(25) | nature; Toxtricity draws from its form's table |
+| rand(129) + rand(128), twice | height, then weight |
+
+A second generator on the same seed gives the level, the rank's least (15 + 10 rank) plus rand(6),
+then the Dynamax level, rank + 1 plus rand(2), or 6 plus rand(3) at rank 4 [PKHeX
+EncounterStatic8N]. PKHeX accepts a caught den Pokemon when one seed of a den encounter of its
+species, form and Gigantamax state gives all of these and its PID carries the roll's shine to its
+trainer; met at a shared den (location 162), any den table's encounter matches. A file's own boss
+fails that check as a catch: "PID+ correlation does not match", or no encounter at a level no den
+gives.
+
+`bin/swsh_host.py --raid-boss` sends a roll: the PKHeX helper's `raid_boss` picks PKHeX's den
+encounter of the boss's species, form and Gigantamax state at the rank its level names, or the
+nearest rank a den gives, and a seed whose roll has the file's shine, preferring its nature and
+gender. The record keeps the file's moves. `--raid-boss-as-is` sends the file's own level, IVs,
+nature, size and PID. An event boss (`raid_event.boss_pk8`) is a roll of a random seed with the
+event table's perfect IVs, ability, gender, nature and shine rules at the table's level.
 
 ## Hosting
 
@@ -432,3 +468,5 @@ its battle went on offline. A host that leaves before the battle starts leaves t
   RaidCapture and the result records, and the unsent fields of both holders.
 - Whether a retail guest takes an event boss from a den advertisement whose den record is zero, and
   what a retail event den host writes in the den kind bits and the den record.
+- What a guest's catch of a hosted boss writes: its met location and level, its moves, and whether it
+  carries the PID's shine to the catcher as PKHeX's raid check expects.

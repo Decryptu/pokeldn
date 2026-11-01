@@ -196,6 +196,17 @@ class Service:
         reply["file"] = self.keep(game, reply)
         return reply
 
+    def raid_boss(self, data: bytes, rank: int, shiny: bool | None = None) -> dict:
+        """A Sword/Shield Max Raid boss as a den holds it, for the PK8 in `data` at star rank `rank` (0 to 4):
+        data (the encrypted party record, raid.boss_record's `rolled` input), seed, rank (the nearest a den of
+        it gives) and den (PKHeX's name for it). `shiny` defaults to the PK8's own (services/pkhex RaidBoss)."""
+        request = {"cmd": "raid_boss", "game": "swsh", "data": base64.b64encode(bytes(data)).decode(), "rank": rank}
+        if shiny is not None:
+            request["shiny"] = shiny
+        reply = self._ask(request)
+        reply["data"] = base64.b64decode(reply["data"])
+        return reply
+
     def paste(self, game: str, text: str, trainer: dict, version: str = "") -> list[dict]:
         """The Showdown sets in `text`, each as make's values with its errors and notes (services/pkhex Paste)."""
         return self._ask({"cmd": "paste", "game": game, "text": text, "trainer": trainer,

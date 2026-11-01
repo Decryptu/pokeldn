@@ -38,12 +38,10 @@ ENTRY = (("entry", "i"), ("species", "i"), ("form", "i"), ("level", "i"), ("dyna
 PROBABILITIES = 15
 # Ability: 0, 1, 2 the personal entry's first, second, hidden; 3 either of the first two; 4 any.
 ABILITY_DRAWS = {0: (0,), 1: (1,), 2: (2,), 3: (0, 1), 4: (0, 1, 2)}
-SHINY_RANDOM, SHINY_NEVER, SHINY_ALWAYS = 0, 1, 2
+SHINY_RANDOM, SHINY_NEVER, SHINY_ALWAYS = raid.SHINY_RANDOM, raid.SHINY_NEVER, raid.SHINY_ALWAYS
 NATURE_RANDOM = 25
 GENDER_RANDOM = 0             # 1 male, 2 female, 3 genderless: the record's gender + 1
-OFF_ABILITY_NUMBER = 0x16     # bits 0-2, one bit per ability slot (PKHeX G8PKM.AbilityNumber)
-OFF_HP_CURRENT = 0x8A
-OFF_DYNAMAX_LEVEL = 0x90
+OFF_ABILITY_NUMBER, OFF_HP_CURRENT, OFF_DYNAMAX_LEVEL = raid.OFF_ABILITY_NUMBER, raid.OFF_HP_CURRENT, raid.OFF_DYNAMAX_LEVEL
 DATA = Path(__file__).with_name("data")
 
 
@@ -288,45 +286,32 @@ def boss_pk8(boss, rand=None, template=None):
     """-> the encrypted party record a den host sends as BossPokemon for `boss`, on the den boss
     record raid.boss_record starts from: species, form, level, experience, moves and their PP, the
     ability the table allows, the table's flawless IVs, nature, gender and shiny rule, Gigantamax and
-    Dynamax level, party stats. What the table leaves open is drawn from `rand` (a random.Random)."""
+    Dynamax level, party stats. What the table leaves open is a den roll (raid.roll) of a seed `rand`
+    (a random.Random) draws, so a guest's catch passes PKHeX's raid check."""
     rand = rand or random.SystemRandom()
     base, ratio, growth, abilities = personal(boss.species, boss.form)
     plain = bytearray(gen8.decrypt(template if template is not None else raid.WILD_BOSS.read_bytes()))
-    old = gen8.read(bytes(plain))
-    slot = rand.choice(ABILITY_DRAWS[boss.ability])
-    ivs = [None] * 6
-    for k in rand.sample(range(6), min(max(boss.flawless_ivs, 0), 6)):
-        ivs[k] = 31
-    ivs = tuple(rand.randrange(32) if iv is None else iv for iv in ivs)
-    if boss.nature != NATURE_RANDOM:
-        nature = boss.nature
-    elif boss.species == encounter.TOXTRICITY:
-        nature = rand.choice(encounter.TOXTRICITY_NATURES[boss.form])
-    else:
-        nature = rand.randrange(25)
-    if boss.gender != GENDER_RANDOM:
-        gender = boss.gender - 1
-    else:
-        gender = (2 if ratio == 0xFF else 1 if ratio == 0xFE else 0 if ratio == 0
-                  else int(rand.randrange(100) < encounter.GENDER_CUTOFF.get(ratio, ratio * 100 // 253)))
-    pid = rand.getrandbits(32)
-    xor = old["trainer_id"] ^ old["secret_id"] ^ (pid >> 16) ^ (pid & 0xFFFF)
-    if boss.shiny == SHINY_NEVER and xor < 16:
-        pid ^= 0x10000000
-    elif boss.shiny == SHINY_ALWAYS and xor >= 16:
-        pid = ((old["trainer_id"] ^ old["secret_id"] ^ (pid & 0xFFFF)) << 16) | (pid & 0xFFFF)
+    drawn = raid.roll(
+        rand.getrandbits(64), max(boss.flawless_ivs, 0), ABILITY_DRAWS[boss.ability], ratio,
+        gender=None if boss.gender == GENDER_RANDOM else boss.gender - 1,
+        nature=None if boss.nature == NATURE_RANDOM else boss.nature,
+        natures=encounter.TOXTRICITY_NATURES[boss.form] if boss.species == encounter.TOXTRICITY else None,
+        shiny=boss.shiny)
+    slot, ivs, nature = drawn["slot"], drawn["ivs"], drawn["nature"]
     stats = party_stats(base, ivs, boss.level, nature, boss.dynamax_level)
     pp = tables()["move_pp"]
     out = bytearray(gen8.write(
         bytes(plain), species=boss.species, form=boss.form, level=boss.level,
         experience=encounter.experience(boss.level, growth), moves=boss.moves,
         move_pp=tuple(pp.get(str(m), 0) if m else 0 for m in boss.moves), move_pp_ups=(0,) * 4,
-        ability=abilities[slot], ivs=ivs, evs=(0,) * 6, nature=nature, gender=gender, pid=pid,
-        encryption_constant=rand.getrandbits(32), held_item=0, stats=stats))
+        ability=abilities[slot], ivs=ivs, evs=(0,) * 6, nature=nature, gender=drawn["gender"],
+        pid=drawn["pid"], encryption_constant=drawn["encryption_constant"], trainer_id=drawn["ids"] & 0xFFFF,
+        secret_id=drawn["ids"] >> 16, held_item=0, stats=stats))
     out[OFF_ABILITY_NUMBER] = (out[OFF_ABILITY_NUMBER] & ~0x07) | 1 << slot
     out[raid.PK8_GIGANTAMAX] = (out[raid.PK8_GIGANTAMAX] & ~0x10) | (0x10 if boss.gigantamax else 0)
     out[raid.DYNAMAX_KIND] = 2 if boss.gigantamax else 1
     out[OFF_DYNAMAX_LEVEL] = boss.dynamax_level
+    out[raid.OFF_HEIGHT], out[raid.OFF_WEIGHT] = drawn["height"], drawn["weight"]
     struct.pack_into("<H", out, OFF_HP_CURRENT, stats[0])
     return gen8.encrypt(bytes(out))
 

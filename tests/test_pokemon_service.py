@@ -965,3 +965,57 @@ def test_an_empty_offer_starts_every_trade_tool_with_a_random_legal_pokemon(serv
     assert entry["legal"] and service.check(game, entry["file"])["legal"]
     args = command.build(tool, filled, {}, Settings())
     assert entry["file"] in args
+
+
+def _raid_catch(service, boss_pk8, tid=24680, sid=13579):
+    """`boss_pk8` as a guest's catch keeps it: the catcher as its trainer, the PID's shine under the den
+    record's TID/SID carried to the catcher's [PKHeX RaidRNG.TryApply, Captured], met at a shared den
+    (PKHeX Encounters8Nest.SharedNest 162) at its level, in a Poke Ball, by an English Sword."""
+    from pokeldn.swsh import pokemon as swsh_pokemon
+    plain = gen8.decrypt(boss_pk8)
+    got = gen8.read(plain)
+    pid = got["pid"]
+    shine = lambda ids: (ids ^ (pid >> 16) ^ (pid & 0xFFFF)) < 16
+    if shine(got["trainer_id"] ^ got["secret_id"]) and not shine(tid ^ sid):
+        pid = (tid ^ sid ^ (pid & 0xFFFF)) << 16 | pid & 0xFFFF
+    elif not shine(got["trainer_id"] ^ got["secret_id"]) and shine(tid ^ sid):
+        pid ^= 0x10000000
+    name = next(s["name"] for s in service.names("swsh", "species") if s["id"] == got["species"])
+    caught = gen8.write(plain, trainer_id=tid, secret_id=sid, ot_name="CATCHER", ot_gender=0, pid=pid,
+                        met_location=162, met_level=got["level"], ball=4, version=44, language=2,
+                        met_date=(26, 10, 1), nickname=name, is_nicknamed=False)
+    return swsh_pokemon.encrypt(caught)
+
+
+@pytest.mark.parametrize("species,level,shiny,gigantamax", [
+    (706, 71, False, False),       # Goodra at a level no den gives: a player's PKHeX refused its catch
+    (706, 62, True, False),
+    (849, 60, False, True),        # Gigantamax Toxtricity
+    (831, 15, False, False),
+])
+def test_a_hosted_raid_boss_caught_by_a_guest_passes_pkhex(service, species, level, shiny, gigantamax):
+    from pokeldn.swsh import pokemon as swsh_pokemon, raid
+    made = service.make("swsh", species, TRAINER, level=level, shiny=shiny,
+                        options={"gigantamax": True} if gigantamax else {})
+    plain = gen8.load(base64.b64decode(made["data"]))
+    rolled = service.raid_boss(swsh_pokemon.encrypt(plain), raid.rank_for_level(level))
+    boss = raid.boss_record(rolled["data"], rolled=True)
+    got = gen8.read(gen8.decrypt(boss))
+    assert 15 + 10 * rolled["rank"] <= got["level"] <= 20 + 10 * rolled["rank"]
+    assert (got["species"], got["moves"]) == (species, gen8.read(plain)["moves"])
+    caught = service.check_bytes("swsh", _raid_catch(service, boss))
+    assert caught["legal"], caught
+    assert caught["shiny"] == shiny
+    # The file's own values, sent as they are, are the catch a player's PKHeX refused.
+    assert not service.check_bytes("swsh", _raid_catch(service, raid.boss_record(swsh_pokemon.encrypt(plain))))["legal"]
+
+
+def test_an_event_raid_boss_caught_by_a_guest_passes_pkhex(service, tmp_path):
+    import random
+    from pokeldn.swsh import raid_event
+    from tests.test_swsh_raid_event import SWORD, boss, event_folder
+    event = raid_event.load(event_folder(tmp_path / "Index 010"))
+    for seed in range(4):
+        record = raid_event.boss_pk8(boss(event, SWORD, 5, 849), random.Random(seed))
+        caught = service.check_bytes("swsh", _raid_catch(service, record))
+        assert caught["legal"], caught

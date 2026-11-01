@@ -18,6 +18,7 @@ def swsh_den(boss_file: str = "", gigantamax: bool = False, event=None, event_bo
     `event` and `event_boss` ("version:stars:number:area") name an event boss in place of `boss_file`.
     None when no boss is chosen or no base den holds it: a guest then refuses the raid at its boss."""
     from pokeldn import gen8
+    from pokeldn.pokemon import SERVICE, BuilderError
     from pokeldn.swsh import pokemon, raid, raid_event
     try:
         if event is not None:
@@ -27,14 +28,16 @@ def swsh_den(boss_file: str = "", gigantamax: bool = False, event=None, event_bo
             boss = event.choices(versions[version], rank, area)[int(number) - 1]
             boss_pk8 = raid_event.boss_pk8(boss)
         elif boss_file:
-            rank = None
             plain = bytearray(gen8.load(Path(boss_file).expanduser().read_bytes()))
             if gigantamax:
                 plain[raid.PK8_GIGANTAMAX] |= 0x10
             boss_pk8 = raid.boss_record(pokemon.encrypt(bytes(plain)))
+            # The host advertises the rank of the den seed it rolls the boss from.
+            rank = SERVICE.raid_boss(pokemon.encrypt(bytes(plain)),
+                                     raid.rank_for_level(gen8.read(bytes(plain))["level"]))["rank"]
         else:
             return None
         row, rank = raid.boss_den(boss_pk8, rank)
-    except (OSError, ValueError, KeyError, IndexError):
+    except (OSError, ValueError, KeyError, IndexError, BuilderError):
         return None
     return None if row is None else raid.reward_choices(row, rank)

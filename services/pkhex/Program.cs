@@ -85,6 +85,7 @@ static partial class Program
                     "move" => Move(game, request),
                     "destinations" => Destinations(game, request),
                     "raid_scan" => RaidScan.Run(request),
+                    "raid_boss" => RaidBoss(game, request),
                     "wild_areas" => Wild.AreasReply(strings),
                     "wild_legal" => Wild.LegalReply(request, strings, Plain),
                     "wild_species" => Wild.SpeciesReply(request, strings),
@@ -1494,6 +1495,77 @@ static partial class Program
 
         static bool OwnTrainer(PKM pk, ITrainerInfo trainer) => pk.OriginalTrainerName == trainer.OT
             && pk.ID32 == trainer.ID32 && pk.OriginalTrainerGender == trainer.Gender;
+
+        // A Max Raid boss as a den holds it before a catch: one seed of a base den encounter of the boss's species, form
+        // and Gigantamax state gives its encryption constant, trainer id, raw PID, IVs, ability, gender, nature, size, level
+        // and Dynamax level [EncounterStatic8N, RaidRNG] (docs/swsh_raid.md, A boss a catch keeps legal).
+        JsonObject RaidBoss(Game game, JsonObject request)
+        {
+            var source = (PK8)Parse(game, Convert.FromBase64String((string)request["data"]!));
+            var wanted = (int)request["rank"]!;
+            var shiny = (bool?)request["shiny"] ?? source.IsShiny;
+            var blank = new PK8 { Species = source.Species, Form = source.Form };
+            List<EncounterStatic8N> dens = [];
+            try
+            {
+                EncounterMovesetGenerator.PriorityList = [EncounterTypeGroup.Static];
+                foreach (var version in (GameVersion[])[GameVersion.SW, GameVersion.SH])
+                    dens.AddRange(EncounterMovesetGenerator.GenerateEncounters(blank, new SimpleTrainerInfo(version), ReadOnlyMemory<ushort>.Empty, version)
+                        .OfType<EncounterStatic8N>()
+                        .Where(e => e.Species == source.Species && e.Form == source.Form && e.CanGigantamax == source.CanGigantamax));
+            }
+            finally
+            {
+                EncounterMovesetGenerator.ResetFilters();
+            }
+            if (dens.Count == 0)
+                throw new ArgumentException("No Max Raid den holds this Pokemon in this form and Gigantamax state.");
+            // A rank's levels are 15 + 10 rank to 20 + 10 rank; a den gives its nearest rank for one it does not hold.
+            static int RankOf(EncounterStatic8N den, int rank) => Math.Clamp(rank, (den.LevelMin - 15) / 10, (den.LevelMax - 20) / 10);
+            var den = dens.MinBy(e => Math.Abs(RankOf(e, wanted) - wanted))!;
+            var rank = RankOf(den, wanted);
+
+            var rand = new Xoroshiro128Plus(Util.Rand.Rand64());
+            PK8? best = null;
+            ulong bestSeed = 0;
+            int bestScore = -1;
+            for (int i = 0; i < 4_000_000 && bestScore < 3; i++)
+            {
+                var seed = rand.Next();
+                var draw = new Xoroshiro128Plus(seed);
+                draw.NextInt();
+                var fake = (uint)draw.NextInt();
+                if (ShinyUtil.GetShinyXor((uint)draw.NextInt(), fake) < 16 != shiny)
+                    continue;
+                // The level and Dynamax level come from the seed's own first draws [EncounterStatic8N.FinishCorrelation].
+                var levels = new Xoroshiro128Plus(seed);
+                var level = (byte)(15 + 10 * rank + (int)levels.NextInt(6));
+                var dynamax = (byte)(rank == 4 ? 6 + (int)levels.NextInt(3) : rank + 1 + (int)levels.NextInt(2));
+                var pk = new PK8
+                {
+                    Species = source.Species, Form = source.Form, ID32 = fake, MetLevel = level, CurrentLevel = level,
+                    DynamaxLevel = dynamax, CanGigantamax = source.CanGigantamax,
+                };
+                den.GenerateSeed64(pk, new SimpleTrainerInfo(GameVersion.SW), seed);
+                if (!den.IsPossibleSeed(pk, seed, true).Possible)
+                    continue;
+                var score = (pk.Nature == source.Nature ? 2 : 0) + (pk.Gender == source.Gender ? 1 : 0);
+                if (score > bestScore)
+                    (best, bestSeed, bestScore) = (pk, seed, score);
+            }
+            if (best is null)
+                throw new ArgumentException("No den seed gives this boss.");
+            best.SetMoves(source.Moves);
+            best.HealPP();
+            best.ResetPartyStats();
+            return new JsonObject
+            {
+                ["data"] = Convert.ToBase64String(game.Write(best)),
+                ["seed"] = bestSeed.ToString("x16"),
+                ["rank"] = rank,
+                ["den"] = den.Name,
+            };
+        }
 
         // Whether PKHeX takes the record as its own trainer's save keeps it, with handler 0.
         static bool KeepsLegal(PKM pk)

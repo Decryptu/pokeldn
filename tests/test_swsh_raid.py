@@ -209,3 +209,27 @@ def test_boss_record_keeps_the_bosss_shine_under_the_den_bosss_trainer(shine):
     assert (built["trainer_id"], built["secret_id"]) == (28222, 36500)
     xor = built["trainer_id"] ^ built["secret_id"] ^ built["pid"] >> 16 ^ built["pid"] & 0xFFFF
     assert (xor if xor < 16 else None) == shine and built["pid"] & 0xFFFF == low
+
+
+@pytest.mark.parametrize("record,seed", [
+    ("template", 0xF41D53DF6C576FFD),          # Pidove, level 15: raid_boss_template.ek8
+    ("boss_hoothoot", 0xBA7E50A969044287),     # Hoothoot, level 17
+])
+def test_an_emulated_den_hosts_boss_is_one_seeds_raid_roll(record, seed):
+    """Both bosses an emulated Shield den host sent are a raid roll of one seed, found by searching the
+    32 unknown bits under the encryption constant: the record's TID/SID, PID, IVs, ability slot, gender,
+    nature and size, and the level 15 plus the seed's first draw under 6 [PKHeX RaidRNG, EncounterStatic8N]."""
+    import struct
+    from pokeldn import gen8
+    from pokeldn.sv.raid_encounter import Xoroshiro
+    ads = json.loads((Path(__file__).parent / "data" / "swsh_raid_adverts.json").read_text())
+    raw = raid.WILD_BOSS.read_bytes() if record == "template" else bytes.fromhex(ads[record])
+    plain = gen8.decrypt(raw)
+    got = gen8.read(plain)
+    drawn = raid.roll(seed, 1, (0, 1), 127)       # both: one perfect IV, either first ability, ratio 127
+    assert drawn["encryption_constant"] == struct.unpack_from("<I", plain, 0)[0]
+    assert drawn["ids"] == got["secret_id"] << 16 | got["trainer_id"] and drawn["pid"] == got["pid"]
+    assert (drawn["ivs"], drawn["gender"], drawn["nature"]) == (got["ivs"], got["gender"], got["nature"])
+    assert 1 << drawn["slot"] == plain[raid.OFF_ABILITY_NUMBER] & 7
+    assert (drawn["height"], drawn["weight"]) == (plain[raid.OFF_HEIGHT], plain[raid.OFF_WEIGHT])
+    assert got["level"] == 15 + Xoroshiro(seed).next_int(6)

@@ -247,6 +247,10 @@ def build_parser():
     ap.add_argument("--raid-gigantamax", action="store_true",
                     help="the --raid-boss boss is Gigantamax; a retail console accepts it where a base "
                          "den holds that Gigantamax Pokemon (docs/swsh_raid.md)")
+    ap.add_argument("--raid-boss-as-is", action="store_true",
+                    help="send the --raid-boss file's own level, IVs, nature, size and PID instead of a den "
+                         "seed's; a console's catch then fails PKHeX's raid check (docs/swsh_raid.md, A boss a "
+                         "catch keeps legal)")
     ap.add_argument("--raid-console-serves", action="store_true",
                     help="put the console first in BattleStart and framework object 0, so it serves "
                          "the battle and the board answers as a client (docs/swsh_raid.md)")
@@ -427,7 +431,18 @@ def main(argv=None):
             plain = bytearray(gen8.load(Path(boss_file).read_bytes()))
             if args.raid_gigantamax:
                 plain[raid.PK8_GIGANTAMAX] |= 0x10
-            boss_pk8 = raid.boss_record(swsh_pokemon.encrypt(bytes(plain)))
+            if args.raid_boss_as_is:
+                boss_pk8 = raid.boss_record(swsh_pokemon.encrypt(bytes(plain)))
+            else:
+                try:
+                    rolled = pokemon_service.SERVICE.raid_boss(
+                        swsh_pokemon.encrypt(bytes(plain)), raid.rank_for_level(gen8.read(bytes(plain))["level"]))
+                except pokemon_service.BuilderError as error:
+                    print(f"[raid] {error}")
+                    return 1
+                boss_pk8, rank = raid.boss_record(rolled["data"], rolled=True), rolled["rank"]
+                print(f"[raid] boss from den seed {rolled['seed']} ({rolled['den']}): "
+                      f"level {gen8.read(gen8.decrypt(boss_pk8))['level']}, {rank + 1} stars")
         if os.environ.get("POKELDN_RAID_BOSS_EDIT"):
             # Test only: OFFSET=HEX,... written into the plain boss record, to bisect a refusal.
             plain = bytearray(gen8.decrypt(boss_pk8))
