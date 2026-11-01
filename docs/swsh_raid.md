@@ -188,6 +188,11 @@ trainer; met at a shared den (location 162), any den table's encounter matches. 
 fails that check as a catch: "PID+ correlation does not match", or no encounter at a level no den
 gives.
 
+A guest's catch keeps the boss record. An emulated Shield guest caught a Wooloo hosted from seed
+`0xF3D291D263CC680F`: the caught record has the roll's encryption constant, PID, IVs, nature, gender,
+size, ability slot and Dynamax level, the boss's moves and level 17, and takes the catcher's trainer,
+met location 162, met level 17, a Poke Ball and the date; PKHeX takes it (`tests/test_pokemon_service.py`).
+
 `bin/swsh_host.py --raid-boss` sends a roll: the PKHeX helper's `raid_boss` picks PKHeX's den
 encounter of the boss's species, form and Gigantamax state at the rank its level names, or the
 nearest rank a den gives, and a seed whose roll has the file's shine, preferring its nature and
@@ -468,5 +473,5 @@ its battle went on offline. A host that leaves before the battle starts leaves t
   RaidCapture and the result records, and the unsent fields of both holders.
 - Whether a retail guest takes an event boss from a den advertisement whose den record is zero, and
   what a retail event den host writes in the den kind bits and the den record.
-- What a guest's catch of a hosted boss writes: its met location and level, its moves, and whether it
-  carries the PID's shine to the catcher as PKHeX's raid check expects.
+- Whether a guest's catch of a shiny hosted boss carries the roll's shine to the catcher's TID/SID, as
+  PKHeX's raid check expects; measured on a plain boss only.

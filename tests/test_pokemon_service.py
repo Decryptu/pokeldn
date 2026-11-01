@@ -1019,3 +1019,21 @@ def test_an_event_raid_boss_caught_by_a_guest_passes_pkhex(service, tmp_path):
         record = raid_event.boss_pk8(boss(event, SWORD, 5, 849), random.Random(seed))
         caught = service.check_bytes("swsh", _raid_catch(service, record))
         assert caught["legal"], caught
+
+
+def test_an_emulated_guests_catch_of_a_hosted_boss_keeps_the_roll_and_passes_pkhex(service):
+    """An emulated Shield guest caught a Wooloo hosted from den seed 0xF3D291D263CC680F: the record keeps
+    the roll's encryption constant, PID, IVs, nature, gender and size and the boss's level 17, and takes
+    the catcher's trainer, met location 162 and a Poke Ball. PKHeX takes it."""
+    from pokeldn.swsh import raid
+    ads = json.loads((Path(__file__).parent / "data" / "swsh_raid_adverts.json").read_text())
+    caught = bytes.fromhex(ads["caught_wooloo"])
+    plain = gen8.decrypt(caught)
+    got = gen8.read(plain)
+    drawn = raid.roll(int(ads["caught_wooloo_seed"], 16), 1, (0, 1), 127)
+    assert int.from_bytes(plain[:4], "little") == drawn["encryption_constant"] and got["pid"] == drawn["pid"]
+    assert (got["ivs"], got["nature"], got["gender"]) == (drawn["ivs"], drawn["nature"], drawn["gender"])
+    assert (plain[raid.OFF_HEIGHT], plain[raid.OFF_WEIGHT]) == (drawn["height"], drawn["weight"])
+    assert (got["species"], got["level"], got["met_level"], got["met_location"], got["ball"]) == (831, 17, 17, 162, 4)
+    assert (got["ot_name"], got["trainer_id"], got["secret_id"]) == ("Guest", 1234, 5678)
+    assert service.check_bytes("swsh", caught)["legal"]
