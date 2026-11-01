@@ -1,17 +1,15 @@
-# pokeldn 0.52.0
+# pokeldn 0.53.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Let's Go Pikachu and Eevee: Pokemon from the GO Park complex, brought from Pokemon GO, can be built
-  and offered, Meltan, Melmetal and the Alolan forms among them. The encounter list groups them by kind
-  (wild, raid, research and the rest).
-- A HOME gift such as Magearna, which is legal only with a handler, is no longer given the player's own
-  trainer: the player's save would clear the handler as it receives it and PKHeX would refuse it.
-  "Make me its original trainer" refuses such a file and says why.
-- The Pokemon to offer card has a Clear button that empties the chosen Pokemon.
+- Sword and Shield Max Raid (Host): the boss is generated from a real den seed, as a den makes it, so a
+  console that catches it gets a Pokemon PKHeX accepts. The boss keeps its species, form, Gigantamax
+  state, moves and shininess from its file; its level, IVs, nature and size come from the seed, within
+  the star rank's levels. Wild Area Event bosses are generated the same way. The command line's
+  `--raid-boss-as-is` sends the file unchanged, whose catch PKHeX refuses.
 
 The radio firmware stays at 1.9.2 and the controller firmware at 1.3.0.
 
