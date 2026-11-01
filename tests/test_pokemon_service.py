@@ -336,6 +336,25 @@ def test_a_chosen_encounter_is_the_one_the_record_was_met_at(service):
         service.make("sv", 25, TRAINER, level=chosen["level_min"] - 1, options={"encounter": chosen["key"]})
 
 
+def test_lets_go_builds_from_the_go_park(service):
+    """Alolan Rattata reaches Let's Go only through the GO Park complex, from Pokemon GO; one choice covers each kind
+    of GO encounter over every dated window."""
+    listed = service.encounters("lgpe", 19, TRAINER, form=1)
+    go = [n for n in listed if n["version"] == "GO"]
+    assert go and len({n["kind"] for n in go}) == len(go)
+    built = service.make("lgpe", 19, TRAINER, options={"form": 1, "encounter": go[0]["key"]})
+    assert built["legal"] and built["encounter_place"] == go[0]["place"] and "GO" in built["encounter"]
+
+
+def test_a_gift_legal_only_with_a_handler_is_not_given_the_players_trainer(service):
+    """A save clears the handler of a Pokemon whose original trainer is its own (docs/za.md, What the trade writes
+    into a received record); HOME's Magearna is then refused by PKHeX ("Current handler cannot be the OT")."""
+    built = service.make("swsh", 801, TRAINER)
+    assert built["legal"]
+    with pytest.raises(pokemon.BuilderError, match="handler"):
+        service.import_file("swsh", built["file"], Settings(ot="PKLDN", switch_tid=123456, switch_sid=789).trainer("swsh"))
+
+
 def test_variants_and_the_sv_tera_type_land_in_the_record(service):
     """Alcremie's sweet is its form argument; a Tera Shard's type is the override byte, Stellar 99 [TeraTypeUtil]."""
     listed = service.options("sv", 869, TRAINER, form=7)

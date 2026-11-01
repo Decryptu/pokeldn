@@ -84,8 +84,18 @@ first, and in each version by kind, each kind cut at its first 80 encounters:
 | 4 | egg | a hatch, in the ball its parent passed on |
 | 5 | Mystery Gift | after every other kind and version, since an event's fixed PID makes a new-PID offer illegal |
 
+Let's Go Pikachu and Eevee also try version GO after their own: the GO Park complex holds Pokemon brought
+from Pokemon GO, Meltan, Melmetal and Alolan forms among them. An encounter choice there is one kind of
+GO encounter (wild, raid, research and the rest) over every dated window PKHeX lists.
+
 An evolved Pokemon below its evolution level is tested at level 100, then a bisection finds the lowest
 legal level. Hydrapple in Scarlet/Violet is legal only at scattered levels.
+
+A save clears the handler of a Pokemon it receives whose original trainer's name, IDs and gender are its
+own ([What the trade writes into a received record](za.md#what-the-trade-writes-into-a-received-record)).
+A build PKHeX takes only with a handler (a HOME gift such as Magearna) and whose original trainer is the
+player is made with original trainer POKELDN and the player as handler; "Make me its original trainer"
+refuses such a file.
 
 ### Offer options
 

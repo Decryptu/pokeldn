@@ -124,6 +124,9 @@ static partial class Program
                                         Func<IEncounterable, bool>? keep = null)
         {
             List<IEncounterable> found = [], gifts = [];
+            // Let's Go's GO Park holds Pokemon brought from GO, with GO as their origin [EncounterGenerator7GO].
+            if (blank is PB7)
+                versions = [.. versions, GameVersion.GO];
             try
             {
                 foreach (var version in versions)
@@ -323,6 +326,8 @@ static partial class Program
         static string EncounterKey(IEncounterable e) => e switch
         {
             MysteryGift gift => $"gift|{gift.Generation}|{gift.CardID}|{gift.Species}|{gift.Form}",
+            // GO lists one slot per event window; a choice is the kind (wild, raid, research) over every window.
+            IPogoSlot go => $"go|{e.Version}|{e.Species}|{e.Form}|{go.Type}",
             _ => $"{e.GetType().Name}|{e.Version}|{e.Species}|{e.Form}|{e.Location}|{e.LongName}",
         };
 
@@ -368,7 +373,7 @@ static partial class Program
                 list.Add(new JsonObject
                 {
                     ["key"] = key,
-                    ["kind"] = encounter.LongName,
+                    ["kind"] = encounter is IPogoSlot go ? $"GO Encounter ({go.Type})" : encounter.LongName,
                     ["place"] = EncounterPlace(encounter),
                     ["version"] = encounter.Version.ToString(),
                     ["species"] = encounter.Species == species ? "" : strings.specieslist[encounter.Species],
@@ -557,7 +562,10 @@ static partial class Program
                         var la = Mend(pk, evolved, encounter, trainer, wish);
                         var unmet = wish.Unmet(pk, strings);
                         if (Accepted(pk, la) && unmet is null)
+                        {
+                            (pk, la) = Handed(pk, trainer, la);
                             return Describe(game, pk, la);
+                        }
                         if (unmet is null)
                             firstProblem ??= la.Report(displayLanguage);
                         else
@@ -855,7 +863,12 @@ static partial class Program
                             break;
                         case "held_item": pk.HeldItem = (int)value!; break;
                         // A file someone else made, as the player's own catch: their name, IDs and gender as original trainer.
-                        case "trainer": note = Retrain(pk, value!.AsObject()); break;
+                        case "trainer":
+                            note = Retrain(pk, value!.AsObject());
+                            pk.RefreshChecksum();
+                            if (!KeepsLegal(pk))
+                                throw new ArgumentException("it is legal only with a handler, and your own save clears the handler as it receives it");
+                            break;
                         default: throw new ArgumentException($"Unsupported edit {name}.");
                     }
                 }
@@ -1461,6 +1474,38 @@ static partial class Program
         }
 
         // A card that gives the receiver's own trainer, not one of its own: the copy carries the trainer it was made for.
+        // A save clears the handler of a Pokemon it receives whose original trainer's name, IDs and gender are its own
+        // (docs/za.md, What the trade writes into a received record). A build legal only with a handler (a HOME gift)
+        // then goes from another trainer, with the player as handler.
+        (PKM, LegalityAnalysis) Handed(PKM pk, ITrainerInfo trainer, LegalityAnalysis la)
+        {
+            if (!OwnTrainer(pk, trainer) || KeepsLegal(pk))
+                return (pk, la);
+            var other = pk.Clone();
+            Retrain(other, new JsonObject { ["ot"] = "POKELDN", ["tid"] = Random.Shared.Next(0x10000),
+                                            ["sid"] = Random.Shared.Next(0x10000), ["gender"] = 0 });
+            other.HandlingTrainerTrash.Clear();
+            other.HandlingTrainerName = trainer.OT;
+            other.HandlingTrainerGender = trainer.Gender;
+            other.RefreshChecksum();
+            var moved = new LegalityAnalysis(other);
+            return Accepted(other, moved) ? (other, moved) : (pk, la);
+        }
+
+        static bool OwnTrainer(PKM pk, ITrainerInfo trainer) => pk.OriginalTrainerName == trainer.OT
+            && pk.ID32 == trainer.ID32 && pk.OriginalTrainerGender == trainer.Gender;
+
+        // Whether PKHeX takes the record as its own trainer's save keeps it, with handler 0.
+        static bool KeepsLegal(PKM pk)
+        {
+            if (pk.CurrentHandler == 0)
+                return true;
+            var received = pk.Clone();
+            received.CurrentHandler = 0;
+            received.RefreshChecksum();
+            return new LegalityAnalysis(received).Results.All(r => r.Result != LegalityCheckResultCode.TransferHandlerFlagRequired);
+        }
+
         static bool YourOT(PKM pk, ITrainerInfo trainer) => pk.OriginalTrainerName == trainer.OT && pk.TID16 == trainer.TID16;
 
         // Whether saves of `version` received the card. HOME's (cards 9000 on) reached either version's saves, whatever

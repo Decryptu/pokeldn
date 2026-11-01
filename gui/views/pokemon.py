@@ -51,6 +51,7 @@ class PokemonPicker:
                                 limit=10 if game in GEN3 else 12,
                                 on_change=lambda e: self._set("nickname", e.control.value))
         self.build_button = t.button(tr('pokemon.build_bdd254', 'Build'), self._build, disabled=True)
+        self.clear_button = t.secondary_button(tr('pokemon.clear', 'Clear'), self._clear, "close")
         self.options = OfferOptions(self)
         self.show_sprite(update=False)     # with the sweet the options hold
         self.variants = ft.Row(spacing=10, visible=False)    # the form and, for Alcremie, the sweet
@@ -77,6 +78,7 @@ class PokemonPicker:
             self.retrain_row,
             ft.Row([t.secondary_button(tr('pokemon.or_use_a_pokemon_file_26272a', 'Or use a Pokemon file'), self._use_file, "file"),
                     t.secondary_button(tr('pokemon.import_paste_1632a4', 'Import paste'), self._paste, "bulletlist"),
+                    self.clear_button,
                     *([t.text(tr('pokemon.or_drop_either_here_a8b5ba', 'or drop either here'), 12, t.FAINT)] if drop.AVAILABLE else [])],
                    spacing=10, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
         ], spacing=10), border_radius=12)
@@ -168,9 +170,27 @@ class PokemonPicker:
         # A form or moveset chosen for the previous species rarely fits this one.
         for key in ("form", "moves", "encounter", "sweet"):
             self.options.chosen.pop(key, None)
+        self.clear_button.visible = True
+        self.clear_button.update()
         self.show_sprite()
         self.options.species_changed()
         self.load_variants()
+
+    def _clear(self, e) -> None:
+        """Back to no Pokemon: the trade offers a random legal one."""
+        self.value.clear()
+        self.options.chosen.clear()
+        self.value["options"] = self.options.chosen
+        self.species.value = None
+        self.level.value = self.nickname.value = ""
+        self.shiny.value = self.retrain.value = False
+        self.variants.visible = False
+        self.options._label()
+        self.options.species_changed()
+        self.show_sprite(update=False)
+        self._show_result()
+        self.on_change(dict(self.value))
+        self.control.update()
 
     def _shiny(self, e) -> None:
         self._set("shiny", e.control.value)
@@ -372,6 +392,7 @@ class PokemonPicker:
                           nickname=found["nickname"])
         self.options.chosen.clear()
         self.options.chosen.update(found["options"])
+        self.clear_button.visible = True
         if self.species.options:
             self.species.value = str(found["species_id"])
         self.level.value = self.value["level"]
@@ -394,6 +415,7 @@ class PokemonPicker:
 
     def _show_result(self) -> None:
         self.retrain_row.visible = bool(self.value.get("file") and self.value.get("source"))
+        self.clear_button.visible = bool(self.value.get("species") or self.value.get("file"))
         if not self.value.get("file"):
             self.result.content = None
             return
