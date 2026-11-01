@@ -24,7 +24,7 @@ Each tool is its game's Trade (Host) with up to six event Pokemon in trade order
 PKHeX.Core embeds every distribution its legality check knows, one table per game; nothing is
 downloaded. The PKHeX service's `gift_events` lists a table's Pokemon cards (eggs and item cards left
 out), newest first by `EncounterServerDate.GetDistributionWindow`, undated cards last. PKHeX.Core
-26.8.26 holds:
+26.10.18 holds:
 
 | game | table | gift Pokemon | opened | HOME's | Your OT |
 |---|---|---:|---|---|---:|
@@ -32,7 +32,7 @@ out), newest first by `EncounterServerDate.GetDistributionWindow`, undated cards
 | Brilliant Diamond/Shining Pearl | `MGDB_G8B` | 9 | 18 May 2022 to 27 Jan 2025, 5 undated | Turtwig, Chimchar, Piplup (9015 to 9017), Manaphy (9026) | 3 |
 | Legends Arceus | `MGDB_G8A` | 11 | 27 Jan 2022 to 27 Jan 2025 | Rowlet, Cyndaquil, Oshawott (9018 to 9020), Enamorus (9027) | 3 |
 | Scarlet/Violet | `MGDB_G9` | 106 | 17 Nov 2022 to 5 Jun 2026 | Sprigatito, Fuecoco, Quaxly (9021 to 9023), Meloetta (9024), Garchomp (9035) | 29 |
-| Legends Z-A | `MGDB_G9A` | 8 | 14 Oct 2025 to 26 Apr 2026 | Chikorita, Tepig, Totodile (9031 to 9033), Volcanion (9034) | 5 |
+| Legends Z-A | `MGDB_G9A` | 9 | 14 Oct 2025 to 28 Aug 2026 | Chikorita, Tepig, Totodile (9031 to 9033), Volcanion (9034) | 5 |
 
 A gift's key is `card-species-form`, plus the Tera type on Scarlet/Violet (`0503-964-0-10` is
 Gavin's Palafin). Scarlet/Violet's card 1521 holds eighteen Mew, one per Tera type.
@@ -53,7 +53,7 @@ A Your OT copy names the receiving save as its OT, so it must be a save the card
   HOME's cards (9000 on) reached either version; another card that fixes its origin reached that
   version alone; otherwise `RestrictVersion` (Let's Go's `IRestrictVersion`) decides.
 
-A card with its own trainer is never refused: its copy is a traded Pokemon. At PKHeX.Core 26.8.26 the
+A card with its own trainer is never refused: its copy is a traded Pokemon. At PKHeX.Core 26.10.18 the
 only refused Your OT cards are Let's Go's Meltan and Melmetal (1501, 1502), legal in Simplified
 Chinese alone (`WB7.IsMainlandChinaGift`).
 

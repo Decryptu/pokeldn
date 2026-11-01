@@ -254,7 +254,7 @@ IDs are kept, and the run omits `--fresh-pid`.
 | nothing to Let's Go | HOME only takes from it |
 | eggs; FireRed/LeafGreen Pokemon with an item or HM move | HOME's FireRed/LeafGreen screen |
 | species or form absent | destination's personal table |
-| Legends Z-A records out | PKHeX.Core 26.8.26 has no route |
+| Legends Z-A records out | PKHeX.Core 26.10.18 has no route |
 
 The box lists every banked Pokemon with a search over its summary (as shown and in English: species,
 nickname, nature, ability, ball) and its game's name, a sort (newest, oldest, Pokedex number, name),

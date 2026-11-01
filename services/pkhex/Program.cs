@@ -1988,10 +1988,19 @@ record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effor
             TeraTypeUtil.SetTeraType(t, (MoveType)tera);
         ApplyEffort(pk);
         // Gen 3 and 4 raise an EV past 100 (the vitamin cap) only in battle, so the record must have gained
-        // experience since it was met; one point stays below the next level.
-        if (pk.Format < 5 && Effort.Any(v => v > EffortValues.MaxVitamins34) && pk.CurrentLevel < 100 &&
-            pk.EXP + 1 < Experience.GetEXP((byte)(pk.CurrentLevel + 1), pk.PersonalInfo.EXPGrowth))
-            pk.EXP += 1;
+        // experience since it was met: at least what PKHeX's EffortExpLegality says those EVs cost, below the next level.
+        if (pk.Format < 5 && Effort.Any(v => v > EffortValues.MaxVitamins34) && pk.CurrentLevel < 100)
+        {
+            Span<int> evs = stackalloc int[6];
+            pk.GetEVs(evs);
+            var growth = pk.PersonalInfo.EXPGrowth;
+            var met = Experience.GetEXP(pk.MetLevel, growth);
+            var next = Experience.GetEXP((byte)(pk.CurrentLevel + 1), growth);
+            var exp = Math.Max(pk.EXP, met + 1);
+            exp += (uint)Math.Max(0, EffortExpLegality.GetRequiredEffortEXP(evs, exp - met, pk.IsPokerusInfected, pk.Generation, pk.Format));
+            if (exp < next)
+                pk.EXP = exp;
+        }
     }
 
     public void ApplyEffort(PKM pk)
