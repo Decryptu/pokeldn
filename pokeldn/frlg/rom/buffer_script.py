@@ -2925,6 +2925,9 @@ class _Machine:
             uc.mem_write(_CLIENT_ADDRESS + offset, (value & 0xFFFFFFFF).to_bytes(4, "little"))
 
         code = bytes(code)
+        # Unicorn 2.1.4 on Windows faults committing the last pages of its translation buffer
+        # (unicorn #2290, fixed after the release); a session that runs long enough reaches them.
+        uc.ctl_flush_tb()
         uc.mem_write(GDECOMPRESSION_BUFFER, code)
         uc.mem_write(_RECV_BUFFER_ADDRESS, code)
         word(CLIENT_PARAM, int(param))
