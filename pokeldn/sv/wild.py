@@ -77,7 +77,7 @@ def areas(service):
 
 def species(service, number, form=0):
     """-> what a crafted spawn of `number` (National Dex) in `form` can hold: {"forms", "types",
-    "abilities" (by slot, 2 the hidden one), "gender" ratio, "natures"}."""
+    "abilities" (by slot, 2 the hidden one), "gender" ratio, "natures", "marks" (the wild ones, by RibbonIndex)}."""
     key = f"sv:wild_species:{number}:{form}"
     if key not in service.species_cache:
         service.species_cache[key] = service._ask({"cmd": "wild_species", "game": "sv",
@@ -87,7 +87,7 @@ def species(service, number, form=0):
 
 def scan(service, spawn):
     """-> PKHeX's verdict on `spawn` (a dict: species, form, level, tera, shiny, nature, gender, scale,
-    ivs, ability, item; None for one drawn at random) caught at each location with a wild slot for its
+    ivs, ability, item, mark (a RibbonIndex, 0 none); None for one drawn at random) caught at each location with a wild slot for its
     species, form and level: [{"location", "name", "teras" (every Tera Type PKHeX accepts there),
     "problems" (with its own Tera Type, none when legal)}]."""
     request = {"cmd": "wild_legal", "game": "sv",

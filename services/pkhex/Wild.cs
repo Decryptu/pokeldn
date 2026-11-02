@@ -50,9 +50,14 @@ static class Wild
         return new JsonObject { ["areas"] = areas, ["types"] = types };
     }
 
+    // The marks a wild Scarlet / Violet encounter rolls, by PKHeX's RibbonIndex: time, weather, Destiny, Uncommon,
+    // Rare and personality; never Dry, Fishing or Curry, which these games do not give [docs/sv_union_circle.md].
+    static readonly int[] Marks = Enumerable.Range((int)RibbonIndex.MarkLunchtime, (int)RibbonIndex.MarkSlump - (int)RibbonIndex.MarkLunchtime + 1)
+        .Where(m => m is not (int)RibbonIndex.MarkDry and not (int)RibbonIndex.MarkFishing and not (int)RibbonIndex.MarkCurry).ToArray();
+
     // -> what a crafted spawn of "species" (National) in "form" can hold: {"forms": [{"id", "name"}], "types",
     // "abilities": [{"slot", "name"}] (slot 2 the hidden one), "gender" ratio (0 male only, 254 female only,
-    // 255 genderless), "natures": [{"id", "name"}]}, names in `strings`' language.
+    // 255 genderless), "natures": [{"id", "name"}], "marks": [{"id", "name"}]}, names in `strings`' language.
     public static JsonObject SpeciesReply(JsonObject request, GameStrings strings)
     {
         var species = checked((ushort)(int)request["species"]!);
@@ -72,9 +77,13 @@ static class Wild
         var natures = new JsonArray();
         for (var n = 0; n < 25; n++)
             natures.Add(new JsonObject { ["id"] = n, ["name"] = strings.natures[n] });
+        var marks = new JsonArray();
+        foreach (var m in Marks)
+            marks.Add(new JsonObject { ["id"] = m, ["name"] = strings.Ribbons.GetNameSafe($"Ribbon{(RibbonIndex)m}", out var name) ? name : ((RibbonIndex)m).ToString() });
         return new JsonObject
         {
             ["forms"] = forms,
+            ["marks"] = marks,
             ["types"] = new JsonArray((int)info.Type1, (int)info.Type2),
             ["abilities"] = abilities,
             ["gender"] = (int)info.Gender,
@@ -86,8 +95,9 @@ static class Wild
 
     // -> {"locations": [{"location", "name", "teras", "problems"}]}: each location with a wild slot for the spawn
     // `request` describes ("species" National, "form", "level", "tera", "shiny", "nature", "gender", "scale", "ivs"
-    // HP Atk Def Spe SpA SpD, "ability" slot 0 1 or 2 hidden, "item"), the Tera Types PKHeX accepts it caught there
-    // with, and PKHeX's problems with its own "tera" there as `plain` words them, none when it is legal.
+    // HP Atk Def Spe SpA SpD, "ability" slot 0 1 or 2 hidden, "item", "mark" a RibbonIndex), the Tera Types PKHeX
+    // accepts it caught there with from any of its slots there (a weather mark needs a slot naming that weather), and
+    // PKHeX's problems with its own "tera" there as `plain` words them, none when it is legal.
     public static JsonObject LegalReply(JsonObject request, GameStrings strings, Func<LegalityAnalysis, string> plain)
     {
         var species = checked((ushort)(int)request["species"]!);
@@ -98,19 +108,27 @@ static class Wild
         var locations = new JsonArray();
         foreach (var area in Areas().GroupBy(a => a.Location).OrderBy(g => g.Key))
         {
-            var slot = area.SelectMany(a => a.Slots).FirstOrDefault(s => s.Species == species
-                && (s.Form == form || s.Form >= forms) && s.LevelMin <= level && level <= s.LevelMax);
-            if (slot is null)
+            var slots = area.SelectMany(a => a.Slots).Where(s => s.Species == species
+                && (s.Form == form || s.Form >= forms) && s.LevelMin <= level && level <= s.LevelMax).ToArray();
+            if (slots.Length == 0)
                 continue;
             var teras = new JsonArray();
             var problems = new JsonArray();
             for (var t = 0; t < TeraTypes; t++)
             {
-                var la = new LegalityAnalysis(Caught(slot, request, form, level, t));
-                if (la.Valid)
+                LegalityAnalysis? first = null;
+                foreach (var slot in slots)
+                {
+                    var la = new LegalityAnalysis(Caught(slot, request, form, level, t));
+                    first ??= la;
+                    if (!la.Valid)
+                        continue;
                     teras.Add(t);
-                else if (t == tera)
-                    foreach (var line in plain(la).Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                    first = null;
+                    break;
+                }
+                if (first is not null && t == tera)
+                    foreach (var line in plain(first).Split('\n', StringSplitOptions.RemoveEmptyEntries))
                         problems.Add(line);
             }
             locations.Add(new JsonObject
@@ -141,6 +159,10 @@ static class Wild
             pk.RefreshAbility(ability);
         pk.HeldItem = (int?)request["item"] ?? 0;
         pk.SetIsShiny((bool?)request["shiny"] ?? false);
+        foreach (var m in Marks)
+            pk.SetRibbon(m, false);
+        if ((int?)request["mark"] is { } mark and not 0)
+            pk.SetRibbon(mark, true);
         pk.ResetPartyStats();
         pk.RefreshChecksum();
         return pk;

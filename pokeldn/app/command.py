@@ -147,19 +147,19 @@ def _args(field: Field, value, tool: Tool) -> list[str]:
 
 ENCOUNTER_FLAGS = (("form", "--spawn-form"), ("tera", "--spawn-tera"), ("nature", "--spawn-nature"),
                    ("gender", "--spawn-gender"), ("ability", "--spawn-ability"), ("scale", "--spawn-scale"),
-                   ("item", "--spawn-item"), ("ivs", "--spawn-ivs"))
+                   ("item", "--spawn-item"), ("mark", "--spawn-mark"), ("ivs", "--spawn-ivs"))
 
 
 def encounter_args(value) -> list[str]:
     """bin/sv_join.py's crafted spawn of an encounter field's value: {"legal", "species" (National),
-    "level", "shiny", and any of form, tera, nature, gender, ability, scale, item and ivs (HP/ATK/DEF/SPA/SPD/SPE),
+    "level", "shiny", and any of form, tera, nature, gender, ability, scale, item, mark and ivs (HP/ATK/DEF/SPA/SPD/SPE),
     None or absent for one drawn at random} (gui/views/encounter.py)."""
     value = value if isinstance(value, dict) else {}
     if not value.get("species"):
         return []
     out = ["--spawn", f"{gen9.internal_index(int(value['species']))}:{int(value.get('level') or 1)}"]
     for key, flag in ENCOUNTER_FLAGS:
-        if value.get(key) not in (None, "") and not (key == "item" and not value[key]):
+        if value.get(key) not in (None, "") and not (key in ("item", "mark") and not value[key]):
             out += [flag, str(value[key])]
     return out + (["--spawn-shiny"] if value.get("shiny") else []) + (["--spawn-legal"] if value.get("legal") else [])
 

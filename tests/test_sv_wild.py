@@ -297,7 +297,7 @@ def test_the_encounters_entry_crafts_the_spawn_s_arguments():
     assert command.problems(tool, values) == ["Pick the Pokemon to spawn."]
     values["--spawn"] = {"legal": True, "species": 906, "level": 20, "shiny": True, "tera": 11, "form": 0,
                          "nature": None, "gender": 1, "ability": 2, "scale": None, "item": 0,
-                         "ivs": "31/31/31/0/0/31"}
+                         "mark": 58, "ivs": "31/31/31/0/0/31"}
     assert command.problems(tool, values) == []
     parsed = parser_of(tool.script).parse_args(command.build(tool, values, {}, Settings()))
     assert parsed.union_circle and parsed.follow_host
@@ -305,6 +305,9 @@ def test_the_encounters_entry_crafts_the_spawn_s_arguments():
     assert (parsed.spawn_tera, parsed.spawn_form, parsed.spawn_gender, parsed.spawn_ability) == (11, 0, 1, 2)
     assert parsed.spawn_nature is None and parsed.spawn_scale is None and parsed.spawn_item is None
     assert sv_join.spawn_ivs(parsed.spawn_ivs) == (31, 31, 31, 31, 0, 0)    # HP Atk Def Spe SpA SpD
+    assert parsed.spawn_mark == 58
+    values["--spawn"] = dict(values["--spawn"], mark=0)
+    assert command.build(tool, values, {}, Settings()).count("--spawn-mark") == 0
     values["--spawn"] = dict(values["--spawn"], legal=False, level=0)
     assert command.problems(tool, values) == ["The level is 1 to 100."]
 
@@ -320,11 +323,13 @@ def test_a_legal_spawn_learns_where_pkhex_accepts_it(monkeypatch, capsys):
     monkeypatch.setattr(wild, "areas", lambda service: TABLE)
     monkeypatch.setattr(wild, "legal_at", lambda service, spawn: asked.append(spawn) or ([MEADOW, LAKE], {}))
     ap, args = circle_args(["--spawn", "25:11", "--spawn-legal", "--spawn-tera", "12", "--spawn-ivs",
-                            "31/30/29/28/27/26", "--spawn-gender", "1"])
+                            "31/30/29/28/27/26", "--spawn-gender", "1", "--spawn-mark", "58"])
     sv_join.circle_guest(ap, args)
     assert args.spawn_wanted == [MEADOW, LAKE] and args.spawn_table is TABLE
     assert asked[0]["species"] == 25 and asked[0]["level"] == 11 and asked[0]["tera"] == 12
-    assert asked[0]["ivs"] == [31, 30, 29, 26, 28, 27] and asked[0]["gender"] == 1
+    assert asked[0]["ivs"] == [31, 30, 29, 26, 28, 27] and asked[0]["gender"] == 1 and asked[0]["mark"] == 58
+    spawner = circle.Spawner(*args.spawn, args.spawn_shiny, tera=args.spawn_tera, crafted=args.spawn_crafted)
+    assert circle.record_fields(spawner._record(0, (0.0, 0.0, 0.0)))["ribbon"] == 58
     assert "at 2 location(s): Meadow, Lake" in capsys.readouterr().out
 
 
@@ -343,6 +348,7 @@ def test_a_legal_spawn_pkhex_accepts_nowhere_stops_the_run(monkeypatch, capsys):
     (["--spawn", "25:0"], "at a level from 1 to 100"),
     (["--spawn", "25:101"], "at a level from 1 to 100"),
     (["--spawn", "25:11", "--spawn-scale", "256"], "do not fit its record"),
+    (["--spawn", "25:11", "--spawn-mark", "256"], "do not fit its record"),
     (["--spawn", "25:11", "--spawn-ivs", "31/31/31/31/31/32"], "do not fit its record")])
 def test_a_crafted_spawn_refuses_what_its_record_cannot_carry(argv, why, capsys):
     with pytest.raises(SystemExit):
@@ -381,6 +387,13 @@ def test_pkhex_accepts_a_wild_pikachu_only_where_and_as_its_slots_allow():
         assert info["types"] == [12, 12] and [a["slot"] for a in info["abilities"]] == [0, 1, 2]
         bundle = {"species": 991, "form": 0, "level": 57, "shiny": False, "gender": 0, "tera": 10}
         assert [(p["name"], p["teras"]) for p in wild.scan(service, bundle)] == [("Area Zero (5)", [10, 14])]
+        marks = {m["id"]: m["name"] for m in wild.species(service, 194)["marks"]}
+        assert marks[58] == "Rainy Mark" and not {62, 66, 67} & set(marks) and len(marks) == 42
+        wooper = {"species": 194, "form": 0, "level": 9, "tera": 10}
+        assert all(10 in p["teras"] for p in wild.scan(service, dict(wooper, mark=58)))
+        snowy = wild.scan(service, dict(wooper, mark=60))       # no Wooper slot at level 9 names snow
+        assert snowy and not any(p["teras"] for p in snowy)
+        assert all(p["problems"] == ["Invalid Marking: Snowy Mark"] for p in snowy)
     finally:
         service.close()
 

@@ -518,14 +518,19 @@ category; a member walks categories 1, 2, 3, 4, 5, 9, 10, 13 and 16 about every 
 `sv_join --spawn SPECIES:LEVEL` joins the circle as a member and keeps three spawns of a Pokemon the
 user crafts around the host's player; with `--follow-host` the guest's player follows the host's.
 The `--spawn-*` flags set what a record carries: form, shiny, Tera Type, nature, gender, ability
-slot, size, held item and IVs. One left out is drawn as the host's own wild ones were: the size, the
-nature and each IV at random, the ability slot 0 or 1, no held item. Each spawn comes 15 to 25 m
+slot, size, held item, mark and IVs. One left out is drawn as the host's own wild ones were: the
+size, the nature and each IV at random, the ability slot 0 or 1, no held item, no mark.
+`--spawn-mark` takes PKHeX's `RibbonIndex` (53 Lunchtime to 97 Slump); that the game reads the
+record's ribbon field in the same numbering is unverified on a console. Each spawn comes 15 to 25 m
 from the host's player. One the host battles (its ask, handed over), removes (a kind 2 naming it) or
 walks more than 50 m from is let go and another comes near the host.
 
 With `--spawn-legal`, PKHeX decides: the helper's `wild_areas` command lists the Scarlet / Violet
 wild slots by location, and `wild_legal` runs PKHeX's legality analysis on the crafted spawn caught
-from each, once per Tera Type. A spawn PKHeX accepts at no location stops the run.
+from each, once per Tera Type; a location counts when any of its slots for the spawn is accepted, so
+a weather mark needs a slot naming that weather (a level 9 Wooper takes Rainy, never Snowy). The app
+offers the 42 wild marks: time, weather, Destiny, Uncommon, Rare and personality. A spawn PKHeX
+accepts at no location stops the run.
 
 The spawns then wait for the host's area (`wild.Locator`). Each wild Pokemon the host's console
 shares (key 0x0026 kind 1, once the guest's player is near) narrows the locations to those with a

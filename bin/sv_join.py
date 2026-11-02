@@ -238,6 +238,9 @@ def build_parser():
     ap.add_argument("--spawn-ability", type=int, choices=(0, 1, 2), default=None,
                     help="ability slot, 2 the hidden ability (default 0 or 1 at random, as a wild "
                          "one's)")
+    ap.add_argument("--spawn-mark", type=int, default=None, metavar="RIBBON",
+                    help="the mark the spawn carries, by PKHeX's RibbonIndex (53 Lunchtime to 97 Slump; "
+                         "default none)")
     ap.add_argument("--spawn-legal", action="store_true",
                     help="with --spawn: spawn only while the host stands in an area where "
                          "PKHeX accepts that spawn caught, found from the wild Pokemon the host's "
@@ -502,7 +505,7 @@ def crafted_spawn(ap, args):
     args.spawn_crafted = {"form": args.spawn_form, "item": args.spawn_item,
                           "scale": args.spawn_scale, "sex": args.spawn_gender,
                           "nature": args.spawn_nature, "ability": args.spawn_ability,
-                          "ivs": None}
+                          "ribbon": args.spawn_mark, "ivs": None}
     try:
         if args.spawn_ivs is not None:
             args.spawn_crafted["ivs"] = spawn_ivs(args.spawn_ivs)
@@ -523,7 +526,7 @@ def crafted_spawn(ap, args):
     spawn = {"species": gen9.national(species), "form": crafted["form"] or 0, "level": level,
              "tera": args.spawn_tera, "shiny": args.spawn_shiny, "nature": crafted["nature"],
              "gender": crafted["sex"], "scale": crafted["scale"], "ability": crafted["ability"],
-             "item": crafted["item"],
+             "item": crafted["item"], "mark": crafted["ribbon"],
              "ivs": None if crafted["ivs"] is None else list(crafted["ivs"])}  # PKHeX's order too
     try:
         args.spawn_table = wild.areas(pokemon_service.SERVICE)

@@ -457,7 +457,7 @@ Scarlet/Violet's Union Circle tools join a console's circle under a four-digit L
 - Quests: unlock remaining Snacksworth legendaries or give BP (1 to 9,999,999); a Snacksworth run
   draws a [progress](#progress) bar of clears.
 - Encounters: the spawn card (`gui/views/encounter.py`) sets species, shiny, form, level, Tera Type,
-  nature, gender, ability, item, scale and IVs; Legal encounters only (default) restricts them to what
+  nature, gender, ability, item, mark, scale and IVs; Legal encounters only (default) restricts them to what
   PKHeX accepts and lists the valid locations. It passes `--spawn` and `--spawn-*`.
 
 `[panel]` cards ([Status cards](plugins.md#status-cards-18)) show atop the tool's options while a run

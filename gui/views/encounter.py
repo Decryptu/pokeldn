@@ -15,6 +15,7 @@ from pokeldn.app.i18n import t as tr
 from pokeldn.sv import wild
 
 RANDOM = "-"
+NO_MARK = 0                 # the record's ribbon field: 0 carries none, else a RibbonIndex
 MALE, FEMALE = 0, 1
 MALE_ONLY, FEMALE_ONLY, GENDERLESS = 0, 254, 255
 
@@ -86,6 +87,8 @@ class EncounterPicker:
             self.value["gender"] = genders(info["gender"])[0]
         if self.value.get("tera") is None:
             self.value["tera"] = info["types"][0]
+        if self.value.get("mark") is None:
+            self.value["mark"] = NO_MARK
         if not self.value.get("legal") or self.table is None:
             return
         levels = self.table.levels(species, form)
@@ -218,7 +221,7 @@ class EncounterPicker:
                 "tera": self._number("tera"), "shiny": bool(self.value.get("shiny")),
                 "nature": self.value.get("nature"), "gender": self.value.get("gender"),
                 "scale": self.value.get("scale"), "ability": self.value.get("ability"),
-                "item": self.value.get("item") or None,
+                "item": self.value.get("item") or None, "mark": self.value.get("mark") or None,
                 # PKHeX's order (HP Atk Def Spe SpA SpD) from the card's (HP Atk Def SpA SpD Spe)
                 "ivs": [int(parts[i]) for i in (0, 1, 2, 5, 3, 4)] if len(parts) == 6 else None}
 
@@ -259,8 +262,11 @@ class EncounterPicker:
             for a in abilities], random=True))
         third = [t.labeled_control(tr('encounter.held_item_6af4a4', 'Held item'), NamePicker(
                      self.app, "sv", "item", str(self.value.get("item") or ""), self._item).control, expand=True),
-                 self._entry(tr('encounter.scale_0_255_e4b57a', 'Scale (0-255)'), "scale", 0, 255, width=130, empty=True)]
+                 self._choice(tr('encounter.mark', 'Mark'), "mark", [(str(NO_MARK), tr('encounter.no_mark', 'None'))]
+                              + [(str(m["id"]), m["name"]) for m in info.get("marks", ())])]
         self.details.controls = [ft.Row(first, spacing=10), ft.Row(second, spacing=10), ft.Row(third, spacing=10),
+                                 self._entry(tr('encounter.scale_0_255_e4b57a', 'Scale (0-255)'), "scale", 0, 255,
+                                             width=130, empty=True),
                                  self._ivs(),
                                  t.text(tr('encounter.empty_means_random_each_iv_0_to_31_as_the_game_draws_a__3e6ed1', 'Empty means random: each IV 0 to 31, as the '
                                                                      'game draws a wild one.'), 12, t.FAINT)]
@@ -351,7 +357,7 @@ class EncounterPicker:
         encounters only, its first type as its Tera Type, and random or empty values below."""
         self.value["species"] = int(e.control.value)
         self.value["form"] = 0
-        for key in ("tera", "nature", "gender", "ability", "scale", "item", "ivs"):
+        for key in ("tera", "nature", "gender", "ability", "scale", "item", "mark", "ivs"):
             self.value.pop(key, None)
         if self.value.get("legal"):
             self.value.pop("level", None)
