@@ -12,6 +12,14 @@ own offer is, and our confirm waiting for the console's alone.
 
 import threading
 
+from pokeldn import panel
+
+# The card a returning round shows the player: a console sends nothing after a trade until its player
+# trades again (docs/architecture.md, Trade back).
+CARD = "trade-back"
+CARD_TITLE = "Send it back"
+CARD_LINE = "Trade again on the console: offer any Pokemon, and the one you just sent comes back."
+
 
 def add_arguments(ap):
     ap.add_argument("--trade-back", action="store_true",
@@ -71,6 +79,9 @@ class Rounds:
         self.round += 1
         if self.returning:
             self.log(f"[trade-back] trade {self.round + 1} returns the console's Pokemon")
+            panel.show(CARD, CARD_TITLE, [CARD_LINE])
+        else:
+            panel.clear(CARD)
 
 
 class Offer:

@@ -733,7 +733,7 @@ SV = Game("sv", tr('catalog.scarlet_violet_504657', 'Scarlet & Violet'), tr('cat
          (tr('catalog.on_the_console_x_poke_portal_union_circle_then_start_a__28de4e', 'On the console: X, Poke Portal, Union Circle, then start a group playing locally under a Link Code.'),
           tr('catalog.enter_the_same_link_code_here_craft_the_pokemon_and_sta_23247e', 'Enter the same Link Code here, craft the Pokemon and start.'),
           tr('catalog.once_pokeldn_is_in_the_group_start_the_circle_on_the_co_c34ac9', 'Once POKELDN is in the group, start the circle on the console. As its start demo ends, our player follows yours.'),
-          tr('catalog.three_of_the_pokemon_come_15_to_25_m_around_you_one_you_47e6f7', 'Three of the Pokemon come 15 to 25 m around you. One you battle, or walk more than 50 m from, comes back near you.'),
+          tr('catalog.three_of_the_pokemon_come_15_to_25_m_around_you_on_gro_5b0e1d', "Three of the Pokemon come 15 to 25 m around you, on ground your game's own wild Pokemon walked, and wander there; none comes in a town. One you battle, or walk more than 50 m from, comes back near you."),
           tr('catalog.with_legal_encounters_only_they_wait_until_the_wild_pok_aca8b5', 'With Legal encounters only they wait until the wild Pokemon your game shares show you stand where PKHeX accepts them caught, and go when you walk 50 m from where that was found.'),
           tr('catalog.close_the_circle_on_the_console_to_stop_fa751d', 'Close the circle on the console to stop.')),
          (Field("--code", tr('catalog.link_code_cc04a1', 'Link Code'), "code", required=True, length=4,

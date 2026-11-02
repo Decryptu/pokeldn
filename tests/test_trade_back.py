@@ -55,6 +55,18 @@ def test_rounds_alternate_the_queue_with_what_came_back():
     assert rounds.current() == b"z"
 
 
+def test_a_returning_round_tells_the_player_to_trade_again(capsys):
+    """After a trade the console sends nothing until its player trades again, so a player who is not
+    told leaves instead."""
+    from pokeldn import panel
+    rounds = Rounds([b"A"], log=lambda *a: None)
+    rounds.done(b"x")
+    (card,) = [panel.read(line) for line in capsys.readouterr().out.splitlines()]
+    assert card["id"] == "trade-back" and "Trade again" in card["lines"][0]
+    rounds.done(b"A")
+    assert panel.read(capsys.readouterr().out.strip()) == {"id": "trade-back", "clear": True}
+
+
 def test_a_round_whose_pokemon_was_not_kept_moves_on_to_the_queue():
     rounds = Rounds([b"A", b"B"], log=lambda *a: None)
     rounds.done(None)

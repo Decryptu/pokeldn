@@ -140,6 +140,20 @@ SPAWN_COPIES = 3            # our spawns kept out at once
 SPAWN_RING = (15.0, 25.0)   # metres from the host's player each comes
 SPAWN_CULL = 50.0           # metres: one of ours the host has gone this far from is let go and
                             # spawned again near it
+# The ground our spawns stand and walk on is what the host's console shows: the lowest height its
+# player and its wild Pokemon stood at in each GROUND_CELL square (the two agree within 0.15 m). One
+# comes only on a cell a wild Pokemon of the host's stood on within SPOT_LIFE seconds, so none where
+# the host's console spawns none, as in a town (docs/sv_union_circle.md, Crafted encounters).
+GROUND_CELL = 1.0
+SPOT_LIFE = 120.0
+SPOT_GAP = 3.0              # metres one of ours keeps from another as it comes
+WANDER = 6.0                # metres one walks from where it came
+WALK_SPEED = 1.0            # m/s
+WALK_STEP = 0.5             # metres between the points a walk's ground is read at
+STEP_RISE = 0.6             # metres: a walk climbing or dropping more in one step is not taken
+IDLE = (2.0, 6.0)           # seconds one stands between walks
+WALK_TRIES = 8              # points drawn for a walk before one rests again
+WALK_FRAME_PERIOD = 1 / 30  # seconds between a walking spawn's transforms (a retail one's ~1/27)
 # A clear's quest sits in the third of the player's three quest slots, as the retail clear seen did.
 CLEAR_SLOT = 2
 # A quest row as a clear carries it: the quest's category (1 Battle, 2 Field, 3 Camera), its id, the
@@ -481,18 +495,105 @@ def transform_frame(object_id, position, yaw):
                         + struct.pack("<3f", *position) + bytes(4))
 
 
+class Ground:
+    """The ground the host's console shows: per GROUND_CELL square the lowest height seen there, and
+    when a wild Pokemon of the host's last stood there."""
+
+    def __init__(self):
+        self.heights = {}           # cell -> the lowest height seen in it
+        self.spots = {}             # cell -> when a host's wild Pokemon last stood in it
+
+    @staticmethod
+    def cell(x, z):
+        return round(x / GROUND_CELL), round(z / GROUND_CELL)
+
+    def add(self, at, now=None):
+        """Keeps `at` as ground; with `now`, as where a wild Pokemon stood then."""
+        x, y, z = at
+        cell = self.cell(x, z)
+        if cell not in self.heights or y < self.heights[cell]:
+            self.heights[cell] = y
+        if now is not None:
+            self.spots[cell] = now
+
+    def height(self, x, z):
+        """-> the ground's height at (x, z): its own cell's, else the nearest neighbour's; None
+        when none of them was seen."""
+        cx, cz = self.cell(x, z)
+        near = [(abs(dx) + abs(dz), self.heights[(cx + dx, cz + dz)])
+                for dx in (-1, 0, 1) for dz in (-1, 0, 1) if (cx + dx, cz + dz) in self.heights]
+        return min(near)[1] if near else None
+
+    def places(self, around, ring, now):
+        """-> the points on cells a host's wild Pokemon stood on within SPOT_LIFE seconds, `ring`
+        (lowest, highest) metres from `around` across the ground."""
+        lo, hi = ring
+        out = []
+        for cell in [c for c, seen in self.spots.items() if now - seen > SPOT_LIFE]:
+            del self.spots[cell]
+        for cell in self.spots:
+            x, z = cell[0] * GROUND_CELL, cell[1] * GROUND_CELL
+            if lo <= math.hypot(x - around[0], z - around[2]) <= hi:
+                out.append((x, self.heights[cell], z))
+        return sorted(out)
+
+    def near(self, around, distance):
+        """-> the points of every cell seen within `distance` metres of `around` across the ground."""
+        reach = math.ceil(distance / GROUND_CELL)
+        cx, cz = self.cell(around[0], around[2])
+        out = []
+        for dx in range(-reach, reach + 1):
+            for dz in range(-reach, reach + 1):
+                cell = (cx + dx, cz + dz)
+                x, z = cell[0] * GROUND_CELL, cell[1] * GROUND_CELL
+                if cell in self.heights and math.hypot(x - around[0], z - around[2]) <= distance:
+                    out.append((x, self.heights[cell], z))
+        return out
+
+    def walk(self, start, end):
+        """-> the points every WALK_STEP from `start` to `end` on the ground, `end` last; None when
+        a point has no ground seen or the ground rises or drops more than STEP_RISE in a step."""
+        gap = math.hypot(end[0] - start[0], end[2] - start[2])
+        steps = max(1, math.ceil(gap / WALK_STEP))
+        out, last = [], start[1]
+        for i in range(1, steps + 1):
+            x = start[0] + (end[0] - start[0]) * i / steps
+            z = start[2] + (end[2] - start[2]) * i / steps
+            y = self.height(x, z)
+            if y is None or abs(y - last) > STEP_RISE:
+                return None
+            out.append((x, y, z))
+            last = y
+        return out
+
+
+@dataclass
+class Spawned:
+    """One of our spawns out: its n, where it came, where it stands and faces, the points left of
+    its walk, when it next walks, when it last moved and when it next sends its state."""
+    n: int
+    home: tuple
+    position: tuple
+    yaw: float
+    walk: list
+    rest: float
+    moved: float
+    refresh: float
+
+
 class Spawner:
     """Our own wild Pokemon in the host's world: `copies` of `species` at `level` (shiny with
     `shiny`, Tera Type `tera`, and any of form, item, scale, sex, nature, ivs and ability `crafted`
     names), each otherwise its own size, nature, IVs and ability slot (never the hidden one), all
-    random as the host's wild ones are. Once
-    `start`ed, after SPAWN_DELAY seconds one every SPAWN_PERIOD seconds while fewer are out, at a
-    random spot SPAWN_RING metres from the host's player and facing it, at its height. One goes when
-    a console battles it, the host's console removes it, or the host's player goes more than
-    SPAWN_CULL metres from it, and another comes in its place. While not `active` every one is let
-    go and none comes. Each spawn's object frames go out before its record, then its transform and a
-    settled state every SPAWN_REFRESH. `update` -> ([(label, payload)] for 0x80 port 0, the label
-    None for a routine state, [frame] for 0x68)."""
+    random as the host's wild ones are. Once `start`ed, after SPAWN_DELAY seconds one every
+    SPAWN_PERIOD seconds while fewer are out, on ground (a `Ground`) a wild Pokemon of the host's
+    stood on lately, SPAWN_RING metres from the host's player and facing it. Each stands IDLE
+    seconds, then walks to another point of the ground within WANDER metres of where it came. One
+    goes when a console battles it, the host's console removes it, or the host's player goes more
+    than SPAWN_CULL metres from it, and another comes in its place. While not `active` every one is
+    let go and none comes. Each spawn's object frames go out before its record, then its transform
+    every WALK_FRAME_PERIOD while it walks and with a settled state every SPAWN_REFRESH. `update` ->
+    ([(label, payload)] for 0x80 port 0, the label None for a routine state, [frame] for 0x68)."""
 
     def __init__(self, species, level, shiny=False, *, tera=0, copies=SPAWN_COPIES,
                  station=streams.JOINER_INDEX, crafted=None, rng=None):
@@ -503,8 +604,9 @@ class Spawner:
         self.rng = rng or random.Random()
         self.due = None
         self.next_n = SPAWN_FIRST
-        self.live = []              # [n, position, yaw, next refresh], oldest first
+        self.live = []              # [Spawned], oldest first
         self.pending = []           # (time, label, record message, n) not yet sent
+        self.waiting = False        # one is due and none is out, the ground holding no place
 
     def start(self, now):
         if self.due is None:
@@ -520,58 +622,109 @@ class Spawner:
 
     def _let_go(self, spawn, why=""):
         self.live.remove(spawn)
-        n = spawn[0]
+        n = spawn.n
         self.pending = [p for p in self.pending if p[3] != n]
         return (f"spawn ({self.station}, {n}) gone{why}",
                 KEY_SPAWN.to_bytes(2, "little") + bytes([GONE]) + spawn_id(self.station, n))
 
     def gone(self, station, n):
         """The host's console removed spawn (station, n): -> whether it was one of ours out."""
-        live = [s for s in self.live if s[0] == n] if station == self.station else []
+        live = [s for s in self.live if s.n == n] if station == self.station else []
         for spawn in live:
             self.live.remove(spawn)
         return bool(live)
 
-    def update(self, now, host_at):
+    def _place(self, host_at, ground, now):
+        """-> a point for a new spawn with ground to walk around it, or None while the ground holds
+        none."""
+        places = [p for p in ground.places(host_at, SPAWN_RING, now)
+                  if all(math.dist(p, s.position) >= SPOT_GAP for s in self.live)]
+        self.rng.shuffle(places)
+        return next((p for p in places if len(ground.near(p, WANDER)) >= WALK_TRIES), None)
+
+    def _walk(self, spawn, ground, now):
+        """Sets `spawn` walking to a point of the ground within WANDER metres of where it came, the
+        first of WALK_TRIES drawn whose way there is ground seen; else it rests again."""
+        ends = ground.near(spawn.home, WANDER)
+        for end in self.rng.sample(ends, min(WALK_TRIES, len(ends))):
+            if math.hypot(end[0] - spawn.position[0], end[2] - spawn.position[2]) < 1.0:
+                continue
+            spawn.walk = ground.walk(spawn.position, end) or []
+            if spawn.walk:
+                break
+        spawn.moved = now
+        spawn.rest = now + self.rng.uniform(*IDLE)
+
+    def _step(self, spawn, dt):
+        """Moves a walking `spawn` WALK_SPEED * `dt` metres along its walk, facing the way it goes."""
+        left = WALK_SPEED * dt
+        while spawn.walk and left > 0:
+            target = spawn.walk[0]
+            gap = math.dist(spawn.position, target)
+            heading = math.atan2(target[0] - spawn.position[0], target[2] - spawn.position[2])
+            if gap <= left:
+                spawn.position = target
+                spawn.walk.pop(0)
+                left -= gap
+            else:
+                spawn.position = tuple(a + (b - a) * left / gap
+                                       for a, b in zip(spawn.position, target))
+                left = 0
+            if gap > 1e-6:
+                spawn.yaw = heading
+
+    def update(self, now, host_at, ground):
         messages, frames = [], []
         if not self.active:
             for spawn in list(self.live):
                 messages.append(self._let_go(spawn))
             return messages, frames
         if host_at is not None:
-            for spawn in [s for s in self.live if math.dist(s[1], host_at) > SPAWN_CULL]:
+            for spawn in [s for s in self.live if math.dist(s.position, host_at) > SPAWN_CULL]:
                 messages.append(self._let_go(spawn, f": the host is more than {SPAWN_CULL:g} m away"))
+        place = None
         if (self.due is not None and now >= self.due and host_at is not None
                 and len(self.live) < self.copies):
+            place = self._place(host_at, ground, now)
+            self.waiting = place is None and not self.live
+            if place is None:
+                self.due = now + SPAWN_PERIOD
+        if place is not None:
             self.due = max(self.due + SPAWN_PERIOD, now)
             n, self.next_n = self.next_n, self.next_n + 1
             object_id = self.station + 4 * n
-            angle = self.rng.uniform(0.0, 2 * math.pi)
-            distance = self.rng.uniform(*SPAWN_RING)
-            position = (host_at[0] + distance * math.sin(angle), host_at[1],
-                        host_at[2] + distance * math.cos(angle))
-            yaw = angle + math.pi                   # back towards the host
-            record = self._record(object_id, position)
+            yaw = math.atan2(host_at[0] - place[0], host_at[2] - place[2])     # towards the host
+            record = self._record(object_id, place)
             frames += [object_frame(object_id, ATTACH, UNATTACHED),
                        object_frame(object_id, SCALE_FRAME, struct.pack("<f", 1.0)),
-                       transform_frame(object_id, position, yaw)]
+                       transform_frame(object_id, place, yaw)]
+            distance = math.hypot(place[0] - host_at[0], place[2] - host_at[2])
             self.pending.append((now, f"spawn ({self.station}, {n}) species {self.species} level "
                                       f"{self.level}{' shiny' if self.shiny else ''}, "
                                       f"{distance:.1f} m from the host",
                                  KEY_SPAWN.to_bytes(2, "little") + bytes([SPAWNED])
                                  + port2.encode_bytes(record), n))
-            self.live.append([n, position, yaw, now + SPAWN_REFRESH])
+            self.live.append(Spawned(n, place, place, yaw, [], now + self.rng.uniform(*IDLE), now,
+                                     now + SPAWN_REFRESH))
         # A record goes out after its object's frames.
         for when, label, message, _ in [p for p in self.pending if p[0] < now]:
             messages.append((label, message))
         self.pending = [p for p in self.pending if p[0] >= now]
         for spawn in self.live:
-            n, position, yaw, refresh = spawn
-            if now >= refresh:
-                spawn[3] = now + SPAWN_REFRESH
-                frames.append(transform_frame(self.station + 4 * n, position, yaw))
+            object_id = self.station + 4 * spawn.n
+            if not spawn.walk and now >= spawn.rest:
+                self._walk(spawn, ground, now)
+            elif spawn.walk and now - spawn.moved >= WALK_FRAME_PERIOD:
+                self._step(spawn, now - spawn.moved)
+                spawn.moved = now
+                frames.append(transform_frame(object_id, spawn.position, spawn.yaw))
+                if not spawn.walk:
+                    spawn.rest = now + self.rng.uniform(*IDLE)
+            if now >= spawn.refresh:
+                spawn.refresh = now + SPAWN_REFRESH
+                frames.append(transform_frame(object_id, spawn.position, spawn.yaw))
                 messages.append((None, KEY_SPAWN_STATE.to_bytes(2, "little") + bytes([SPAWN_STATE])
-                                 + spawn_id(self.station, n)
+                                 + spawn_id(self.station, spawn.n)
                                  + encode((SPAWN_STATE_VALUE, 0.0, 0.0, 0, SETTLED))))
         return messages, frames
 
@@ -584,7 +737,7 @@ class Spawner:
             asker, _ = read_spawn_id(body, pos)
         except (ValueError, IndexError):
             return None
-        live = [s for s in self.live if s[0] == n] if station == self.station else []
+        live = [s for s in self.live if s.n == n] if station == self.station else []
         if live:
             self.live.remove(live[0])
             return (f"spawn ({station}, {n}) handed over as {asker}",
@@ -664,6 +817,8 @@ class Member:
         self.host_at = None         # where the host's player (or its ride) last stood, or its estimate
         self.host_seen = None       # when the host's console last showed where its player stands
         self.wild_seen = []         # (time, position) of the host's own wild spawns, in order
+        self.wild_ids = set()       # object ids of the host's wild spawns out
+        self.ground = Ground()      # where the host's player and wild spawns stood
         self.spawn_frames = []      # our spawns' frames due now on 0x68
         self.follow = follow
         self.tracks = {}            # our object -> [(time, the host's transform as ours)]
@@ -731,10 +886,13 @@ class Member:
         if (len(payload) < OBJECT_ID_AT + 2
                 or int.from_bytes(payload[:2], "little") != KEY_FRAME):
             return
-        if (payload[2] == TRANSFORM and len(payload) >= POSITION_AT + 12
-                and object_of(payload) in self.host_objects):
+        if payload[2] == TRANSFORM and len(payload) >= POSITION_AT + 12:
             at = struct.unpack_from("<3f", payload, POSITION_AT)
-            if math.dist(at, (0, 0, 0)) > NEAR_ORIGIN:        # not riding or set down
+            if object_of(payload) in self.wild_ids:
+                self.ground.add(at, now)
+            elif (object_of(payload) in self.host_objects
+                    and math.dist(at, (0, 0, 0)) > NEAR_ORIGIN):  # not riding or set down
+                self.ground.add(at)
                 self.host_at, self.host_seen = at, now
                 if self.locator is not None:
                     self.locator.source = wild.GAME
@@ -918,6 +1076,8 @@ class Member:
             if int.from_bytes(record[:2], "little") % 4 == station:
                 return
             fields = record_fields(record)
+            self.wild_ids.add(int.from_bytes(record[:2], "little"))
+            self.ground.add(fields["position"], now)
             self.wild_seen = [s for s in self.wild_seen if now - s[0] <= ESTIMATE_WINDOW]
             self.wild_seen.append((now, fields["position"]))
             self._estimate(now)
@@ -929,6 +1089,7 @@ class Member:
                 (owner, n), _ = read_spawn_id(payload, 3)
             except (ValueError, IndexError):
                 return
+            self.wild_ids.discard(owner + 4 * n)
             if self.spawner.gone(owner, n):
                 self.details.append(f"the host removed our spawn ({owner}, {n}); another comes")
 
@@ -1082,10 +1243,13 @@ class Member:
             self.locator.notes, self.locator.details = [], []
         if self.spawner is not None and self.overworld:
             self.spawner.start(now)
-            out_before = bool(self.spawner.live)
-            messages, frames = self.spawner.update(now, self.host_at)
+            out_before, waited = bool(self.spawner.live), self.spawner.waiting
+            messages, frames = self.spawner.update(now, self.host_at, self.ground)
             if self.spawner.live and not out_before:
                 self.notes.append("our spawns are coming out around the host's player")
+            elif self.spawner.waiting and not waited:
+                self.notes.append("our spawns wait for wild Pokemon around the host's player; "
+                                  "a town has none")
             for label, payload in messages:
                 self.queue.append((label, self._flags(), streams.compress(payload)))
             self.spawn_frames += frames

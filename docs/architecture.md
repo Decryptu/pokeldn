@@ -200,8 +200,10 @@ path with a suffix: `_tradeN_` and the species (FireRed/LeafGreen), `.N` (Scarle
 
 `--trade-back`, on every trade host and joiner (the app's Send it back switch), follows each queued
 trade with one that offers the Pokemon the console just sent, so a Pokemon that evolves by trade
-evolves on the console. The player offers ours back in that second trade. `pokeldn/trade_back.py`
-holds the order:
+evolves on the console. The player offers ours back in that second trade. After a trade a console
+sends nothing until its player trades again (a retail Scarlet's last status `b90101b902b90280800100`,
+then 26 s of silence and a leave when its player backed out), so a returning round shows the player
+a `trade-back` status card saying to trade again. `pokeldn/trade_back.py` holds the order:
 
 | trade | offers |
 |---|---|

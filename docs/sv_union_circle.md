@@ -432,6 +432,11 @@ An entity's object id is station + 4n, the u16 that opens its record. A console 
 only with a member whose player stands near its own. Every id is a pair of unsigned integers (the
 dispatcher `0x1dbd4b0` reads no signed tag).
 
+A retail host sends each of its entities' transforms about 27 times a second while it lives, and the
+entity wanders: 0 to 41 m from where it came, 61 of 70 entities under 15 m, over 310 s. The height
+in each transform is the ground's. In 1 m squares both the host's player and its entities crossed,
+the lowest height of each agreed within 0.15 m (52 squares, median 0.00 m).
+
 A console files another's entity as unsettled (status 1) and refuses to battle it
 (`BattleStartWait`) until a state names status 0. Walking into a settled one, it shows the "!"
 and asks the owner (`0x1972664`): it takes a new id of its own for the entity, stores the pair
@@ -522,9 +527,18 @@ slot, size, held item, mark and IVs. One left out is drawn as the host's own wil
 size, the nature and each IV at random, the ability slot 0 or 1, no held item, no mark.
 `--spawn-mark` takes PKHeX's `RibbonIndex` (53 Lunchtime to 97 Slump); the game reads the record's
 ribbon field in the same numbering: a retail Scarlet caught a spawn sent with 58 holding the Rainy
-Mark (bit 58 of the PK9's flags at 0x34, no title affixed), and PKHeX found it legal. Each spawn
-comes 15 to 25 m from the host's player. One the host battles (its ask, handed over), removes (a
-kind 2 naming it) or walks more than 50 m from is let go and another comes near the host.
+Mark (bit 58 of the PK9's flags at 0x34, no title affixed), and PKHeX found it legal. One the host
+battles (its ask, handed over), removes (a kind 2 naming it) or walks more than 50 m from is let go
+and another comes near the host.
+
+The record carries no ground, so `circle.Ground` keeps the one the host's console shows: in each 1 m
+square, the lowest height its player (or ride) and its entities stood at. A spawn comes 15 to 25 m
+from the host's player, only on a square one of the host's entities stood on within the last 120 s
+with at least eight known squares within 6 m, so none of ours comes where the host's console spawns
+none (a retail Scarlet showed none of the spawns sent while its player stood in a town). Each spawn
+rests 2 to 6 s, then walks at 1 m/s to a known square within 6 m of where it came, its height the
+ground's every 0.5 m; a step rising or dropping more than 0.6 m, or crossing a square with no ground
+known, is not taken. A walking spawn's transform goes out every 1/30 s.
 
 With `--spawn-legal`, PKHeX decides: the helper's `wild_areas` command lists the Scarlet / Violet
 wild slots by location, and `wild_legal` runs PKHeX's legality analysis on the crafted spawn caught
@@ -558,3 +572,5 @@ The search shows as a `[panel]` status card with id `zone` in the app.
   above the quest's goal.
 - What the status record's further slots, its byte string and its element 7 hold.
 - What the type-10 objects are, and what the key-0x0025 ids and queries arbitrate.
+- What a spawn state's first float (0.001 to 0.04 from a retail host) stands for, and whether a
+  console plays a spawn's walk animation from its transforms alone.

@@ -10,7 +10,7 @@ import sv_join
 from pokeldn import gen9
 from pokeldn.sv import circle, streams, wild
 from test_sv_circle import (DEMO_ENDED, FIELD_KEYS, HOST_OBJECTS, HOST_WALK, RETAIL_SPAWN, moved,
-                            position, sent, spawn_out, stands)
+                            position, sent, slope, spawn_out, stands, wild_walks)
 
 MEADOW, LAKE, CAVE = 1, 2, 3
 TABLE = wild.Table((
@@ -111,9 +111,9 @@ class Located:
         self.at.append(at)
 
 
-def keeping(copies=circle.SPAWN_COPIES, locator=None, crafted=None):
+def keeping(copies=circle.SPAWN_COPIES, locator=None, crafted=None, wild=True):
     """-> a member keeping `copies` Pikachu (dev number) out from the demo's end at 100, the host's
-    player where HOST_WALK has it."""
+    player where HOST_WALK has it, with `wild` a wild Pokemon of the host's walking around it."""
     member = circle.Member(spawner=circle.Spawner(25, 12, tera=12, copies=copies, crafted=crafted,
                                                   rng=random.Random(1)),
                            locator=locator)
@@ -124,6 +124,8 @@ def keeping(copies=circle.SPAWN_COPIES, locator=None, crafted=None):
     member.on_lua(DEMO_ENDED)
     member.tick(100.0)
     stands(member, HOST_WALK, 100.0)
+    if wild:
+        wild_walks(member, 100.0)
     return member
 
 
@@ -141,7 +143,8 @@ def test_a_member_keeps_three_out_15_to_25_metres_from_the_host():
     labels = run(member, 110.0, 120.0)
     assert len([l for l in labels if "species 25 level 12" in l]) == 3 and len(member.spawner.live) == 3
     host = position(HOST_WALK)
-    for _, at, _, _ in member.spawner.live:
+    for spawn in member.spawner.live:
+        at = spawn.position
         assert 15.0 <= math.hypot(at[0] - host[0], at[2] - host[2]) <= 25.0
 
 
@@ -174,11 +177,13 @@ def test_one_the_host_walks_away_from_goes_and_comes_again_near_it():
     member = keeping()
     run(member, 110.0, 113.0)
     stands(member, moved(HOST_WALK, 0.0, circle.SPAWN_CULL + 30), 113.0)
+    wild_walks(member, 113.0, around=position(moved(HOST_WALK, 0.0, circle.SPAWN_CULL + 30)))
     labels = run(member, 113.0, 117.0)
     gone = [l for l in labels if l.endswith(f"gone: the host is more than {circle.SPAWN_CULL:g} m away")]
     assert len(gone) == 3 and len(member.spawner.live) == 3
     host = position(moved(HOST_WALK, 0.0, circle.SPAWN_CULL + 30))
-    for _, at, _, _ in member.spawner.live:
+    for spawn in member.spawner.live:
+        at = spawn.position
         assert math.hypot(at[0] - host[0], at[2] - host[2]) <= 25.0
 
 
@@ -199,7 +204,7 @@ def test_a_located_member_spawns_only_while_the_host_s_area_is_found():
     member = keeping(locator=located)
     assert run(member, 110.0, 114.0) == [] and set(located.at) == {position(HOST_WALK)}
     member.on_lua(bytes.fromhex("260001bc60") + RETAIL_SPAWN)
-    ((species, form, level, at),) = located.spawns
+    species, form, level, at = located.spawns[-1]
     assert (species, form, level) == (gen9.national(954), 0, 27)
     located.found = True
     assert len(run(member, 114.0, 118.0)) == 3
@@ -220,13 +225,14 @@ def host_spawn(member, n, at, now):
 def test_with_the_host_s_transforms_gone_its_newest_spawns_place_it():
     """As in Area Zero: the host's console shares its wild Pokemon but not where its player stands."""
     located = Located()
-    member = keeping(locator=located)
+    member = keeping(locator=located, wild=False)
     run(member, 110.0, 111.0)
     member.test_host_frame = None
     x, y, z = position(HOST_WALK)
     far = [(x + 300.0 + dx, y - 40.0, z + dz) for dx, dz in ((10, 0), (-10, 0), (0, 20), (0, -20))]
     for n, at in enumerate(far):
         host_spawn(member, 0x40 + n, at, 111.5)
+    wild_walks(member, 111.5, rows=(-20, 20), around=(x + 300.0, y - 40.0, z), object_id=4 * 0x40)
     assert member.host_at == tuple(position(HOST_WALK)) and located.source == wild.GAME   # still fresh
     labels = run(member, 111.5, 114.0)
     middle = (x + 300.0, y - 40.0, z)
@@ -235,11 +241,14 @@ def test_with_the_host_s_transforms_gone_its_newest_spawns_place_it():
     located.found = True
     labels = run(member, 114.0, 118.0)
     assert len([l for l in labels if "species 25 level 12" in l]) == 3
-    for _, at, _, _ in member.spawner.live:
-        assert 15.0 <= math.hypot(at[0] - middle[0], at[2] - middle[2]) <= 25.0 and at[1] == pytest.approx(y - 40.0)
+    for spawn in member.spawner.live:
+        at = spawn.position
+        assert 15.0 <= math.hypot(at[0] - middle[0], at[2] - middle[2]) <= 25.0
+        assert at[1] == pytest.approx(slope(at[0], at[2], middle), abs=0.3)
     # Only the newest few count, and only for a while.
     for n in range(circle.ESTIMATE_SPAWNS):
         host_spawn(member, 0x50 + n, (x + 600.0, y, z), 118.0)
+    wild_walks(member, 118.0, rows=(-20, 20), around=(x + 600.0, y, z), object_id=4 * 0x50)
     assert member.host_at == pytest.approx((x + 600.0, y, z))
     run(member, 118.0, 118.0 + circle.ESTIMATE_WINDOW + 0.1)
     assert located.source == wild.LOST and member.host_at is None
@@ -275,10 +284,11 @@ def test_the_zone_card_says_when_the_host_s_position_is_estimated_or_lost():
 def test_our_own_spawns_are_not_weighed():
     located = Located()
     member = keeping(locator=located)
+    weighed = list(located.spawns)
     ours = bytearray(RETAIL_SPAWN)
     ours[:2] = (streams.JOINER_INDEX + 4 * 300).to_bytes(2, "little")
     member.on_lua(bytes.fromhex("260001bc60") + bytes(ours))
-    assert located.spawns == []
+    assert located.spawns == weighed
 
 
 # The app entry

@@ -9,7 +9,7 @@ import trio
 
 import sv_join
 from pokeldn.ldn import channel_table, reliable5
-from pokeldn.sv import circle, raid, streams
+from pokeldn.sv import circle, port2, raid, streams
 from test_sv_raid import HOST_IP, HOST_MAC, JOIN_IP, JOIN_MAC, Clock, RaidHostConsole
 
 
@@ -668,9 +668,32 @@ def test_a_spawn_record_reads_and_writes_a_retail_record_s_fields():
 DEMO_ENDED = HOST_SYNC[:-8] + circle.DEMO_ENDED.to_bytes(4, "little") + HOST_SYNC[-4:]
 
 
-def spawning(**kw):
+def slope(x, z, around=None):
+    """-> the height of a hillside through `around` (the host's player), rising 0.3 m a metre
+    eastwards."""
+    around = around or position(HOST_WALK)
+    return around[1] + 0.3 * (x - around[0])
+
+
+def wild_walks(member, now, rows=range(-30, 31, 2), around=None, object_id=None):
+    """The host's console shares a wild Rabsca (RETAIL_SPAWN's object) at `around` (the host's
+    player), or names `object_id` it shared before, that then walks the hillside through it in rows
+    `rows` metres north of it, one transform a metre."""
+    around = around or position(HOST_WALK)
+    if object_id is None:
+        object_id = int.from_bytes(RETAIL_SPAWN[:2], "little")
+        record = circle.spawn_record(object_id, around, species=954, level=27)
+        member.on_lua(bytes.fromhex("260001") + port2.encode_bytes(record), now)
+    for dz in rows:
+        for dx in range(-30, 31):
+            x, z = around[0] + dx, around[2] + dz
+            member.on_frame(circle.transform_frame(object_id, (x, slope(x, z, around), z), 0.0), now)
+
+
+def spawning(wild=True, **kw):
     """-> a member whose shiny Rayquaza spawner starts as the demo ends at 100, the host's player
-    standing where HOST_WALK has it."""
+    standing where HOST_WALK has it, a wild Pokemon of the host's (with `wild`) walking the
+    hillside around it."""
     member = circle.Member(spawner=circle.Spawner(384, 70, True, tera=15, rng=random.Random(1),
                                                   **kw))
     member.on_table(FIELD_KEYS)
@@ -680,6 +703,8 @@ def spawning(**kw):
     member.on_lua(DEMO_ENDED)
     assert [label for label, _, _ in member.tick(100.0)] == ["message 103"]
     stands(member, HOST_WALK, 100.0)
+    if wild:
+        wild_walks(member, 100.0)
     return member
 
 
@@ -717,7 +742,8 @@ def test_a_member_spawns_from_ten_seconds_after_the_demo_one_a_second_around_the
     fields = circle.record_fields(record)
     assert (fields["species"], fields["level"], fields["shiny"], fields["tera"]) == (384, 70, 1, 15)
     host, at = position(HOST_WALK), fields["position"]
-    assert at[1] == host[1] and 15.0 <= math.hypot(at[0] - host[0], at[2] - host[2]) <= 25.0
+    assert 15.0 <= math.hypot(at[0] - host[0], at[2] - host[2]) <= 25.0
+    assert math.isclose(at[1], slope(at[0], at[2]), abs_tol=0.3 + 1e-3)    # on the ground
     assert position(transform) == at
     _, qy, _, qw = struct.unpack_from("<4f", transform, circle.ROTATION_AT)
     yaw = 2 * math.atan2(qy, qw)
@@ -733,6 +759,55 @@ def test_a_member_spawns_from_ten_seconds_after_the_demo_one_a_second_around_the
             + bytes.fromhex("880000000088000000000000")) in messages
     assert [circle.object_of(f) for f in frames] == [first + 8] * 3 + [first]
     assert frames[-1] == transform
+
+
+def test_a_member_spawns_only_where_the_host_s_wild_pokemon_stood_lately():
+    """No wild Pokemon of the host's (in a town): none of ours. One then walks a single row north of
+    the host: ours come on that row only; SPOT_LIFE seconds after it, none comes there again."""
+    member = spawning(wild=False)
+    for now in (110.0, 120.0, 130.0):
+        assert spawn_out(member, now) == ([], [])
+    assert member.notes == ["our spawns wait for wild Pokemon around the host's player; a town has none"]
+    host = position(HOST_WALK)
+    wild_walks(member, 130.0, rows=(20,))
+    _, frames = spawn_out(member, 131.0)
+    at = position(frames[2])
+    assert math.isclose(at[2], host[2] + 20, abs_tol=circle.GROUND_CELL)
+    assert 15.0 <= math.hypot(at[0] - host[0], at[2] - host[2]) <= 25.0
+    member.spawner.live = []
+    assert spawn_out(member, 130.0 + circle.SPOT_LIFE + 1)[1] == []
+
+
+def test_a_spawn_walks_the_ground_around_where_it_came():
+    """It rests, then walks at WALK_SPEED within WANDER metres of where it came, a transform every
+    WALK_FRAME_PERIOD, its height the hillside's, facing the way it goes."""
+    member = spawning(copies=1)
+    _, frames = spawn_out(member, 110.0)
+    home = position(frames[2])
+    track = []
+    now = 110.0
+    while now < 150.0:
+        now += 1 / 60
+        for frame in spawn_out(member, now)[1]:
+            track.append((now, position(frame), frame))
+    assert len({at for _, at, _ in track}) > 50               # it moved
+    for t, at, frame in track:
+        assert math.hypot(at[0] - home[0], at[2] - home[2]) <= circle.WANDER + 1.5
+        assert math.isclose(at[1], slope(at[0], at[2]), abs_tol=0.3 + 1e-3)
+    times = [t for t, _, _ in track]
+    # At most a walk frame every WALK_FRAME_PERIOD and a refresh in any second.
+    assert max(sum(t <= u < t + 1.0 for u in times) for t in times) <= 1 / circle.WALK_FRAME_PERIOD + 1
+    for (t0, a, _), (t1, b, frame) in zip(track, track[1:]):
+        across = math.hypot(b[0] - a[0], b[2] - a[2])
+        if t1 - t0 >= 0.5 or across < 1e-3:
+            continue
+        _, qy, _, qw = struct.unpack_from("<4f", frame, circle.ROTATION_AT)
+        yaw = 2 * math.atan2(qy, qw)
+        assert math.sin(yaw) * (b[0] - a[0]) + math.cos(yaw) * (b[2] - a[2]) > 0.99 * across
+    for i, (t0, a, _) in enumerate(track):
+        later = [(t, b) for t, b, _ in track[i:] if 0.5 <= t - t0 <= 1.0]
+        for t1, b in later[:1]:
+            assert math.hypot(b[0] - a[0], b[2] - a[2]) <= circle.WALK_SPEED * (t1 - t0) + 0.1
 
 
 def test_a_spawn_id_is_written_as_retail_consoles_write_theirs():
