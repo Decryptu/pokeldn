@@ -111,7 +111,8 @@ class GamesView:
         forget_unremembered(app.settings.tool_values, self.catalog)
         self.tree = ft.ListView(spacing=2, padding=ft.Padding(8, 8, 8, 8), expand=True)
         self.summary = t.text("", 12, t.MUTED, text_align=ft.TextAlign.CENTER)
-        self.variants = ft.Column(spacing=t.GAP, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)  # render_variants
+        # The choices card hugs its rows, centred as the tabs above it.
+        self.variants = ft.Column(spacing=t.GAP, horizontal_alignment=ft.CrossAxisAlignment.CENTER)  # render_variants
         self.cards = ft.Column(spacing=t.GAP)
         self.run_panel = ft.Column(spacing=t.GAP, visible=False)    # show_run_cards
         # The cards start below the toolbar and scroll under its glass.
