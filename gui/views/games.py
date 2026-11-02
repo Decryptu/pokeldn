@@ -379,7 +379,7 @@ class GamesView:
                                      [(key, names[key], "gamepad") for key, _ in VERSIONS_OF[self.game.key]],
                                      settings.version(self.game.key), self._played))
         # Side by side while they fit, one under another on a narrow window.
-        self.variants.controls = [t.card_box(ft.Row(rows, spacing=24, run_spacing=12, wrap=True))] if rows else []
+        self.variants.controls = [t.card_box(ft.Row(rows, spacing=24, run_spacing=12, wrap=True, alignment=ft.MainAxisAlignment.CENTER))] if rows else []
         self.variants.visible = bool(rows)
 
     def _played(self, version: str) -> None:
