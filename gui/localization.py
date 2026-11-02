@@ -121,10 +121,8 @@ class DisplayService(pokemon.Service):
                 found[key] = [error_message(line) for line in found.get(key, ())]
         if "encounter" in reply:
             reply["encounter"] = translate(reply["encounter"])
-        for found in reply.get("encounters", ()):
-            found["kind"] = translate(found["kind"])
-        if "note" in reply:
-            reply["note"] = error_message(reply["note"]) if reply["note"] else reply["note"]
+        if reply.get("note"):
+            reply["note"] = error_message(reply["note"])
         if "problems" in reply:
             reply["problems"] = "\n".join(error_message(line) for line in reply["problems"].splitlines())
         for route in reply.get("games", {}).values():

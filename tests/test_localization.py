@@ -92,7 +92,7 @@ def french_copy(monkeypatch):
     monkeypatch.setattr(localization, "_game_names", {})
 
 
-def test_encounter_details_and_retraining_note_translate_without_rewriting_selection(french_copy, monkeypatch):
+def test_an_encounter_label_and_the_retraining_note_follow_the_pack(french_copy, monkeypatch):
     from gui.views.pokemon import encounter_label
     monkeypatch.setattr(localization, "_game_names", {"fr": {}})
     i18n._pack.resources["messages"].update({"Wild (SL)": "Sauvage (SL)", "Scarlet": "Écarlate",
@@ -109,9 +109,7 @@ def test_encounter_details_and_retraining_note_translate_without_rewriting_selec
     assert requests[-1]["display_language"] == "fr"
     assert shown["note"] == "est chromatique pour vous"
     assert encounter_label(shown["encounters"][0], True) == "Zone Sud · Sauvage · Lv 10-12 · Écarlate"
-    assert {k: v for k, v in shown["encounters"][0].items() if k != "kind"} == {
-        k: v for k, v in encounter.items() if k != "kind"}
-    assert reply["note"] == "is shiny for you" and encounter["kind"] == "Wild (SL)"
+    assert shown["encounters"][0] == encounter and reply["note"] == "is shiny for you"
     monkeypatch.setattr(i18n, "_pack", None)
     assert localization.DisplayService()._ask({"cmd": "encounters", "game": "sv"}) == reply
     assert "display_language" not in requests[-1]
