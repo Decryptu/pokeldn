@@ -539,7 +539,8 @@ none (a retail Scarlet showed none of the spawns sent while its player stood in 
 rests 2 to 6 s, then walks at 1 m/s to a known square within 6 m of where it came, its height the
 ground's every 0.5 m; a step rising or dropping more than 0.6 m, or crossing a square with no ground
 known, is not taken. A walking spawn's transform goes out every 1/30 s. A retail Scarlet showed these
-spawns standing on the ground and walking.
+spawns standing on the ground and walking, and its player running into a walking one started the
+battle.
 
 With `--spawn-legal`, PKHeX decides: the helper's `wild_areas` command lists the Scarlet / Violet
 wild slots by location, and `wild_legal` runs PKHeX's legality analysis on the crafted spawn caught
