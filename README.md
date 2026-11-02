@@ -108,7 +108,7 @@ Contributors to this repository (GitHub does not list contributors on a fork):
 - [easyworld](https://github.com/easyworld): ESP32 serial reconnects after a high-baud session,
   language packs that translate game names, module messages, tool help, the documentation and its
   page titles, game choices and raid partners' names, the language pack checker, CJK tooltips, and
-  game names and gift summaries in the display language
+  game names, gift summaries, encounter places and original-trainer notes in the display language
 - [capito27](https://github.com/capito27): Scarlet/Violet event Tera Raids, the raid finder's reward
   filter, its full seed search, its ranking by rewards and its size mark filter, and the Tera Raid
   NPC partners: their draw from the RaidPoint and the host's choice of them; Simulated Mystery Gifts

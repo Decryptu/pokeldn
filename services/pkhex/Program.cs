@@ -336,7 +336,11 @@ static partial class Program
         {
             if (e is MysteryGift gift)
                 return gift.CardTitle is { Length: > 0 } title ? title : $"#{gift.CardID:0000}";
-            return e is ILocation place ? place.GetEncounterLocation(e.Generation, e.Version) ?? "" : "";
+            if (e is not ILocation place)
+                return "";
+            var location = place.GetLocation();
+            return location == 0 ? "" : strings.GetLocationName(location != place.Location, location,
+                e.Generation, e.Generation, e.Version);
         }
 
         // The encounters a build of the species and form can come from, grouped (EncounterKey), in the build's order.

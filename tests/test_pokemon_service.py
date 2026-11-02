@@ -46,6 +46,18 @@ def test_a_display_language_names_the_same_ids(service, display, language, game,
     assert set(shown) == {n["id"] for n in english}
 
 
+def test_encounter_places_follow_the_display_language(service, display):
+    english = service.encounters("sv", 25, TRAINER)
+    chinese = display("zh-Hans").encounters("sv", 25, TRAINER)
+    assert [n["key"] for n in chinese] == [n["key"] for n in english]
+    assert [{k: v for k, v in n.items() if k not in ("species", "place", "kind")} for n in chinese] == [
+        {k: v for k, v in n.items() if k not in ("species", "place", "kind")} for n in english]
+    wild = [(a, b) for a, b in zip(english, chinese) if not a["gift"] and a["place"]]
+    assert any(a["place"] != b["place"] and any('\u3400' <= c <= '\u9fff' for c in b["place"]) for a, b in wild)
+    service.species_cache.clear()
+    assert service.encounters("sv", 25, TRAINER) == english
+
+
 @pytest.mark.parametrize("mode", ["empty", "made"])
 def test_a_display_language_builds_the_same_record_with_english_names_kept(service, display, mode):
     service.home_tracker = mode
