@@ -459,7 +459,7 @@ Pokemon itself. Every record captured fits this layout:
 | | 32 | shiny; the spawn is shiny when set |
 | | 33-37 | form |
 | | 38-44 | level |
-| | 45-52 | ribbon (mark), applied when not 0 |
+| | 45-52 | ribbon (mark) by PKHeX's `RibbonIndex`, applied when not 0 |
 | | 53-57 | nature |
 | | 58-62 | Tera Type |
 | 0x0C | u32 bits 0-3 | Alcremie decoration |
@@ -520,10 +520,11 @@ user crafts around the host's player; with `--follow-host` the guest's player fo
 The `--spawn-*` flags set what a record carries: form, shiny, Tera Type, nature, gender, ability
 slot, size, held item, mark and IVs. One left out is drawn as the host's own wild ones were: the
 size, the nature and each IV at random, the ability slot 0 or 1, no held item, no mark.
-`--spawn-mark` takes PKHeX's `RibbonIndex` (53 Lunchtime to 97 Slump); that the game reads the
-record's ribbon field in the same numbering is unverified on a console. Each spawn comes 15 to 25 m
-from the host's player. One the host battles (its ask, handed over), removes (a kind 2 naming it) or
-walks more than 50 m from is let go and another comes near the host.
+`--spawn-mark` takes PKHeX's `RibbonIndex` (53 Lunchtime to 97 Slump); the game reads the record's
+ribbon field in the same numbering: a retail Scarlet caught a spawn sent with 58 holding the Rainy
+Mark (bit 58 of the PK9's flags at 0x34, no title affixed), and PKHeX found it legal. Each spawn
+comes 15 to 25 m from the host's player. One the host battles (its ask, handed over), removes (a
+kind 2 naming it) or walks more than 50 m from is let go and another comes near the host.
 
 With `--spawn-legal`, PKHeX decides: the helper's `wild_areas` command lists the Scarlet / Violet
 wild slots by location, and `wild_legal` runs PKHeX's legality analysis on the crafted spawn caught
