@@ -538,7 +538,8 @@ with at least eight known squares within 6 m, so none of ours comes where the ho
 none (a retail Scarlet showed none of the spawns sent while its player stood in a town). Each spawn
 rests 2 to 6 s, then walks at 1 m/s to a known square within 6 m of where it came, its height the
 ground's every 0.5 m; a step rising or dropping more than 0.6 m, or crossing a square with no ground
-known, is not taken. A walking spawn's transform goes out every 1/30 s.
+known, is not taken. A walking spawn's transform goes out every 1/30 s. A retail Scarlet showed these
+spawns standing on the ground and walking.
 
 With `--spawn-legal`, PKHeX decides: the helper's `wild_areas` command lists the Scarlet / Violet
 wild slots by location, and `wild_legal` runs PKHeX's legality analysis on the crafted spawn caught
@@ -572,5 +573,4 @@ The search shows as a `[panel]` status card with id `zone` in the app.
   above the quest's goal.
 - What the status record's further slots, its byte string and its element 7 hold.
 - What the type-10 objects are, and what the key-0x0025 ids and queries arbitrate.
-- What a spawn state's first float (0.001 to 0.04 from a retail host) stands for, and whether a
-  console plays a spawn's walk animation from its transforms alone.
+- What a spawn state's first float (0.001 to 0.04 from a retail host) stands for.
