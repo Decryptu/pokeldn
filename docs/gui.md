@@ -167,8 +167,11 @@ found, Find mine asks for a trade.
 
 A different trainer for each game gives each title its own name, gender, language, ID and secret ID,
 edited one game at a time; the IDs are as that game shows them. A game never edited keeps the shared
-trainer. `settings.json` holds the switch as `per_game_trainer` and the values as `game_trainers`,
-game key to the fields that differ. `Settings.own(game)` is the trainer a game sees; `Settings.ids`,
+trainer. A game sold as two versions lists each version (FireRed and LeafGreen, Sword and Shield, and the
+rest), so two saves of one game keep their own trainers; a version never edited keeps its game's trainer.
+When the two versions differ, that game's tools show Your game beside Hosts and Joins, and a run uses the
+picked version's trainer. `settings.json` holds the switch as `per_game_trainer`, the values as
+`game_trainers`, game or version key to the fields that differ, and each game's picked version as `played`. `Settings.own(game)` is the trainer a game sees; `Settings.ids`,
 `Settings.name`, `Settings.trainer` and the launch tokens `{ot}`, `{tid}`, `{sid}`, `{language}`,
 `{gender}` read through it (`tests/test_gui_catalog.py`). Find mine on a game takes the newest trainer
 read off that game.

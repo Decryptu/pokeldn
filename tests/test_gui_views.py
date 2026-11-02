@@ -822,16 +822,19 @@ def test_a_trainer_per_game_edits_only_the_chosen_games_trainer(tmp_path, monkey
     def type_into(label, text):
         fields()[label].on_change(SimpleNamespace(control=SimpleNamespace(value=text, update=lambda: None)))
 
-    fields()["Game"].on_select(SimpleNamespace(control=SimpleNamespace(value="sv")))
+    fields()["Game"].on_select(SimpleNamespace(control=SimpleNamespace(value="violet")))
     type_into("ID", "123456")
     type_into("Secret ID", "4295")          # past 32 bits with that ID: refused
     type_into("Name", "Misty")
-    fields()["Game"].on_select(SimpleNamespace(control=SimpleNamespace(value="frlg")))
+    fields()["Game"].on_select(SimpleNamespace(control=SimpleNamespace(value="firered")))
     assert fields()["ID"].value == "1" and fields()["Name"].value == "Ash"
     type_into("ID", "65536")                # a FireRed ID is five digits, at most 65535
     saved = settings_module.load()
+    # Scarlet keeps the shared trainer until the tool's Your game picks Violet, whose save Misty plays.
+    assert saved.split("sv") and not saved.split("swsh") and saved.name("sv") == "Ash"
+    saved.played["sv"] = "violet"
     assert saved.own("sv") == {"ot": "Misty", "gender": 0, "language": 2, "tid": 123456, "sid": 4}
-    assert (saved.ot, saved.switch_tid, saved.tid) == ("Ash", 3, 1) and "frlg" not in saved.game_trainers
+    assert (saved.ot, saved.switch_tid, saved.tid) == ("Ash", 3, 1) and "firered" not in saved.game_trainers
     assert saved.ids("sv") == ((4 * 10**6 + 123456) & 0xFFFF, (4 * 10**6 + 123456) >> 16)
 
 

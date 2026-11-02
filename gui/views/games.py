@@ -18,6 +18,8 @@ from pokeldn import plugins
 from pokeldn.app.catalog import Field, Game, Tool, activities, activity_of
 from pokeldn.app.introspect import flags_of
 from pokeldn.app.paths import SESSION
+from pokeldn.app.settings import VERSIONS as VERSIONS_OF
+from gui.views.settings import TRAINER_GAMES
 from gui.views.event_gifts import EventGiftPicker
 from gui.views.pokemon import NAME_LISTS, VERSIONS, LinkCodePicker, NamePicker, OfferQueue, PokemonPicker
 from gui.views.raid_event import FOLDED, RaidEventPicker
@@ -370,8 +372,19 @@ class GamesView:
                              lambda option, a=name: self.select(self.game, activity.pick(
                                  self.chosen[(self.game.key, activity.key)], a, option)))
                 for name, axis, options in activity.axes(self.tool)]
+        settings = self.app.settings
+        if settings.split(self.game.key):     # two saves of one game: which one this run trades with
+            names = dict(TRAINER_GAMES)
+            rows.append(t.choice_row(tr('games.your_game', 'Your game'),
+                                     [(key, names[key], "gamepad") for key, _ in VERSIONS_OF[self.game.key]],
+                                     settings.version(self.game.key), self._played))
         self.variants.controls = [t.card_box(ft.Column(rows, spacing=12, tight=True))] if rows else []
         self.variants.visible = bool(rows)
+
+    def _played(self, version: str) -> None:
+        self.app.settings.played[self.game.key] = version
+        self.app.settings.save()
+        self.select(self.game, self.tool)
 
     def render_body(self) -> None:
         self.raid_partners = self.reward_picker = None

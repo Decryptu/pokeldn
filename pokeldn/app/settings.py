@@ -17,6 +17,12 @@ LANGUAGES = (("2", "English"), ("3", "French"), ("5", "German"), ("4", "Italian"
 SWITCH_TID_LIMIT = 1_000_000
 GEN3 = ("frlg", "rse")      # games whose records keep a 16-bit TID and SID and a Gen III name
 TRAINER_LANGUAGES = {1, 2, 3, 4, 5, 7, 8, 9, 10}   # PKHeX LanguageID Settings offers
+# A game sold as two versions -> each version's key and PKHeX version number: with a trainer per game, each
+# version keeps its own save's trainer and the tool's "Your game" picks one (docs/gui.md, A trainer per game).
+VERSIONS = {"frlg": (("firered", 4), ("leafgreen", 5)), "lgpe": (("pikachu", 42), ("eevee", 43)),
+            "swsh": (("sword", 44), ("shield", 45)), "bdsp": (("bd", 48), ("sp", 49)),
+            "sv": (("scarlet", 50), ("violet", 51))}
+VERSION_GAME = {key: game for game, versions in VERSIONS.items() for key, _ in versions}
 
 
 @dataclass
@@ -55,6 +61,7 @@ class Settings:
     game_trainers: dict = field(default_factory=dict)
     # "gba" or "switch" -> the newest console trainer a run reported (pokeldn.console_trainer), for Find mine.
     found_trainers: dict = field(default_factory=dict)
+    played: dict = field(default_factory=dict)      # game -> the version key its tools run as (VERSIONS)
     board_names: dict = field(default_factory=dict)   # MAC -> name the user gave the board
     tool_values: dict = field(default_factory=dict)   # tool key -> {"values": {...}, "extra": {...}}
     bank_view: dict = field(default_factory=dict)     # the Bank's "sort", "only" and "dex_only" choices
@@ -69,17 +76,30 @@ class Settings:
         tmp.write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
         os.replace(tmp, PATH)
 
+    def version(self, game: str) -> str:
+        """The version `game`'s tools run as: the one picked, else its first."""
+        versions = [key for key, _ in VERSIONS.get(game, ())]
+        return self.played.get(game) if self.played.get(game) in versions else (versions[0] if versions else game)
+
     def own(self, game: str) -> dict:
-        """`game`'s trainer as the player sees it: ot, gender, language, and tid and sid as the game shows them."""
+        """`game`'s trainer as the player sees it: ot, gender, language, and tid and sid as the game shows them.
+        `game` is a game key or a version key; a game with versions reads the picked version's trainer, and a
+        version never edited reads its game's."""
+        version, game = (game, VERSION_GAME[game]) if game in VERSION_GAME else (self.version(game), game)
         shown = {"ot": self.ot, "gender": self.gender, "language": self.language,
                  "tid": self.tid if game in GEN3 else self.switch_tid,
                  "sid": self.sid if game in GEN3 else self.switch_sid}
         if self.per_game_trainer:
-            own = self.game_trainers.get(game)
-            for key, value in (own.items() if isinstance(own, dict) else ()):
-                if key in shown and type(value) is type(shown[key]):
-                    shown[key] = value
+            for own in (self.game_trainers.get(game), self.game_trainers.get(version)):
+                for key, value in (own.items() if isinstance(own, dict) else ()):
+                    if key in shown and type(value) is type(shown[key]):
+                        shown[key] = value
         return shown
+
+    def split(self, game: str) -> bool:
+        """`game`'s versions hold different trainers, so its tools ask which one runs."""
+        versions = VERSIONS.get(game, ())
+        return self.per_game_trainer and len({json.dumps(self.own(key), sort_keys=True) for key, _ in versions}) > 1
 
     def names(self) -> list[str]:
         """Every trainer name a run can present, the shared one and each game's own: the private-log masks."""
@@ -93,7 +113,7 @@ class Settings:
 
     def ids(self, game: str) -> tuple[int, int]:
         """The 16-bit TID and SID a record of `game` stores."""
-        shown = self.own(game)
+        shown, game = self.own(game), VERSION_GAME.get(game, game)
         if game in GEN3:
             return shown["tid"], shown["sid"]
         whole = shown["sid"] * SWITCH_TID_LIMIT + shown["tid"]
@@ -101,7 +121,7 @@ class Settings:
 
     def name(self, game: str) -> str:
         """The trainer name `game` can hold: Japanese FRLG takes five Gen III characters."""
-        shown = self.own(game)
+        shown, game = self.own(game), VERSION_GAME.get(game, game)
         if game not in GEN3:
             return shown["ot"]
         from pokeldn.frlg.text import charmap
@@ -117,6 +137,9 @@ class Settings:
         """Keeps a run's `[trainer]` message as the newest of its row ("gba" or "switch") and of its game."""
         row = "gba" if message["game"] in GEN3 else "switch"
         self.found_trainers[row] = self.found_trainers[message["game"]] = {**message, "when": time.time()}
+        version = next((key for key, number in VERSIONS.get(message["game"], ()) if number == message.get("version")), None)
+        if version:
+            self.found_trainers[version] = self.found_trainers[row]
         self.save()
 
     def take_found(self, row: str) -> dict | None:

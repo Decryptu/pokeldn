@@ -10,7 +10,7 @@ from gui.app import keys_problem
 from pokeldn import __version__, console_trainer, pokemon, plugins
 from pokeldn.app.paths import SESSION
 from pokeldn.app.sprites import CACHE
-from pokeldn.app.settings import GEN3, switch_ids_valid
+from pokeldn.app.settings import GEN3, VERSION_GAME, switch_ids_valid
 from pokeldn.app import preview, storage
 from gui.views.widgets import PathField, open_folder
 from pokeldn.app.i18n import t as tr
@@ -25,14 +25,20 @@ LANGUAGES = (("2", tr("settings.language_english", "English")),
              ("9", tr("settings.language_simplified_chinese", "Simplified Chinese")),
              ("10", tr("settings.language_traditional_chinese", "Traditional Chinese")))
 
-# The games a trainer per game names, in the app's order; Ruby, Sapphire and Emerald only where they show.
-TRAINER_GAMES = (("frlg", tr("settings.game_frlg", "FireRed and LeafGreen")),
+# The games a trainer per game names, in the app's order, a game sold as two versions as each version (VERSIONS);
+# Ruby, Sapphire and Emerald only where they show.
+TRAINER_GAMES = (("firered", tr("settings.game_firered", "FireRed")),
+                 ("leafgreen", tr("settings.game_leafgreen", "LeafGreen")),
                  ("rse", tr("settings.game_rse", "Ruby, Sapphire and Emerald")),
-                 ("lgpe", tr("settings.game_lgpe", "Let's Go Pikachu and Eevee")),
-                 ("swsh", tr("settings.game_swsh", "Sword and Shield")),
-                 ("bdsp", tr("settings.game_bdsp", "Brilliant Diamond and Shining Pearl")),
+                 ("pikachu", tr("settings.game_pikachu", "Let's Go Pikachu")),
+                 ("eevee", tr("settings.game_eevee", "Let's Go Eevee")),
+                 ("sword", tr("settings.game_sword", "Sword")),
+                 ("shield", tr("settings.game_shield", "Shield")),
+                 ("bd", tr("settings.game_bd", "Brilliant Diamond")),
+                 ("sp", tr("settings.game_sp", "Shining Pearl")),
                  ("pla", tr("settings.game_pla", "Legends Arceus")),
-                 ("sv", tr("settings.game_sv", "Scarlet and Violet")),
+                 ("scarlet", tr("settings.game_scarlet", "Scarlet")),
+                 ("violet", tr("settings.game_violet", "Violet")),
                  ("za", tr("settings.game_za", "Legends Z-A")))
 
 LINKS = ((tr('settings.documentation_c20592', 'Documentation'), "https://decryptu.github.io/pokeldn/"),
@@ -57,7 +63,7 @@ class SettingsView:
         app.update_listeners.append(self._update_shown)
         self._update_text()
         self.show_advanced = False
-        self.trainer_game = "frlg"     # the game a trainer per game edits
+        self.trainer_game = "firered"     # the game a trainer per game edits
         self.column = ft.Column(spacing=t.GAP)
         self.scroll = t.readable(self.column, 760)
         self.control = self.scroll
@@ -210,7 +216,7 @@ class SettingsView:
                 list(LANGUAGES), str(shown["language"]), on_select=lambda e: store("language", int(e.control.value)))),
         ], spacing=10, intrinsic_height=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH))
         if game:
-            rows.append(ids("gba" if game in GEN3 else "switch", "tid", "sid", tr('settings.id_c5d6a4', 'ID'),
+            rows.append(ids("gba" if VERSION_GAME.get(game, game) in GEN3 else "switch", "tid", "sid", tr('settings.id_c5d6a4', 'ID'),
                             s.own(game)["tid"], s.own(game)["sid"]))
         else:
             rows.append(ids("gba", "tid", "sid", tr('settings.id_firered_and_leafgreen_d6b2c2', 'ID, FireRed and LeafGreen'), s.tid, s.sid))
