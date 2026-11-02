@@ -411,9 +411,9 @@ def labeled_control(label: str, control: ft.Control, **kwargs) -> ft.Column:
 class _Button(ft.Button):
     def before_update(self):
         super().before_update()
-        if isinstance(self.icon, ft.Image):   # a pixel icon is an image: it takes the label's colour by hand
-            colors = self.style.color
-            self.icon.color = colors[ft.ControlState.DISABLED if self.disabled else ft.ControlState.DEFAULT]
+        for image in (self.icon, self.content):   # a pixel icon is an image: it takes the label's colour by hand
+            if isinstance(image, ft.Image):
+                image.color = self.style.color[ft.ControlState.DISABLED if self.disabled else ft.ControlState.DEFAULT]
 
 
 def button(label: str, on_click=None, icon=None, color: str = BLUE, filled: bool = True,
@@ -433,6 +433,12 @@ def button(label: str, on_click=None, icon=None, color: str = BLUE, filled: bool
                        ft.ControlState.PRESSED: ft.Colors.with_opacity(0.14, "#000000")},
         elevation=0, shadow_color=ft.Colors.TRANSPARENT)
     kwargs.setdefault("height", CONTROL_HEIGHT)
+    if icon and not label:
+        # An empty label still keeps its slot and the icon's gap, pushing the icon off centre: the icon is the
+        # whole content of a round button instead.
+        style.padding, style.shape = ft.Padding.all(0), ft.CircleBorder()
+        kwargs.setdefault("width", kwargs["height"])
+        return _Button(content=pixel_icon(icon, color=ink), on_click=on_click, style=style, elevation=0, **kwargs)
     return _Button(label, icon=pixel_icon(icon, color=ink) if icon else None, on_click=on_click,
                    style=style, elevation=0, **kwargs)
 
