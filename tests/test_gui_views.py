@@ -2063,3 +2063,25 @@ def test_a_failed_trade_run_retries_on_the_offers_it_has_not_traded(tmp_path, mo
 
     runs[1].end("prod.keys has no master_key_12; dump the keys again")
     assert panel.retry_at is None and len(runs) == 2
+
+
+@pytest.mark.parametrize("current, shown", [(True, "Installed. Ready to use."), (False, "")])
+def test_the_line_after_an_install_ends_when_the_board_answers(monkeypatch, current, shown):
+    from gui.views import boards
+    view = object.__new__(boards.BoardView)
+    port = SimpleNamespace(device="COM3")
+    identities = {}
+    view.app = SimpleNamespace(identities=identities, chips={}, controllers=[], radio_port=lambda ports: "", settings=SimpleNamespace(board_names={}),
+                               board_status=lambda ports, key=None: SimpleNamespace(state="checking", detail=""))
+    view.ports, view.selected, view.list, view.detail = [port], "COM3", ft.ListView(), ft.Column()
+    view.progress_text = SimpleNamespace(value="Installed. Checking the board...")
+    view.confirming = True
+    for card in ("header", "firmware_card", "about_card", "help_card", "line"):
+        monkeypatch.setattr(view, card, lambda *a: "", raising=False)
+    view.render()
+    assert view.progress_text.value == "Installed. Checking the board..."
+    monkeypatch.setattr(boards.board, "Identity", SimpleNamespace)
+    identities["COM3"] = SimpleNamespace(ble=False, firmware_version="1", sta_mac="", stock=False, gift_kept=False, chip="",
+                                         current=current)
+    view.render()
+    assert view.progress_text.value == shown and not view.confirming

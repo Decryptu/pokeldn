@@ -60,6 +60,7 @@ class BoardView:
         self.downloading = False
         self.installing = ""        # the firmware being written, from the press until the board answers
         self.flash_kind = "radio"
+        self.confirming = False     # the "Checking the board" line after an install, until the board answers
         self.pad_child = None
         self.pad: dict | None = None    # the S3 controller's status over Bluetooth
         self.pad_error = ""
@@ -218,6 +219,10 @@ class BoardView:
         self.list.controls = rows
         if self.selected:
             f = self.facts(self.selected)
+            if self.confirming and f.state != "checking":
+                self.confirming = False
+                self.progress_text.value = (tr('boards.installed_ready_to_use', 'Installed. Ready to use.')
+                                            if f.state == "ready" else "")
             cards = [self.header(f), self.firmware_card(f), self.about_card(f)]
             if f.state in PROBLEMS or f.state == "none":
                 cards.append(self.help_card())
@@ -610,6 +615,7 @@ class BoardView:
                 tr('boards.installed_plug_the_board_into_the_switch_s_usb_c_port_a_7dda2a', "Installed. Plug the board into the Switch's USB-C port and open Control.") if kind == "pad"
                 else tr('boards.installed_checking_the_board_72e948', 'Installed. Checking the board...'))
             self.pad, self.pad_error = None, ""
+            self.confirming = kind != "pad"
             self.render()
             self.control.update()
             # A native-USB board comes back under a new port name, or as a controller with none.

@@ -235,6 +235,7 @@
 "boards.installed_checking_the_board_72e948" = "Installed. Checking the board..."
 "boards.installed_f8b32f" = "Installed"
 "boards.installed_plug_the_board_into_the_switch_s_usb_c_port_a_7dda2a" = "Installed. Plug the board into the Switch's USB-C port and open Control."
+"boards.installed_ready_to_use" = "Installed. Ready to use."
 "boards.installing_firmware_298596" = "Installing {value0} firmware"
 "boards.ios_firmware" = "It must run the Bluetooth radio firmware (pokeldn-radio-ble-c6.bin for an ESP32-C6), installed once from a computer with the desktop app's Board page."
 "boards.ios_list_hint" = "Power the board near the phone. It shows up here over Bluetooth on its own."
