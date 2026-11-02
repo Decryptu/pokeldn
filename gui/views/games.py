@@ -111,7 +111,7 @@ class GamesView:
         forget_unremembered(app.settings.tool_values, self.catalog)
         self.tree = ft.ListView(spacing=2, padding=ft.Padding(8, 8, 8, 8), expand=True)
         self.summary = t.text("", 12, t.MUTED, text_align=ft.TextAlign.CENTER)
-        self.variants = ft.Column(spacing=t.GAP)    # render_variants
+        self.variants = ft.Column(spacing=t.GAP, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)  # render_variants
         self.cards = ft.Column(spacing=t.GAP)
         self.run_panel = ft.Column(spacing=t.GAP, visible=False)    # show_run_cards
         # The cards start below the toolbar and scroll under its glass.
@@ -378,7 +378,8 @@ class GamesView:
             rows.append(t.choice_row(tr('games.your_game', 'Your game'),
                                      [(key, names[key], "gamepad") for key, _ in VERSIONS_OF[self.game.key]],
                                      settings.version(self.game.key), self._played))
-        self.variants.controls = [t.card_box(ft.Column(rows, spacing=12, tight=True))] if rows else []
+        # Side by side while they fit, one under another on a narrow window.
+        self.variants.controls = [t.card_box(ft.Row(rows, spacing=24, run_spacing=12, wrap=True))] if rows else []
         self.variants.visible = bool(rows)
 
     def _played(self, version: str) -> None:

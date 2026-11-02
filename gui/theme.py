@@ -519,7 +519,8 @@ def choice_row(label: str, options: list[tuple[str, str, str]], value: str, on_c
     """A labelled capsule switcher on a card: one of a few ways to run the same thing (Hosts / Joins)."""
     track = ft.Container(segmented(options, value, on_change, wrap=True), bgcolor=FIELD,
                          border_radius=TOOLBAR_ITEM / 2 + 3, padding=3)
-    return labeled_control(label, ft.Row([track], wrap=True))
+    # No aligned Container around the label: alignment fills the width, and the rows sit side by side.
+    return ft.Column([text(label, 11, MUTED), track], spacing=4, tight=True)
 
 
 def fade(scrollable: ft.ScrollableControl, size: float = 24) -> ft.ShaderMask:
