@@ -746,8 +746,8 @@ class BankView:
         extension = os.path.splitext(entry.path)[1][1:]
         path = await self.app.picker.save_file(dialog_title=tr('bank.export_pokemon_0cfbf8', 'Export Pokemon'), file_name=os.path.basename(entry.path),
                                                file_type=ft.FilePickerFileType.CUSTOM,
-                                               allowed_extensions=[extension])
-        if not path:
+                                               allowed_extensions=[extension], src_bytes=bank.data(entry))
+        if not path:     # a browser or a phone's web view saved src_bytes itself
             return
         path += "" if path.lower().endswith(f".{extension}") else f".{extension}"
         try:

@@ -353,8 +353,9 @@ class ControllerView:
         path = await self.app.picker.save_file(dialog_title=tr('controller.export_macro_d0363d', 'Export macro'),
                                                file_name=f"{self.macro.name}{m.EXTENSION}",
                                                file_type=ft.FilePickerFileType.CUSTOM,
-                                               allowed_extensions=[m.EXTENSION[1:]])
-        if not path:
+                                               allowed_extensions=[m.EXTENSION[1:]],
+                                               src_bytes=self.macro.dumps().encode("utf-8"))
+        if not path:     # a browser or a phone's web view saved src_bytes itself
             return
         path += "" if path.lower().endswith(m.EXTENSION) else m.EXTENSION
         try:

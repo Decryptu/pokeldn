@@ -5,6 +5,7 @@ from pokeldn.app.i18n import t as tr
 
 import os
 import threading
+from pathlib import Path
 
 import flet as ft
 
@@ -177,8 +178,9 @@ class SavePanel:
 
     async def _export(self, entry: saves.Entry) -> None:
         path = await self.app.picker.save_file(dialog_title=tr('saves.export_save_caac5b', 'Export save'), file_name=saves.file_name(entry),
-                                               file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=["sav"])
-        if not path:
+                                               file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=["sav"],
+                                               src_bytes=Path(entry.path).read_bytes())
+        if not path:     # a browser or a phone's web view saved src_bytes itself
             return
         path += "" if path.lower().endswith(".sav") else ".sav"
         try:

@@ -1,3 +1,4 @@
+import os
 import re
 import threading
 from pathlib import Path
@@ -51,7 +52,8 @@ class PokemonPicker:
                                 limit=10 if game in GEN3 else 12,
                                 on_change=lambda e: self._set("nickname", e.control.value))
         self.build_button = t.button(tr('pokemon.build_bdd254', 'Build'), self._build, disabled=True)
-        self.clear_button = t.secondary_button(tr('pokemon.clear', 'Clear'), self._clear, "close")
+        self.clear_button = t.secondary_button("", self._clear, "close", tooltip=tr('pokemon.clear', 'Clear'))
+        self.export_button = t.secondary_button("", self._export, "download", tooltip=tr('pokemon.export', 'Export as a file'))
         self.options = OfferOptions(self)
         self.show_sprite(update=False)     # with the sweet the options hold
         self.variants = ft.Row(spacing=10, visible=False)    # the form and, for Alcremie, the sweet
@@ -78,6 +80,7 @@ class PokemonPicker:
             self.retrain_row,
             ft.Row([t.secondary_button(tr('pokemon.or_use_a_pokemon_file_26272a', 'Or use a Pokemon file'), self._use_file, "file"),
                     t.secondary_button(tr('pokemon.import_paste_1632a4', 'Import paste'), self._paste, "bulletlist"),
+                    self.export_button,
                     self.clear_button,
                     *([t.text(tr('pokemon.or_drop_either_here_a8b5ba', 'or drop either here'), 12, t.FAINT)] if drop.AVAILABLE else [])],
                    spacing=10, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
@@ -408,6 +411,30 @@ class PokemonPicker:
         self.result.content = ft.Column(lines, spacing=2)
         self.control.update()
 
+    async def _export(self, e) -> None:
+        """Saves the built or loaded record as a file of its game's format (its kept copy's extension)."""
+        source = self.value.get("file")
+        if not source or not os.path.exists(source):
+            return
+        extension = os.path.splitext(source)[1][1:]
+        name = os.path.basename(source).split("-")[0] + "." + extension
+        with open(source, "rb") as kept:
+            data = kept.read()
+        # A browser or a phone's web view saves src_bytes itself and returns no path.
+        path = await self.app.picker.save_file(dialog_title=tr('pokemon.export', 'Export as a file'), file_name=name,
+                                               file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=[extension],
+                                               src_bytes=data)
+        if not path:
+            return
+        path += "" if path.lower().endswith(f".{extension}") else f".{extension}"
+        try:
+            with open(path, "wb") as out:
+                out.write(data)
+            self._message(tr('pokemon.exported_to', 'Exported to {value0}', value0=path), t.MUTED)
+        except OSError as error:
+            self._message(str(error), t.RED)
+        self.result.update()
+
     def _message(self, text: str, color: str, busy: bool = False) -> None:
         message = t.text(text, 12, color, selectable=True, expand=True if busy else None)
         self.result.content = (ft.Row([PixelActivity(tr('pokemon.building_pokemon_4ac59b', 'Building Pokemon')), message], spacing=8)
@@ -416,6 +443,7 @@ class PokemonPicker:
     def _show_result(self) -> None:
         self.retrain_row.visible = bool(self.value.get("file") and self.value.get("source"))
         self.clear_button.visible = bool(self.value.get("species") or self.value.get("file"))
+        self.export_button.visible = bool(self.value.get("file"))
         if not self.value.get("file"):
             self.result.content = None
             return
