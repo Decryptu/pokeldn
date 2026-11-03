@@ -1,14 +1,13 @@
-# pokeldn 0.56.1
+# pokeldn 0.56.2
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- ESP32-C3 boards, the Super Mini among them, now reach the console with no setting to change: an
-  ESP32-C3 hosts and joins at 8.5 dBm, the only power those small boards associate at. Settings,
-  Transmit power is now Automatic by default; Full (20 dBm) restores the maximum.
-- On any other board, a join the console keeps refusing at full power is tried once more at 8.5 dBm.
+- Board page, Test the radio: the board listens for a Switch and for Wi-Fi, then shows a Wi-Fi
+  network named POKELDN-TEST for a phone to look for. The results go in the log and in Copy board
+  details, so a report says whether the board can hear and be heard.
 
 The radio firmware stays at 1.9.3 and the controller firmware at 1.3.0.
 
