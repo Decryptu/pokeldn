@@ -675,7 +675,9 @@ directions with no console run and no second board:
 
 A console waiting in a local play menu that hosts shows up as a Switch on its channel. Wi-Fi heard
 with no Switch points at the console; nothing heard at all points at the board's receiver. A phone
-that never lists `POKELDN-TEST` beside the board points at its transmitter. The results go to the
+that never lists `POKELDN-TEST` beside the board points at its transmitter. A Mac's scan lists the beacon
+only with a running timestamp and the TIM element, and misses it in some scans; a beacon of only SSID,
+rates and channel was never listed. The results go to the
 Board page's log, which Copy board details includes.
 
 ## Unresolved
