@@ -1,18 +1,18 @@
-# pokeldn 0.55.0
+# pokeldn 0.56.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Settings, Transmit power lowers the board's radio strength. Some small ESP32-C3 boards (Super Mini,
-  0.42-inch screen) are reported to connect only at 8.5 dBm: try it when the board sees the console but
-  cannot join it or be joined.
-- A board whose join the console refused is reset before the next search, and a failed search now names
-  its error in the log.
+- Sword and Shield, Trade (Join): a trade that carries a legendary or mythical Pokemon (Spectrier and
+  Zacian among them) now completes. The console paused before its last confirmation and the
+  app's connection went stale, so the console failed the trade.
+- Sword and Shield, Dynamax Adventure (Join) over the board finds a lobby whose player chose a target
+  legendary; before, only LAN mode found it.
+- The Sword and Shield command line accepts a `.pk8` saved by PKHeX as it is.
 
-The radio firmware is 1.9.3: it applies the transmit power before joining. Update it on Board. The
-controller firmware stays at 1.3.0.
+The radio firmware stays at 1.9.3 and the controller firmware at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
