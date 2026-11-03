@@ -23,6 +23,8 @@ from pokeldn.ldn import esp32, userspace_ip
 ETH_P_LDN = 0x88B7
 # A console still advertising refused one join (0xc9, 0x2) and took the next [docs/hardware_esp32.md].
 JOIN_ATTEMPTS = 3
+# ESP32-C3 Super Mini boards associate only at 8.5 dBm [docs/hardware_esp32.md, Transmit power].
+LOW_TX_POWER = 34   # 0.25 dBm
 BROADCAST = wlan.MACAddress("ff:ff:ff:ff:ff:ff")
 
 
@@ -247,19 +249,26 @@ class EspStation:
     @contextlib.asynccontextmanager
     async def connect(self):
         radio, router = self._factory.radio, self._factory.router
-        with trio.fail_after(self._factory.join_timeout):
-            for attempt in range(1, JOIN_ATTEMPTS + 1):
+        factory = self._factory
+        # After the full-power attempts, one more at LOW_TX_POWER when the user chose no power.
+        powers = [factory.tx_power] * JOIN_ATTEMPTS + ([LOW_TX_POWER] if factory.tx_power == 0 else [])
+        with trio.fail_after(factory.join_timeout):
+            for attempt, power in enumerate(powers, 1):
+                if power != factory.tx_power:
+                    print(f"[esp32] The board could not join at full power; trying {power / 4:g} dBm.",
+                          flush=True)
                 await trio.to_thread.run_sync(
                     radio.sta_join, self._channel, self._bssid, self._ssid, self._key, self._address,
-                    0, self._factory.tx_power)
+                    0, power)
                 while True:
                     msg_type, payload = await router.control.receive()
                     if msg_type == esp32.MSG_LINK:
                         break
                 link = esp32.Link.parse(payload)
                 if link.up:
+                    factory.tx_power = power   # the host's later networks in this run use it too
                     break
-                if attempt == JOIN_ATTEMPTS:
+                if attempt == len(powers):
                     # A refused join leaves the station connecting; the next scan's CHANNEL would fail.
                     await trio.to_thread.run_sync(radio.stop)
                     raise ConnectionError(f"the board could not join (reason {link.reason:#x})")
@@ -560,7 +569,7 @@ def use(port: str | None = None, *, radio: esp32.Radio | None = None, port_facto
     @contextlib.asynccontextmanager
     async def factory():
         esp = EspFactory(radio, port_factory=port_factory, ap_flags=ap_flags, ap_flags2=ap_flags2,
-                         tx_power=tx_power)
+                         tx_power=tx_power or board_tx_power(radio))
         try:
             yield esp
         finally:
@@ -634,6 +643,14 @@ def use_from_environment(log=None) -> esp32.Radio | None:
     ap_flags = int(os.environ.get("POKELDN_ESP32_AP_FLAGS", "0"), 0)
     ap_flags2 = int(os.environ.get("POKELDN_ESP32_AP_FLAGS2", "0"), 0)
     return use(port, ap_flags=ap_flags, ap_flags2=ap_flags2, tx_power=tx_power_from_environment(), log=log)
+
+
+def board_tx_power(radio: esp32.Radio) -> int:
+    """The power a board gets when the user chose none: LOW_TX_POWER for an ESP32-C3, whose Super
+    Mini boards never associate at full power; 0 (the driver's maximum) for the others. Reads the
+    HELLO reply the port open kept: a new HELLO resets the board's screen and host watchdog."""
+    info = getattr(radio, "info", None)
+    return LOW_TX_POWER if info is not None and info.target == "esp32c3" else 0
 
 
 def tx_power_from_environment() -> int:

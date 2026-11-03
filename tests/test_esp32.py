@@ -368,11 +368,14 @@ _radio = contextvars.ContextVar("radio")
 
 
 @contextlib.contextmanager
-def _two_boards(refuse_joins=0, tx_power=0):
+def _two_boards(refuse_joins=0, tx_power=0, boards=lambda host, station: None):
     air = esp32_sim.Air()
     host_board, station_board = esp32_sim.SimulatedBoard(air), esp32_sim.SimulatedBoard(air)
     station_board.refuse_joins = refuse_joins
+    boards(host_board, station_board)
     radios = esp32.Radio(host_board.host_stream()), esp32.Radio(station_board.host_stream())
+    for radio in radios:
+        radio.info = radio.hello()   # as Radio.open_serial keeps it
     ports = {}
 
     @contextlib.asynccontextmanager
@@ -384,7 +387,7 @@ def _two_boards(refuse_joins=0, tx_power=0):
     @contextlib.asynccontextmanager
     async def factory():
         esp = esp32_wlan.EspFactory(_radio.get(), port_factory=port_factory, join_timeout=5,
-                                    tx_power=tx_power)
+                                    tx_power=tx_power or esp32_wlan.board_tx_power(_radio.get()))
         try:
             yield esp
         finally:
@@ -534,7 +537,7 @@ def test_the_apps_transmit_power_reaches_the_boards_join_and_access_point(monkey
 def test_a_join_refused_every_time_leaves_the_board_stopped_for_the_next_scan():
     """A joiner scans again after a refused seat; the board must be idle for the scan's CHANNEL."""
     async def main():
-        with _two_boards(esp32_wlan.JOIN_ATTEMPTS) as ((host_radio, station_radio), ports, host_board):
+        with _two_boards(esp32_wlan.JOIN_ATTEMPTS + 1) as ((host_radio, station_radio), ports, host_board):
             station_board = host_board.air.boards[1]
             up = trio.Event()
             refused = []
@@ -563,10 +566,75 @@ def test_a_join_refused_every_time_leaves_the_board_stopped_for_the_next_scan():
                     nursery.start_soon(host)
                     nursery.start_soon(station)
             joins = [i for i, t in enumerate(station_board.commands) if t == esp32.CMD_STA_JOIN]
-            assert len(joins) == esp32_wlan.JOIN_ATTEMPTS
+            assert len(joins) == esp32_wlan.JOIN_ATTEMPTS + 1   # the last at LOW_TX_POWER
             assert esp32.CMD_STOP in station_board.commands[joins[-1]:]
 
     trio.run(main)
+
+
+def _join_once(boards, tx_power=0):
+    """Our host and our station on simulated boards; returns (host board, station board, STA_JOINs)."""
+    async def main():
+        with _two_boards(tx_power=tx_power, boards=boards) as ((host_radio, station_radio), ports, host_board):
+            up, done = trio.Event(), trio.Event()
+
+            async def host():
+                _radio.set(host_radio)
+                param = ldn.CreateNetworkParam(keys=KEYS, channel=6, local_communication_id=0x0100ABCD00000000,
+                                               name=b"POKELDN", app_version=1)
+                async with ldn.create_network(param):
+                    up.set()
+                    await done.wait()
+
+            async def station():
+                _radio.set(station_radio)
+                await up.wait()
+                network, = await ldn.scan(KEYS, channels=[6], dwell_time=0.5)
+                async with ldn.connect(ldn.ConnectNetworkParam(network=network, keys=KEYS, name=b"B",
+                                                               app_version=1)):
+                    done.set()
+
+            with trio.fail_after(20):
+                async with trio.open_nursery() as nursery:
+                    nursery.start_soon(host)
+                    nursery.start_soon(station)
+            host_board, station_board = host_board.air.boards
+            return host_board, station_board, station_board.commands.count(esp32.CMD_STA_JOIN)
+
+    return trio.run(main)
+
+
+def _super_mini(board):
+    board.target, board.power_limit = "esp32c3", esp32_wlan.LOW_TX_POWER
+
+
+# A Super Mini associates only at 8.5 dBm (docs/hardware_esp32.md, Transmit power); with no power
+# chosen, an ESP32-C3 hosts and joins at it from the first command.
+@pytest.mark.parametrize("role", ["host", "station"])
+def test_a_super_mini_hosts_and_joins_with_no_power_chosen(role):
+    host, station, joins = _join_once(lambda h, s: _super_mini(h if role == "host" else s))
+    assert (host.tx_power, station.tx_power, joins) == (
+        (esp32_wlan.LOW_TX_POWER, 0, 1) if role == "host" else (0, esp32_wlan.LOW_TX_POWER, 1))
+
+
+def test_a_board_refused_at_full_power_joins_at_low_power_after_the_full_attempts():
+    def boards(host, station):
+        station.power_limit = esp32_wlan.LOW_TX_POWER   # a distorting board that names no C3
+    host, station, joins = _join_once(boards)
+    assert (station.tx_power, joins) == (esp32_wlan.LOW_TX_POWER, esp32_wlan.JOIN_ATTEMPTS + 1)
+
+
+def test_full_power_chosen_on_a_super_mini_is_sent_and_never_lowered():
+    seen = []
+
+    def boards(host, station):
+        _super_mini(station)
+        seen.append(station)
+    with pytest.raises(BaseExceptionGroup) as raised:
+        _join_once(boards, tx_power=80)
+    assert raised.group_contains(ConnectionError, match="reason 0x2", depth=None)
+    station, = seen
+    assert (station.tx_power, station.commands.count(esp32.CMD_STA_JOIN)) == (80, esp32_wlan.JOIN_ATTEMPTS)
 
 
 def test_userspace_stack_carries_udp_both_ways_on_simulated_boards():

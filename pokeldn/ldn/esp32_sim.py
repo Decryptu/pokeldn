@@ -106,6 +106,9 @@ class SimulatedBoard:
         self.ap_mac = self.sta_mac[:5] + bytes([(self.sta_mac[5] + 1) & 0xFF])
         self.mode = IDLE
         self.refuse_joins = 0        # STA_JOINs answered as a retail join failure, 0xc9
+        # A Super Mini's antenna: nonzero, no association happens while this board's power byte is
+        # 0 (the driver's maximum) or above it, in either role.
+        self.power_limit = 0
         self.commands: list[int] = []   # every command type the host sent, in order
         self.tx_power = 0               # the last STA_JOIN's or AP_START's power byte (0.25 dBm)
         self.channel = 1
@@ -124,6 +127,7 @@ class SimulatedBoard:
         self.beacon_on = False
         self._staged = bytearray()
         self.version = ""                 # the firmware version HELLO reports, "" for none
+        self.target = "simulated"         # the IDF target HELLO names (esp32, esp32c3, ...)
         self.host_silent_after = 5.0      # the firmware's HOST_SILENT_US
         self._host_seen = 0.0
         self._watched = False
@@ -151,12 +155,15 @@ class SimulatedBoard:
                     self._command(msg_type, payload)
         self._emit(esp32.MSG_CREDIT, struct.pack("<I", self._consumed & 0xFFFFFFFF))
 
+    def _distorts(self) -> bool:
+        return bool(self.power_limit) and not 0 < self.tx_power <= self.power_limit
+
     def _command(self, t: int, p: bytes) -> None:
         self._host_seen = time.monotonic()
         self.commands.append(t)
         if t == esp32.CMD_HELLO:
             self._watched = False
-            text = "pokeldn-radio simulated" + (f" version={self.version}" if self.version else "")
+            text = f"pokeldn-radio {self.target}" + (f" version={self.version}" if self.version else "")
             self._emit(esp32.MSG_INFO, bytes([esp32.PROTOCOL_VERSION]) + self.sta_mac + self.ap_mac
                        + b"\x03" + text.encode())
         elif t == esp32.CMD_ALIVE and self.version:
@@ -182,6 +189,9 @@ class SimulatedBoard:
                 self.sta_mac = mac
             self._result(t)
             ap = self.air.access_point(self.bssid, self.channel, self.ssid)
+            if ap is not None and (self._distorts() or ap._distorts()):
+                self._emit(esp32.MSG_LINK, b"\x00" + struct.pack("<H", 0x2) + self.sta_mac)
+                return
             if ap is not None and self.refuse_joins:
                 self.refuse_joins -= 1
                 self._emit(esp32.MSG_LINK, b"\x00" + struct.pack("<H", 0xC9) + self.sta_mac)
