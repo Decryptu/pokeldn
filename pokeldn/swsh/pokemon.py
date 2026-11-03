@@ -25,8 +25,9 @@ def read(raw):
 
 
 def build_from(template_raw, **fields):
-    """-> an encrypted PK8 made by editing a real one; fields as `gen8.write`."""
-    return encrypt(gen8.write(decrypt(template_raw), **fields))
+    """-> an encrypted party PK8 made by editing a real one; fields as `gen8.write`. Any `gen8.load`
+    shape works as a template, PKHeX's decrypted export included."""
+    return encrypt(gen8.write(gen8.load(template_raw), **fields))
 
 
 def party(blob, slots=PARTY_SLOTS):

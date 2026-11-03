@@ -190,6 +190,28 @@ table `0x2067f4c`:
 countdown `[delegate+0x60]`, an xorshift draw of 2..302. The init installs the delegate as the 10040
 holder's listener (`0x010da6d0`) and its second interface at `[content+0x2c0]` (`0x010da6bc`).
 
+### A legendary in the trade
+
+State 1 (`0x010daf3c`) recomputes the role from the two Pokemon at `[delegate+0x48]` and
+`[delegate+0x50]` through two species checks, `0x008fc280(species, form)` and `0x008fc310(species)`.
+`0x008fc280` is true for species 150, 151 and 249 to 251, and for entries of the jump tables
+`0x02052aec` (382 to 494) and `0x02052cb0` (643 and above). With role 0, state 6 goes to state 8,
+whose countdown delays the console's command 2.
+
+Measured on an emulated Shield 1.3.2 hosting, with `bin/swsh_connect.py` joining:
+
+| offered | role byte | console after `02000200` |
+|---|---|---|
+| Blastoise, Pikachu | 1 | command 2 and `02000300` 0.6 s later |
+| Spectrier, Zacian, our pair answered once | 0 | no command for 53 s, content 40 in state 9 and the pump in state 3 (`0x010db48c`, its send `0x010de080` not done), then "L'échange de Pokémon n'a pas pu être effectué" |
+| Spectrier, our pair re-sent every second | 0 | `02000300` 2.4 s after `02000200`; the trade completes |
+
+The re-sent pair carries the console's last clock plus the time elapsed since, at 60 per second (the
+envelope clock's rate in a capture); `--ladder-refresh` sets the period. The hosting direction
+(`bin/swsh_host.py`, the console joining) completed a Spectrier trade with no change: its host
+publishes from its own frame clock. Which check in pump state 3 reads the joiner's clock is
+unresolved.
+
 ### The pump
 
 `0x010db3e0`, run by content 40's tick before the machine, is a 17-state machine on `[content+0x80]`
