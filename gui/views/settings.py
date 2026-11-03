@@ -88,6 +88,9 @@ class SettingsView:
         self._keys(s.keys, update=False)
         speed = t.dropdown([("921600", tr('settings.921600_default_1702d5', '921600 (default)')), ("1500000", tr('settings.1500000_faster_needs_a_good_cable_f5b9b7', '1500000 (faster, needs a good cable)'))],
                            str(s.baud), on_select=lambda e: self.save("baud", int(e.control.value)))
+        power = t.dropdown([("0", tr('settings.full_default', 'Full (default)')), ("15", "15 dBm"), ("11", "11 dBm"),
+                            ("8.5", "8.5 dBm")],
+                           f"{s.tx_power:g}", on_select=lambda e: self.save("tx_power", float(e.control.value)))
 
         trainer = self._trainer()
 
@@ -104,6 +107,7 @@ class SettingsView:
 
         advanced = [
             t.card(tr('settings.serial_speed_1ed128', 'Serial speed'), speed, tr('settings.how_fast_the_computer_talks_to_the_board_keep_the_defau_4942ca', 'How fast the computer talks to the board. Keep the default unless a guide says otherwise.')),
+            t.card(tr('settings.transmit_power', 'Transmit power'), power, tr('settings.transmit_power_help', "The board's radio strength. Some small ESP32-C3 boards (Super Mini, 0.42-inch screen) only reach the console at 8.5 dBm: lower it when the board sees the console but cannot join it or be joined.")),
             switch("board_trace", tr('settings.record_the_board_s_serial_traffic_e599a1', "Record the board's serial traffic"),
                    tr('settings.adds_the_board_s_counters_and_every_serial_message_to_t_615de0', "Adds the board's counters and every serial message to the session record. Only for radio problems someone asked you to report.")),
             t.card(tr('settings.home_tracker_2e98ab', 'HOME tracker'), t.dropdown([("empty", tr('settings.leave_it_empty_default_3eca45', 'Leave it empty (default)')), ("made", tr('settings.make_one_495c86', 'Make one'))],

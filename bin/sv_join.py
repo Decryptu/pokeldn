@@ -626,7 +626,7 @@ def main(argv=None):
             try:
                 nets = trio.run(find)
             except Exception as exc:
-                print(f"[sv] the scan raised: {exc}")
+                print(f"[sv] the scan raised: {launcher.error_text(exc)}")
                 time.sleep(0.5)
                 continue
             target = None

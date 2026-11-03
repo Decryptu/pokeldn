@@ -51,3 +51,11 @@ def describe_network(net, name="", suffix=""):
     return (f"comm_id=0x{net.local_communication_id:016x}{f' ({name})' if name else ''} "
             f"scene={net.scene_id} version={net.version} app_version={net.app_version} "
             f"ch={net.channel} {net.num_participants}/{net.max_participants}{suffix}")
+
+
+def error_text(exc) -> str:
+    """`exc` as a log line: a trio nursery's group shows the errors inside it, not its own summary."""
+    inner = getattr(exc, "exceptions", None)
+    if inner:
+        return "; ".join(error_text(sub) for sub in inner)
+    return f"{type(exc).__name__}: {exc}"

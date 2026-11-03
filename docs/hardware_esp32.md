@@ -642,7 +642,17 @@ broadcasts need the firmware's forwarding ([A station's broadcasts](ldn.md#a-sta
 authentication and association; `LINK` comes up 0.23 to 0.34 s later. A retail Sword's network can
 fail an attempt (`LINK` down, reason `0xc9` or `0x2`) while its advertisements are still heard, and a
 new attempt then associates, so the host sends `STA_JOIN` up to three times
-(`pokeldn.ldn.esp32_wlan.JOIN_ATTEMPTS`). Why an attempt misses is unknown.
+(`pokeldn.ldn.esp32_wlan.JOIN_ATTEMPTS`). Why an attempt misses is unknown. After the last refused
+attempt the host sends `STOP`: a scan's `CHANNEL` that follows is refused until the board is idle.
+
+### Transmit power
+
+`POKELDN_ESP32_TX_POWER` caps the board's transmit power in dBm (2 to 20); the host sends it in
+0.25 dBm units as the power byte of `STA_JOIN` and `AP_START`, and the desktop app's Settings,
+Transmit power sets it. Unset, the driver's maximum applies. From firmware 1.9.3 the station's cap is
+set before the association; earlier images set it once `LINK` was up. ESP32-C3 Super Mini boards are
+reported in hobbyist forums to associate with access points only at 8.5 dBm, an antenna fault of
+those boards; on the ESP32-C3 0.42-inch OLED board the effect is unmeasured.
 
 ## Unresolved
 

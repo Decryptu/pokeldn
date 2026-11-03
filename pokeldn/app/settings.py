@@ -34,6 +34,7 @@ class Settings:
     plugins: list = field(default_factory=list)   # plugin ids turned on
     app_language: str = ""   # language-pack plugin id; empty selects English
     baud: int = 921600
+    tx_power: float = 0     # the board's transmit power cap in dBm; 0: the driver's maximum
     capture: bool = True
     private_logs: bool = True   # mask names, trainer IDs, MACs and the home folder in the logs shown (redact.py)
     board_trace: bool = False

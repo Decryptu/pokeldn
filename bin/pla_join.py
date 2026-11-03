@@ -282,7 +282,7 @@ def main_radio(args, offer, exchange, record):
         try:
             nets = trio.run(find)
         except Exception as exc:
-            print(f"[pla] the scan raised: {exc}")
+            print(f"[pla] the scan raised: {launcher.error_text(exc)}")
             time.sleep(0.5)
             continue
         target = pick(args, nets, record)

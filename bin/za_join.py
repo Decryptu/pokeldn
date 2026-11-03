@@ -843,7 +843,7 @@ def main(argv=None):
             try:
                 nets = trio.run(find)
             except Exception as exc:
-                print(f"[za] the scan raised: {exc}")
+                print(f"[za] the scan raised: {launcher.error_text(exc)}")
                 time.sleep(0.5)
                 continue
             # A scan that never returns reads like a console that stopped hosting: log every pass.

@@ -106,6 +106,8 @@ class SimulatedBoard:
         self.ap_mac = self.sta_mac[:5] + bytes([(self.sta_mac[5] + 1) & 0xFF])
         self.mode = IDLE
         self.refuse_joins = 0        # STA_JOINs answered as a retail join failure, 0xc9
+        self.commands: list[int] = []   # every command type the host sent, in order
+        self.tx_power = 0               # the last STA_JOIN's or AP_START's power byte (0.25 dBm)
         self.channel = 1
         self.bssid = b""
         self.ssid = b""
@@ -151,6 +153,7 @@ class SimulatedBoard:
 
     def _command(self, t: int, p: bytes) -> None:
         self._host_seen = time.monotonic()
+        self.commands.append(t)
         if t == esp32.CMD_HELLO:
             self._watched = False
             text = "pokeldn-radio simulated" + (f" version={self.version}" if self.version else "")
@@ -173,6 +176,7 @@ class SimulatedBoard:
         elif t == esp32.CMD_STA_JOIN:
             self._go_idle()
             self.channel, self.bssid, self.ssid, self.key = p[0], p[1:7], p[7:39], p[39:55]
+            self.tx_power = p[62] if len(p) > 62 else 0
             mac = p[55:61]
             if mac != bytes(6):
                 self.sta_mac = mac
@@ -196,6 +200,7 @@ class SimulatedBoard:
         elif t == esp32.CMD_AP_START:
             self._go_idle()
             self.channel, self.bssid, self.ssid, self.key = p[0], p[1:7], p[7:39], p[39:55]
+            self.tx_power = p[58] if len(p) > 58 else 0
             self.mode = AP
             self._result(t)
             self._emit(esp32.MSG_LINK, b"\x01" + struct.pack("<H", 0) + self.bssid)

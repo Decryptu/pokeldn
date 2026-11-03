@@ -368,7 +368,7 @@ _radio = contextvars.ContextVar("radio")
 
 
 @contextlib.contextmanager
-def _two_boards(refuse_joins=0):
+def _two_boards(refuse_joins=0, tx_power=0):
     air = esp32_sim.Air()
     host_board, station_board = esp32_sim.SimulatedBoard(air), esp32_sim.SimulatedBoard(air)
     station_board.refuse_joins = refuse_joins
@@ -383,7 +383,8 @@ def _two_boards(refuse_joins=0):
 
     @contextlib.asynccontextmanager
     async def factory():
-        esp = esp32_wlan.EspFactory(_radio.get(), port_factory=port_factory, join_timeout=5)
+        esp = esp32_wlan.EspFactory(_radio.get(), port_factory=port_factory, join_timeout=5,
+                                    tx_power=tx_power)
         try:
             yield esp
         finally:
@@ -487,6 +488,83 @@ def test_ldn_host_and_station_run_on_simulated_boards(refused):
             assert isinstance(joined[0], ldn.JoinEvent) and joined[0].participant.name == b"Board"
             assert received[0].endswith(b"pia")
             assert any(f[24:28] == b"\x7f\x00\x22\xaa" for f in host_board.sent_raw)
+
+    trio.run(main)
+
+
+# The ESP32-C3 boards with a 0.42-inch screen are reported to associate only at 8.5 dBm
+# (docs/hardware_esp32.md, Transmit power): the app's setting has to reach both commands.
+def test_the_apps_transmit_power_reaches_the_boards_join_and_access_point(monkeypatch):
+    from pokeldn.app.runner import base_env
+    from pokeldn.app.settings import Settings
+
+    env = base_env(Settings(tx_power=8.5), "auto")
+    monkeypatch.setenv("POKELDN_ESP32_TX_POWER", env["POKELDN_ESP32_TX_POWER"])
+    power = esp32_wlan.tx_power_from_environment()
+
+    async def main():
+        with _two_boards(tx_power=power) as ((host_radio, station_radio), ports, host_board):
+            up, done = trio.Event(), trio.Event()
+
+            async def host():
+                _radio.set(host_radio)
+                param = ldn.CreateNetworkParam(keys=KEYS, channel=6, local_communication_id=0x0100ABCD00000000,
+                                               name=b"POKELDN", app_version=1)
+                async with ldn.create_network(param):
+                    up.set()
+                    await done.wait()
+
+            async def station():
+                _radio.set(station_radio)
+                await up.wait()
+                network, = await ldn.scan(KEYS, channels=[6], dwell_time=0.5)
+                async with ldn.connect(ldn.ConnectNetworkParam(network=network, keys=KEYS, name=b"B",
+                                                               app_version=1)):
+                    done.set()
+
+            with trio.fail_after(20):
+                async with trio.open_nursery() as nursery:
+                    nursery.start_soon(host)
+                    nursery.start_soon(station)
+            assert [board.tx_power for board in host_board.air.boards] == [34, 34]
+
+    trio.run(main)
+
+
+def test_a_join_refused_every_time_leaves_the_board_stopped_for_the_next_scan():
+    """A joiner scans again after a refused seat; the board must be idle for the scan's CHANNEL."""
+    async def main():
+        with _two_boards(esp32_wlan.JOIN_ATTEMPTS) as ((host_radio, station_radio), ports, host_board):
+            station_board = host_board.air.boards[1]
+            up = trio.Event()
+            refused = []
+
+            async def host():
+                _radio.set(host_radio)
+                param = ldn.CreateNetworkParam(keys=KEYS, channel=6, local_communication_id=0x0100ABCD00000000,
+                                               name=b"POKELDN", app_version=1)
+                async with ldn.create_network(param):
+                    up.set()
+                    while not refused:
+                        await trio.sleep(0.05)
+
+            async def station():
+                _radio.set(station_radio)
+                await up.wait()
+                network, = await ldn.scan(KEYS, channels=[6], dwell_time=0.5)
+                with pytest.raises(ConnectionError, match="reason 0xc9"):
+                    async with ldn.connect(ldn.ConnectNetworkParam(network=network, keys=KEYS, name=b"B",
+                                                                   app_version=1)):
+                        pass
+                refused.append(True)
+
+            with trio.fail_after(20):
+                async with trio.open_nursery() as nursery:
+                    nursery.start_soon(host)
+                    nursery.start_soon(station)
+            joins = [i for i, t in enumerate(station_board.commands) if t == esp32.CMD_STA_JOIN]
+            assert len(joins) == esp32_wlan.JOIN_ATTEMPTS
+            assert esp32.CMD_STOP in station_board.commands[joins[-1]:]
 
     trio.run(main)
 

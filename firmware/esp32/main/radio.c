@@ -417,6 +417,14 @@ static esp_err_t sta_join(const uint8_t *p, size_t n)
     esp_wifi_start();
     esp_wifi_set_tx_done_cb(tx_done);
     esp_wifi_set_ps(WIFI_PS_NONE);
+    /* Before the association: a board whose antenna distorts at full power never associates. */
+    if (s_sta_power) {
+        int8_t before = 0, after = 0;
+        esp_wifi_get_max_tx_power(&before);
+        const esp_err_t set = esp_wifi_set_max_tx_power((int8_t)s_sta_power);
+        esp_wifi_get_max_tx_power(&after);
+        wire_log("sta max tx power %u: %d, %d -> %d", s_sta_power, set, before, after);
+    }
     start_sniffer();
     wifi_config_t config = {0};
     memcpy(config.sta.ssid, p + 7, 32);
@@ -471,13 +479,6 @@ static void sta_install_keys(void)
         const int set = esp_wifi_internal_set_rts(&rts);
         esp_wifi_internal_get_rts(&rts);
         wire_log("sta rts after: %d thr %u retries %u", set, rts.thr, rts.retries_before_rts);
-    }
-    if (s_sta_power) {
-        int8_t before = 0, after = 0;
-        esp_wifi_get_max_tx_power(&before);
-        const esp_err_t set = esp_wifi_set_max_tx_power((int8_t)s_sta_power);
-        esp_wifi_get_max_tx_power(&after);
-        wire_log("sta max tx power %u: %d, %d -> %d", s_sta_power, set, before, after);
     }
     if (s_sta_rate)
         wire_log("sta fixed rate %u: %d", s_sta_rate,
