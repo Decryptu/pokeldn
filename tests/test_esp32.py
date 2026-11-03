@@ -1859,3 +1859,46 @@ def test_the_board_needs_no_privilege_on_any_platform(monkeypatch, platform):
     assert esp32_wlan.default_port_factory() is userspace_ip.userspace_port
     monkeypatch.setenv("POKELDN_L2", "tap")
     assert esp32_wlan.default_port_factory() is esp32_wlan.kernel_tap
+
+
+def test_the_radio_test_hears_a_switch_and_shows_a_network_a_census_receives():
+    """A board advertising LDN on channel 6 is heard there and nowhere else; the test network's
+    beacons reach another board's census at the chosen power."""
+    from pokeldn.ldn import esp32_radio_test
+
+    air = esp32_sim.Air()
+    console, tested, phone = (esp32_sim.SimulatedBoard(air) for _ in range(3))
+    radios = [esp32.Radio(board.host_stream()) for board in (console, tested, phone)]
+    console_radio, tested_radio, phone_radio = radios
+    stop = threading.Event()
+
+    def advertise():
+        console_radio.set_channel(6)
+        frame = (b"\xd0\x00\x00\x00" + b"\xff" * 6 + console.sta_mac * 2 + b"\x00\x00"
+                 + b"\x7f\x00\x22\xaa" + bytes(32))
+        while not stop.is_set():
+            console_radio.send_raw(frame)
+            time.sleep(0.02)
+    advertiser = threading.Thread(target=advertise, daemon=True)
+    advertiser.start()
+    try:
+        heard = esp32_radio_test.hear(tested_radio, dwell=0.3)
+        assert [sorted(c.switches) for c in heard] == [[], [console.sta_mac.hex(":")], []]
+        assert "The board hears a Switch." in esp32_radio_test.summary(heard)
+        stop.set()
+        advertiser.join()
+
+        phone_radio.sniff(6, "ff:ff:ff:ff:ff:ff")
+        census = []
+        phone_radio.subscribe(lambda t, p: census.append(p) if t == esp32.MSG_RX_CENSUS else None)
+        sent = esp32_radio_test.show_network(tested_radio, 0.5, power=esp32_wlan.LOW_TX_POWER)
+        assert tested.tx_power == esp32_wlan.LOW_TX_POWER and tested.mode == esp32_sim.IDLE
+        beacons = [f for f in tested.sent_raw if f[0] == 0x80]
+        assert sent == len(beacons) >= 3
+        # the SSID element, as a phone's scan reads it: tag 0 after the 24 + 12 byte fixed part
+        assert beacons[0][36:38 + len(esp32_radio_test.TEST_SSID)] == b"\x00\x0cPOKELDN-TEST"
+        assert len(census) == sent and all(p[13] == 0x80 for p in census)
+    finally:
+        stop.set()
+        for radio in radios:
+            radio.close()

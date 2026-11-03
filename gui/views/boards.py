@@ -373,8 +373,12 @@ class BoardView:
                            width=220, on_submit=lambda e: self._rename(e.control, f.mac))
             rows.append(info(tr('boards.name_dcd1d5', 'Name'), ft.Row([name, t.icon_button("check", lambda e: self._rename(name, f.mac),
                                                                  tr('boards.save_the_name_4a4b36', 'Save the name'))], spacing=4)))
-            rows.append(ft.Row([t.secondary_button(tr('boards.blink_the_led_8c40f1', 'Blink the LED'), self._blink, "lightbulb",
-                                                   disabled=self.app.busy)]))
+            buttons = [t.secondary_button(tr('boards.blink_the_led_8c40f1', 'Blink the LED'), self._blink, "lightbulb",
+                                          disabled=self.app.busy)]
+            if f.kind in ("radio", "radio_ble") and f.port:
+                buttons.append(t.secondary_button(tr('boards.test_the_radio', 'Test the radio'), self._radio_test_confirm,
+                                                  "wifi", disabled=self.app.busy))
+            rows.append(ft.Row(buttons, spacing=8, wrap=True))
         if f.key != CONTROLLER and not android.active() and not ios.active():
             rows.append(ft.Row([self.report_button()]))
         if f.gift:
@@ -412,6 +416,63 @@ class BoardView:
 
     def _blink(self, e) -> None:
         self._identify(e, blink=True)
+
+    def _radio_test_confirm(self, e) -> None:
+        lines = [tr('boards.radio_test_step_console', 'On the Switch, open a local trade or Link Play search and leave it waiting.'),
+                 tr('boards.radio_test_step_listen', 'The board listens on the Switch channels for about 20 seconds.'),
+                 tr('boards.radio_test_step_phone', 'Then it shows a Wi-Fi network named POKELDN-TEST for 60 seconds: look for it in your phone\'s Wi-Fi list, close to the board and a few steps away.'),
+                 tr('boards.radio_test_step_report', 'The results stay in the log below; Copy board details includes them.')]
+
+        def go(e):
+            self.app.page.pop_dialog()
+            self._radio_test()
+
+        self.app.page.show_dialog(t.dialog(
+            title=t.text(tr('boards.test_the_radio_question', 'Test the radio?'), 17, weight=ft.FontWeight.W_600),
+            content=ft.Column([t.text(line, 13, t.MUTED) for line in lines], tight=True, spacing=8, width=420),
+            actions=[t.secondary_button(tr('boards.cancel_19766e', 'Cancel'), lambda e: self.app.page.pop_dialog()),
+                     t.button(tr('boards.start_radio_test', 'Start'), go, "wifi")]))
+
+    def _radio_test(self) -> None:
+        """docs/hardware_esp32.md, The radio test."""
+        if self.app.busy:
+            return
+        device = self.selected
+        self.app.board_busy = True
+        self.log.add(f'[app] Radio test on {device}; the board may restart.')
+        self.render()
+        self.control.update()
+
+        def work():
+            from pokeldn.ldn import esp32, esp32_radio_test, esp32_wlan
+            radio = None
+            try:
+                radio = esp32.Radio.open_serial(device)
+                self.log.add(f'[radio test] {radio.info.text}')
+                self.log.add('[radio test] Listening on channels 1, 6 and 11.')
+                for line in esp32_radio_test.summary(esp32_radio_test.hear(radio)):
+                    self.log.add(f'[radio test] {line}')
+                chosen = self.app.settings.tx_power
+                power = round(chosen * 4) if chosen else esp32_wlan.board_tx_power(radio)
+                self.log.add(f'[radio test] POKELDN-TEST is on the air for 60 s on channel 6 at '
+                             f'{f"{power / 4:g} dBm" if power else "full power"}: look for it on your phone.')
+                sent = esp32_radio_test.show_network(radio, 60, power)
+                self.log.add(f'[radio test] Done, {sent} beacons sent. If your phone never listed POKELDN-TEST '
+                             'next to the board, the board cannot be heard.')
+            except Exception as error:   # never leave the board marked busy
+                self.log.add(f'[radio test] Failed: {type(error).__name__}: {error}')
+            finally:
+                if radio is not None:
+                    radio.close()
+                self.app.board_busy = False
+                self.app.identities.pop(device, None)
+
+                def done():
+                    self.render()
+                    self.control.update()
+                self.app.ui(done)
+
+        threading.Thread(target=work, daemon=True).start()
 
     def report_button(self) -> ft.Control:
         return t.secondary_button(tr('boards.copying_ad61bf', 'Copying...') if self.reporting else

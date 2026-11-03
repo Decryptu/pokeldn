@@ -663,6 +663,21 @@ With no power chosen (Settings, Automatic), the host picks it (`pokeldn.ldn.esp3
 
 Settings, Full (20 dBm) restores the maximum on a C3.
 
+### The radio test
+
+The desktop app's Board page, Test the radio (`pokeldn.ldn.esp32_radio_test`), checks a board's two
+directions with no console run and no second board:
+
+| phase | what the board does | what the player reads |
+|---|---|---|
+| hearing, about 20 s | on channels 1, 6 and 11: 3 s idle, where LDN advertisements reach the host as `RX_MGMT`, then 3 s of census (`SNIFF` to `ff:ff:ff:ff:ff:ff`) | each channel's Switch transmitters and Wi-Fi beacons with their best RSSI, frame and damaged counts, the median noise floor |
+| being heard, 60 s | a hidden access point (`AP_START`) at the trades' power, and from it an open `POKELDN-TEST` beacon every 100 ms by `RAW_TX` | whether a phone's Wi-Fi list shows `POKELDN-TEST` near the board |
+
+A console waiting in a local play menu that hosts shows up as a Switch on its channel. Wi-Fi heard
+with no Switch points at the console; nothing heard at all points at the board's receiver. A phone
+that never lists `POKELDN-TEST` beside the board points at its transmitter. The results go to the
+Board page's log, which Copy board details includes.
+
 ## Unresolved
 
 - Whether a XIAO ESP32C3 trades at the automatic 8.5 dBm is unmeasured; it traded at the driver's

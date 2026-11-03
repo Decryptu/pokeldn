@@ -12,7 +12,7 @@ import zlib
 
 from pokeldn.ldn import esp32
 
-IDLE, STA, AP = "idle", "sta", "ap"
+IDLE, STA, AP, SNIFF = "idle", "sta", "ap", "sniff"
 
 
 class _HostStream:
@@ -127,6 +127,7 @@ class SimulatedBoard:
         self.beacon_on = False
         self._staged = bytearray()
         self.version = ""                 # the firmware version HELLO reports, "" for none
+        self.census = False
         self.target = "simulated"         # the IDF target HELLO names (esp32, esp32c3, ...)
         self.host_silent_after = 5.0      # the firmware's HOST_SILENT_US
         self._host_seen = 0.0
@@ -224,6 +225,11 @@ class SimulatedBoard:
             self._result(t)
         elif t == esp32.CMD_ETH_TX:
             self._ethernet_tx(p)
+        elif t == esp32.CMD_SNIFF:
+            self._go_idle()
+            self.channel, self.mode = p[0], SNIFF
+            self.census = p[1:7] == b"\xff" * 6
+            self._result(t)
         elif t == esp32.CMD_RAW_TX:
             self._raw_tx(p)
         elif t == esp32.CMD_STATUS:
@@ -326,6 +332,11 @@ class SimulatedBoard:
 
     def _raw_tx(self, frame: bytes) -> None:
         self.sent_raw.append(frame)
+        for board in self.air.boards:
+            if board is not self and board.channel == self.channel and board.mode == SNIFF and board.census:
+                # radio.c census_send: stamp, rssi, noise floor, rx_state, type, PHY, sig_len, 16 bytes
+                head = struct.pack("<IbbBBBBBH", 0, -40, -95, 0, 0, 0, 0, 0, len(frame) + 4)
+                board._emit(esp32.MSG_RX_CENSUS, head + frame[:16])
         if len(frame) < 28 or frame[0] & 0xFC != 0xD0 or frame[24:28] != b"\x7f\x00\x22\xaa":
             return
         for board in self.air.boards:
