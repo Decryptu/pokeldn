@@ -1,24 +1,18 @@
-# pokeldn 0.54.0
+# pokeldn 0.55.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Scarlet and Violet Union Circle - Encounters: a crafted spawn can carry one of the 42 wild marks (the
-  Rainy Mark was caught on a retail Scarlet and PKHeX accepts it; Legal encounters only checks the mark
-  against the area's weather). Spawns now stand on the ground the game shows, walk around where they
-  came, and wait while you are in a town, where the game spawns none.
-- Send it back: after the first trade a card tells the player to trade again, offering any Pokemon.
-- Each version of a two-version game has its own trainer in Settings (FireRed and LeafGreen, Sword and
-  Shield, and the rest); a game's tools show Your game when the versions differ.
-- The offer card exports the built or loaded Pokemon in its game's format; exports work from a browser
-  and the phone apps.
-- Encounter details and original-trainer notes are translated (thanks to easyworld).
-- A tool's choices sit side by side in one centred card; the Boards page says when a newly installed
-  board is ready.
+- Settings, Transmit power lowers the board's radio strength. Some small ESP32-C3 boards (Super Mini,
+  0.42-inch screen) are reported to connect only at 8.5 dBm: try it when the board sees the console but
+  cannot join it or be joined.
+- A board whose join the console refused is reset before the next search, and a failed search now names
+  its error in the log.
 
-The radio firmware stays at 1.9.2 and the controller firmware at 1.3.0.
+The radio firmware is 1.9.3: it applies the transmit power before joining. Update it on Board. The
+controller firmware stays at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
