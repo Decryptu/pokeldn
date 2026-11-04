@@ -248,6 +248,22 @@ def test_a_shiny_level_or_evolved_request_is_built_legal(service, game, species,
         assert built["level"] == edit["level"]
 
 
+@pytest.mark.parametrize("game, species, moves", [
+    # Venusaur's last four in the game's learnset; a Bulbasaur caught at level 1 and raised is legal with Tackle and Growl.
+    ("lgpe", 3, {"Razor Leaf", "Growth", "Double-Edge", "Solar Beam"}),
+    ("sv", 3, {"Synthesis", "Worry Seed", "Power Whip", "Solar Beam"}),
+    ("swsh", 25, {"Discharge", "Thunderbolt", "Light Screen", "Thunder"}),
+])
+def test_a_raised_pokemon_knows_the_moves_of_its_level(service, game, species, moves):
+    for _ in range(3):   # the encounter's level is rolled, and it decided the moves
+        built = service.make(game, species, TRAINER, level=100)
+        assert built["legal"] and set(built["moves"]) == moves
+
+
+def test_a_named_move_stays_on_a_raised_pokemon(service):
+    assert service.make("lgpe", 3, TRAINER, level=100, options={"moves": [22]})["moves"] == ["Vine Whip"]
+
+
 # Growlithe, Arcanine, Voltorb, Electrode, Typhlosion, Qwilfish, Samurott, Lilligant, Basculin, Zorua, Zoroark,
 # Braviary, Sliggoo, Goodra, Avalugg, Decidueye: Legends Arceus has them only in a Hisuian form.
 HISUIAN_ONLY = [58, 59, 100, 101, 157, 211, 503, 549, 550, 570, 571, 628, 705, 706, 713, 724]
@@ -1014,7 +1030,9 @@ def test_a_hosted_raid_boss_caught_by_a_guest_passes_pkhex(service, species, lev
     boss = raid.boss_record(rolled["data"], rolled=True)
     got = gen8.read(gen8.decrypt(boss))
     assert 15 + 10 * rolled["rank"] <= got["level"] <= 20 + 10 * rolled["rank"]
-    assert (got["species"], got["moves"]) == (species, gen8.read(plain)["moves"])
+    assert got["species"] == species
+    # Goodra learns Power Whip above any den's level; the catch can only hold what the den's level knows.
+    assert (got["moves"] == gen8.read(plain)["moves"]) == (level != 71)
     caught = service.check_bytes("swsh", _raid_catch(service, boss))
     assert caught["legal"], caught
     assert caught["shiny"] == shiny

@@ -565,6 +565,8 @@ static partial class Program
                             pk.SetNickname(nickname);
                         wish.Apply(pk);
                         var la = Mend(pk, evolved, encounter, trainer, wish);
+                        if (evolved || pk.CurrentLevel > built.CurrentLevel)
+                            (pk, la) = Learned(pk, la, encounter, wish, game.Versions[0]);
                         var unmet = wish.Unmet(pk, strings);
                         if (Accepted(pk, la) && unmet is null)
                         {
@@ -655,6 +657,32 @@ static partial class Program
             return la;
         }
 
+        // Tackle at level 100 is legal, so Mend leaves a raised Pokemon its catch-level moves. This takes the species' last
+        // four level-up moves, else PKHeX's suggestion, which mixes in pre-evolutions' moves. An event keeps its fixed moves.
+        (PKM, LegalityAnalysis) Learned(PKM pk, LegalityAnalysis la, IEncounterTemplate encounter, Wish wish, GameVersion version)
+        {
+            if (wish.Moves.Length > 0 || encounter is MysteryGift || pk.IsEgg || !Accepted(pk, la))
+                return (pk, la);
+            var top = new ushort[4];
+            GameData.GetLearnSource(version).GetLearnset(pk.Species, pk.Form).SetEncounterMoves(pk.CurrentLevel, top);
+            foreach (var moves in new[] { top, null })
+            {
+                var moved = pk.Clone();
+                try
+                {
+                    Refit(moved, wish, moves);
+                }
+                catch (IndexOutOfRangeException)
+                {
+                    continue;   // the learnset gap Mend steps over
+                }
+                var result = Refresh(moved, wish);
+                if (Accepted(moved, result) && wish.Unmet(moved, strings) is null)
+                    return (moved, result);
+            }
+            return (pk, la);
+        }
+
         // The method that turned the species before this one into the record's species, if PKHeX has one.
         static EvolutionMethod? HowEvolved(PKM pk)
         {
@@ -720,10 +748,12 @@ static partial class Program
             }
         }
 
-        void Refit(PKM pk, Wish wish)
+        void Refit(PKM pk, Wish wish, ushort[]? moves = null)
         {
             // Moves the request names stay; PKHeX suggests the rest.
-            if (wish.Moves.Length > 0)
+            if (moves is not null)
+                pk.SetMoves(moves);
+            else if (wish.Moves.Length > 0)
                 pk.SetMoves(wish.Moveset());
             else
                 pk.SetMoveset();
@@ -1560,6 +1590,13 @@ static partial class Program
             if (best is null)
                 throw new ArgumentException("No den seed gives this boss.");
             best.SetMoves(source.Moves);
+            // A den's level is below a boss built past it: a move learned between the two makes the catch illegal.
+            if (new LegalityAnalysis(best).Info.Moves.Any(m => !m.Valid))
+            {
+                var top = new ushort[4];
+                GameData.GetLearnSource(GameVersion.SW).GetLearnset(best.Species, best.Form).SetEncounterMoves(best.CurrentLevel, top);
+                best.SetMoves(top);
+            }
             best.HealPP();
             best.ResetPartyStats();
             return new JsonObject
