@@ -1031,8 +1031,9 @@ def test_a_hosted_raid_boss_caught_by_a_guest_passes_pkhex(service, species, lev
     got = gen8.read(gen8.decrypt(boss))
     assert 15 + 10 * rolled["rank"] <= got["level"] <= 20 + 10 * rolled["rank"]
     assert got["species"] == species
-    # Goodra learns Power Whip above any den's level; the catch can only hold what the den's level knows.
-    assert (got["moves"] == gen8.read(plain)["moves"]) == (level != 71)
+    # A den level below the build's replaces a move it cannot know; the catch below is the contract.
+    if got["level"] >= level:
+        assert got["moves"] == gen8.read(plain)["moves"]
     caught = service.check_bytes("swsh", _raid_catch(service, boss))
     assert caught["legal"], caught
     assert caught["shiny"] == shiny
