@@ -27,6 +27,11 @@ CLEANUP = {"cd", "du", "df", "ls", "rm", "rmdir", "mv", "find", "stat", "cat", "
            "git", "true", "sort", "wc"}
 
 
+def on_disk(stat):
+    """Bytes a file takes; Windows reports no blocks, only its length."""
+    return stat.st_blocks * 512 if hasattr(stat, "st_blocks") else stat.st_size
+
+
 def folder_size(path):
     """Bytes on disk under `path`; a symlink counts as itself, so a link to a dump costs nothing."""
     total, stack = 0, [path]
@@ -37,7 +42,7 @@ def folder_size(path):
                     if entry.is_dir(follow_symlinks=False):
                         stack.append(entry.path)
                     else:
-                        total += entry.stat(follow_symlinks=False).st_blocks * 512
+                        total += on_disk(entry.stat(follow_symlinks=False))
         except OSError:
             continue
     return total
@@ -78,7 +83,7 @@ def is_cleanup(command):
 
 def largest(root=ROOT, budgets=BUDGETS, count=10):
     folders = [p for name in budgets if (Path(root) / name).is_dir() for p in (Path(root) / name).iterdir()]
-    sizes = [(folder_size(p) if p.is_dir() and not p.is_symlink() else p.lstat().st_blocks * 512, p)
+    sizes = [(folder_size(p) if p.is_dir() and not p.is_symlink() else on_disk(p.lstat()), p)
              for p in folders]
     return sorted(sizes, key=lambda item: -item[0])[:count]
 
