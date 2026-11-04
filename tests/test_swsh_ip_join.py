@@ -88,7 +88,6 @@ def test_the_apps_dynamax_adventure_guest_seats_in_our_max_lair_host(tmp_path, m
     keys_file = _loopback(tmp_path, monkeypatch)
     import swsh_connect
     import swsh_host
-    monkeypatch.setattr(swsh_host, "LAIR_SCENE_ID", scene)
     from test_swsh_trade_payload import a_payload
     from pokeldn.app.catalog import GAMES
     from pokeldn.app.command import build
@@ -99,7 +98,7 @@ def test_the_apps_dynamax_adventure_guest_seats_in_our_max_lair_host(tmp_path, m
     result = {}
     host = threading.Thread(target=lambda: result.setdefault("host", swsh_host.main(
         ["--ip-host", "--our-ip", HOST_IP, "--keys", str(keys_file), "--seconds", "60",
-         "--lair-legendary", "144", "--lair-seed", "173502832"])), daemon=True)
+         "--lair-legendary", "144", "--lair-seed", "173502832", "--lair-scene", str(scene)])), daemon=True)
     join = threading.Thread(target=lambda: result.setdefault("join", swsh_connect.main(
         build(tool, {}, {}, Settings())
         + ["--keys", str(keys_file), "--ip-join", "--host-ip", HOST_IP, "--our-ip", JOIN_IP,

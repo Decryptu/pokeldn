@@ -22,6 +22,8 @@ import struct
 import sys
 import time
 
+import trio
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.host_support import open_output
@@ -31,6 +33,7 @@ from pokeldn import config, gen8
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn import launcher
 from pokeldn.ldn import hold_after_trade_over, host4, left_after_trade, mesh_protocol as mesh
+from pokeldn.ldn import api as ldn
 from pokeldn.ldn import pia_lan
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, find_ap_phy
@@ -43,7 +46,6 @@ from pokeldn import trade_back
 
 SCENE_ID = 60001  # a retail Sword's Link Trade network
 RAID_SCENE_ID = 60006  # a den lobby (docs/swsh_raid.md)
-LAIR_SCENE_ID = 50000  # a Max Lair lobby
 LAIR_HANDOVER = 10.0   # a hosting Sword destroys its network within 10 s of the handover
 RAID_PARTICIPANTS = 4
 RAID_UID_COPY = 0x55
@@ -257,6 +259,9 @@ def build_parser():
     ap.add_argument("--lair-legendary", type=int, default=None, metavar="SPECIES",
                     help="host a Dynamax Adventure (Max Lair) lobby whose legendary is this species; "
                          "the host leaves once the adventure starts (docs/swsh_raid.md)")
+    ap.add_argument("--lair-scene", type=int, default=None, metavar="SCENE",
+                    help="the lobby's LDN scene; by default the console's own lobby's, found by a "
+                         "scan, else 50000 (docs/swsh_raid.md)")
     ap.add_argument("--lair-seed", type=lambda s: int(s, 0), default=None,
                     help="the adventure seed (ChikaBattleSeed): the rentals and encounters; random "
                          "by default")
@@ -370,6 +375,20 @@ def show_lobby(app_data, boss_pk8, legendary, code):
         screen.lobby("Adventure", legendary, names.get(str(legendary), ""), RAID_PARTICIPANTS - 1, code=code)
 
 
+LAIR_SCANS = 2
+
+
+async def console_lair_scene(args, phy):
+    """-> the scene of a Max Lair lobby the console has open, or None."""
+    keys = ldn.load_keys(resolve_keys(args.keys))
+    for _ in range(LAIR_SCANS):
+        for net in await ldn.scan(keys, phyname=phy, channels=[1, 6, 11], dwell_time=1.5):
+            if net.local_communication_id == args.comm_id and lair.is_scene(net.scene_id):
+                print(f"[lair] the console's lobby is at scene {net.scene_id}")
+                return net.scene_id
+    return None
+
+
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
@@ -405,7 +424,9 @@ def main(argv=None):
             return 1
         args.advert = args.advert or str(lair_host.ADVERT)
         args.snapshot = args.snapshot or str(raid.DEN_SNAPSHOT)
-        args.scene_id = LAIR_SCENE_ID
+        args.scene_id = args.lair_scene or lair.SCENE
+        if not (args.lair_scene or args.ip_host or args.lan):
+            args.scene_id = trio.run(console_lair_scene, args, phy) or lair.SCENE
         lair_seed = (args.lair_seed if args.lair_seed is not None
                      else struct.unpack("<Q", os.urandom(8))[0])
         offer, encounters = lair.adventure(lair_seed)

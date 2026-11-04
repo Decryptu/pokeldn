@@ -156,3 +156,33 @@ def lair_host_messages(host_id):
 
     return [lair_host.scalar(lair.BATTLE_SEED, 173502832),
             lair_host.player_number([host_id, STATION])]
+
+
+def test_our_board_lobby_takes_the_scene_of_the_console_it_finds(monkeypatch):
+    """A console targeting a legendary matches only that legendary's scene (`0x006cba10`), so a board
+    host at plain 50000 is never joined; docs/swsh_raid.md, Dynamax Adventures."""
+    import types
+    import trio
+    import swsh_host
+
+    class Network:
+        def __init__(self, comm_id, scene):
+            self.local_communication_id, self.scene_id = comm_id, scene
+
+    air = []
+
+    async def scan(keys, **kwargs):
+        return air
+
+    monkeypatch.setattr(swsh_host.ldn, "scan", scan)
+    monkeypatch.setattr(swsh_host.ldn, "load_keys", lambda path: None)
+    monkeypatch.setattr(swsh_host, "resolve_keys", lambda path: path)
+    args = types.SimpleNamespace(keys="", comm_id=swsh_host.COMM_ID)
+
+    def scene():
+        return trio.run(swsh_host.console_lair_scene, args, None)
+
+    air[:] = [Network(swsh_host.COMM_ID + 1, 50480), Network(swsh_host.COMM_ID, 60006)]
+    assert scene() is None
+    air.append(Network(swsh_host.COMM_ID, 50480))
+    assert scene() == 50480

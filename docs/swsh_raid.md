@@ -324,7 +324,22 @@ network at scene 50480; 480 is Uxie, a Max Lair legendary. That the value is the
 player chose to target is a hypothesis; the consoles measured here advertised 50000.
 On the other path the game mode is 50000, or 50001 with the flag set, and a non-zero value goes
 into a search attribute. `swsh_lair.is_scene` accepts 50000 + 0 or a Max Lair legendary's species,
-+ 0 or 1000. Whether a console with a target joins a lobby advertised at another scene is unknown.
++ 0 or 1000.
+
+Max Lair's matching parameters end in `0x0101` (`0x00bd7f60`), kept at `[matching+0x280]`; trades
+pass zero (`0x010967e0`). With byte `+0x281` set, the match on a found network's scene (`0x006cba10`,
+`0x006cb5e8`) compares thousands and then remainders, and with it clear the two scenes must be equal:
+
+| searcher's scene | found scene it accepts |
+|---|---|
+| 50000 | any 50xxx |
+| 50480 | 50480 only |
+| 51000 | any 51xxx |
+
+`swsh_host.py --lair-legendary` over a radio scans for the console's own lobby and advertises its
+scene, 50000 when it finds none; `--lair-scene` sets it. A console with a target therefore searches
+past a host at 50000, and it needs to be in Invite Others before the host starts. Over LAN the game
+mode stays 50000 or 50001, so a target never hides a lobby there.
 
 Two message holders run on the reliable 0x80 port 0, each field a holder with one field 1:
 
