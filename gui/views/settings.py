@@ -63,7 +63,8 @@ class SettingsView:
         app.update_listeners.append(self._update_shown)
         self._update_text()
         self.show_advanced = False
-        self.trainer_game = "firered"     # the game a trainer per game edits
+        # The game a trainer per game edits; a restart must not look like the trainer was forgotten.
+        self.trainer_game = app.settings.last_edited(dict(TRAINER_GAMES)) or "firered"
         self.column = ft.Column(spacing=t.GAP)
         self.scroll = t.readable(self.column, 760)
         self.control = self.scroll

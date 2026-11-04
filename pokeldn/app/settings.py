@@ -109,8 +109,17 @@ class Settings:
 
     def set_own(self, game: str, key: str, value) -> None:
         """Sets one field of `game`'s own trainer; the others start as the shared trainer's."""
-        self.game_trainers[game] = {**self.own(game), key: value}
+        self._keep_own(game, {key: value})
         self.save()
+
+    def _keep_own(self, game: str, fields: dict) -> None:
+        own = {**self.own(game), **fields}
+        self.game_trainers.pop(game, None)     # last in the dict: last_edited
+        self.game_trainers[game] = own
+
+    def last_edited(self, games) -> str | None:
+        """The newest of `games` given its own trainer: Settings opens on it after a restart."""
+        return next((game for game in reversed(self.game_trainers) if game in games), None)
 
     def ids(self, game: str) -> tuple[int, int]:
         """The 16-bit TID and SID a record of `game` stores."""
@@ -148,8 +157,10 @@ class Settings:
         trainer: its IDs, and its name, gender and language where known. -> what it took, None when no run
         reported one."""
         found = self.found_trainers.get(row)
-        if not found and row not in ("gba", "switch"):     # a run before trainers were kept per game
-            found = next((f for f in self.found_trainers.values() if isinstance(f, dict) and f.get("game") == row), None)
+        if not found and row not in ("gba", "switch"):     # a run that named its game only
+            number = dict(VERSIONS.get(VERSION_GAME.get(row), ())).get(row)
+            found = next((f for f in self.found_trainers.values() if isinstance(f, dict)
+                          and f.get("game") == VERSION_GAME.get(row, row) and f.get("version") in (None, number)), None)
         if not found:
             return None
         tid, sid = console_trainer.shown(found["game"], found["tid"], found["sid"])
@@ -159,7 +170,7 @@ class Settings:
         if found.get("language") in TRAINER_LANGUAGES:
             taken["language"] = found["language"]
         if row not in ("gba", "switch"):
-            self.game_trainers[row] = {**self.own(row), **taken}
+            self._keep_own(row, taken)
         else:
             if row == "gba":
                 self.tid, self.sid = taken.pop("tid"), taken.pop("sid")

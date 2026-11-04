@@ -174,7 +174,11 @@ picked version's trainer. `settings.json` holds the switch as `per_game_trainer`
 `game_trainers`, game or version key to the fields that differ, and each game's picked version as `played`. `Settings.own(game)` is the trainer a game sees; `Settings.ids`,
 `Settings.name`, `Settings.trainer` and the launch tokens `{ot}`, `{tid}`, `{sid}`, `{language}`,
 `{gender}` read through it (`tests/test_gui_catalog.py`). Find mine on a game takes the newest trainer
-read off that game.
+read off that game. Settings opens on the game edited last.
+
+`settings.json` sits in the data folder, apart from the app, so an update leaves it in place:
+`%APPDATA%\pokeldn` on Windows, `~/Library/Application Support/pokeldn` on macOS, `~/.local/share/pokeldn` on
+Linux. The phone apps keep it in their private storage, which uninstalling erases.
 
 ## Windows USB drivers
 
