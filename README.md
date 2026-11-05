@@ -14,7 +14,7 @@
 pokeldn trades with retail Pokémon games on Switch and Switch 2 through an ESP32 board connected to a
 computer by USB. Nothing is installed on the console.
 
-The desktop app runs on macOS (Apple silicon), Windows and Linux. The same app runs on Android, with
+The desktop app runs on macOS (Apple silicon and Intel), Windows and Linux. The same app runs on Android, with
 the board on the phone's USB port, and on iPhone and iPad, with the board reached over Bluetooth.
 Command-line tools run from source, and the docs describe the games' local wireless protocols. AI tools helped reverse engineer
 those protocols and write parts of the code.

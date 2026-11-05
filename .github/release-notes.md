@@ -24,6 +24,7 @@ meant for commercial or promotional use; see the License section of the README.
 | Computer | File |
 |---|---|
 | macOS, Apple silicon | `pokeldn-macos-arm64.zip` |
+| macOS, Intel | `pokeldn-macos-x64.zip` |
 | Windows, x64 | `pokeldn-windows-x64.zip` |
 | Linux, x64 | `pokeldn-linux-x64.tar.gz` |
 | Android, arm64 | `pokeldn-android-arm64.apk` |
@@ -71,7 +72,7 @@ Received Pokemon are saved in `Documents/pokeldn/Received`, with a configurable 
 
 ## Platform notes
 
-macOS requires Apple silicon and macOS 12 or later. Linux requires GTK 3, libsecret and access
+macOS requires macOS 12 or later. Linux requires GTK 3, libsecret and access
 to the serial port; on distributions using the `dialout` group, run `sudo usermod -aG dialout "$USER"`
 and log out and back in. ESP32-S2 is unsupported.
 
