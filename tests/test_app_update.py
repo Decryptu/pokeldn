@@ -52,7 +52,8 @@ def test_a_release_github_marks_prerelease_or_draft_is_not_offered():
     ("darwin", "arm64", "pokeldn-macos-arm64.zip"),
     ("win32", "AMD64", "pokeldn-windows-x64.zip"),
     ("linux", "x86_64", "pokeldn-linux-x64.tar.gz"),
-    ("darwin", "x86_64", ""),           # no Intel Mac build: the release page instead
+    ("darwin", "x86_64", "pokeldn-macos-x64.zip"),
+    ("linux", "aarch64", ""),           # no Linux arm64 build: the release page instead
 ])
 def test_the_download_is_this_machines_file_or_the_release_page(system, machine, name):
     found = update.newer(release("v9.0.0"), "0.2.2", update.asset_name(system, machine))

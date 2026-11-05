@@ -93,6 +93,8 @@ jobs:
           # Flet's own CI builds its macOS client here; macos-14's rsync 2.6.9 fails Flutter's plugin copy.
           - os: macos-26
             asset: pokeldn-macos-arm64.zip
+          - os: macos-26-intel
+            asset: pokeldn-macos-x64.zip
           - os: windows-latest
             asset: pokeldn-windows-x64.zip
           - os: ubuntu-22.04
@@ -160,7 +162,7 @@ jobs:
           path: |
             gui/client/*
             !gui/client/flet
-          key: flet-client-${{ runner.os }}-${{ hashFiles('requirements.txt', 'gui/requirements.txt', 'gui/flet_client.py', 'scripts/build_client.py', 'gui/flet_drop/**') }}
+          key: flet-client-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('requirements.txt', 'gui/requirements.txt', 'gui/flet_client.py', 'scripts/build_client.py', 'gui/flet_drop/**') }}
       - name: Restore the ARM-only Unicorn
         id: unicorn
         uses: actions/cache@v6
@@ -168,7 +170,7 @@ jobs:
           path: |
             gui/unicorn/lib
             gui/unicorn/pokeldn-unicorn
-          key: unicorn-${{ runner.os }}-${{ hashFiles('requirements.txt', 'scripts/build_unicorn.py') }}
+          key: unicorn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('requirements.txt', 'scripts/build_unicorn.py') }}
       # The app runs its own build of Flet's client, which takes files dropped on it (scripts/build_client.py).
       - name: Flutter version
         if: steps.client.outputs.cache-hit != 'true' || runner.os == 'Linux'
