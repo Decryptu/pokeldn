@@ -167,6 +167,24 @@ clock-based events will no longer occur.", then a main menu offering CONTINUE on
 (player name and play time read back, 0 badges). Emerald loaded at launch through LayeredFS showed
 no battery message ([The real-time clock](#the-real-time-clock)).
 
+A stream ends when the console loses the first data block of a message. The console takes a block
+only once it has read the one before [link_rfu_2.c:1146], and the header of the next
+message lands while it still decodes the last one. On an emulated console, 2240 blocks in, the
+console's frames to the host came 0.07 to 0.12 s apart four times in 0.6 s with the host still
+sending. The client's receive buffer then held blocks 1 to 4 of the message at offsets 0 to 756 and
+the next message's header at 1008. The CRC failed, `LinkRfu_FatalError` ran, and
+`sLinkErrorBuffer` read `0x90000000` ([The emulator can close the link on its
+own](frlg_link.md#the-emulator-can-close-the-link-on-its-own)). The disconnect frame followed 0.3 s
+after that header. The host now counts its gaps in console frames received and leaves 24 frames
+(`HEADER_GAP_FRAMES`) after a header that follows a busy message. With both, 3645 of 3645 blocks
+went through in 3 h 13 min with no stop, the check pass was whole, and Emerald booted through its
+intro to its title and main menu with no battery message, showing CONTINUE on the save (POKELDN,
+137:40, 0 badges). Whether one of the two alone is enough is unmeasured.
+
+The decoder's own load is ruled out: the whole BPRE stream under unicorn
+(`tools/rse/rom_stream_cost.py`) peaks at 96,715 instructions a call and no message outlasts its
+quiet frames.
+
 The ROM copy carries the application's three librfu patches ([The breakpoint
 hooks](frlg_rom.md#the-breakpoint-hooks)), which the cartridge file lacks. The image is written with
 the same patches applied at the cartridge's `librfu_sio32id.o` (`builds.SIO32ID`, offsets `+0x12E`,
@@ -326,13 +344,6 @@ Under unicorn, `RtcGetRawInfo` from the built ROM returned the expected date at 
 - The live blocks of the error path. After a link error 2816 blocks into an emulated stream, A on
   the error screen gave a black screen: the way back to the title runs from overwritten blocks, so a
   cut stream restarts from a relaunch.
-- Why an emulated console's link stopped twice mid-stream (after 20 min and after 1 h 49 min) with
-  its frame rate steady until the last second. In the later stop the console's own link layer sent
-  the RFU disconnect frame (`0x44`) 0.27 s after the short message that opens a batch, with both
-  directions at full rate until then; what made it give up is unknown. The decoder does not account
-  for it: the whole BPRE stream under unicorn (`tools/rse/rom_stream_cost.py`) peaks at 96,715
-  instructions a call, no message outlasts its quiet frames, and the chunk at the stop is ordinary.
 - The live blocks of the eleven other cartridges.
-- Whether a session lasting hours stays up.
 - What FireRed does with the save file after Emerald has saved into it.
 - A build for the Japanese cartridges.

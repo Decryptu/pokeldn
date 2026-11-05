@@ -23,6 +23,9 @@ HOST_NAME_PAD = linkplayer.HOST_NAME_PAD
 
 # A message's header block: SEND_BLOCK_INIT echoed and one fragment.
 HEADER_FRAMES = 3
+# Its next block after a message that kept the console busy: the console takes that block only once
+# it has read the header, and a late console loses it and fails the CRC [docs/rse_switch_build.md].
+HEADER_GAP_FRAMES = 24
 # The console's own RFU timeout fires a few seconds after it goes quiet; report twice before.
 STATUS_REPORT_FRAMES = 120
 
@@ -121,6 +124,8 @@ class HostMysteryGiftEngine:
         self._blocks = deque()
         self._sender = None
         self._gap = 0
+        self._gap_frame = 0
+        self._header_gap = 0
         self._expected = None
         self._link_player_seen = False
         self._standby_seen = False
@@ -234,6 +239,7 @@ class HostMysteryGiftEngine:
         """`after`: frames the console stays busy with this message once its last block is out. The
         next message's first block may land meanwhile; its second must not, so the host waits until
         that one would arrive after the console is free."""
+        self._header_gap = HEADER_GAP_FRAMES if self._after else 0
         self._after = after
         blocks = mg_link.build_message(ident, payload, size)
         self._message_label = f"ident{ident}"
@@ -425,7 +431,10 @@ class HostMysteryGiftEngine:
             return self._words.popleft()
 
         if self._gap > 0:
-            self._gap -= 1
+            # Console frames, not ticks: a console that stalls runs no decoder and consumes no block.
+            if self._gap_frame != self._child_frames:
+                self._gap_frame = self._child_frames
+                self._gap -= 1
             return [0] * 7
 
         if self._sender is None and self._blocks:
@@ -454,7 +463,8 @@ class HostMysteryGiftEngine:
                         self._complete_link_player_barrier(
                             self._pending_standby_count)
                 self._sender = None
-                self._gap = self.timing.inter_block_gap_frames
+                self._gap = max(self.timing.inter_block_gap_frames, self._header_gap)
+                self._header_gap = 0
                 if not self._blocks:
                     # The next first block takes about HEADER_FRAMES, then the usual gap.
                     self._gap = max(self._gap, self._after - self._gap - HEADER_FRAMES)
