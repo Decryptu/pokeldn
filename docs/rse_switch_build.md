@@ -204,6 +204,14 @@ copy at counter 195 and FireRed's at 194; that image as the save file, with Emer
 showed the file's trainer and the MYSTERY GIFT entry, and CONTINUE loaded the field. A full stream
 after a save write has not run.
 
+The same order runs on a retail Switch Lite with English FireRed over a XIAO ESP32S3 on firmware
+1.9.3: the save backup, `--save-restore-emerald` (19 sectors in 390 s), then the stream with
+`--block-repeat 1 --inter-block-gap-frames 8`, which wrote 3645 of 3645 blocks in 3 h 18 min with no
+drop. Emerald booted, loaded the Emerald save and saved in game. The console's auto-sleep ends a stream
+about 10 minutes after the last button press with error 2318-0314, with no RFU disconnect frame; the
+game survived that, returned to its title and kept the blocks and the written save, FireRed printing
+that the save file is corrupted before it loaded its own copy, and the next session resumed the stream.
+
 The ROM copy carries the application's three librfu patches ([The breakpoint
 hooks](frlg_rom.md#the-breakpoint-hooks)), which the cartridge file lacks. The image is written with
 the same patches applied at the cartridge's `librfu_sio32id.o` (`builds.SIO32ID`, offsets `+0x12E`,
@@ -357,9 +365,9 @@ Under unicorn, `RtcGetRawInfo` from the built ROM returned the expected date at 
 
 ## Unresolved
 
-- Whether a retail console runs the build: the emulated-console measurements are the only ones.
 - What Emerald does continuing FireRed's save file.
-- The stream over the board on a retail console, and its pacing there.
+- What FireRed shows on relaunch once Emerald has saved twice: by [save.c] neither copy would pass its
+  checksums, and with no Mystery Gift entry the host cannot reach the console.
 - The live blocks of the error path. After a link error 2816 blocks into an emulated stream, A on
   the error screen gave a black screen: the way back to the title runs from overwritten blocks, so a
   cut stream restarts from a relaunch.
