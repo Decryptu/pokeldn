@@ -33,8 +33,7 @@ def find_port() -> str | None:
 
 def flash(port: str, build_dir: str = BUILD_DIR, log=print) -> None:
     """esptool from the ESP-IDF Python env, with the build's own flash_args."""
-    envs = sorted(glob.glob(os.path.join(PROJECT_ROOT, "scratchpad", "esp", "idf-tools",
-                                         "python_env", "*", "bin", "python")))
+    envs = sorted(glob.glob(os.path.expanduser("~/.espressif/python_env/*/bin/python")))
     python = envs[-1] if envs else sys.executable
     cmd = [python, "-m", "esptool", "--chip", "auto", "-p", port, "-b", "460800",
            "--before", "default-reset", "--after", "hard-reset", "write-flash", "@flash_args"]

@@ -231,7 +231,7 @@ settings. [Mystery Gift files](gifts.md#console-code) documents packaging and sh
 Offline first, every time:
 
     ./.venv/bin/python -m pytest tests/test_buffer_script.py -q
-    ./.venv/bin/python scratchpad/mg_client_harness.py --buffer-script -v
+    ./.venv/bin/python -m pytest tests/test_mystery_gift_flow.py -q
 
 On hardware the console waits on Mystery Gift -> Wonder Cards -> Friend and joins the host. In the
 run lines below, `HOST` stands for
@@ -260,7 +260,7 @@ table), this is the only unclaimed EWRAM span; the rest are three- and eight-byt
 `_calloc_r` and `_free_r` are inside libc). A 0xA5 fill there survived menus, walking and a whole wild
 battle on the French FireRed under mGBA. The GB-Link Team cards keep their relocated script there
 ([frlg_gift.md](frlg_gift.md#gb-link-team-cards)).
-`scratchpad/ewram_symbol.py ADDR LEN` checks an address.
+The decomp's link map names what sits at an address.
 
 Never pick an address because it reads zero. 0x0202B280, 0x020185C4 and 0x0203B0E9 read tens of
 kilobytes of zeros and are the battle and box buffers, the run-up to `gDecompressionBuffer`, and
@@ -1805,8 +1805,8 @@ zeroed buffer. The answer is 116 bytes (four header words, the 100-byte `struct 
 `*param` is the personality.
 
 The substructs are encrypted with `personality ^ otId` and checksummed, so a valid checksum proves the
-two words. `check_create_mon` checks species, level and IVs; `scratchpad/verify_create_mon.py`
-predicts the thirteen derived fields: exp from `gExperienceTables[growthRate][level]`, friendship and
+two words. `check_create_mon` checks species, level and IVs. The
+thirteen derived fields follow from the species and level: exp from `gExperienceTables[growthRate][level]`, friendship and
 ability slot from `gSpeciesInfo`, moves and PP from the learnset, six stats from `CalculateMonStats`.
 The nickname comes from `gSpeciesNames` [pokemon.c:1810], the cartridge's French table, and is read,
 never predicted. Three fields measure the console:

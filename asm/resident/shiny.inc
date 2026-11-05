@@ -26,8 +26,8 @@
 @ ReadKeys runs first in that main-loop pass [main.c:81], so the shim's A in gMain.newKeys reaches the
 @ waiting script; it puts CB1_Overworld back and calls it.
 @
-@ Calibrating p_offset for another kind of encounter is the turbo hook's ring (ring=, and
-@ scratchpad/emu/rng_ring_read.py): this hook has no room for it.
+@ Calibrating p_offset for another kind of encounter is the turbo hook's ring (ring=): this hook
+@ has no room for it.
 @
 @ State at p_state: +0 seed followed, +4 its index, +8 search seed, +12 its index, +16 target index,
 @ +20 target nature + 1 (0 none), +24 the word shown, +32 64 less the calls in the

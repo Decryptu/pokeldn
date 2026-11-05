@@ -2,7 +2,7 @@
 """Host a Legends Z-A local Link Trade, so a searching console joins it and trades.
 
     POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/za_host.py --keys KEYS \\
-        --trade-offer scratchpad/za_offer_glaceon_built.bin --capture scratchpad/zhNN.jsonl
+        --trade-offer OFFER.bin --capture scratchpad/zhNN.jsonl
 
     (them) Link Trade -> local communication -> search, code 00000000
 

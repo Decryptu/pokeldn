@@ -508,7 +508,8 @@ reported in INFO as `version=...`; an unversioned build shows `version unknown` 
 serial protocol matches. The protocol number is separate and changes only with the wire contract.
 
 ESP-IDF v6.1 (tag `v6.1`, commit `fff9895c82d744c7237be8847347bdd1b07c6643`) builds all four targets.
-Install its tools with `install.sh esp32,esp32s3,esp32c3,esp32c6`, then activate the IDF environment.
+Install its tools with `install.sh esp32,esp32s3,esp32c3,esp32c6`, then activate the IDF environment
+(`. scripts/esp_env.sh`).
 
     cd firmware/esp32
     idf.py set-target esp32   # esp32s3, esp32c3 or esp32c6 for those chips
@@ -534,8 +535,8 @@ CDC `SET_CONTROL_LINE_STATE` instead.
 A build with `POKELDN_BLE=1` also carries the host link over Bluetooth LE, for the iOS app, which
 cannot open a USB serial device; the board then needs USB only for power.
 
-    POKELDN_BLE=1 idf.py -B ../../scratchpad/esp/build-ble \
-        -D SDKCONFIG=../../scratchpad/esp/build-ble/sdkconfig \
+    POKELDN_BLE=1 idf.py -B BUILD_DIR \
+        -D SDKCONFIG=BUILD_DIR/sdkconfig \
         -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.ble" build
 
 The board advertises only its name, `POKELDN-RADIO`; the iOS app scans with no service filter. The

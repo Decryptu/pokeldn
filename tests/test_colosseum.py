@@ -21,12 +21,8 @@ SESSION_ID = b"\x7b\xf1"
 
 
 def _mon():
-    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                        "scratchpad", "TREECKO.pk3")
-    if not os.path.exists(path):
-        pytest.skip("scratchpad/TREECKO.pk3 is not in this checkout")
-    from pokeldn.frlg.save import mon as monmod
-    return monmod.Mon.from_file(path)
+    from tests.frlg_party import treecko
+    return treecko()
 
 
 def _search_word(app_data):

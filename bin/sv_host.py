@@ -289,8 +289,7 @@ def build_parser():
     ap.add_argument("--record-set", default=None,
                     help="a directory of NNN.bin records to send on 0x81 port 0 as this host's own "
                          "identity, the way a pair's host sends its 46; the first carries "
-                         "INITIALIZED and every one is already zlib "
-                         "(scratchpad/sv_extract_records.py writes such a set); by default the "
+                         "INITIALIZED and every one is already zlib; by default the "
                          "recorded set in pokeldn.sv.reference")
     ap.add_argument("--trainer-name", default="POKELDN",
                     help="the player name record 1 of our identity carries, the one the trade screen shows")

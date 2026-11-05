@@ -220,7 +220,7 @@ firmware builds at 1000 Hz.
 
 ## Build
 
-    . scratchpad/esp/env.sh
+    . scripts/esp_env.sh
     cd firmware/pad && idf.py -B BUILD_DIR -D SDKCONFIG=SDKCONFIG_PATH build
 
 TinyUSB comes from the component manager (`espressif/esp_tinyusb` 2.4.0). The release builds

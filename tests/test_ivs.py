@@ -19,7 +19,7 @@ PARTY = 0x02024280
 WORDS = 0x0203FF80
 STOP = 0x02030000
 PACKED = 0x02030100
-ROM = pathlib.Path("scratchpad/FireRed_f.gba")
+ROM = pathlib.Path("scratchpad/frlg_languages/FireRed_f.gba")
 
 
 def _packed(ivs):
@@ -72,7 +72,7 @@ def test_no_read_in_a_lag_frame_or_outside_the_overworld(lag, cb2):
     assert (read(WORDS), read(WORDS + 8)) == (0, 0)
 
 
-@pytest.mark.parametrize("cartridge", ["scratchpad/FireRed_f.gba", "scratchpad/LeafGreen_f.gba"])
+@pytest.mark.parametrize("cartridge", ["scratchpad/frlg_languages/FireRed_f.gba", "scratchpad/frlg_languages/LeafGreen_f.gba"])
 def test_the_cartridge_getmondata_reads_a_mon_this_project_encrypted_and_leaves_it_intact(cartridge):
     rom_path = pathlib.Path(cartridge)
     if not rom_path.exists():

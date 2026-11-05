@@ -31,6 +31,13 @@ def pytest_configure(config):
 
 
 @pytest.fixture(autouse=True)
+def _captures_outside_the_repository(tmp_path_factory, monkeypatch):
+    """An app run writes its capture relative to its working folder, here the repository's budget."""
+    monkeypatch.setattr("pokeldn.app.command.CAPTURES",
+                        str(tmp_path_factory.getbasetemp() / "captures"))
+
+
+@pytest.fixture(autouse=True)
 def _fresh_run_state():
     """A run is one process; each test starts with no completed trade (pokeldn.ldn.trades_done) and no
     trainer already printed (pokeldn.console_trainer.show prints each once per process)."""

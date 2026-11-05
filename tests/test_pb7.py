@@ -1,23 +1,22 @@
-"""The structure Let's Go trades, pinned to a message a host sent over LDN."""
+"""The structure Let's Go trades."""
 from pathlib import Path
 import os
 import struct
 
 import pytest
 
-from pokeldn.lgpe import pb7, reference
+from pokeldn.lgpe import pb7
 
-OFFER = os.path.join(os.path.dirname(__file__), "..", "scratchpad",
-                     "ip18_pia.jsonl.payload2.bin")
 
 
 @pytest.fixture
 def message():
-    """An offer a host sent over LDN; tests needing the capture skip without it."""
-    if not os.path.exists(OFFER):
-        pytest.skip("the captured offer is not here")
-    with open(OFFER, "rb") as fh:
-        return fh.read()
+    """An offer built around a box structure holding a Pikachu."""
+    plain = bytearray(pb7.BOX_SIZE)
+    plain[0:4] = bytes.fromhex("78563412")
+    struct.pack_into("<H", plain, 8, 25)
+    struct.pack_into("<H", plain, 6, pb7.checksum(plain))
+    return pb7.build_message(pb7.OFFER_MESSAGE, pb7.encrypt(bytes(plain)), step=1)
 
 
 def test_a_trade_message_is_a_header_and_a_body_of_the_stated_length(message):
@@ -26,16 +25,6 @@ def test_a_trade_message_is_a_header_and_a_body_of_the_stated_length(message):
     assert m["size"] == pb7.BOX_SIZE == len(m["body"])
     assert m["flags"] == pb7.FLAGS
     assert len(message) == pb7.HEADER_SIZE + m["size"]
-
-
-def test_the_offer_body_carries_the_pokemon_the_host_was_holding(message):
-    plain = pb7.decrypt(pb7.parse_message(message)["body"])
-    assert struct.unpack_from("<H", plain, 4)[0] == 0            # the sanity word
-    assert struct.unpack_from("<H", plain, 6)[0] == pb7.checksum(plain)
-    assert struct.unpack_from("<H", plain, 8)[0] == 25           # Pikachu
-    assert plain[0x14] == 9                                      # Static
-    assert plain[0x40:0x4E].decode("utf-16le") == "Pikachu"
-    assert plain[0xB0:0xBE].decode("utf-16le") == "Ryujinx"
 
 
 def test_encrypting_a_decrypted_structure_returns_the_bytes_that_arrived(message):
@@ -49,7 +38,6 @@ def test_a_message_built_around_a_body_parses_back(message):
     built = pb7.build_message(pb7.OFFER_MESSAGE, body)
     m = pb7.parse_message(built)
     assert m["kind"] == pb7.OFFER_MESSAGE and m["body"] == body
-    assert built == message
 
 
 def test_a_body_that_is_not_the_box_size_is_refused():
@@ -108,14 +96,6 @@ def test_the_joiner_answers_an_offer_once_with_a_structure_the_game_accepts(mess
     assert sent2 == []
 
 
-def test_the_first_message_a_capture_gives_us_carries_the_hosts_own_trainer(message):
-    """The recorded identity came from two emulators sharing a save, so its trainer ids are the host's."""
-    with open(reference.IDENTITY, "rb") as fh:
-        ours = pb7.parse_message(fh.read())
-    offer = pb7.decrypt(pb7.parse_message(message)["body"])
-    assert pb7.trainer_id(ours["body"]) == pb7.trainer_id(offer, pb7.BOX_TRAINER_ID)
-
-
 def test_a_replaced_trainer_id_changes_four_bytes_and_nothing_else():
     body = bytes(range(256)) * 2
     out = pb7.set_trainer_id(body, 41234, 12345)
@@ -152,22 +132,6 @@ def test_the_commit_is_answered_with_a_commit_of_our_own():
     mod._answer_commit(types.SimpleNamespace(offer="echo"), state, commit,
                        lambda b, p: sent.append(b))
     assert len(sent) == 1
-
-
-def test_the_completed_trade_sends_the_pokemon_we_built_back_to_us():
-    """The second kind 4 returns our built Pokemon under our own trainer id and OT."""
-    import struct
-    result = os.path.join(os.path.dirname(__file__), "..", "scratchpad",
-                          "ip23_pia.jsonl.payload8.bin")
-    if not os.path.exists(result):
-        pytest.skip("the completed trade capture is not here")
-    with open(result, "rb") as fh:
-        m = pb7.parse_message(fh.read())
-    assert m["kind"] == pb7.RESULT_MESSAGE and m["step"] == 8
-    plain = pb7.decrypt(m["body"])
-    assert struct.unpack_from("<H", plain, 8)[0] == 16                  # Pidgey
-    assert pb7.trainer_id(plain, pb7.BOX_TRAINER_ID) == (41234, 12345)  # ours, not the host's
-    assert plain[0xB0:0xBE].decode("utf-16le") == "POKELDN"
 
 
 def test_a_run_that_ends_mid_trade_says_so(capsys, monkeypatch):

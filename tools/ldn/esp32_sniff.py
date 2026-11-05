@@ -4,7 +4,6 @@ one channel, recorded whole with its PHY rate in a POKELDN_ESP32_TRACE file. doc
 
     ./.venv/bin/python tools/ldn/esp32_sniff.py --port /dev/cu.usbserial-XXXX --channel 1 \\
         --mac 48:f1:eb:20:9b:22 --seconds 120 --trace scratchpad/ehNN_sniff.trace
-    scratchpad/esp32_trace_read.py scratchpad/ehNN_sniff.trace --key-from scratchpad/ehNN_esp32.trace
 """
 import argparse
 import os

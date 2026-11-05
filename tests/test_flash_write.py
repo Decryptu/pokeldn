@@ -107,7 +107,7 @@ def test_everything_between_the_pattern_and_the_footer_is_zeroed():
 
 def test_the_checksum_matches_the_real_saves_on_disk():
     import pathlib
-    sav = pathlib.Path("scratchpad/hgfs/Switch/frlg_bridge/dumps/055_backup_pre_step2.sav")
+    sav = pathlib.Path("~/Documents/Switch/frlg_bridge/dumps/055_backup_pre_step2.sav").expanduser()
     if not sav.exists():
         pytest.skip("no reference save on this machine")
     blob = sav.read_bytes()
@@ -224,7 +224,7 @@ def test_the_chunk_sizes_are_the_ones_in_the_cartridge():
     """sSaveSlotLayout is read from the ROM when it is on disk."""
     import pathlib
     import struct
-    rom = pathlib.Path("scratchpad/FireRed_f.gba")
+    rom = pathlib.Path("scratchpad/frlg_languages/FireRed_f.gba")
     if not rom.exists():
         pytest.skip("no cartridge image on this machine")
     blob = rom.read_bytes()

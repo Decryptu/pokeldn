@@ -80,7 +80,7 @@ def test_spanish_speed_four_installs_and_toggles_its_own_callbacks():
     from tests.test_frlg_english_cartridges import BIOS_SIZE, STOP, _console, _image, _word
     build = builds.BPRS
     script = GIFT_REGISTRY.build_distribution("speed-4", build=build).ram_script
-    machine = _console(b"\x00" * 4, build, _image("scratchpad/frlg_es/FireRed_s.gba"))
+    machine = _console(b"\x00" * 4, build, _image("scratchpad/frlg_languages/FireRed_s.gba"))
     uc = machine.uc
     uc.mem_map(0, BIOS_SIZE)
     script_at, context = 0x02038000, 0x03000FB0
@@ -120,7 +120,7 @@ def test_spanish_speed_four_installs_and_toggles_its_own_callbacks():
         assert entered.count(build.vblank_intr) == 1
 
 
-NATURE_ROM = ROOT / "scratchpad/frlg_en/FireRed_e.gba"
+NATURE_ROM = ROOT / "scratchpad/frlg_languages/FireRed_e.gba"
 
 
 @pytest.mark.skipif(shutil.which("arm-none-eabi-as") is None or not bs.emulation_available(),

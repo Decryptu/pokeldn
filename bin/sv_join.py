@@ -266,8 +266,7 @@ def build_parser():
                          "the game on port 0 only once ours is announced (docs/sv.md)")
     ap.add_argument("--record-set", metavar="DIR",
                     help="send this directory's records as our own on 0x81 port 1, in sequence "
-                         "order, in place of --mirror-records. `scratchpad/sv_extract_records.py` "
-                         "writes one from a station's own log, so a whole real identity can be "
+                         "order, in place of --mirror-records, so a whole real identity can be "
                          "replayed rather than the host's mirrored back; by default the recorded "
                          "set in pokeldn.sv.reference")
     ap.add_argument("--trainer-name", default="POKELDN",

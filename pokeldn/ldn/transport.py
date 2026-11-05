@@ -45,7 +45,7 @@ def _format_join_error(e):
     return "\n".join(parts)
 
 LDN_VIFS = {"ldn", "ldn-mon", "ldn-tap", "ldnclient"}
-AIR_MONITOR_VIF = "ldnair"      # owned by scratchpad/run_*.sh; never touched here
+AIR_MONITOR_VIF = "ldnair"      # owned by the operator; never touched here
 
 
 def _run(cmd):

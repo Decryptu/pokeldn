@@ -14,6 +14,9 @@ from pokeldn.sv import raid_partners
 from pokeldn.app import raid_rewards
 
 
+CAPTURES = "captures"          # relative to the run's data folder
+
+
 @cache
 def accepted(script: str) -> frozenset[str]:
     return frozenset(f.option for f in flags_of(script))
@@ -210,7 +213,7 @@ def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = N
     if "--keys" in known and "--keys" not in args:
         args += ["--keys", os.path.expanduser(settings.keys)]
     if "--capture" in known and settings.capture:
-        args += ["--capture", f"captures/{tool.key}-{stamp}.jsonl"]
+        args += ["--capture", f"{CAPTURES}/{tool.key}-{stamp}.jsonl"]
     owned = (gift_builder.owned_flags(tool) if any(f.kind == "builder" for f in tool.fields)
              else frozenset())
     for flag, value in extra.items():

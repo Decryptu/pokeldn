@@ -1027,7 +1027,7 @@ def test_the_log_says_where_the_table_is_and_what_it_starts_with():
 # The expected sums are computed here word by word, independently of
 # buffer_script.rom_checksum_reference.
 
-FRENCH_FIRERED = os.path.join(ROOT, "scratchpad", "FireRed_f.gba")
+FRENCH_FIRERED = os.path.join(ROOT, "scratchpad", "frlg_languages", "FireRed_f.gba")
 
 
 def _sequential_sums(image, start, end, block, base=0x08000000):

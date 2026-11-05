@@ -133,6 +133,7 @@ def test_a_run_says_which_cartridge_it_was_against():
 
 
 def test_the_dumps_of_one_cartridge_are_not_placed_at_the_other_s_addresses(tmp_path):
+    from script_read import every_dump
     logs = tmp_path / "launcher_logs"
     logs.mkdir()
     (logs / "bs120_launcher.log").write_text("--expect-console firered --dump-address 0x08081CC8")
@@ -140,7 +141,6 @@ def test_the_dumps_of_one_cartridge_are_not_placed_at_the_other_s_addresses(tmp_
     (logs / "lg191_launcher.log").write_text("--expect-console leafgreen --dump-address 0x08081C9C")
     (tmp_path / "lg191_dump.bin").write_bytes(b"\x02" * 16)
 
-    from script_read import every_dump
     assert every_dump(str(tmp_path)) == [(0x08081CC8, b"\x01" * 16)]
     assert every_dump(str(tmp_path), "leafgreen") == [(0x08081C9C, b"\x02" * 16)]
     assert len(every_dump(str(tmp_path), None)) == 2
@@ -161,19 +161,18 @@ def test_a_scattered_run_is_placed_block_by_block(tmp_path):
         ("bs122[0]", 0x080CE040, 0xAA), ("bs122[1]", 0x0804A2A0, 0xBB)]
 
 
-def test_the_shipped_table_is_what_this_decomp_and_these_dumps_still_say():
-    """Regenerated from the decomp and the dumps, the shipped names come back; later dumps may add more."""
+def test_the_shipped_table_is_what_this_decomp_and_this_cartridge_say():
+    """Regenerated from the decomp and the cartridge, the shipped names come back."""
     decomp = pathlib.Path("~/pokefirered").expanduser()
-    scratchpad = pathlib.Path(__file__).resolve().parent.parent / "scratchpad"
-    if not (decomp / "src").is_dir() or not (scratchpad / "launcher_logs").is_dir():
-        pytest.skip("no decomp checkout or no dumps to regenerate from")
+    image = pathlib.Path(__file__).resolve().parent.parent / "scratchpad/frlg_languages/FireRed_f.gba"
+    if not (decomp / "src").is_dir() or not image.exists():
+        pytest.skip("no decomp checkout or no cartridge image to regenerate from")
 
     from pokeldn.frlg.rom import scrcmd
-    from script_read import every_dump
     from rom_functions import known_names as all_known_names
 
     calls, where = decomp_source.read_tree(sorted(decomp.glob("src/**/*.c")))
-    memory = scrcmd.Memory(every_dump(str(scratchpad), "firered"))
+    memory = scrcmd.Memory([(0x08000000, image.read_bytes())])
     names = {address: gen_worker_names.entry_name(label)
              # An English-build name is a deduction and must not anchor worker_names.
                  for address, label in all_known_names(with_workers=False,
