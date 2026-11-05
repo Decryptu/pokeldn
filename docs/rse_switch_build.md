@@ -114,6 +114,10 @@ and redoes the checksums ([The save](rse.md#the-save)):
 x 5, y 4). `--copy-party-mon N` appends a copy of party slot N with a new PID, so a one-Pokemon save
 can trade. The Pokedex flag shows the POKeDEX menu with no seen or caught entries.
 
+Emerald loads a whole save from retail Emerald as it stands in the FireRed save file: on an emulated
+console a 128 KB save with `FLAG_SYS_MYSTERY_GIFT_ENABLE` set showed its trainer, the MYSTERY GIFT
+entry and its menu, and CONTINUE loaded the field. The software clock raised no battery message.
+
 ## Delivery without Atmosphere
 
 A console running Atmosphere takes the ROM as a LayeredFS file ([Running it](#running-it)). A stock
@@ -184,6 +188,21 @@ intro to its title and main menu with no battery message, showing CONTINUE on th
 The decoder's own load is ruled out: the whole BPRE stream under unicorn
 (`tools/rse/rom_stream_cost.py`) peaks at 96,715 instructions a call and no message outlasts its
 quiet frames.
+
+An Emerald save goes in before the stream, in the same application launch, with
+`--save-restore-emerald FILE`. It writes the file's newest copy beside the chip's newest with the next
+counter, plus the four sectors past the slots (19 sectors, 7 to 9 minutes on an emulated console),
+reads each one back, and stops. FireRed's load is skipped: its checksums fail on Emerald's chunks and
+its save would overwrite the copy. Emerald's chunks are longer than FireRed's, and a FireRed sector's
+tail is zero, so Emerald accepts a FireRed copy and takes the higher counter; FireRed refuses the
+Emerald copy and keeps loading its own.
+
+The application holds the flash in memory and an emulated console's save file did not change after
+the write, after leaving Mystery Gift, or when the emulator closed. A relaunch before the game saves
+loses the written copy, so the stream follows in the same launch. Over GDB the flash held the file's
+copy at counter 195 and FireRed's at 194; that image as the save file, with Emerald loaded at launch,
+showed the file's trainer and the MYSTERY GIFT entry, and CONTINUE loaded the field. A full stream
+after a save write has not run.
 
 The ROM copy carries the application's three librfu patches ([The breakpoint
 hooks](frlg_rom.md#the-breakpoint-hooks)), which the cartridge file lacks. The image is written with

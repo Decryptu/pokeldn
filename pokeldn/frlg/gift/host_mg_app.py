@@ -575,8 +575,9 @@ class SaveTransferHostApplication(MysteryGiftHostApplication):
 
     ACTIVITY_NOUN = "save transfer"
 
-    def __init__(self, config, *, backup=None, restore=None, resume_dir=None, **kwargs):
+    def __init__(self, config, *, backup=None, restore=None, resume_dir=None, emerald=False, **kwargs):
         super().__init__(config, **kwargs)
+        self.emerald = emerald
         if (backup is None) == (restore is None):
             raise ValueError("a save session either backs up or restores")
         self.backup_path, self.restore_path, self.resume_dir = backup, restore, resume_dir
@@ -604,7 +605,7 @@ class SaveTransferHostApplication(MysteryGiftHostApplication):
             server = save_transfer.SaveBackupServer(resume_dir=self.resume_dir, **common)
         else:
             with open(self.restore_path, "rb") as handle:
-                server = save_transfer.SaveRestoreServer(handle.read(), **common)
+                server = save_transfer.SaveRestoreServer(handle.read(), emerald=self.emerald, **common)
         return HostMysteryGiftEngine(server=server, link_player=link_player,
                                      trust_pia=self.config.trust_pia, timing=timing, log=self.log)
 
@@ -614,6 +615,9 @@ class SaveTransferHostApplication(MysteryGiftHostApplication):
         if self.backup_path:
             self.info(f"Save backup: the console sends its whole 128 KB save; it goes to "
                       f"{self.backup_path}. The console's save is not changed.")
+        elif self.emerald:
+            self.info(f"Emerald save: {self.restore_path} goes beside the console's newest save, every "
+                      "sector is read back, and the game does not load it.")
         else:
             self.info(f"Save restore: {self.restore_path} goes beside the console's newest save, "
                       "every sector is read back, then the game loads it and saves. Until then the "
@@ -636,7 +640,7 @@ class SaveTransferHostApplication(MysteryGiftHostApplication):
             from pokeldn.frlg.gift import save_transfer
             save_transfer.write_backup(self.backup_path, server)
             print(f"[save] wrote {self.backup_path}", flush=True)
-        self.delivery_succeeded = outcome in ("backed-up", "restored")
+        self.delivery_succeeded = outcome in ("backed-up", "restored", "written")
         if outcome == "backed-up":
             show_done("backup")
             print("Save backed up. The console showed our message and kept its save as it was.")
@@ -645,6 +649,8 @@ class SaveTransferHostApplication(MysteryGiftHostApplication):
         elif outcome == "restored":
             show_done("restore")
             print("Save restored. Let the console finish saving; CONTINUE then loads it.")
+        elif outcome == "written":
+            print("Emerald save written. Run the ROM transfer in this same launch or the next one.")
         elif outcome == "not-restored":
             print("Not restored: the console keeps the save it had.")
         elif outcome == "refused":
