@@ -1,9 +1,11 @@
 """The recorded game messages shipped in pokeldn/*/data carry no real player: every name in them is
 an emulator's, and no account identifier is set. A file added there must pass this too."""
 from pathlib import Path
+import codecs
 import glob
 import os
 import re
+import subprocess
 import zlib
 
 import pytest
@@ -28,6 +30,20 @@ def test_a_shipped_message_names_only_an_emulated_player(path):
     names = {m.decode("utf-16-le") for m in re.findall(rb"(?:[\x20-\x7e]\x00){3,}", data)}
     assert names <= EMULATOR_NAMES
     assert not re.search(rb"u-[0-9a-z]{20}", data)
+
+
+def test_no_file_in_the_repository_names_an_emulator():
+    """CLAUDE.md hard rule 16, in text, UTF-16 and hex. The names are rot13 so this file passes."""
+    if not os.path.exists(os.path.join(ROOT, "..", ".git")):
+        pytest.skip("not a checkout")
+    names = [codecs.encode(n, "rot13").encode() for n in ("Elhwvak", "Elhovat", "ElhCynlre")]
+    forms = [f for n in names for f in (n, n.decode().encode("utf-16-le"))]
+    pattern = re.compile(b"|".join(re.escape(f) for f in forms + [f.hex().encode() for f in forms]),
+                         re.IGNORECASE)
+    listed = subprocess.run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+                            cwd=os.path.join(ROOT, ".."), capture_output=True, check=True).stdout
+    paths = [os.path.join(ROOT, "..", p.decode()) for p in listed.split(b"\0") if p]
+    assert not [p for p in paths if os.path.isfile(p) and pattern.search(Path(p).read_bytes())]
 
 
 def test_the_scarlet_identity_is_44_records_and_four_fragments_a_launcher_can_send():

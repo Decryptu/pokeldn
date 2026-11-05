@@ -85,9 +85,9 @@ The application loads the ROM from its RomFS at every launch ([The ROM map](frlg
 LayeredFS file over that path replaces the cartridge until it is removed. `tools/rse/rom_mod.py`
 installs one in an emulator's mod folder or on an Atmosphere SD card:
 
-    ./.venv/bin/python tools/rse/rom_mod.py install pokeemerald_switch_BPRE.gba --title 0100554023408000
+    ./.venv/bin/python tools/rse/rom_mod.py install pokeemerald_switch_BPRE.gba --title 0100554023408000 --data FOLDER
     ./.venv/bin/python tools/rse/rom_mod.py install pokeemerald_switch_BPRE.gba --title 0100554023408000 --sd /Volumes/SWITCH
-    ./.venv/bin/python tools/rse/rom_mod.py remove --title 0100554023408000
+    ./.venv/bin/python tools/rse/rom_mod.py remove --title 0100554023408000 --data FOLDER
 
 The ROM must match the title's cartridge: BPRE for English FireRed (`0100554023408000`), BPRF for French
 FireRed (`01004B3023412000`). The game keeps the title's save file name (`FireRed_e.sav`); an Emerald

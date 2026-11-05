@@ -236,11 +236,11 @@ def test_full_connection_response_matches_a_real_station():
     """With a network id the response is the capture's 0x348-byte body."""
     from pokeldn.ldn import station9
     r = station9.build_connection_response(0x7F00020000020000, 0x5E8E66C4, ack_id=0x4110DDD9,
-                                           network_id=0x64CB9EF7, player_name=b"RyuPlayer")
+                                           network_id=0x64CB9EF7, player_name=b"EMUPLAYER")
     assert len(r) == 0x348
     assert r[:0x11].hex() == "02000904007f000200000200005e8e66c4"
     assert r[0x31:0x40] == bytes.fromhex("64cb9ef7010101") + b"username"
-    assert r[0x88:0x92] == b"\x01RyuPlayer" and r[0xB1] == 1
+    assert r[0x88:0x92] == b"\x01EMUPLAYER" and r[0xB1] == 1
     assert r[0x344:] == (0x4110DDD9).to_bytes(4, "big")
     assert set(r[0x11:0x31]) == {0} and set(r[0xB2:0x344]) == {0}
     short = station9.build_connection_response(1, 2)

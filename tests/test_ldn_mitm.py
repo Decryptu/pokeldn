@@ -2,13 +2,15 @@
 
 from pokeldn.ldn import ldn_mitm
 
-# what a joining instance sent as its Connect body: ip 127.0.0.3, mac 02:00:7f:00:00:03, "RyuPlayer"
+# what a joining instance sent as its Connect body: ip 127.0.0.3, mac 02:00:7f:00:00:03, its
+# player name swapped for one of the same length
 CONNECT_BODY = bytes.fromhex(
-    "0300007f02007f0000030001527975506c617965720000000000000000000000") + bytes(0x20)
+    "0300007f02007f0000030001454d55504c415945520000000000000000000000") + bytes(0x20)
 
 
 def test_the_connect_body_is_built_the_way_an_instance_sends_it():
-    assert ldn_mitm.build_node_info("127.0.0.3", bytes.fromhex("02007f000003")) == CONNECT_BODY
+    assert ldn_mitm.build_node_info("127.0.0.3", bytes.fromhex("02007f000003"),
+                                    b"EMUPLAYER") == CONNECT_BODY
 
 
 def test_the_measured_wire_lengths():

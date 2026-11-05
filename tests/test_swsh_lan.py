@@ -65,7 +65,7 @@ def test_our_session_info_is_the_consoles():
     reply = bytes.fromhex(VECTORS["challenge"]["reply"])
     got = pia_lan.parse_browse_reply(reply)
     assert (got["game_mode"], got["players"], got["max_players"]) == (60001, 1, 2)
-    assert got["host_ip"] == CONSOLE_IP and got["stations"][0]["name"] == "RyuPlayer"
+    assert got["host_ip"] == CONSOLE_IP and got["stations"][0]["name"] == "EMUPLAYER"
     # A console's ids are its address and port, its network id the service variable id.
     assert got["host_constant"] == pia_lan.constant_id(CONSOLE_IP, got["host_port"])
     assert got["host_service_variable"] == got["network_id"] == pia_lan.service_variable_id(

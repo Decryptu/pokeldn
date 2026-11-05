@@ -37,7 +37,8 @@ def test_the_shield_save_on_the_share_decrypts_when_present():
     raw = Path(path).read_bytes()
     assert swsh_save.hash_ok(raw)
     by_key = {b[0]: b for b in swsh_save.decrypt(raw)}
-    assert by_key[0xf25c070e][3][0xB0:0xBE].decode("utf-16-le") == "Ryujinx"
+    name = by_key[0xf25c070e][3][0xB0:0xBE].decode("utf-16-le")
+    assert name.isascii() and name.isalnum()
     assert len(by_key[0x112d5141][3]) == 0x17C8
 
 
