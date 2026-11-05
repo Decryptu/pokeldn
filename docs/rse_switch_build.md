@@ -58,6 +58,7 @@ Each change sits under `#if REVISION >= 0xA`, so `make compare` still matches pr
 | link layer | `link_rfu_2.c` (the rev10 timeouts, reseed, reload and soft reset on `svc_51`), `link_rfu_3.c` (ASCII tables), `link.c` (error screen, `HandleLinkConnection`) |
 | Union Room | `union_room.c` (leader and join-group state machines, activity reporting, parental controls), `union_room_chat.c` and `naming_screen.c` (bad-word filter), `union_room_player_avatar.c`, `union_room_battle.c` |
 | save | `save.c`, `load_save.c`, `main.c` (`svc_SetSaveBlock2`, black backdrop, no adapter wait on soft reset) |
+| clock | `rtc.c` (a software clock when no GPIO port is attached, [The real-time clock](#the-real-time-clock)) |
 | guards | `cable_club.c`, `trade.c`, `field_screen_effect.c`, `menu.c`, `task.c`, `wireless_communication_status_screen.c`, `mystery_gift_menu.c`, `battle_setup.c` (`svc_SetStarter`) |
 
 Left out: pokefirered's intro colours, status-screen counts, link test removals, Hall of Fame tickets,
@@ -76,7 +77,7 @@ into the tree. `--compare` also builds REVISION 0 and runs pret's sha1 check. Th
 whose map places `librfu_sio32id.o` anywhere but the cartridge's address. Homebrew ships no
 `arm-none-eabi-cpp`; `--cpp` names another.
 
-From a fresh clone the BPRE build is sha1 `4e0a7e203e761cbb861ec65e98b31d6657083865` and the
+From a fresh clone the BPRE build is sha1 `a1de677b211ba967b721233ef6096de0e1507c6b` and the
 REVISION 0 build passes `pokeemerald.gba: OK`.
 
 ## Running it
@@ -164,7 +165,7 @@ op sent at 3 h 12 min, then Emerald's intro and its title screen in the FireRed 
 the title Emerald printed "The internal battery has run dry. The game can be played." and "However,
 clock-based events will no longer occur.", then a main menu offering CONTINUE on FireRed's save file
 (player name and play time read back, 0 badges). Emerald loaded at launch through LayeredFS showed
-no battery message; which of the application's launch steps sets up the clock is unknown.
+no battery message ([The real-time clock](#the-real-time-clock)).
 
 The ROM copy carries the application's three librfu patches ([The breakpoint
 hooks](frlg_rom.md#the-breakpoint-hooks)), which the cartridge file lacks. The image is written with
@@ -271,12 +272,56 @@ Gift session dumped 0x08F00000: all 16 words read back unchanged (English FireRe
 host). The RomFS reload happens at an application launch, not a soft reset, so the written ROM survives
 the boot into the new game.
 
+### The real-time clock
+
+The application emulates a cartridge GPIO port and an S-3511 clock, and attaches them only when the
+ROM it loaded at launch is not FireRed or LeafGreen. The attach hook (`main + 0x056DD8`, slot `+0x40`
+of the Sloop component's vtable `main + 0x1C3878`) reads the third letter of the game code from the
+component's header copy: `G` or `R` skips the port, anything else builds it.
+
+| what | where |
+|---|---|
+| header copy: `0xAC` to component `+0x55`, `0xBC` to `+0x5D` | `main + 0x05593C` to `main + 0x055950` |
+| third letter test, `0x47` and `0x52` | `main + 0x056DF4` |
+| port region installed over region `0x08` only, ROM pointer, size and mask copied from the plain object | `main + 0x056E20` to `main + 0x056E64` |
+| region vtable | `main + 0x1C3978` |
+| read 16 bits: `0xC8` enable, `0xC6` direction, `0xC4` data, served only while the enable is 1 | `main + 0x05610C` |
+| write 16 bits: the same three offsets | `main + 0x05620C` |
+| the clock's serial protocol: bit 0 clock, bit 1 data, bit 2 chip select, command prefix `0x60` | `main + 0x0351CC` |
+| date source: `nn::time` calendar, BCD into the clock's registers | `main + 0x05EB90`, `main + 0x034CA8` |
+
+A BIOS soft reset runs in the guest, so no host code looks at the new header. Emerald built with game
+code `BPEE` and loaded at launch gets the port; streamed into a `BPRE` session it does not. Its GPIO
+stores are then ordinary cartridge stores and its reads return ROM bytes, so `SiiRtcProbe` succeeds on
+whatever those bytes give and `RtcCheckInfo` flags the date (`month == 0` is `RTC_ERR_INVALID_MONTH`
+[rtc.c:174]), which `RTC_ERR_FLAG_MASK` turns into the dead-battery message [main_menu.c:717]. The
+reads have not been observed under a debugger. Emerald loaded at launch with only its header's game
+code changed to `BPRE` shows the dead-battery message on an emulated console, with no stream involved.
+
+The date reaches the clock device only: `main + 0x05EB90` has five callers, four inside the device and
+one in its setup (`main + 0x054A9C`). No syscall between `0x40` and `0x62` calls it, so a streamed ROM
+has no way to read the console's time.
+
+The build keeps a software clock for that case (`src/rtc.c`, under `REVISION >= 0xA`). `RtcInit` reads
+`0x080000C8` after enabling it: a port reads back 1, a plain ROM reads its own 0. With no port, the raw
+date is 1 January 2001 plus the save's play time, so it lives in the save with no new field and goes
+back with an older save. A game day is 24 hours of play. The clock stops where play time stops, at
+999:59:59, on 11 February 2001. With the port attached, the build reads the application's clock
+as before.
+
+| Emerald on an emulated console, loaded at launch | main menu |
+|---|---|
+| game code `BPEE`, no software clock | no message |
+| game code `BPRE`, no software clock | dead-battery message |
+| game code `BPRE`, software clock | no message |
+
+Under unicorn, `RtcGetRawInfo` from the built ROM returned the expected date at seven play times and
+`RtcCheckInfo` returned 0 at each. A stream of this build has not run.
+
 ## Unresolved
 
-- Whether the application emulates the GPIO real-time clock Emerald reads: loaded at launch, Emerald's
-  main menu showed no dead-battery message; streamed in, it did.
 - Whether a retail console runs the build: the emulated-console measurements are the only ones.
-- The real-time clock after a streamed boot, and what Emerald does continuing FireRed's save file.
+- What Emerald does continuing FireRed's save file.
 - The stream over the board on a retail console, and its pacing there.
 - The live blocks of the error path. After a link error 2816 blocks into an emulated stream, A on
   the error screen gave a black screen: the way back to the title runs from overwritten blocks, so a
@@ -284,7 +329,9 @@ the boot into the new game.
 - Why an emulated console's link stopped twice mid-stream (after 20 min and after 1 h 49 min) with
   its frame rate steady until the last second. In the later stop the console's own link layer sent
   the RFU disconnect frame (`0x44`) 0.27 s after the short message that opens a batch, with both
-  directions at full rate until then; what made it give up is unknown.
+  directions at full rate until then; what made it give up is unknown. The decoder does not account
+  for it: the whole BPRE stream under unicorn (`tools/rse/rom_stream_cost.py`) peaks at 96,715
+  instructions a call, no message outlasts its quiet frames, and the chunk at the stop is ordinary.
 - The live blocks of the eleven other cartridges.
 - Whether a session lasting hours stays up.
 - What FireRed does with the save file after Emerald has saved into it.

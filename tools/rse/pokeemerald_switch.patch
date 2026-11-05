@@ -4279,3 +4279,105 @@ index e001c2c..27581d2 100644
  	.include "bg.o"
  	.align 4
  	.include "window.o"
+diff --git a/src/rtc.c b/src/rtc.c
+index 54c176d..3711a07 100644
+--- a/src/rtc.c
++++ b/src/rtc.c
+@@ -8,6 +8,9 @@ static u16 sErrorStatus;
+ static struct SiiRtcInfo sRtc;
+ static u8 sProbeResult;
+ static u16 sSavedIme;
++#if REVISION >= 0xA
++static bool8 sSoftClock;
++#endif
+ 
+ // iwram common
+ COMMON_DATA struct Time gLocalTime = {0};
+@@ -32,6 +35,44 @@ static const s32 sNumDaysInMonths[MONTH_COUNT] =
+     [MONTH_DEC - 1] = 31,
+ };
+ 
++#if REVISION >= 0xA
++// The Switch application attaches its clock only to a ROM it loaded at launch; a ROM streamed into a
++// session has none, and the time is the save's play time [docs/rse_switch_build.md, The real-time clock].
++#define GPIO_READ_ENABLE_PORT (*(vu16 *)0x80000C8)
++#define SOFT_CLOCK_YEAR 1
++#define SOFT_CLOCK_MAX_HOURS 999
++
++static u8 BinaryToBcd(u32 value)
++{
++    return ((value / 10) << 4) | (value % 10);
++}
++
++static void SoftClockGetDateTime(struct SiiRtcInfo *rtc)
++{
++    u32 seconds = 0, days;
++    s32 month = 0;
++
++    if (gSaveBlock2Ptr != NULL)
++    {
++        u32 hours = gSaveBlock2Ptr->playTimeHours;
++        if (hours > SOFT_CLOCK_MAX_HOURS)
++            hours = SOFT_CLOCK_MAX_HOURS;
++        seconds = hours * 3600 + gSaveBlock2Ptr->playTimeMinutes * 60 + gSaveBlock2Ptr->playTimeSeconds;
++    }
++    days = seconds / 86400;
++    seconds %= 86400;
++    rtc->dayOfWeek = (1 + days) % 7;    // 2001 Jan 1 was a Monday
++    while (days >= sNumDaysInMonths[month])
++        days -= sNumDaysInMonths[month++];
++    rtc->year = BinaryToBcd(SOFT_CLOCK_YEAR);
++    rtc->month = BinaryToBcd(month + 1);
++    rtc->day = BinaryToBcd(days + 1);
++    rtc->hour = BinaryToBcd(seconds / 3600);
++    rtc->minute = BinaryToBcd(seconds / 60 % 60);
++    rtc->second = BinaryToBcd(seconds % 60);
++}
++#endif
++
+ void RtcDisableInterrupts(void)
+ {
+     sSavedIme = REG_IME;
+@@ -100,6 +141,14 @@ void RtcInit(void)
+ 
+     RtcDisableInterrupts();
+     SiiRtcUnprotect();
++#if REVISION >= 0xA
++    sSoftClock = GPIO_READ_ENABLE_PORT != TRUE;
++    if (sSoftClock)
++    {
++        RtcRestoreInterrupts();
++        return;
++    }
++#endif
+     sProbeResult = SiiRtcProbe();
+     RtcRestoreInterrupts();
+ 
+@@ -133,6 +182,13 @@ void RtcGetInfo(struct SiiRtcInfo *rtc)
+ 
+ void RtcGetDateTime(struct SiiRtcInfo *rtc)
+ {
++#if REVISION >= 0xA
++    if (sSoftClock)
++    {
++        SoftClockGetDateTime(rtc);
++        return;
++    }
++#endif
+     RtcDisableInterrupts();
+     SiiRtcGetDateTime(rtc);
+     RtcRestoreInterrupts();
+@@ -140,6 +196,13 @@ void RtcGetDateTime(struct SiiRtcInfo *rtc)
+ 
+ void RtcGetStatus(struct SiiRtcInfo *rtc)
+ {
++#if REVISION >= 0xA
++    if (sSoftClock)
++    {
++        rtc->status = SIIRTCINFO_24HOUR;
++        return;
++    }
++#endif
+     RtcDisableInterrupts();
+     SiiRtcGetStatus(rtc);
+     RtcRestoreInterrupts();
