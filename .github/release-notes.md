@@ -1,18 +1,14 @@
-# pokeldn 0.56.3
+# pokeldn 0.57.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- A Pokemon built above the level it is caught at now knows the moves of its level, in every game:
-  a level 100 Venusaur no longer keeps Tackle and Growl.
-- A hosted Max Raid boss built above what a den gives takes the moves of the den's level when its own
-  would make the catch illegal.
-- Dynamax Adventure (Host) over the board takes the scene of the lobby the console has open, for a
-  console whose lobby is not at the default scene. Press Invite Others before starting the host.
-- Settings, Your trainer opens on the game you edited last when each game has its own trainer, and
-  Find mine on one version takes a trainer read from a run that named only the game.
+- Plugins reach API 1.13: a tool's script can prepare its files and then run a built-in launcher in
+  its own run, one session after another, and can read a FireRed or LeafGreen cartridge image out of a
+  game package.
+- The radio test no longer counts a frame of the last channel for the next one.
 
 The radio firmware stays at 1.9.3 and the controller firmware at 1.3.0.
 

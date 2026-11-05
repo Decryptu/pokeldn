@@ -20,7 +20,7 @@ class Flag:
 
 def _load(script: str):
     if os.environ.get("POKELDN_PLATFORM") == "android" and script.startswith("bin/"):
-        # The APK carries the launchers compiled only (runner._execute, examples/android).
+        # The APK carries the launchers compiled only (runner.execute, examples/android).
         return importlib.import_module("bin." + os.path.basename(script)[:-3])
     path = os.path.join(ROOT, script)
     name = f"_pokeldn_entry_{os.path.basename(script)[:-3]}"

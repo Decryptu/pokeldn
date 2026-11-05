@@ -93,7 +93,8 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
     parser.add_argument(
         "--rom-base", metavar="ROM",
         help=("with --rom-transfer: the console's own cartridge ROM (from its RomFS); the stream "
-              "then goes as LZMA against the console's copy, about a third of the bytes"))
+              "then goes as LZMA against the console's copy, about a third of the bytes; 'none': "
+              "LZMA with no cartridge, about half of them"))
     parser.add_argument(
         "--rom-no-boot", action="store_true",
         help="with --rom-transfer: write and check every block, then end the session without booting")
@@ -945,7 +946,9 @@ def _rom_session(parser, args, config):
         with open(args.rom_transfer, "rb") as handle:
             image = handle.read()
         base = None
-        if args.rom_base:
+        if args.rom_base == "none":
+            base = b""
+        elif args.rom_base:
             with open(args.rom_base, "rb") as handle:
                 base = handle.read()
         rom_transfer.blocks_of(image)

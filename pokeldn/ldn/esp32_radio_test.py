@@ -22,6 +22,9 @@ class Channel:
     noise: list = field(default_factory=list)
 
 
+SETTLE = 0.1
+
+
 def hear(radio: esp32.Radio, channels=CHANNELS, dwell: float = 3.0) -> list[Channel]:
     """Per channel: `dwell` seconds idle (LDN advertisements reach the host as RX_MGMT), then
     `dwell` seconds of census (every frame's first 16 bytes, RSSI and noise floor)."""
@@ -48,10 +51,11 @@ def hear(radio: esp32.Radio, channels=CHANNELS, dwell: float = 3.0) -> list[Chan
     radio.subscribe(received)
     try:
         for channel in channels:
-            with lock:
-                current = Channel(channel)
             radio.stop()
             radio.set_channel(channel)
+            time.sleep(SETTLE)              # a frame of the last channel can still be on its way up
+            with lock:
+                current = Channel(channel)
             time.sleep(dwell)
             radio.sniff(channel, "ff:ff:ff:ff:ff:ff")
             time.sleep(dwell)

@@ -167,6 +167,26 @@ while not finished():
 popup.cancel(asked)                     # closes it; no callback fires
 ```
 
+### Running a launcher (1.13)
+
+A tool's script can prepare its files and then run a built-in launcher in its own run, with the radio
+and Stop as the launcher has them. Give its parser `--keys` and the app passes Settings' `prod.keys`.
+
+```python
+from pokeldn.plugins import run_launcher
+
+status = run_launcher("bin/frlg_mg_host.py", ["--live", "--keys", args.keys, "--save-backup", path])
+```
+
+`run_launcher` returns the launcher's exit status; 130 is Stop. The script keeps running after it, so
+one tool can run several sessions in turn. Stable flags of `bin/frlg_mg_host.py`:
+
+| flag | session |
+|---|---|
+| `--save-backup FILE`, `--save-resume-dir DIR` | the console's save into `FILE` |
+| `--save-restore-emerald FILE` | an Emerald save beside the console's newest one, for the ROM transfer that follows in the same launch |
+| `--rom-transfer ROM`, `--rom-base ROM` or `none`, `--block-repeat N`, `--inter-block-gap-frames N` | a ROM into the running game ([The ROM transfer](rse_switch_build.md#the-rom-transfer)) |
+
 ### What a plugin can import
 
 The released app carries Python 3.13 and no `pip`:
@@ -453,6 +473,7 @@ major still served is listed in `DEPRECATED` with its last release; one dropped 
 | 1.10 | `add_offer_edit` |
 | 1.11 | FireRed/LeafGreen RNG: `lcg`, `rng_countdown.mon_from`, `scan`, `buffer_script.read_rng_trace` |
 | 1.12 | a `Tool`'s `activity` and `variant` ([A tool's row](#a-tools-row-112)) |
+| 1.13 | `run_launcher`, `pokeldn.switch.cartridge.read`, the ROM flags of `bin/frlg_mg_host.py` ([Running a launcher](#running-a-launcher-113)) |
 
 ## The API, version 1
 
@@ -464,11 +485,12 @@ major still served is listed in `DEPRECATED` with its last release; one dropped 
 | `api.add_battle_server(game, name, factory, label="")` | a raid battle server (1.6) |
 | `api.add_offer_edit(game, edit, label="")` | an edit to every offer of a built-in launcher, before PKHeX's check (1.10, [Offer edits](#offer-edits-110)) |
 | `api.folder` | the plugin's folder, or None for a package |
-| `api.version`, `api.level` | the app's API, `1` and `12` |
+| `api.version`, `api.level` | the app's API, `1` and `13` |
 | `api.data` | the kept data folder (1.1) |
 | `pokeldn.plugins.data_folder(plugin_id)` | the same from a script (1.1) |
 | `api.library`, `pokeldn.plugins.library_folder(plugin_id)` | the library folder (1.7, [A library](#a-library-17)) |
 | `Tool`, `Field`, `Game` | catalog types from `pokeldn.plugins` |
+| `pokeldn.plugins.run_launcher(script, argv)` | a built-in launcher inside this run; -> its exit status (1.13) |
 | `pokeldn.ldn.show_done()` | prints the trade-done line |
 | `pokeldn.popup.acknowledge(title, text="", *, id, label="OK", on_ack, tone)` | a one-button pop-up; -> id (1.2, [Pop-ups](gui.md#pop-ups)) |
 | `pokeldn.popup.confirm(title, text, agree, disagree, *, id, on_agree, on_disagree, on_dismiss, tone)` | two buttons; Esc or outside dismisses; -> id (1.2) |
@@ -481,7 +503,7 @@ major still served is listed in `DEPRECATED` with its last release; one dropped 
 
 This table and the next are the supported surface; any other import can change in any release.
 
-## The program surface (1.3, Bank added in 1.4, language packs in 1.5, RNG in 1.11)
+## The program surface (1.3, Bank added in 1.4, language packs in 1.5, RNG in 1.11, cartridges in 1.13)
 
 A plugin or a separate program on a pokeldn checkout can use these; `tests/test_plugin_surface.py`
 resolves each.
@@ -520,6 +542,7 @@ resolves each.
 | `pokeldn.frlg.rom.lcg.step(value)`, `.advance(value, n)`, `.distance(start, target)`, `.draws(value, count)` | FireRed/LeafGreen's `gRngValue` generator: the next state, n ahead, the steps between two, the next `count` `Random()` results and the state left (1.11, [The RNG](frlg_rng.md)) |
 | `pokeldn.frlg.rom.lcg.recover_wild_state(personality, ivs, max_gap=)` | the states that build a Pokemon, IVs in stored order (1.11) |
 | `pokeldn.frlg.rom.rng_countdown.mon_from(state, tid, sid)`, `.scan(state, tid, sid, frames=, want=)` | the scripted `CreateMon` a state builds: `personality`, `ivs`, `nature`, `shiny`; the shiny presses within `frames` (1.11) |
+| `pokeldn.switch.cartridge.read(path, keys=)` | the GBA image in a `.gba` or a FireRed/LeafGreen game package; `ValueError` names what is wrong (1.13) |
 | `pokeldn.frlg.rom.buffer_script.read_rng_trace(dump)` | the samples of a `--buffer-script rng-trace` session's `--dump-file` (1.11) |
 
 Stop a launcher run with SIGINT to its PID, then SIGTERM after 15 s; never `pkill -f`.

@@ -90,6 +90,18 @@ def check() -> None:
             assert gifts.load(copy, game="frlg" if game == "frlg-code" else game).variants
         print("FRLG gifts, console code and Sword/Shield gift files verified")
     list(list_ports.comports())
+    # The ROM encoder is a child of the app: the frozen app has no multiprocessing.
+    from pokeldn.frlg.gift import rom_transfer
+    from pokeldn.switch import cartridge
+    assert cartridge.PACKAGES
+    image = bytearray(0x1E4000)
+    for at, original, _ in rom_transfer.builds.wrapper_patches("BPRE"):
+        image[at:at + len(original)] = original
+    child = rom_transfer.encoder(bytes(image), b"")
+    job = child.submit(rom_transfer._worker_encode, "BPRE", [None] * rom_transfer.BLOCKS, 3, {})
+    assert job.result()[0], "the ROM encoder returned no order"
+    child.shutdown()
+    print("ROM encoder verified")
     scripts = sorted((Path(paths.ROOT) / "bin").glob("*.py"))
     for path in scripts:
         result = subprocess.run(runner.command("--run", str(path), "--help"),

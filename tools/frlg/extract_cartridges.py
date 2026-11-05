@@ -13,28 +13,18 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from pokeldn.switch.container import CtrSection, load_keys, program_nca  # noqa: E402
-from pokeldn.switch.romfs import RomFs  # noqa: E402
+from pokeldn.switch import cartridge  # noqa: E402
+from pokeldn.switch.container import load_keys  # noqa: E402
 
 SWITCH = pathlib.Path.home() / "Documents/Switch"
 
 
 def extract(package, keys, out):
     """-> the .gba written from one package's RomFS."""
-    container, offset, header, key = program_nca(str(package), keys, section=_romfs_section)
-    try:
-        section = next(s for s in header["sections"] if _romfs_section(s))
-        romfs = RomFs(CtrSection(container, offset, section, key), section["data_offset"])
-        path, data_offset, size = next(f for f in romfs.walk() if f[0].endswith(".gba"))
-        target = out / path.rsplit("/", 1)[-1]
-        target.write_bytes(romfs.read_file(data_offset, size))
-        return target
-    finally:
-        container.close()
-
-
-def _romfs_section(section):
-    return section["fs_type"] == 0 and section["crypt"] == 3
+    name, image = cartridge.from_package(package, keys)
+    target = out / name
+    target.write_bytes(image)
+    return target
 
 
 def main(argv=None):

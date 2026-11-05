@@ -2,6 +2,7 @@
 
 import os
 
+from pokeldn import progress
 from pokeldn.frlg import config as configmod
 from pokeldn.frlg.gift import game_data_log, gift_registry, mystery_gift_attempts, wonder_card, wonder_news
 from pokeldn.frlg.link import host_session
@@ -530,6 +531,7 @@ class RomTransferHostApplication(MysteryGiftHostApplication):
         return None
 
     def _progress(self, done, total):
+        progress.show(done, total, "Writing the ROM", "items")
         if done // 16 == self._shown and done < total:
             return
         self._shown = done // 16

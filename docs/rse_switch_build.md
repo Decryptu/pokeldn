@@ -185,6 +185,11 @@ went through in 3 h 13 min with no stop, the check pass was whole, and Emerald b
 intro to its title and main menu with no battery message, showing CONTINUE on the save (POKELDN,
 137:40, 0 badges). Whether one of the two alone is enough is unmeasured.
 
+The host encodes in a child process of the app (`pokeldn.frlg.gift.rom_transfer`, `--module`), since
+a packaged app has no `multiprocessing`, and in a thread on a phone. With `--rom-base none` the host has
+no cartridge and the stream is LZMA that names no block of the console's copy: 6,349,961 bytes for the
+BPRE build against 3,350,357 from the cartridge in the same encoder and 11,842,749 uncompressed.
+
 The decoder's own load is ruled out: the whole BPRE stream under unicorn
 (`tools/rse/rom_stream_cost.py`) peaks at 96,715 instructions a call and no message outlasts its
 quiet frames.
@@ -372,5 +377,4 @@ Under unicorn, `RtcGetRawInfo` from the built ROM returned the expected date at 
   the error screen gave a black screen: the way back to the title runs from overwritten blocks, so a
   cut stream restarts from a relaunch.
 - The live blocks of the eleven other cartridges.
-- What FireRed does with the save file after Emerald has saved into it.
 - A build for the Japanese cartridges.

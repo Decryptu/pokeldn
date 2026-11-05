@@ -20,19 +20,22 @@ from pokeldn.frlg.rom import buffer_script  # noqa: E402
 from pokeldn.frlg.rom.buffer_payloads import THUMB_CODE  # noqa: E402
 
 
-def stream(image, base, code):
-    """-> (the copy's bytes with decoder and order table written, emission order, [lz_messages])."""
+def stream(image, base, code, console=b""):
+    """-> (the copy's bytes with decoder and order table written, emission order, [lz_messages]).
+    `console`: what the copy holds when the host has no `base`."""
     server = rt.RomTransferServer(image, live=rt.live_blocks()[code], base=base, encoder_process=False)
     server.blocks, server.hashes = server._patched(server._raw, server._raw_hashes, code)
-    server.base, server._base_patched_hashes = server._patched(server.base, server._base_hashes, code)
+    if server.base:
+        server.base, server._base_patched_hashes = server._patched(server.base, server._base_hashes, code)
     empty = b"\xff" * rt.BLOCK
-    copy = [server.base[n] if n < len(server.base) else empty for n in range(rt.BLOCKS)]
+    held = server.base or rt.with_wrapper_patches(rt.blocks_of(console), code)
+    copy = [held[n] if n < len(held) else empty for n in range(rt.BLOCKS)]
     hashes = [rt.block_hash(raw) for raw in copy]
     direct, staged, start, moved = server.plan(hashes)
     slot_of = {n: start + i for i, n in enumerate(moved)}
     top = max([n for n, _ in direct] + [n for n in moved if slot_of[n] in dict(staged)])
     slots = {n: s for n, s in slot_of.items() if n <= top}
-    order, chunks = rt._worker_encode(server._sources(hashes, start, moved), top, slots)
+    order, chunks = rt._worker_encode(code, server._sources(hashes, start, moved), top, slots)
     table = b"".join(b.to_bytes(2, "little") for b in order).ljust(len(rt.ORDER_BLOCKS) * rt.BLOCK, b"\xff")
     for k, n in enumerate(rt.ORDER_BLOCKS):
         copy[n] = table[k * rt.BLOCK:(k + 1) * rt.BLOCK]
@@ -43,15 +46,22 @@ def stream(image, base, code):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("image")
-    ap.add_argument("--base", required=True, help="the console's own cartridge ROM")
+    ap.add_argument("--base", required=True, help="the console's own cartridge ROM, or none")
+    ap.add_argument("--console", help="with --base none: the ROM the console's copy holds")
     ap.add_argument("--code", default="BPRE")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     with open(args.image, "rb") as handle:
         image = handle.read()
-    with open(args.base, "rb") as handle:
-        base = handle.read()
-    rom, order, messages = stream(image, base, args.code)
+    base = b""
+    if args.base != "none":
+        with open(args.base, "rb") as handle:
+            base = handle.read()
+    console = b""
+    if args.console:
+        with open(args.console, "rb") as handle:
+            console = handle.read()
+    rom, order, messages = stream(image, base, args.code, console)
     print(f"{len(messages)} messages, {sum(len(m[0]) for m in messages)} bytes, {len(order)} blocks", flush=True)
     machine = buffer_script.session_machine(rt.code(), memory={buffer_script.ROM_BASE: rom})
     machine.call()
