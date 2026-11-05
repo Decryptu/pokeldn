@@ -103,12 +103,12 @@ QUEUES = [(tool, f) for tool in TOOLS for f in tool.fields if f.kind == "pokemon
 
 @pytest.mark.parametrize("tool, field", QUEUES, ids=[t.key for t, _ in QUEUES])
 def test_a_queue_reaches_the_entry_point_as_every_offer_in_order(tool, field):
-    files = [f"/tmp/queued-{n}.bin" for n in range(1, field.queue + 1)]
-    args = build(tool, {field.key: [{"file": f} for f in files] + [{"file": "/tmp/past-the-limit"}]},
+    files = [f"/offers/queued-{n}.bin" for n in range(1, field.queue + 1)]
+    args = build(tool, {field.key: [{"file": f} for f in files] + [{"file": "/offers/past-the-limit"}]},
                  {}, Settings())
     parsed = vars(parser_of(tool.script).parse_args(args))
     given = [v for value in parsed.values() for v in (value if isinstance(value, list) else [value])
-             if isinstance(v, str) and v.startswith("/tmp/")]
+             if isinstance(v, str) and v.startswith("/offers/")]
     assert given == files
     if field.count:
         assert parsed[field.count.lstrip("-")] == field.queue
