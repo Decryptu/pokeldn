@@ -5,7 +5,8 @@
 @
 @ The first message is this whole image: `install` copies it to RESIDENT, past the 1 KiB the client
 @ overwrites each time, and points the outgoing message at the footers (id, checksum, signature,
-@ counter: 12 bytes at +0xFF4) of the chip's 28 save sectors, for the pass's CLI_SEND_LOADED.
+@ counter: 12 bytes at +0xFF4) of the chip's 28 save sectors and the game's own gSaveCounter, for the
+@ pass's CLI_SEND_LOADED.
 @ Every later message starts with a branch to RESIDENT + 4, then holds:
 @   +4  op: OP_DATA or OP_FINISH
 @   OP_DATA:  +5 sector, +6 flags (bit 0: write it now), +8 u16 offset in the sector, +10 u16 token
@@ -22,6 +23,7 @@
 @   0x000  b install
 @   0x004  b entry           where a data message's branch lands, at RESIDENT + 4
 @   0x008  load_game_save    LoadGameSave | 1 (builds.Build.load_game_save)
+@   0x00C  save_counter      &gSaveCounter (builds.Build.save_counter)
 
     .arm
     .text
@@ -45,6 +47,8 @@ _start:
     b       entry
 load_game_save:
     .word   0
+save_counter:
+    .word   0
 
 install:
     adr     r1, _start
@@ -64,7 +68,7 @@ install:
     mov     r6, r0
     ldr     r4, footers
     str     r4, [r6, #LINK_SEND_BUFFER]
-    mov     r1, #SAVE_SECTORS * 12
+    mov     r1, #SAVE_SECTORS * 12 + 4
     strh    r1, [r6, #LINK_SEND_SIZE]
     mov     r5, #0                          @ the sector
 6:  mov     r2, r5, lsr #4
@@ -84,6 +88,9 @@ install:
     blo     6b
     mov     r2, #0
     bl      bank
+    ldr     r1, save_counter
+    ldr     r1, [r1]
+    str     r1, [r4]
     mov     r0, #1
     pop     {r4-r6, lr}
     bx      lr

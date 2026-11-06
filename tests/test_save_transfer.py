@@ -153,6 +153,35 @@ def test_an_emerald_save_goes_on_the_chip_unloaded_and_the_console_keeps_its_own
     assert sav.describe(after).newest.index == old.index and sav.describe(after).newest.counter == 205
 
 
+def test_a_second_emerald_save_replaces_the_emerald_copy_and_keeps_the_firered_one():
+    """The chip's newest copy is Emerald's own; chip_newest alone would aim at FireRed's slot."""
+    first_save, wanted = synthetic_save(900, seed=15, name="MAY", layout="emerald"), synthetic_save(50, seed=16, layout="emerald")
+    chip = bytearray(synthetic_save(205, seed=3))
+    emerald_slot = 1 - sav.describe(chip).newest.index
+    start = emerald_slot * 14 * sav.SECTOR_SIZE
+    other = sav.emerald_first(first_save) * sav.SECTOR_SIZE
+    chip[start:start + 14 * sav.SECTOR_SIZE] = first_save[other:other + 14 * sav.SECTOR_SIZE]
+    assert sav.chip_newest(b"".join(sav.sector(chip, n)[0xFF4:] for n in range(28)))[1] == 900
+    server = save_transfer.SaveRestoreServer(wanted, emerald=True)
+    host, client = session(server, bytes(chip), b"BPRE")
+    assert drive(host, client)
+    assert server.outcome == "written"
+    after = client.flash
+    assert sav.describe(after).newest.counter == 205
+    assert sav.emerald_first(after) == emerald_slot * 14 and sav.footer(after, emerald_slot * 14)[3] == 206
+
+
+def test_a_firered_copy_is_never_taken_for_the_emerald_save_in_a_console_backup():
+    chip = bytearray(synthetic_save(205, seed=3))
+    emerald = synthetic_save(100, seed=4, name="MAY", layout="emerald")
+    newest = sav.describe(chip).newest.index
+    start, source = (1 - newest) * 14 * sav.SECTOR_SIZE, sav.emerald_first(emerald) * sav.SECTOR_SIZE
+    chip[start:start + 14 * sav.SECTOR_SIZE] = emerald[source:source + 14 * sav.SECTOR_SIZE]
+    assert sav.emerald_first(chip) == (1 - newest) * 14
+    with pytest.raises(sav.SaveError):
+        sav.emerald_first(synthetic_save(205, seed=3))
+
+
 def test_a_file_with_no_whole_emerald_copy_is_refused_with_nothing_written():
     chip = synthetic_save(205, seed=3)
     broken = bytearray(synthetic_save(8, seed=8, layout="emerald"))

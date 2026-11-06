@@ -1,14 +1,13 @@
-# pokeldn 0.57.0
+# pokeldn 0.57.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Plugins reach API 1.13: a tool's script can prepare its files and then run a built-in launcher in
-  its own run, one session after another, and can read a FireRed or LeafGreen cartridge image out of a
-  game package.
-- The radio test no longer counts a frame of the last channel for the next one.
+- Writing an Emerald save before a ROM transfer now keeps the game's own copy: the save goes in the
+  slot beside it, whichever slot the console reports. Emerald swap 1.1.0 needs this version; with its
+  new build, FireRed still loads after Emerald saves.
 
 The radio firmware stays at 1.9.3 and the controller firmware at 1.3.0.
 

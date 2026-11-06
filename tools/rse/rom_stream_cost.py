@@ -20,6 +20,9 @@ from pokeldn.frlg.rom import buffer_script  # noqa: E402
 from pokeldn.frlg.rom.buffer_payloads import THUMB_CODE  # noqa: E402
 
 
+COUNT_LIMIT = 1_000_000     # past the session's own limit: this tool measures a heavy call and goes on
+
+
 def stream(image, base, code, console=b""):
     """-> (the copy's bytes with decoder and order table written, emission order, [lz_messages]).
     `console`: what the copy holds when the host has no `base`."""
@@ -71,7 +74,7 @@ def main():
             machine.load(message, param=0)
             calls, peak, total = 0, 0, 0
             while True:
-                run = machine.call()
+                run = machine.call(instruction_limit=COUNT_LIMIT)
                 calls, peak, total = calls + 1, max(peak, run.instructions), total + run.instructions
                 if run.done:
                     break

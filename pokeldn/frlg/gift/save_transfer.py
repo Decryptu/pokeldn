@@ -35,6 +35,7 @@ DATA_HEADER = 12
 SAVE_STATUS_OK = 1                     # LoadGameSave's SAVE_STATUS_OK [include/save.h]
 BACKUP_FIRST, BACKUP_SEND_QUEUE = 0x004, 0x008
 RESTORE_LOAD_GAME_SAVE = 0x008
+RESTORE_SAVE_COUNTER = 0x00C            # asm/save-restore.s 0x00C: &gSaveCounter
 
 BACKED_UP = _encode_message("Your save was copied to\nthe computer.", None)
 RESTORED = _encode_message("The save from the computer\nis in. Saving it now.", None)
@@ -53,6 +54,7 @@ def backup_code(build, first=0):
 def restore_code(build):
     code = bytearray(PAYLOADS[RESTORE][0])
     code[RESTORE_LOAD_GAME_SAVE:RESTORE_LOAD_GAME_SAVE + 4] = (build.load_game_save | 1).to_bytes(4, "little")
+    code[RESTORE_SAVE_COUNTER:RESTORE_SAVE_COUNTER + 4] = build.save_counter.to_bytes(4, "little")
     return bytes(code)
 
 
@@ -325,7 +327,7 @@ class SaveRestoreServer(_Server):
         newest = sav.chip_newest(footers)
         self.info("The chip's newest copy is " + (f"slot {newest[0]}, counter {newest[1]}"
                                                   if newest else "missing") + ".")
-        plan = sav.sectors_to_write(self.save, footers, first)
+        plan = sav.sectors_to_write(self.save, footers, first, keep_game_copy=self.emerald)
         self.progress(0, len(plan))
         written = 0
         for batch in restore_batches(plan):

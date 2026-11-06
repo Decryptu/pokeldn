@@ -77,7 +77,7 @@ into the tree. `--compare` also builds REVISION 0 and runs pret's sha1 check. Th
 whose map places `librfu_sio32id.o` anywhere but the cartridge's address. Homebrew ships no
 `arm-none-eabi-cpp`; `--cpp` names another.
 
-From a fresh clone the BPRE build is sha1 `a1de677b211ba967b721233ef6096de0e1507c6b` and the
+From a fresh clone the BPRE build is sha1 `a6b7e67c3cab1225dba709503ad0ef974b9ae9d5` and the
 REVISION 0 build passes `pokeemerald.gba: OK`.
 
 ## Running it
@@ -91,8 +91,8 @@ installs one in an emulator's mod folder or on an Atmosphere SD card:
     ./.venv/bin/python tools/rse/rom_mod.py remove --title 0100554023408000 --data FOLDER
 
 The ROM must match the title's cartridge: BPRE for English FireRed (`0100554023408000`), BPRF for French
-FireRed (`01004B3023412000`). The game keeps the title's save file name (`FireRed_e.sav`); an Emerald
-save and a FireRed save cannot share it, so back the FireRed save up first.
+FireRed (`01004B3023412000`). The game keeps the title's save file name (`FireRed_e.sav`); both games
+share it ([The FireRed copy](#the-firered-copy)).
 
 On an emulated console (English FireRed, BPRE build) Emerald boots at 60 FPS, shows no dead-battery
 message, saves, and loads the save after a relaunch. With the emulator's LDN pointed at the Mac the
@@ -167,8 +167,9 @@ place and 157 live blocks staged at `0xE3D`, 3,691,122 bytes of LZMA in 4268 mes
 1 --inter-block-gap-frames 8`, messages cut at 10 frames of decoding), the check pass whole, the boot
 op sent at 3 h 12 min, then Emerald's intro and its title screen in the FireRed application. Past
 the title Emerald printed "The internal battery has run dry. The game can be played." and "However,
-clock-based events will no longer occur.", then a main menu offering CONTINUE on FireRed's save file
-(player name and play time read back, 0 badges). Emerald loaded at launch through LayeredFS showed
+clock-based events will no longer occur.", then, on a build older than [The FireRed
+copy](#the-firered-copy), a main menu offering CONTINUE on FireRed's save file (player name and play
+time read back, 0 badges). Emerald loaded at launch through LayeredFS showed
 no battery message ([The real-time clock](#the-real-time-clock)).
 
 A stream ends when the console loses the first data block of a message. The console takes a block
@@ -191,23 +192,33 @@ no cartridge and the stream is LZMA that names no block of the console's copy: 6
 BPRE build against 3,350,357 from the cartridge in the same encoder and 11,842,749 uncompressed.
 
 The decoder's own load is ruled out: the whole BPRE stream under unicorn
-(`tools/rse/rom_stream_cost.py`) peaks at 96,715 instructions a call and no message outlasts its
+(`tools/rse/rom_stream_cost.py`) peaks at 102,765 instructions a call and no message outlasts its
 quiet frames.
 
 An Emerald save goes in before the stream, in the same application launch, with
-`--save-restore-emerald FILE`. It writes the file's newest copy beside the chip's newest with the next
-counter, plus the four sectors past the slots (19 sectors, 7 to 9 minutes on an emulated console),
-reads each one back, and stops. FireRed's load is skipped: its checksums fail on Emerald's chunks and
-its save would overwrite the copy. Emerald's chunks are longer than FireRed's, and a FireRed sector's
-tail is zero, so Emerald accepts a FireRed copy and takes the higher counter; FireRed refuses the
-Emerald copy and keeps loading its own.
+`--save-restore-emerald FILE`. It writes the file's newest Emerald copy beside the running game's own
+copy with the next counter, plus the four sectors past the slots (19 sectors, 7 to 9 minutes on an
+emulated console), reads each one back, and stops. FireRed's load is skipped: its checksums fail on
+Emerald's chunks and its save would overwrite the copy. A FILE from a console holding both games gives
+its Emerald copy, whichever counter is higher.
 
 The application holds the flash in memory and an emulated console's save file did not change after
 the write, after leaving Mystery Gift, or when the emulator closed. A relaunch before the game saves
 loses the written copy, so the stream follows in the same launch. Over GDB the flash held the file's
 copy at counter 195 and FireRed's at 194; that image as the save file, with Emerald loaded at launch,
-showed the file's trainer and the MYSTERY GIFT entry, and CONTINUE loaded the field. A full stream
-after a save write has not run.
+showed the file's trainer and the MYSTERY GIFT entry, and CONTINUE loaded the field.
+
+A full stream after a save write has run on an emulated console with the build that keeps
+[The FireRed copy](#the-firered-copy): 3645 of 3645 blocks in 3 h 14 min. Emerald booted, loaded the
+written save and saved in game at counter 201, FireRed's copy stayed at counter 194, and a relaunch
+of FireRed showed CONTINUE and MYSTERY GIFT.
+
+An emulated stream needs the emulator's logging off. With Info logging and the log file on, the
+emulator's process stopped for up to 1.03 s at a time, the host held frames (39 times in one stream)
+and four of five streams ended in a link error between 1472 and about 3200 blocks. With both off, one stream
+had 2 stalls over 0.15 s, the longest 0.17 s, 2 holds and no error. About 1980 stops of the process
+for 0.26 to 0.56 s, forced with `tools/rse/stream_stall.py` from block 960 to block 2816, caused about
+4000 holds and no error.
 
 The same order runs on a retail Switch Lite with English FireRed over a XIAO ESP32S3 on firmware
 1.9.3: the save backup, `--save-restore-emerald` (19 sectors in 390 s), then the stream with
@@ -216,6 +227,49 @@ drop. Emerald booted, loaded the Emerald save and saved in game. The console's a
 about 10 minutes after the last button press with error 2318-0314, with no RFU disconnect frame; the
 game survived that, returned to its title and kept the blocks and the written save, FireRed printing
 that the save file is corrupted before it loaded its own copy, and the next session resumed the stream.
+
+### The FireRed copy
+
+Both games use the same 32 sectors, the same footer and the same two 14-sector slots. Their chunks
+differ at two ids:
+
+| id | Emerald | FireRed, LeafGreen |
+|---|---|---|
+| 0 | `0xF2C` | `0xF24` |
+| 4 | `0xF08` | `0xEE8` |
+
+A FireRed sector's tail is zero, so a FireRed copy passes Emerald's checksums. An Emerald copy fails
+FireRed's at id 4: `ResetWaldaWallpaper` fills `waldaPhrase.colors` at `0x3D70`, past FireRed's
+SaveBlock1. A slot with one failing id is `SAVE_STATUS_ERROR`; a stock FireRed then prints "The save
+file is corrupted." and "The previous save file will be loaded." and loads the other slot. With both
+slots failing it prints "The save file has been deleted...", offers NEW GAME only and leaves the file
+unchanged until a new game saves ([main_menu.c:232]). From there no Mystery Gift reaches the console.
+
+Unpatched, Emerald alternates slots by `gSaveCounter % 2`, so its first save after
+`--save-restore-emerald` lands on FireRed's slot. The build keeps that slot instead
+(`sFireRedSlot` in `save.c`, `REVISION >= 0xA`):
+
+- `GetSaveValidStatus` also checks each sector against FireRed's chunks. A slot passing all 14 counts
+  as `SAVE_STATUS_EMPTY`, so Emerald never loads a FireRed copy; of two, the higher counter is the one
+  kept.
+- `gSaveCounter` skips that slot's parity at each increment, and starts on the other parity when no
+  Emerald copy exists. Emerald's copy stays in one slot; `svc_FinishSave` writes the flash image
+  whole, so a second Emerald copy adds no safety on this application.
+
+Measured on an emulated console with English FireRed:
+
+| chip before | what ran | chip after | next launch |
+|---|---|---|---|
+| Emerald in both slots | stock FireRed | unchanged | "The save file has been deleted...", NEW GAME only |
+| FireRed 194, Emerald 195 | two saves in Emerald | FireRed 194 byte for byte, Emerald 199 | FireRed: both messages, then CONTINUE and MYSTERY GIFT; Emerald: CONTINUE on its save |
+| FireRed 194 and 193 | Emerald, NEW GAME, one save | FireRed 194 byte for byte, Emerald 3 | Emerald: CONTINUE on the new game |
+
+With no Emerald copy the menu offers NEW GAME and OPTION. A save in FireRed goes to the slot beside its
+loaded copy and replaces Emerald's. `--save-restore-emerald` reads `gSaveCounter` from the running
+game to find FireRed's slot: an Emerald copy can hold the chip's highest counter
+(`asm/save-restore.s`, `sav.sectors_to_write`).
+
+### The ROM image
 
 The ROM copy carries the application's three librfu patches ([The breakpoint
 hooks](frlg_rom.md#the-breakpoint-hooks)), which the cartridge file lacks. The image is written with
@@ -238,7 +292,7 @@ literal after a match is coded against the byte the console holds there.
 The decoder (`asm/rom-lzma.c`, 1768 bytes of Thumb built by clang) runs from ROM block `0xFFF`,
 which the host writes first and the boot's fill clears with the order table. Its state, 6.9 KB with 5.2 KB of
 probabilities, sits at `gDecompressionBuffer + 0x2000`. It decodes about a thousand bytes a frame
-(at most 98,000 instructions a call under unicorn) and returns 0 until a message is consumed, so the
+(at most 102,765 instructions a call under unicorn) and returns 0 until a message is consumed, so the
 client calls it again the next frame. A finished block is written with `swi 0x48` and read back.
 The host encodes in a worker process while one-block surveys keep the link busy.
 
@@ -370,11 +424,11 @@ Under unicorn, `RtcGetRawInfo` from the built ROM returned the expected date at 
 
 ## Unresolved
 
-- What Emerald does continuing FireRed's save file.
-- What FireRed shows on relaunch once Emerald has saved twice: by [save.c] neither copy would pass its
-  checksums, and with no Mystery Gift entry the host cannot reach the console.
+- A retail console has run only the build before [The FireRed copy](#the-firered-copy). On it FireRed's
+  copy does not survive an Emerald save.
 - The live blocks of the error path. After a link error 2816 blocks into an emulated stream, A on
   the error screen gave a black screen: the way back to the title runs from overwritten blocks, so a
   cut stream restarts from a relaunch.
+- What turns a logging stall into a link error. Forced stops of the same length caused none.
 - The live blocks of the eleven other cartridges.
 - A build for the Japanese cartridges.
