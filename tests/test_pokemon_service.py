@@ -123,7 +123,7 @@ for line in sys.stdin:
     assert len({row["process"] for row in recorded}) == requests
     assert all(row["request"] == {"cmd": "check", "game": "pla", "fresh": True,
                                   "data": base64.b64encode(REFERENCE_RECORD).decode(),
-                                  "fields": {"ot_name": "HOST"}, "home_tracker": "empty"} for row in recorded)
+                                  "fields": {"ot_name": "HOST"}, "home_tracker": "empty", "allow_illegal": False} for row in recorded)
 
 
 @pytest.fixture(scope="module")
@@ -154,6 +154,28 @@ def test_creation_import_and_launcher_preparation_remain_legal(service, game):
     final = service.check_bytes(game, Path(offer).read_bytes())
     assert final["legal"] and final["ot"] == imported["ot"]
     assert "Event" not in built["encounter"]   # Pikachu has wild and egg encounters in every game
+
+
+@pytest.mark.parametrize("game", FORMATS)
+def test_a_non_legal_pokemon_is_refused_until_the_setting_allows_it(service, game, monkeypatch):
+    asked = dict(options={"nature": 3, "gender": 1, "moves": [147], "ivs": dict.fromkeys(("hp", "atk", "def", "spa", "spd", "spe"), 7)},
+                 level=7, shiny=True, nickname="HAX")
+    with pytest.raises(pokemon.BuilderError):
+        service.make(game, 25, TRAINER, **asked)
+    monkeypatch.setattr(service, "allow_illegal", True)
+    built = service.make(game, 25, TRAINER, **asked)
+    assert not built["legal"] and built["report"]
+    data = Path(built["file"]).read_bytes()
+    read = service.check_bytes(game, data)
+    assert (read["species_id"], read["level"], read["shiny"], read["nickname"]) == (25, 7, True, "HAX")
+    assert "Spore" in read["moves"] and read["battle"]["ivs"] == [7] * 6
+    assert read["nature"] == "Adamant"
+    assert service.prepare(game, data)
+    listed = service.options(game, 25, TRAINER)
+    assert len(listed["balls"]) > 4 and (game in ("frlg", "za") or len(listed["abilities"]) > 100)
+    monkeypatch.setattr(service, "allow_illegal", False)
+    with pytest.raises(pokemon.BuilderError):
+        service.prepare(game, data)
 
 
 @pytest.mark.parametrize("game", FORMATS)

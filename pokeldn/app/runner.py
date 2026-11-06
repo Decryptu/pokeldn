@@ -286,7 +286,8 @@ if os.environ.get("POKELDN_PLATFORM") in ("android", "ios"):   # neither starts 
 
 def base_env(settings, port: str, trace: str | None = None) -> dict:
     env = dict(os.environ, PYTHONUNBUFFERED="1", POKELDN_ESP32_BAUD=str(settings.baud),
-               POKELDN_MANAGED_RUN="1", POKELDN_HOME_TRACKER=settings.home_tracker)
+               POKELDN_MANAGED_RUN="1", POKELDN_HOME_TRACKER=settings.home_tracker,
+               POKELDN_ALLOW_ILLEGAL="1" if settings.allow_illegal else "0")
     env["POKELDN_RADIO"] = f"{settings.radio}:" if settings.radio else f"esp32:{port or 'auto'}"
     if trace:
         env["POKELDN_ESP32_TRACE"] = trace

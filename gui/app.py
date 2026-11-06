@@ -45,6 +45,7 @@ class App:
         SESSION.mkdir(parents=True, exist_ok=True)
         self.settings = settings.load()
         pokemon.SERVICE.home_tracker = self.settings.home_tracker
+        pokemon.SERVICE.allow_illegal = self.settings.allow_illegal
         self.plugin_stopped = plugins.turn_off_the_one_that_stopped(self.settings)   # and watches this start
         self.picker = ft.FilePicker()
         if android.active():   # the web view's picker gives no paths

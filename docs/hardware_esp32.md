@@ -183,6 +183,17 @@ command again; otherwise each queued message costs a 500 ms write, a `wire_dropp
 constant `flash3` on the LED. With the host killed during a FireRed trade room, the console shows
 2318-0006 and a later JOIN search lists no host.
 
+### Standby
+
+From firmware 1.10.0 a board in idle that has read no host message for 30 s (`STANDBY_AFTER_US`)
+calls `esp_wifi_stop`. In idle the receiver otherwise runs without pause, in promiscuous mode with
+power save off. The first host message of any kind runs `esp_wifi_start` before it is handled: on a
+classic ESP32 the first HELLO after 36 s of silence took 8.2 ms against 1.6 ms awake, and the radio
+then heard 81 to 315 frames per channel in 3 s of census. A host in a run
+sends ALIVE every second, so the board never sleeps under one; a stored beacon and a hosted network
+are out of idle and stay up. The CPU clock is unchanged. The LED breathes at peak 12 over 8 s
+instead of peak 50 over 4 s. The current drawn in standby has not been measured.
+
 ## Portable beacon
 
 From firmware 1.8.0 the board stores one LDN advertisement cycle in NVS and sends it with no host.
@@ -410,7 +421,8 @@ The LED runs LEDC PWM (13 bits, 5 kHz) every 10 ms with gamma 2.2 and 150 ms cro
 | flash3 | 5 | 1000 ms | three flashes in the first 60 % of the period |
 | ramp-up, ramp-down, pulse | 6, 7, 8 | 1000, 1000, 1200 ms | once |
 
-The automatic look: one pulse at boot, a dim 4 s breathe idle, a 250 ms blink while joining, a
+The automatic look: one pulse at boot, a dim 4 s breathe idle, a dimmer 8 s breathe in
+[standby](#standby), a 250 ms blink while joining, a
 brighter 1.5 s breathe hosting with no station, dim on when linked, off while sniffing.
 
 Every frame flickers the LED on top. A failed join, a refused key, a dropped board-to-host message or

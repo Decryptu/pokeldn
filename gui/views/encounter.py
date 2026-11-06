@@ -254,8 +254,8 @@ class EncounterPicker:
         second = [self._choice(tr('encounter.nature_c71ce8', 'Nature'), "nature",
                                [(str(n["id"]), n["name"]) for n in info["natures"]], random=True)]
         if len(genders(info["gender"])) > 1:
-            second.append(self._choice(tr('encounter.gender_a04630', 'Gender'), "gender",
-                                       [(str(MALE), tr('encounter.male_03f8c1', 'Male')), (str(FEMALE), tr('encounter.female_e8cca8', 'Female'))]))
+            second.append(self._flip(tr('encounter.gender_a04630', 'Gender'), "gender",
+                                     [(str(MALE), tr('encounter.male_03f8c1', 'Male')), (str(FEMALE), tr('encounter.female_e8cca8', 'Female'))]))
         abilities = info["abilities"]
         second.append(self._choice(tr('encounter.ability_9c40ae', 'Ability'), "ability", [
             (str(a["slot"]), a["name"] + (tr('encounter.hidden_b8bab1', ' (hidden)') if a["slot"] == 2 else ""))
@@ -287,6 +287,14 @@ class EncounterPicker:
             options = [(RANDOM, tr('encounter.random_67bc48', 'Random'))] + options
         return t.labeled_control(label, t.dropdown(options, RANDOM if current is None else str(current),
                                                    on_select=picked, menu_height=320), expand=True)
+
+    def _flip(self, label: str, key: str, options: list[tuple[str, str]]) -> ft.Control:
+        def picked(value):
+            self.value[key] = int(value)
+            self._fit()
+            self._save()
+            self._check()
+        return t.labeled_control(label, t.choice_field(options, str(self.value.get(key)), picked), expand=True)
 
     def _entry(self, label: str, key: str, low: int, high: int, width: int, empty: bool = False) -> ft.Control:
         current = self.value.get(key)

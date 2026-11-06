@@ -249,7 +249,8 @@ class PokemonPicker:
                                             self.value.get("options"))
                 self.value.update(file=info["file"], summary=builder.summary(info), legal=info["legal"],
                                   encounter=info.get("canonical", info)["encounter"], moves=info.get("canonical", info)["moves"],
-                                  place=info.get("encounter_place", ""), home_tracker=info.get("home_tracker", ""))
+                                  place=info.get("encounter_place", ""), home_tracker=info.get("home_tracker", ""),
+                                  report="" if info["legal"] else info["report"])
                 self.value.pop("source", None)    # built for the player: nobody else's trainer to replace
                 self.on_change(dict(self.value))
                 done = self._show_result
@@ -684,7 +685,7 @@ class OfferOptions:
         if not species:
             self.body.controls = [t.text(tr('pokemon.pick_a_species_first_48ebb5', 'Pick a species first.'), 12, t.MUTED)]
             return
-        target = (species, int(self.chosen.get("form") or 0))
+        target = (species, int(self.chosen.get("form") or 0), SERVICE.allow_illegal)
         if self.loaded_for == target:
             return
         self.loaded_for = target
@@ -737,8 +738,7 @@ class OfferOptions:
         if len(found["abilities"]) > 1:
             first.append(t.labeled_control(tr('pokemon.ability_9c40ae', 'Ability'), self._choice("ability", found["abilities"]), expand=True))
         if found["gendered"]:
-            first.append(t.labeled_control(tr('pokemon.gender_a04630', 'Gender'), self._choice(
-                "gender", [{"id": int(k), "name": n} for k, n in GENDERS]), expand=True))
+            first.append(t.labeled_control(tr('pokemon.gender_a04630', 'Gender'), self._gender(), expand=True))
         second = [t.labeled_control(tr('pokemon.ball_ae5859', 'Ball'), self._choice("ball", found["balls"]), expand=True),
                   t.labeled_control(tr('pokemon.friendship_0_255_30186d', 'Friendship (0-255)'), self._number("friendship", 255), width=130)]
         if found.get("tera"):
@@ -833,18 +833,30 @@ class OfferOptions:
         self._label()
         self.control.update()
 
-    def _yes_no(self, key: str) -> ft.Dropdown:
-        def picked(e):
-            if e.control.value == ANY:
+    def _gender(self) -> ft.Control:
+        def picked(value):
+            if value == ANY:
+                self.chosen.pop("gender", None)
+            else:
+                self.chosen["gender"] = int(value)
+            self._label()
+            self.label.update()
+        current = self.chosen.get("gender")
+        return t.choice_field([(ANY, tr('pokemon.random_67bc48', 'Random')), *GENDERS],
+                              ANY if current is None else str(current), picked)
+
+    def _yes_no(self, key: str) -> ft.Control:
+        def picked(value):
+            if value == ANY:
                 self.chosen.pop(key, None)
             else:
-                self.chosen[key] = e.control.value == "yes"
+                self.chosen[key] = value == "yes"
             self._label()
             self.label.update()
         current = self.chosen.get(key)
-        return t.dropdown([(ANY, tr('pokemon.random_67bc48', 'Random')), ("yes", tr('pokemon.yes_85a39a', 'Yes')),
-                           ("no", tr('pokemon.no_1ea442', 'No'))],
-                          ANY if current is None else "yes" if current else "no", on_select=picked)
+        return t.choice_field([(ANY, tr('pokemon.random_67bc48', 'Random')), ("yes", tr('pokemon.yes_85a39a', 'Yes')),
+                               ("no", tr('pokemon.no_1ea442', 'No'))],
+                              ANY if current is None else "yes" if current else "no", picked)
 
     def _moves(self, names: list[dict]) -> ft.Control:
         moves = (list(self.chosen.get("moves", [])) + [0] * 4)[:4]

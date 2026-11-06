@@ -92,9 +92,11 @@ class Service:
         self.species_cache: dict[str, list[dict]] = {}
         # Settings.home_tracker; the app sets it, a run inherits it through the environment.
         self.home_tracker = os.environ.get("POKELDN_HOME_TRACKER") or "empty"
+        # Settings.allow_illegal, reaching a run the same way; the GTS asks PKHeX itself and stays legal.
+        self.allow_illegal = os.environ.get("POKELDN_ALLOW_ILLEGAL") == "1"
 
     def _ask(self, request: dict) -> dict:
-        request = {**request, "home_tracker": self.home_tracker}
+        request = {**request, "home_tracker": self.home_tracker, "allow_illegal": self.allow_illegal}
         with self.lock:
             for attempt in range(2):
                 if self.proc is None or self.proc.poll() is not None:
@@ -164,7 +166,7 @@ class Service:
     def options(self, game: str, species: int, trainer: dict, version: str = "", form: int = 0) -> dict:
         """The forms, natures, abilities, held items, balls and effort kind an offer of this species can ask for;
         alpha is whether it has an Alpha encounter, None in a game with no Alphas."""
-        key = f"{game}:options:{species}:{form}:{version}"
+        key = f"{game}:options:{species}:{form}:{version}:{self.allow_illegal}"
         if key not in self.species_cache:
             self.species_cache[key] = self._ask({"cmd": "options", "game": game, "species": species,
                                                  "form": form, "trainer": trainer, "version": version})
@@ -239,7 +241,7 @@ class Service:
         """The Pokemon in the file at `path`, kept, or BuilderError; `trainer` ({ot, tid, sid, gender}, as
         settings.trainer gives it) replaces its original trainer and keeps its shine (services/pkhex Retrain)."""
         reply = self.check(game, path, {"trainer": trainer} if trainer else None)
-        if not reply["legal"]:
+        if not reply["legal"] and not self.allow_illegal:
             raise BuilderError(reply["report"])
         reply["file"] = self.keep(game, reply)
         return reply
@@ -252,7 +254,7 @@ class Service:
 
     def prepare(self, game: str, data: bytes, *, fresh=False, fields=None) -> bytes:
         reply = self.check_bytes(game, data, fresh=fresh, fields=fields)
-        if not reply["legal"]:
+        if not reply["legal"] and not self.allow_illegal:
             raise BuilderError(reply["report"])
         if reply.get("note"):
             print(f"[pokemon] the offer {reply['note']}", flush=True)

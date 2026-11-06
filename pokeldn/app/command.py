@@ -417,6 +417,7 @@ def code_error(field: Field, value, game: str = "sv") -> str:
 
 
 def missing_offer(tool: Tool, values: dict) -> str:
+    from pokeldn import pokemon
     for field in tool.fields:
         if field.kind != "pokemon" or not applies(field, tool, values):
             continue
@@ -430,7 +431,7 @@ def missing_offer(tool: Tool, values: dict) -> str:
                 return (tr("command.choose_gift", "Choose the Mystery Gift Pokemon first.") if field.events else
                         tr("command.build_offer_n", "Build the Pokemon to offer for trade {n} first.", n=n) if many else
                         tr("command.build_offer", "Build the Pokemon to offer first."))
-            if entry.get("legal") is False:
+            if entry.get("legal") is False and not pokemon.SERVICE.allow_illegal:
                 return (tr("command.offer_illegal_n", "The Pokemon for trade {n} is not legal.", n=n) if many else
                         tr("command.offer_illegal", "The Pokemon is not legal."))
     return ""

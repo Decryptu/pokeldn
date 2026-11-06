@@ -284,6 +284,20 @@ Edit allows what the game allows: nickname, level upward, moves, held item. The 
 refuses an edit that makes a legal Pokemon illegal. Queued Pokemon are not editable.
 `tests/test_bank.py` covers moves, refusals, edits and imports through the real helper.
 
+### Non-legal Pokemon
+
+Settings, Advanced, Allow non-legal Pokemon (`Settings.allow_illegal`, off by default) sends
+`allow_illegal` with every helper request; a run inherits it as `POKELDN_ALLOW_ILLEGAL`. The builder
+still tries every encounter first. With no legal result the helper's `Forged` takes an encounter's
+record and writes the species, form, level, shininess, nickname, nature, gender, ability, IVs, moves,
+item and ball as asked; the record is marked Not legal. The ability and ball lists then offer every
+value in the game. A Gen 3 record keeps nature and gender in its PID, which is rerolled until they
+match, and takes only its species' abilities.
+
+The setting also lifts the refusals on an illegal file, a bank edit, a move between games and a trade.
+A species or form the game does not have stays refused. The GTS keeps legal Pokemon only, since a
+listing reaches other players, and an illegal Pokemon can crash the game drawing it.
+
 ### The HOME tracker setting
 
 PKHeX flags a missing tracker (`TransferTrackerMissing`) on a Pokemon moved into another game and on

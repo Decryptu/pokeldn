@@ -48,6 +48,7 @@ static partial class Program
         // The app's HOME tracker setting (docs/gui.md, The bank): "empty" leaves a tracker HOME would have issued unset
         // and accepts PKHeX's one complaint about it; "made" fills it. HOME 3.1.0 refuses a tracker it did not issue.
         var emptyTracker = true;
+        var allowIllegal = false;   // the app's Allow non-legal Pokemon setting (docs/gui.md, Non-legal Pokemon)
         var madeTrackers = new HashSet<ulong>();
 
         while (Console.ReadLine() is { } line)
@@ -60,6 +61,7 @@ static partial class Program
                 displayLanguage = DisplayLanguage((string?)request["display_language"]);
                 strings = GameInfo.GetStrings(displayLanguage);
                 emptyTracker = (string?)request["home_tracker"] != "made";
+                allowIllegal = (bool?)request["allow_illegal"] == true;
                 madeTrackers.Clear();
                 var game = games[(string)request["game"]!];
                 reply = (string)request["cmd"]! switch
@@ -311,11 +313,12 @@ static partial class Program
                 ["tera"] = teras,
                 ["base"] = new JsonArray(detail.HP, detail.ATK, detail.DEF, detail.SPA, detail.SPD, detail.SPE),
                 ["natures"] = natures,
-                ["abilities"] = abilities,
+                ["abilities"] = allowIllegal && game.Context != EntityContext.Gen9a && blank.Format >= 6
+                    ? Names(game, "abilities")["names"]!.DeepClone() : abilities,
                 ["gendered"] = !detail.Genderless && !detail.OnlyFemale && !detail.OnlyMale,
                 ["effort"] = effort,
                 ["held"] = Names(game, "held")["names"]!.DeepClone(),
-                ["balls"] = balls,
+                ["balls"] = allowIllegal ? Names(game, "balls")["names"]!.DeepClone() : balls,
                 ["alpha"] = alpha,
             };
         }
@@ -410,7 +413,7 @@ static partial class Program
             });
         }
 
-        JsonObject Make(Game game, JsonObject request)
+        JsonObject Make(Game game, JsonObject request, bool forge = true)
         {
             var species = checked((ushort)(int)request["species"]!);
             var first = FirstForm(game, species) ?? throw new ArgumentException("This species is absent from the selected game.");
@@ -437,14 +440,20 @@ static partial class Program
                     options["form"] = (int)f;
                     try
                     {
-                        return Make(game, probe);
+                        return Make(game, probe, false);
                     }
                     catch (InvalidOperationException e)
                     {
                         refused ??= e;
                     }
                 }
-                throw refused!;
+                if (!allowIllegal)
+                    throw refused!;
+                var forged = request.DeepClone().AsObject();
+                if (forged["options"] is not JsonObject chosen)
+                    forged["options"] = chosen = [];
+                chosen["form"] = (int)first;
+                return Make(game, forged);
             }
             var form = wish.Form.Value;
             if (!game.Table.IsPresentInGame(species, form))
@@ -581,6 +590,8 @@ static partial class Program
                     }
                 }
             }
+            if (allowIllegal && forge)
+                return Forged(game, request, blank, species, form, level, shiny, nickname, wish);
             var name = strings.specieslist[species];
             throw new InvalidOperationException(firstProblem is not null
                 ? $"No legal {name} with these choices. {firstProblem}"
@@ -837,6 +848,53 @@ static partial class Program
             };
         }
 
+        // What was asked for with no legality check, on the record of an encounter: of the species, or of the first
+        // the game has, for its met data. Only a build no legal Pokemon can satisfy comes here.
+        JsonObject Forged(Game game, JsonObject request, PKM blank, ushort species, byte form, int level, bool shiny,
+                          string nickname, Wish wish)
+        {
+            var (versions, trainer) = Trainer(game, request);
+            PKM? Base(PKM template)
+            {
+                foreach (var encounter in Encounters(template, trainer, ReadOnlyMemory<ushort>.Empty, versions))
+                    if (encounter is IEncounterConvertible convertible && !encounter.IsEgg
+                        && convertible.ConvertToPKM(trainer) is var pk && pk.GetType() == blank.GetType())
+                        return pk;
+                return null;
+            }
+            var made = Base(blank);
+            for (ushort s = 1; made is null && s <= game.Table.MaxSpeciesID; s++)
+                if (FirstForm(game, s) is { } f)
+                {
+                    var other = game.Blank();
+                    other.Species = s;
+                    other.Form = f;
+                    made = Base(other);
+                }
+            if (made is null)
+                throw new InvalidOperationException($"PKHeX has no record to start {strings.specieslist[species]} from.");
+            made.Species = species;
+            made.Form = form;
+            made.ClearNickname();
+            made.Gender = made.GetSaneGender();
+            if (made.Format >= 6)
+                made.RefreshAbility(0);
+            made.CurrentLevel = (byte)(level > 0 ? level : Math.Max((int)made.CurrentLevel, 50));
+            made.MetLevel = Math.Min(made.MetLevel, made.CurrentLevel);
+            if (nickname.Length > 0)
+                made.SetNickname(nickname);
+            wish.Force(made, shiny);
+            made.HealPP();
+            made.ResetPartyStats();
+            if (made is PB7 pb7)
+            {
+                pb7.ResetPartyStats();
+                ResetSizes(pb7);
+            }
+            made.RefreshChecksum();
+            return Describe(game, made, new LegalityAnalysis(made));
+        }
+
         // Shininess is the PID against the trainer's IDs. From Gen 7 the PID fixes nothing else, so its high half moves
         // to keep square, star or none, unless the encounter fixes the PID (an overworld or raid seed, a Gen 3 PID's
         // nature, ability and gender): then the PID stays and the shine follows the IDs. -> a note when it was lost.
@@ -999,7 +1057,7 @@ static partial class Program
                 pk.RefreshChecksum();
                 la = new LegalityAnalysis(pk);
             }
-            return Accepted(pk, la) ? (pk, la, "") : (pk, la, Plain(la));
+            return Accepted(pk, la) || allowIllegal ? (pk, la, "") : (pk, la, Plain(la));
         }
 
         // A Pokemon file or a game save, each Pokemon in it as the bank would keep it (docs/gui.md, Importing). A
@@ -2159,6 +2217,45 @@ record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effor
             if (exp < next)
                 pk.EXP = exp;
         }
+    }
+
+    // Apply, then what a legal build gets from its encounter or leaves out: every value set as asked, the game's limits
+    // on the record the only ones left. Gen 3 keeps nature and gender in the PID and an ability in its species' slots.
+    public void Force(PKM pk, bool shiny)
+    {
+        if (pk is G3PKM)
+        {
+            var tsv = (uint)(pk.TID16 ^ pk.SID16);
+            for (var tries = 0; tries < 1_000_000; tries++)
+            {
+                var low = (uint)Random.Shared.Next(0x10000);
+                var high = shiny ? low ^ tsv ^ (uint)Random.Shared.Next(8) : (uint)Random.Shared.Next(0x10000);
+                pk.PID = high << 16 | low;
+                if (pk.IsShiny == shiny && (Nature is not { } n || pk.Nature == n) && (Gender is not { } g || pk.Gender == (byte)g))
+                    break;
+            }
+        }
+        else
+        {
+            if (shiny != pk.IsShiny)
+                pk.SetIsShiny(shiny);
+            if (Nature is { } nature)
+                pk.Nature = pk.StatAlignment = nature;
+            if (Gender is { } gender)
+                pk.Gender = (byte)gender;
+            if (Ability is { } ability)
+                pk.Ability = ability;
+        }
+        Apply(pk);
+        for (var i = 0; i < 6; i++)
+            if (IVs[i] >= 0)
+                _ = i switch
+                {
+                    0 => pk.IV_HP = IVs[i], 1 => pk.IV_ATK = IVs[i], 2 => pk.IV_DEF = IVs[i],
+                    3 => pk.IV_SPA = IVs[i], 4 => pk.IV_SPD = IVs[i], _ => pk.IV_SPE = IVs[i],
+                };
+        if (Alpha is { } alpha && pk is IAlpha a)
+            a.IsAlpha = alpha;
     }
 
     public void ApplyEffort(PKM pk)

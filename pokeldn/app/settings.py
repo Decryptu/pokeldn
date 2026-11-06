@@ -46,6 +46,7 @@ class Settings:
     # "empty" or "made": what the bank and the builder put in a HOME tracker HOME never issued (docs/gui.md,
     # The bank); pokeldn.pokemon.Service sends it with every request.
     home_tracker: str = "empty"
+    allow_illegal: bool = False   # PKHeX-flagged Pokemon may be built, kept and traded, never put on the GTS
     # Trainer used for generated encounters.
     ot: str = "POKELDN"
     tid: int = field(default_factory=lambda: random.randint(1, 65535))   # FireRed/LeafGreen, as shown

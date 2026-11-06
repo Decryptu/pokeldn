@@ -1,15 +1,20 @@
-# pokeldn 0.57.1
+# pokeldn 0.58.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Writing an Emerald save before a ROM transfer now keeps the game's own copy: the save goes in the
-  slot beside it, whichever slot the console reports. Emerald swap 1.1.0 needs this version; with its
-  new build, FireRed still loads after Emerald saves.
+- The radio board no longer runs hot while idle: with no program using it for 30 seconds it turns its
+  radio off, its LED breathes dimmer, and it wakes on its own at the next session. Update the board's
+  firmware on the Board page to get this.
+- Settings, Show advanced settings, Allow non-legal Pokemon lets you build, keep and trade Pokemon that
+  PKHeX finds illegal. It is off by default. A broken Pokemon can crash the other game, and the GTS
+  still takes legal Pokemon only.
+- Gender and other short choices now take one click, tabs share a dark background, and short drop-down
+  lists fit their content.
 
-The radio firmware stays at 1.9.3 and the controller firmware at 1.3.0.
+The radio firmware moves to 1.10.0; the controller firmware stays at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.

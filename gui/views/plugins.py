@@ -111,7 +111,6 @@ class PluginsView:
             ("browse", tr('plugins.tab_browse', 'Browse · {value0}', value0=available), "package"),
             ("sources", tr('plugins.tab_sources', 'Sources · {value0}', value0=len(listings)), "globe"),
         ], self.tab, self._tab, wrap=True)
-        tabs = ft.Container(tabs, padding=4, border_radius=999, bgcolor=ft.Colors.with_opacity(0.05, "#FFFFFF"))
         if self.tab == "browse":
             self.column.controls = [header, ft.Row([tabs]), self.notice, *self._browse(listings)]
         elif self.tab == "sources":

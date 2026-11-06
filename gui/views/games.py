@@ -306,7 +306,7 @@ class GamesView:
         self.chosen.setdefault(row, {}).update(tool.variant)
         self.summary.value = tool.summary
         self.tabs.content = t.segmented([("basic", tr('games.basic_0e35f6', 'Basic'), "sliders-horizontal"),
-                                          ("all", tr('games.advanced_9f088d', 'Advanced'), "bulletlist")], self.tab, self._tab)
+                                          ("all", tr('games.advanced_9f088d', 'Advanced'), "bulletlist")], self.tab, self._tab, track=False)
         self.render_tree()
         self.render_variants()
         self.render_body()
