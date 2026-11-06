@@ -30,7 +30,7 @@ Each app includes PKHeX.Core and firmware for classic ESP32, ESP32-S3, ESP32-C3 
 and ESP-IDF are bundled or unnecessary for running the app. Supply your own `prod.keys`.
 The separate `pokeldn-radio*.bin` (wireless; `-ble` for Bluetooth wireless) and `pokeldn-pad*.bin` (controller) files are merged
 firmware images for manual flashing at address `0x0`; the app selects the right image for the
-connected chip. `SHA256SUMS` covers all thirteen downloads.
+connected chip. `SHA256SUMS` covers all fourteen downloads.
 
 Code signing policy: free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
 [SignPath Foundation](https://signpath.org); [what is signed, team roles and privacy](https://decryptu.github.io/pokeldn/code_signing.html).
