@@ -1,15 +1,12 @@
-# pokeldn 0.59.0
+# pokeldn 0.59.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Item, ball and ribbon pickers show each one's icon, downloaded once from PokeAPI like the Pokemon
-  sprites.
-- The Sword/Shield Mystery Gift builder can give its Pokemon ribbons, picked by name and icon.
-- A trade offer opened from another game's Pokemon file (`.pk4` to `.pk7`, or another title's format)
-  is converted to the trade's game the way the bank moves one.
+- Every item, held item, ball and ribbon list shows an icon on each row. Missing icons download once,
+  top to bottom at a steady pace, and the list fills in as they arrive.
 
 The radio firmware stays at 1.10.0; the controller firmware stays at 1.3.0.
 
