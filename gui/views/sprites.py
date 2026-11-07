@@ -112,19 +112,20 @@ class Icon:
     """An item, ball or ribbon icon by the helper's "icon" name, cropped to its visible pixels and scaled
     to fill `size`; an empty slot while it loads, offline or when PokeAPI has none."""
 
-    def __init__(self, app, name: str | None, ribbon: bool = False, size: int = 24):
+    def __init__(self, app, name: str | None, ribbon: bool = False, size: int = 24, fetch: bool = True):
+        """`fetch` False shows only a cached image: a list's rows, which the cache's prefetch fills in."""
         self.app, self.size, self.cache = app, size, RIBBONS if ribbon else ITEMS
         self.token = 0
         self.control = ft.Container(width=size, height=size, alignment=ft.Alignment.CENTER)
-        self.show(name, update=False)
+        self.show(name, update=False, fetch=fetch)
 
-    def show(self, name: str | None, update: bool = True) -> None:
+    def show(self, name: str | None, update: bool = True, fetch: bool = True) -> None:
         self.token += 1
         token = self.token
         self.cache.online = bool(self.app.settings.sprites)
         data = self.cache.cached(name) if name else None
         self._set(data, name, update)
-        if data or not name or not self.cache.online or self.cache.known_missing(name):
+        if data or not fetch or not name or not self.cache.online or self.cache.known_missing(name):
             return
 
         def load():

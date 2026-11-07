@@ -450,8 +450,10 @@ placeholder; a missing shiny falls back to normal.
 Item, ball and ribbon pickers show icons from the same repository (`sprites/items/`,
 `sprites/ribbons/generation-viii/`), cached in `sprites/items/` and `sprites/ribbons/`. The helper names
 each file from the English name (`IconName`: "Poké Ball" `poke-ball`; a Gen 3 item by its later name; Legends
-Arceus's own balls `la`-prefixed). A list of 60 names or fewer shows an icon on every row; a longer one
-shows the chosen item's icon only. A name PokeAPI lacks (TMs, most Legends Z-A items) shows none.
+Arceus's own balls `la`-prefixed). Every row shows its icon once cached; a list opened with icons
+missing has them downloaded one at a time in list order, 0.05 s apart, on one thread per cache
+(`SpriteCache.prefetch`), and redraws after every 24. A network failure ends the run; the next list
+resumes. A name PokeAPI lacks (TMs, most Legends Z-A items) shows none.
 
 ## Raid events
 

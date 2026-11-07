@@ -950,21 +950,40 @@ class OfferOptions:
 
 FOREIGN_EXTENSIONS = ("pk1", "pk2", "pk4", "pk5", "pk6", "pk7", "pb7", "pk8", "pb8", "pa8", "pk9", "pa9", "ck3", "xk3",
                       "bk4", "rk4", "sk2")   # pokeldn.pokemon.FOREIGN, offered by the file picker
-ICON_ROWS = 60     # a list this short shows an icon on every row; a longer one only beside the choice
-
-
 def icon_choices(app, dropdown: ft.Dropdown, names: list[dict], ribbon: bool = False) -> Callable[[str], None] | None:
-    """Puts PokeAPI icons on a dropdown of names the helper gave an "icon": the chosen one beside the field,
-    and one per row in a short list. Returns what to call with the new value, None when no name has an icon."""
+    """Puts PokeAPI icons on a dropdown of names the helper gave an "icon": the chosen one beside the field, and one
+    on every row. A row shows a cached icon at once; the cache downloads the rest in list order (prefetch), and the
+    rows redraw after each batch. Returns what to call with the new value, None when no name has an icon."""
     icons = {str(n["id"]): n["icon"] for n in names if n.get("icon")}
     if not icons or app is None:
         return None
-    if len(names) <= ICON_ROWS:
+    rows = {}
+
+    def fill() -> bool:
+        """Gives a row its icon once cached; True when any row changed."""
+        changed = False
         for option in dropdown.options:
-            if option.key in icons:
-                option.leading_icon = Icon(app, icons[option.key], ribbon).control
+            if option.key in icons and option.key not in rows:
+                icon = Icon(app, icons[option.key], ribbon, fetch=False)
+                if icon.control.content is not None:
+                    rows[option.key] = option.leading_icon = icon.control
+                    changed = True
+        return changed
+
+    def batch():
+        def redraw():
+            if fill():
+                try:
+                    dropdown.update()
+                except RuntimeError:    # the dropdown left the page
+                    pass
+        app.ui(redraw)
+    fill()
     chosen = Icon(app, icons.get(str(dropdown.value)), ribbon)
     dropdown.leading_icon = chosen.control
+    if len(rows) < len(icons):
+        cache = chosen.cache
+        cache.prefetch([icons[o.key] for o in dropdown.options if o.key in icons and o.key not in rows], batch)
     return lambda value: chosen.show(icons.get(str(value)))
 
 
