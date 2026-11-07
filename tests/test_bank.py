@@ -386,3 +386,18 @@ def test_a_queue_with_two_offers_takes_four_more_and_refuses_the_fifth(tmp_path)
     problems = [bank.enqueue(settings, tool, field, {"file": f"{n}.pk8", "bank": f"B{n}"}) for n in range(5)]
     assert problems[:4] == [""] * 4 and problems[4]
     assert bank.room(settings, tool, field) == 0 and len(values[field.key]) == 6
+
+
+def test_a_non_legal_record_is_imported_only_under_the_bank_setting(service, vault, monkeypatch):
+    monkeypatch.setattr(service, "allow_illegal", True)
+    built = service.make("swsh", 25, TRAINER, level=7, shiny=True, options={"moves": [147]})   # Spore
+    monkeypatch.setattr(service, "allow_illegal", False)
+    path = vault / "hax.pk8"
+    path.write_bytes(base64.b64decode(built["data"]))
+    [refused] = bank.import_file(str(path), TRAINERS).pokemon
+    assert refused.state == "refused" and not bank.entries()
+    monkeypatch.setattr(service, "bank_illegal", True)
+    (vault / bank.LEDGER).unlink(missing_ok=True)
+    [found] = bank.import_file(str(path), TRAINERS).pokemon
+    [entry] = bank.entries()
+    assert found.state == "banked" and not entry.legal and bank.data(entry) == path.read_bytes()

@@ -1780,6 +1780,8 @@
 "settings.app_language_b8352b" = "App language"
 "settings.asks_github_for_a_newer_pokeldn_when_the_app_starts_and_b07880" = "Asks GitHub for a newer pokeldn when the app starts, and each installed plugin's own address for a newer version of it. Nothing about you or your games is sent."
 "settings.automatic_default" = "Automatic (default)"
+"settings.bank_illegal" = "Import non-legal Pokemon into the bank"
+"settings.bank_illegal_detail" = "Keep a Pokemon PKHeX finds illegal when you import a file or a save into your bank, marked Not legal. Moving it to a game or trading it still needs Allow non-legal Pokemon. The GTS takes legal Pokemon only."
 "settings.board_screen" = "Show the board's screen"
 "settings.board_screen_detail" = "Draws what the board's pixel screen shows at the top of the Session panel: the link's traffic, each trade's Pokemon, the Mystery Gift card and a raid's lobby. No screen needs to be plugged into the board."
 "settings.bug_reports_aa0e58" = "Bug reports"

@@ -1,20 +1,16 @@
-# pokeldn 0.58.0
+# pokeldn 0.58.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The radio board no longer runs hot while idle: with no program using it for 30 seconds it turns its
-  radio off, its LED breathes dimmer, and it wakes on its own at the next session. Update the board's
-  firmware on the Board page to get this.
-- Settings, Show advanced settings, Allow non-legal Pokemon lets you build, keep and trade Pokemon that
-  PKHeX finds illegal. It is off by default. A broken Pokemon can crash the other game, and the GTS
-  still takes legal Pokemon only.
-- Gender and other short choices now take one click, tabs share a dark background, and short drop-down
-  lists fit their content.
+- Settings, Show advanced settings, Import non-legal Pokemon into the bank keeps a Pokemon PKHeX finds
+  illegal when you import a file or a save into your bank, marked Not legal. It is off by default.
+  Moving it to a game or trading it still needs Allow non-legal Pokemon, and the GTS takes legal
+  Pokemon only.
 
-The radio firmware moves to 1.10.0; the controller firmware stays at 1.3.0.
+The radio firmware stays at 1.10.0; the controller firmware stays at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.

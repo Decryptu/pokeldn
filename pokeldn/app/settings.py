@@ -47,6 +47,7 @@ class Settings:
     # The bank); pokeldn.pokemon.Service sends it with every request.
     home_tracker: str = "empty"
     allow_illegal: bool = False   # PKHeX-flagged Pokemon may be built, kept and traded, never put on the GTS
+    bank_illegal: bool = False    # an import keeps a PKHeX-flagged Pokemon in the bank (docs/gui.md, Non-legal Pokemon)
     # Trainer used for generated encounters.
     ot: str = "POKELDN"
     tid: int = field(default_factory=lambda: random.randint(1, 65535))   # FireRed/LeafGreen, as shown

@@ -94,6 +94,7 @@ class Service:
         self.home_tracker = os.environ.get("POKELDN_HOME_TRACKER") or "empty"
         # Settings.allow_illegal, reaching a run the same way; the GTS asks PKHeX itself and stays legal.
         self.allow_illegal = os.environ.get("POKELDN_ALLOW_ILLEGAL") == "1"
+        self.bank_illegal = False   # Settings.bank_illegal: only the bank's import reads it
 
     def _ask(self, request: dict) -> dict:
         request = {**request, "home_tracker": self.home_tracker, "allow_illegal": self.allow_illegal}
@@ -250,7 +251,7 @@ class Service:
         """Each Pokemon in a Pokemon file or a game save, as the bank would keep it [services/pkhex Import].
         `trainers` maps every game to the trainer who receives a Pokemon HOME moves there."""
         return self._ask({"cmd": "import", "game": "sv", "name": name, "trainers": trainers,
-                          "data": base64.b64encode(data).decode()})
+                          "data": base64.b64encode(data).decode(), "bank_illegal": self.bank_illegal})
 
     def prepare(self, game: str, data: bytes, *, fresh=False, fields=None) -> bytes:
         reply = self.check_bytes(game, data, fresh=fresh, fields=fields)

@@ -118,6 +118,9 @@ class SettingsView:
             t.card(tr('settings.allow_illegal', 'Allow non-legal Pokemon'), None,
                    tr('settings.allow_illegal_detail', "Build, import, keep and trade Pokemon PKHeX finds illegal: any level, moves, ability, ball or shininess. When no legal Pokemon has what you asked for, the builder makes it anyway and marks it Not legal. A broken Pokemon can crash the other game when it is drawn, so back your save up. The GTS still takes legal Pokemon only."),
                    trailing=t.switch(s.allow_illegal, lambda e: self._allow_illegal(e.control.value))),
+            t.card(tr('settings.bank_illegal', 'Import non-legal Pokemon into the bank'), None,
+                   tr('settings.bank_illegal_detail', "Keep a Pokemon PKHeX finds illegal when you import a file or a save into your bank, marked Not legal. Moving it to a game or trading it still needs Allow non-legal Pokemon. The GTS takes legal Pokemon only."),
+                   trailing=t.switch(s.bank_illegal, lambda e: self._bank_illegal(e.control.value))),
             t.card(tr('settings.pokemon_sprites_bba928', 'Pokemon sprites'), ft.Row([t.button(tr('settings.clear_the_cache_883bc1', 'Clear the cache'), self._clear_sprites, "refresh",
                                                         filled=False), self.sprite_state], spacing=10),
                    tr('settings.pixel_art_sprites_come_from_pokeapi_and_are_kept_on_thi_a49320', 'Pixel-art sprites come from PokeAPI and are kept on this computer after the first download. The app works without them.'),
@@ -274,6 +277,10 @@ class SettingsView:
     def _allow_illegal(self, value: bool) -> None:
         self.save("allow_illegal", value)
         pokemon.SERVICE.allow_illegal = value
+
+    def _bank_illegal(self, value: bool) -> None:
+        self.save("bank_illegal", value)
+        pokemon.SERVICE.bank_illegal = value
 
     def _home_tracker(self, value: str) -> None:
         self.save("home_tracker", value)

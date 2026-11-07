@@ -61,7 +61,8 @@ static partial class Program
                 displayLanguage = DisplayLanguage((string?)request["display_language"]);
                 strings = GameInfo.GetStrings(displayLanguage);
                 emptyTracker = (string?)request["home_tracker"] != "made";
-                allowIllegal = (bool?)request["allow_illegal"] == true;
+                // The bank import also keeps one under Import non-legal Pokemon into the bank (bank_illegal).
+                allowIllegal = (bool?)request["allow_illegal"] == true || (bool?)request["bank_illegal"] == true;
                 madeTrackers.Clear();
                 var game = games[(string)request["game"]!];
                 reply = (string)request["cmd"]! switch
@@ -1144,7 +1145,7 @@ static partial class Program
                 if (source.GetType() == game.Blank().GetType())
                 {
                     var la = new LegalityAnalysis(source);
-                    return Accepted(source, la) ? (key, source, la, []) : throw new InvalidDataException(Plain(la));
+                    return Accepted(source, la) || allowIllegal ? (key, source, la, []) : throw new InvalidDataException(Plain(la));
                 }
             // What HOME's way in takes off: the held item goes back to the bag, and Pal Park and Poke Transfer
             // refuse a Pokemon knowing an HM. The file is left as it is, so the item and moves stay in that game.
@@ -1164,7 +1165,7 @@ static partial class Program
             }
             source.RefreshChecksum();
             // HOME's games replace moves a game lacks; a move its own game never allowed is no such move.
-            if (new LegalityAnalysis(source) is { Valid: false } own)
+            if (!allowIllegal && new LegalityAnalysis(source) is { Valid: false } own)
                 throw new InvalidDataException(Plain(own));
             var refusals = new List<string>();
             foreach (var key in new[] { "frlg", "sv", "swsh", "bdsp", "pla", "za" })

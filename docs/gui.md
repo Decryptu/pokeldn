@@ -298,6 +298,11 @@ The setting also lifts the refusals on an illegal file, a bank edit, a move betw
 A species or form the game does not have stays refused. The GTS keeps legal Pokemon only, since a
 listing reaches other players, and an illegal Pokemon can crash the game drawing it.
 
+Settings, Advanced, Import non-legal Pokemon into the bank (`Settings.bank_illegal`, off by default)
+sends `bank_illegal` with the helper's `import` request only. The import then keeps a record PKHeX
+flags, in its own format or after HOME's conversion, and the bank marks it Not legal. Moving it out of
+the bank or trading it still follows Allow non-legal Pokemon.
+
 ### The HOME tracker setting
 
 PKHeX flags a missing tracker (`TransferTrackerMissing`) on a Pokemon moved into another game and on
