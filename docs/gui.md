@@ -627,6 +627,7 @@ detects corruption and does not authenticate the release.
 | Windows, `C:\Program Files` | Update now behind UAC (`ShellExecuteExW` `runas`) |
 | Windows, the root of another drive (`D:\pokeldn`) | Update now without UAC: the swap only adds folders beside the app, which a volume's root allows users. A release before 0.34.0 probed the root with a file, asked for UAC there, and a standard user's update stopped on "Windows did not give pokeldn permission to change D:\"; from such a release the next version is downloaded once by hand |
 | Windows, a mapped or `subst` drive | the drive letter is kept; the helper finds the old app's processes under either spelling; behind UAC the helper gets the folder the letter stands for, since an elevated process sees no letter the user's session mapped |
+| the app's folder holds entries a packed app does not ship (`pokeldn.exe` and `_internal` loose on a Desktop) | Download only; the helper refuses the same folder from an older app, since the swap renames the folder and deletes it whole |
 | a session, flash or cleanup running | asks to finish first |
 
 `scripts/check_update.py ARCHIVE FOLDER` tests a packed app's update against 127.0.0.1;

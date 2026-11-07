@@ -1,14 +1,14 @@
-# pokeldn 0.60.1
+# pokeldn 0.60.2
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- A built Pokemon shows its gender, ♂ in blue or ♀ in pink, and its summary words start with a
-  capital.
-- A trade has a copy button: the same Pokemon becomes the next trade, built again from the same
-  choices so each copy has its own PID.
+- Update now refuses to replace a folder that holds anything besides pokeldn. An earlier app whose
+  files sat loose in another folder, such as `pokeldn.exe` and `_internal` placed straight on the
+  Desktop, replaced that whole folder and deleted the files in it. Keep pokeldn in a folder of its
+  own; this version's update helper refuses such a folder even when an older app starts it.
 
 The radio firmware stays at 1.10.0; the controller firmware stays at 1.3.0.
 
