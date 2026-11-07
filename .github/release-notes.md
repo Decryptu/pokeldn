@@ -1,14 +1,15 @@
-# pokeldn 0.58.1
+# pokeldn 0.59.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Settings, Show advanced settings, Import non-legal Pokemon into the bank keeps a Pokemon PKHeX finds
-  illegal when you import a file or a save into your bank, marked Not legal. It is off by default.
-  Moving it to a game or trading it still needs Allow non-legal Pokemon, and the GTS takes legal
-  Pokemon only.
+- Item, ball and ribbon pickers show each one's icon, downloaded once from PokeAPI like the Pokemon
+  sprites.
+- The Sword/Shield Mystery Gift builder can give its Pokemon ribbons, picked by name and icon.
+- A trade offer opened from another game's Pokemon file (`.pk4` to `.pk7`, or another title's format)
+  is converted to the trade's game the way the bank moves one.
 
 The radio firmware stays at 1.10.0; the controller firmware stays at 1.3.0.
 
