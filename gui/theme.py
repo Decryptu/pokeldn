@@ -22,6 +22,7 @@ MUTED = "#A1A1A6"
 FAINT = "#98989D"   # 4.8:1 on HOVER, the lightest surface it sits on (WCAG AA for small text)
 BLUE = "#47AEFA"
 RED = "#FD474D"
+PINK = "#F77FBE"
 GREEN = "#3DD68C"
 AMBER = "#FF9F0A"
 SILVER = "#BCC3CE"

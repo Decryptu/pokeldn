@@ -633,6 +633,12 @@ detects corruption and does not authenticate the release.
 `POKELDN_UPDATE_URL` replaces the endpoint (`tests/test_app_update.py`). Whether macOS asks for App
 Management permission in `/Applications` is unmeasured.
 
+## Duplicating a trade
+
+A trade's copy button inserts the same Pokemon as the next trade. A built Pokemon is built again from
+the same choices, so the copy has its own PID; Brilliant Diamond and Shining Pearl refuse an offer whose
+PID the save already holds. A Pokemon from a file is copied byte for byte.
+
 ## File drops
 
 | target | takes |

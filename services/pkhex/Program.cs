@@ -2077,6 +2077,7 @@ static partial class Program
                 ["form_id"] = pk.Form,
                 ["level"] = pk.CurrentLevel,
                 ["shiny"] = pk.IsShiny,
+                ["gender"] = pk.Gender,
                 ["alpha"] = pk is IAlphaReadOnly { IsAlpha: true },
                 ["nickname"] = pk.Nickname,
                 ["is_nicknamed"] = pk.IsNicknamed,

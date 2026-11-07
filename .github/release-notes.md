@@ -5,8 +5,10 @@ through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Every item, held item, ball and ribbon list shows an icon on each row. Missing icons download once,
-  top to bottom at a steady pace, and the list fills in as they arrive.
+- A built Pokemon shows its gender, ♂ in blue or ♀ in pink, and its summary words start with a
+  capital.
+- A trade has a copy button: the same Pokemon becomes the next trade, built again from the same
+  choices so each copy has its own PID.
 
 The radio firmware stays at 1.10.0; the controller firmware stays at 1.3.0.
 

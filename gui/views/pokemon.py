@@ -31,13 +31,13 @@ class PokemonPicker:
     """Pick a species and PKHeX builds a legal one for the game; or check a file someone brings."""
 
     def __init__(self, app, game: str, value: dict | None, on_change, version: str = "", on_team=None,
-                 on_more=None, glow=None, trainer: dict | None = None):
+                 on_more=None, glow=None, trainer: dict | None = None, on_duplicate=None):
         """`on_team(sets)` places the sets after the first of a pasted team and says where they went;
         `on_more(paths)` places the files dropped with the first. `glow()` is what lights under a drag.
         `trainer` replaces the app's own as the Pokemon's original trainer."""
         self.app, self.game, self.on_change, self.version = app, game, on_change, version
         self.trainer = trainer
-        self.on_team, self.on_more = on_team, on_more
+        self.on_team, self.on_more, self.on_duplicate = on_team, on_more, on_duplicate
         self.value = dict(value or {})
         self.species = t.dropdown([], None, on_select=self._pick, enable_filter=True, editable=True,
                                   menu_height=320, hint_text=tr('pokemon.loading_species_ef998d', 'Loading species...'), disabled=True)
@@ -54,6 +54,8 @@ class PokemonPicker:
         self.build_button = t.button(tr('pokemon.build_bdd254', 'Build'), self._build, disabled=True)
         self.clear_button = t.secondary_button("", self._clear, "close", tooltip=tr('pokemon.clear', 'Clear'))
         self.export_button = t.secondary_button("", self._export, "download", tooltip=tr('pokemon.export', 'Export as a file'))
+        self.duplicate_button = t.secondary_button("", lambda e: self.on_duplicate(dict(self.value)), "copy",
+                                                   tooltip=tr('pokemon.duplicate', 'Duplicate as a new trade'))
         self.options = OfferOptions(self)
         self.show_sprite(update=False)     # with the sweet the options hold
         self.variants = ft.Row(spacing=10, visible=False)    # the form and, for Alcremie, the sweet
@@ -81,6 +83,7 @@ class PokemonPicker:
             ft.Row([t.secondary_button(tr('pokemon.or_use_a_pokemon_file_26272a', 'Or use a Pokemon file'), self._use_file, "file"),
                     t.secondary_button(tr('pokemon.import_paste_1632a4', 'Import paste'), self._paste, "bulletlist"),
                     self.export_button,
+                    self.duplicate_button,
                     self.clear_button,
                     *([t.text(tr('pokemon.or_drop_either_here_a8b5ba', 'or drop either here'), 12, t.FAINT)] if drop.AVAILABLE else [])],
                    spacing=10, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
@@ -250,7 +253,7 @@ class PokemonPicker:
                 self.value.update(file=info["file"], summary=builder.summary(info), legal=info["legal"],
                                   encounter=info.get("canonical", info)["encounter"], moves=info.get("canonical", info)["moves"],
                                   place=info.get("encounter_place", ""), home_tracker=info.get("home_tracker", ""),
-                                  report="" if info["legal"] else info["report"])
+                                  report="" if info["legal"] else info["report"], gender=info.get("gender", 2))
                 self.value.pop("source", None)    # built for the player: nobody else's trainer to replace
                 self.on_change(dict(self.value))
                 done = self._show_result
@@ -309,7 +312,7 @@ class PokemonPicker:
                           encounter=info.get("canonical", info)["encounter"], moves=info.get("canonical", info)["moves"],
                           place=info.get("encounter_place", ""),
                           report="" if info["legal"] else info["report"], home_tracker=info.get("home_tracker", ""),
-                          species=info["species_id"], shiny=info["shiny"])
+                          species=info["species_id"], shiny=info["shiny"], gender=info.get("gender", 2))
         if self.species.options:
             self.species.value = str(info["species_id"])
         self.shiny.value = info["shiny"]
@@ -394,7 +397,7 @@ class PokemonPicker:
             submit(None)
 
     def _apply_set(self, found: dict, notes: list[str]) -> None:
-        for key in ("file", "summary", "legal", "encounter", "place", "moves", "report", "home_tracker"):
+        for key in ("file", "summary", "legal", "encounter", "place", "moves", "report", "home_tracker", "gender"):
             self.value.pop(key, None)
         self.value.update(species=found["species_id"], level=str(found["level"]), shiny=found["shiny"],
                           nickname=found["nickname"])
@@ -449,6 +452,7 @@ class PokemonPicker:
         self.retrain_row.visible = bool(self.value.get("file") and self.value.get("source"))
         self.clear_button.visible = bool(self.value.get("species") or self.value.get("file"))
         self.export_button.visible = bool(self.value.get("file"))
+        self.duplicate_button.visible = bool(self.on_duplicate and self.value.get("species"))
         if not self.value.get("file"):
             self.result.content = None
             return
@@ -456,7 +460,8 @@ class PokemonPicker:
         lines = [ft.Row([
             t.pixel_icon("shield" if legal else "warning-diamond",
                     color=t.GREEN if legal else t.RED),
-            t.text(summary_text(self.value.get("summary", "")), 13, weight=ft.FontWeight.W_600, expand=True),
+            t.text("", 13, weight=ft.FontWeight.W_600, expand=True,
+                   spans=gendered_summary(self.value.get("summary", ""), self.value.get("gender"))),
             t.badge(tr('pokemon.legal_4787ea', 'Legal') if legal else tr('pokemon.not_legal_c66729', 'Not legal'), t.GREEN if legal else t.RED,
                     "check" if legal else "warning-diamond"),
         ], spacing=8)]
@@ -499,6 +504,7 @@ class OfferQueue:
         slot["picker"] = PokemonPicker(self.app, self.game, entry, lambda v, s=slot: self._changed(s, v),
                                        version=self.version, on_team=lambda sets, s=slot: self._team(s, sets),
                                        on_more=lambda paths, s=slot: self._more(s, paths),
+                                       on_duplicate=lambda v, s=slot: self._duplicate(s, v),
                                        glow=lambda s=slot: s["box"] if len(self.slots) > 1 else self.card)
         slot["remove"] = t.icon_button("close", lambda e, s=slot: self._remove(s), tr('pokemon.remove_this_trade_311a79', 'Remove this trade'))
         slot["header"] = ft.Row([slot["title"], slot["remove"]], spacing=8,
@@ -590,6 +596,26 @@ class OfferQueue:
         self.control.update()
         self.footer.update()
 
+    def _duplicate(self, slot: dict, value: dict) -> None:
+        """A copy of `slot` right after it. A built one is built again with the same choices: the same file
+        twice carries one PID, which BDSP refuses once its save holds it."""
+        if len(self.slots) >= self.limit:
+            self.count.value = tr('pokemon.queue_full', 'One session trades at most {value0}.', value0=self.limit)
+            self.count.color = t.AMBER
+            self.count.update()
+            return
+        rebuild = bool(value.get("file")) and not value.get("source")
+        if rebuild:
+            for key in ("file", "summary", "legal", "encounter", "place", "moves", "report", "home_tracker", "gender"):
+                value.pop(key, None)
+        copy = self._slot(value, self.slots.index(slot) + 1)
+        self._render()
+        self._save()
+        self.control.update()
+        self.footer.update()
+        if rebuild:
+            copy["picker"]._build(None)
+
     def _remove(self, slot: dict) -> None:
         if len(self.slots) > 1:
             self.slots.remove(slot)
@@ -600,6 +626,17 @@ class OfferQueue:
 
 
 STATS = (("hp", tr('pokemon.hp_9449a7', 'HP')), ("atk", tr('pokemon.atk_f231c4', 'Atk')), ("def", tr('pokemon.def_fcc0fc', 'Def')), ("spa", tr('pokemon.spa_099d09', 'SpA')), ("spd", tr('pokemon.spd_08fc8c', 'SpD')), ("spe", tr('pokemon.spe_80f7bc', 'Spe')))
+
+
+def gendered_summary(summary: str, gender) -> list[ft.TextSpan]:
+    """The summary with ♂ in blue or ♀ in pink after the species; PKHeX's gender 2 is genderless."""
+    species, _, rest = summary_text(summary).partition(" · ")
+    spans = [ft.TextSpan(species)]
+    if gender in (0, 1):
+        spans.append(ft.TextSpan(" ♂" if gender == 0 else " ♀", ft.TextStyle(color=t.BLUE if gender == 0 else t.PINK)))
+    return spans + ([ft.TextSpan(" · " + rest)] if rest else [])
+
+
 EFFORT = {"evs": tr('pokemon.evs_3f8987', 'EVs'), "avs": tr('pokemon.avs_a495d3', 'AVs'), "gvs": tr('pokemon.effort_levels_9996e7', 'Effort levels')}
 GENDERS = (("0", tr('pokemon.male_03f8c1', 'Male')), ("1", tr('pokemon.female_e8cca8', 'Female')))
 ANY = "-"
