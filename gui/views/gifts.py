@@ -13,7 +13,7 @@ import flet as ft
 from gui import drop, theme as t
 from gui.views.pokemon import NamePicker, pokemon_header
 from gui.views.saves import SavePanel
-from gui.views.sprites import MINI, SIZE, Sprite
+from gui.views.sprites import MINI, SIZE, Icon, Sprite
 from gui.views.widgets import PathField, PixelActivity
 from gui.localization import SERVICE, error_message, gift_description, translate
 from pokeldn import gifts, pokemon
@@ -590,9 +590,52 @@ class GiftBuilder:
                          "random" if self.state.get("nature") is None else str(self.state["nature"]),
                          on_select=lambda e: self.edit("nature", None if e.control.value == "random"
                                                        else int(e.control.value)))),
-                     self.switch_row(tr('gifts.gigantamax_b91de1', 'Gigantamax'), "gigantamax", tr('gifts.it_can_gigantamax_a_species_with_a_gigantamax_form_or_o_b3bf91', 'It can Gigantamax: a species with a Gigantamax form, or one that evolves into one.'))]
+                     self.switch_row(tr('gifts.gigantamax_b91de1', 'Gigantamax'), "gigantamax", tr('gifts.it_can_gigantamax_a_species_with_a_gigantamax_form_or_o_b3bf91', 'It can Gigantamax: a species with a Gigantamax form, or one that evolves into one.')),
+                     self.ribbons()]
         rows += [self.moves(self.state), self.number_field(tr('gifts.card_id_30f8dc', 'Card id'), "card_id")]
         return ft.Column(rows, spacing=10)
+
+    def ribbons(self) -> ft.Control:
+        """The ribbons the card's Pokemon arrives with (pokeldn.swsh.gift_builder.ribbon_list): each a chip with
+        its icon and name, and a searchable list that adds one."""
+        chosen = [r for r in self.state.get("ribbons") or () if isinstance(r, int)]
+        chips = ft.Row([], spacing=6, run_spacing=6, wrap=True)
+
+        def change(ribbons):
+            self.edit("ribbons", ribbons, rebuild=True)
+
+        def added(value):
+            if value and int(value) not in chosen and len(chosen) < wc8.RIBBONS_LEN:
+                change(chosen + [int(value)])
+
+        def chip(entry) -> ft.Control:
+            return ft.Container(ft.Row([Icon(self.app, entry.get("icon"), ribbon=True).control,
+                                        t.text(entry["name"], 12, t.TEXT),
+                                        t.icon_button("close", lambda e, r=entry["id"]: change([c for c in chosen if c != r]),
+                                                      tr('gifts.remove_ribbon', 'Remove'))],
+                                       spacing=6, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                                bgcolor=t.FIELD, border_radius=8, padding=ft.Padding(8, 2, 2, 2))
+
+        def load():
+            try:
+                names = {n["id"]: n for n in SERVICE.names(self.game, "ribbons")}
+            except Exception:
+                names = {}
+
+            def show():
+                chips.controls = [chip(names.get(r, {"id": r, "name": f"#{r}"})) for r in chosen]
+                try:
+                    chips.update()
+                except RuntimeError:    # the editor was redrawn while the names loaded
+                    pass
+            self.app.ui(show)
+        if chosen:
+            threading.Thread(target=load, daemon=True).start()
+        picker = NamePicker(self.app, self.game, "ribbon", "", added, optional=False,
+                            hint=tr('gifts.add_a_ribbon', 'Add a ribbon'))
+        return t.labeled_control(tr('gifts.ribbons', 'Ribbons'), ft.Column([
+            t.text(tr('gifts.ribbons_help', 'The Pokemon arrives wearing these.'), 12, t.MUTED),
+            picker.control, chips], spacing=8))
 
     def _load_forms(self) -> None:
         """Read game form choices off the UI thread; discard replies for an old editor or species."""

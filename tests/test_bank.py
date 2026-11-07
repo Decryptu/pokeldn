@@ -401,3 +401,27 @@ def test_a_non_legal_record_is_imported_only_under_the_bank_setting(service, vau
     [found] = bank.import_file(str(path), TRAINERS).pokemon
     [entry] = bank.entries()
     assert found.state == "banked" and not entry.legal and bank.data(entry) == path.read_bytes()
+
+
+@pytest.mark.parametrize("name, game, species", [
+    ("bidoof.pk4", "pla", 399),
+    ("bidoof.pk4", "bdsp", 399),
+    ("fletchling.pk6", "sv", 661),
+])
+def test_an_older_record_opened_as_a_trade_offer_is_converted_to_the_offers_game(service, vault, name, game, species):
+    """The offer's file picker takes any format PKHeX reads and moves it in as the bank would (HOME's way in)."""
+    path = vault / name
+    path.write_bytes(bytes.fromhex(FIXTURE[name.split(".")[1]]))
+    info = service.import_file(game, str(path), receiver=OWNER)
+    kept = Path(info["file"])
+    assert kept.suffix == "." + pokemon.EXTENSIONS[game] and info["converted_from"] == name.split(".")[1].upper()
+    offer = service.check_bytes(game, kept.read_bytes())
+    assert offer["legal"] and offer["species_id"] == species and offer["held_item_id"] == 0
+    assert "Rock Smash" not in offer["moves"]
+
+
+def test_an_older_record_the_offers_game_lacks_is_refused_with_why(service, vault):
+    path = vault / "bidoof.pk4"
+    path.write_bytes(bytes.fromhex(FIXTURE["pk4"]))
+    with pytest.raises(pokemon.BuilderError, match="Bidoof is not in that game"):
+        service.import_file("swsh", str(path), receiver=OWNER)

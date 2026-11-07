@@ -148,6 +148,11 @@ square, star or plain shine; a PID the encounter fixes (Gen 3's nature, ability 
 overworld or raid seed) stays, and the card says the shine changed. A Pokemon legal only with its own
 trainer, an event with a fixed one, is refused with PKHeX's reason.
 
+A Pokemon file of another game (`.pk4` to `.pk7`, `.pb7`, any title's format PKHeX reads,
+`pokeldn.pokemon.FOREIGN`) goes to the offer's game as [the bank](#importing) moves one: PKHeX's
+`convert` drops its held item and Gen 3/4 HM moves, then takes it through HOME's conversion
+(`Converted`). A species or form the game lacks is refused with the reason.
+
 ### Find your trainer
 
 Find mine fills one row's ID and secret ID, with the name, gender and language, from the newest
@@ -441,6 +446,12 @@ firmware's 50 ms frame, dims with the board and turns off after its ten idle min
 Images come from [PokeAPI](https://github.com/PokeAPI/sprites) on demand, cached in `sprites/`.
 Settings, Pokemon sprites disables downloads and clears the cache. A missing image shows a
 placeholder; a missing shiny falls back to normal.
+
+Item, ball and ribbon pickers show icons from the same repository (`sprites/items/`,
+`sprites/ribbons/generation-viii/`), cached in `sprites/items/` and `sprites/ribbons/`. The helper names
+each file from the English name (`IconName`: "Poké Ball" `poke-ball`; a Gen 3 item by its later name; Legends
+Arceus's own balls `la`-prefixed). A list of 60 names or fewer shows an icon on every row; a longer one
+shows the chosen item's icon only. A name PokeAPI lacks (TMs, most Legends Z-A items) shows none.
 
 ## Raid events
 

@@ -9,7 +9,7 @@ from gui import theme as t
 from gui.app import keys_problem
 from pokeldn import __version__, console_trainer, pokemon, plugins
 from pokeldn.app.paths import SESSION
-from pokeldn.app.sprites import CACHE
+from pokeldn.app.sprites import CACHE, ITEMS, RIBBONS
 from pokeldn.app.settings import GEN3, VERSION_GAME, switch_ids_valid
 from pokeldn.app import preview, storage
 from gui.views.widgets import PathField, open_folder
@@ -316,7 +316,7 @@ class SettingsView:
         self.asked = False
 
     def _clear_sprites(self, e) -> None:
-        self.sprite_state.value = tr('settings.files_removed_78e092', '{value0} files removed', value0=CACHE.clear())
+        self.sprite_state.value = tr('settings.files_removed_78e092', '{value0} files removed', value0=CACHE.clear() + ITEMS.clear() + RIBBONS.clear())
         self.sprite_state.update()
 
     def _storage_refresh(self, inventory=None) -> None:

@@ -190,10 +190,16 @@ def _box(value) -> bool:
             and 0 <= value[0] < value[2] <= MAX_DIMENSION and 0 <= value[1] < value[3] <= MAX_DIMENSION)
 
 
+POKEMON_KEY = r"[1-9][0-9]*-[a-z][a-z0-9-]*"   # a form's sprite, "{species}-{form name}"
+ICON_KEY = r"[a-z0-9][a-z0-9-]*"                 # an item, ball or ribbon file, named by the helper's "icon"
+
+
 class SpriteCache:
-    def __init__(self, folder: Path | None = None, base: str | None = None, online: bool = True):
+    def __init__(self, folder: Path | None = None, base: str | None = None, online: bool = True,
+                 key: str = POKEMON_KEY):
         self.folder = Path(folder) if folder else DATA / "sprites"
         self.base = (base or BASE).rstrip("/")
+        self.key = key                  # the names a string key may take; an int key is a species
         self.online = online            # False reads the cache and never touches the network
         self.offline_until = 0.0
         self.lock = threading.Lock()
@@ -205,11 +211,9 @@ class SpriteCache:
     def _path(self, species: int | str, shiny: bool) -> Path:
         return self.folder / ("shiny" if shiny else "normal") / f"{species}.png"
 
-    @staticmethod
-    def _valid_key(species: int | str) -> bool:
-        return ((type(species) is int and species > 0) or
-                (isinstance(species, str) and
-                 re.fullmatch(r"[1-9][0-9]*-[a-z][a-z0-9-]*", species) is not None))
+    def _valid_key(self, species: int | str) -> bool:
+        return ((type(species) is int and species > 0 and self.key == POKEMON_KEY) or
+                (isinstance(species, str) and len(species) <= 64 and re.fullmatch(self.key, species) is not None))
 
     def cached(self, species: int | str, shiny: bool = False) -> bytes | None:
         """The sprite on disk, or None. Never touches the network; a damaged file is removed."""
@@ -356,3 +360,8 @@ class SpriteCache:
 
 
 CACHE = SpriteCache()
+# Item and ball icons, and the Gen 8 ribbons a Sword/Shield card carries, from the same repository; inside
+# CACHE's folder, so its clear() removes them too.
+ICON_BASE = os.environ.get("POKELDN_ICON_BASE", "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites")
+ITEMS = SpriteCache(DATA / "sprites" / "items", f"{ICON_BASE}/items", key=ICON_KEY)
+RIBBONS = SpriteCache(DATA / "sprites" / "ribbons", f"{ICON_BASE}/ribbons/generation-viii", key=ICON_KEY)

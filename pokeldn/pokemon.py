@@ -26,6 +26,15 @@ RECORD_SIZES = {"frlg": (80, 100), "rse": (80, 100), "lgpe": (232, 260), "bdsp":
 NATURES = ("Hardy", "Lonely", "Brave", "Adamant", "Naughty", "Bold", "Docile", "Relaxed", "Impish",
            "Lax", "Timid", "Hasty", "Serious", "Jolly", "Naive", "Modest", "Mild", "Quiet", "Bashful",
            "Rash", "Calm", "Gentle", "Sassy", "Careful", "Quirky")   # the index every record stores
+# Pokemon files of other games PKHeX reads; the offer converts one to its own game (Service.import_file).
+FOREIGN = re.compile(r"\.(pk[1-9]|pb7|pb8|pa8|pa9|ck3|xk3|bk4|rk4|sk2)$", re.IGNORECASE)
+
+
+def foreign(game: str, path: str) -> bool:
+    """Whether the file at `path` is another game's Pokemon, to convert before `game` takes it."""
+    return bool(FOREIGN.search(path)) and not path.lower().endswith("." + EXTENSIONS[game])
+
+
 CHECK_TIMEOUT = 10.0
 RECORD_LIMIT = 768
 
@@ -238,10 +247,21 @@ class Service:
         data = entity_bytes(game, data)
         return self._ask({"cmd": "owner", "game": game, "data": base64.b64encode(data).decode()})
 
-    def import_file(self, game: str, path: str, trainer: dict | None = None) -> dict:
+    def import_file(self, game: str, path: str, trainer: dict | None = None, receiver: dict | None = None) -> dict:
         """The Pokemon in the file at `path`, kept, or BuilderError; `trainer` ({ot, tid, sid, gender}, as
-        settings.trainer gives it) replaces its original trainer and keeps its shine (services/pkhex Retrain)."""
-        reply = self.check(game, path, {"trainer": trainer} if trainer else None)
+        settings.trainer gives it) replaces its original trainer and keeps its shine (services/pkhex Retrain).
+        A record of another format (FOREIGN) first goes to `game` as the bank moves one, received by `receiver`."""
+        if foreign(game, path):
+            data = Path(path).expanduser().read_bytes()
+            if len(data) > RECORD_LIMIT:
+                raise BuilderError("This file is too big to be one Pokemon.")
+            moved = self._ask({"cmd": "convert", "game": game, "name": Path(path).name,
+                               "trainer": receiver or trainer or {}, "data": base64.b64encode(data).decode()})
+            reply = self.check_bytes(game, base64.b64decode(moved["data"]),
+                                     fields={"trainer": trainer} if trainer else None)
+            reply["converted_from"] = moved["from"]
+        else:
+            reply = self.check(game, path, {"trainer": trainer} if trainer else None)
         if not reply["legal"] and not self.allow_illegal:
             raise BuilderError(reply["report"])
         reply["file"] = self.keep(game, reply)

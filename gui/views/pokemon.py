@@ -11,7 +11,7 @@ from pokeldn.app.command import offers
 from pokeldn.app.settings import GEN3
 from pokeldn.lgpe.session import CODE_PICKER, code_picks
 from gui import drop, theme as t
-from gui.views.sprites import EDGE, MINI, SIZE as SPRITE_SIZE, Sprite
+from gui.views.sprites import EDGE, MINI, SIZE as SPRITE_SIZE, Icon, Sprite
 from gui.views.widgets import PixelActivity
 from gui.localization import SERVICE, error_message, summary_text, translate
 from pokeldn.app.i18n import t as tr
@@ -263,7 +263,7 @@ class PokemonPicker:
 
     async def _use_file(self, e) -> None:
         files = await self.app.picker.pick_files(
-            allowed_extensions=[builder.EXTENSIONS[self.game], "bin", "hex", "ek3"],
+            allowed_extensions=[builder.EXTENSIONS[self.game], "bin", "hex", "ek3", *FOREIGN_EXTENSIONS],
             file_type=ft.FilePickerFileType.CUSTOM)
         if files and files[0].path:
             self.load(files[0].path)
@@ -290,7 +290,8 @@ class PokemonPicker:
             return
         retrain = bool(self.value.get("retrain"))
         try:
-            info = SERVICE.import_file(self.game, path, self.owner() if retrain else None)
+            info = SERVICE.import_file(self.game, path, self.owner() if retrain else None,
+                                       receiver=self.owner() if builder.foreign(self.game, path) else None)
         except Exception as exc:
             self._message(tr('pokemon.not_legal_with_my_trainer', 'Not legal with you as its original trainer: {value0}', value0=exc)
                           if retrain else
@@ -301,6 +302,9 @@ class PokemonPicker:
         self.value["source"] = path
         self.value["note"] = tr('pokemon.retrain_note', 'With you as its original trainer it {value0}.', value0=info["note"]) \
             if retrain and info.get("note") else ""
+        if info.get("converted_from"):
+            self.value["note"] = " ".join(filter(None, [tr('pokemon.converted_note', 'Converted from {value0} as HOME would move it.',
+                                                           value0=info["converted_from"]), self.value["note"]]))
         self.value.update(file=info["file"], summary=builder.summary(info), legal=info["legal"],
                           encounter=info.get("canonical", info)["encounter"], moves=info.get("canonical", info)["moves"],
                           place=info.get("encounter_place", ""),
@@ -791,8 +795,16 @@ class OfferOptions:
             self.label.update()
         options = [(ANY, any_label or tr('pokemon.random_67bc48', 'Random'))] + [(str(n["id"]), n["name"]) for n in
                                        (sorted(names, key=lambda n: n["name"]) if search else names)]
-        return t.dropdown(options, ANY if current is None else str(current), on_select=picked,
-                          enable_filter=search, editable=search, menu_height=320)
+        icon = None
+
+        def selected(e):
+            if icon:
+                icon(e.control.value)
+            picked(e)
+        dropdown = t.dropdown(options, ANY if current is None else str(current), on_select=selected,
+                              enable_filter=search, editable=search, menu_height=320)
+        icon = icon_choices(getattr(self.picker, "app", None), dropdown, names)
+        return dropdown
 
     def _encounter(self, encounters: list[dict]) -> ft.Control:
         """Where the Pokemon comes from: any legal encounter, or one PKHeX lists for the species."""
@@ -936,7 +948,27 @@ class OfferOptions:
         return ""
 
 
-NAME_LISTS = {"species": "species", "move": "moves", "item": "items", "ball": "balls",
+FOREIGN_EXTENSIONS = ("pk1", "pk2", "pk4", "pk5", "pk6", "pk7", "pb7", "pk8", "pb8", "pa8", "pk9", "pa9", "ck3", "xk3",
+                      "bk4", "rk4", "sk2")   # pokeldn.pokemon.FOREIGN, offered by the file picker
+ICON_ROWS = 60     # a list this short shows an icon on every row; a longer one only beside the choice
+
+
+def icon_choices(app, dropdown: ft.Dropdown, names: list[dict], ribbon: bool = False) -> Callable[[str], None] | None:
+    """Puts PokeAPI icons on a dropdown of names the helper gave an "icon": the chosen one beside the field,
+    and one per row in a short list. Returns what to call with the new value, None when no name has an icon."""
+    icons = {str(n["id"]): n["icon"] for n in names if n.get("icon")}
+    if not icons or app is None:
+        return None
+    if len(names) <= ICON_ROWS:
+        for option in dropdown.options:
+            if option.key in icons:
+                option.leading_icon = Icon(app, icons[option.key], ribbon).control
+    chosen = Icon(app, icons.get(str(dropdown.value)), ribbon)
+    dropdown.leading_icon = chosen.control
+    return lambda value: chosen.show(icons.get(str(value)))
+
+
+NAME_LISTS = {"species": "species", "move": "moves", "item": "items", "ball": "balls", "ribbon": "ribbons",
               "bag": "bag"}     # the items a Sword/Shield gift may carry
 EMPTY = "-"
 
@@ -945,13 +977,18 @@ class NamePicker:
     """A searchable list of the species, moves, items or balls a game has, by name; the value is the id."""
 
     def __init__(self, app, game: str, kind: str, value: str, on_change, optional: bool = True,
-                 names: list[dict] | Callable[[], list[dict]] | None = None, only=None):
+                 names: list[dict] | Callable[[], list[dict]] | None = None, only=None, hint: str = ""):
         """`names` replaces the PKHeX list, directly or through a loader run off the UI thread, for a
         game whose ids differ from it; `only` keeps the ids it holds."""
         self.app, self.game, self.kind, self.optional = app, game, NAME_LISTS[kind], optional
-        self.names, self.only = names, only
-        self.dropdown = t.dropdown([], None, on_select=lambda e: on_change("" if e.control.value == EMPTY
-                                                                           else e.control.value),
+        self.names, self.only, self.hint = names, only, hint
+        self.picked = None     # icon_choices' update, once the names carry icons
+
+        def selected(e):
+            if self.picked:
+                self.picked(e.control.value)
+            on_change("" if e.control.value == EMPTY else e.control.value)
+        self.dropdown = t.dropdown([], None, on_select=selected,
                                    enable_filter=True, editable=True, menu_height=320,
                                    hint_text=tr('pokemon.loading_47d2a5', 'Loading...'), disabled=True)
         self.value = value
@@ -979,7 +1016,8 @@ class NamePicker:
                     options.insert(0, ft.DropdownOption(key=EMPTY, text=tr('pokemon.not_set_4895f7', 'Not set')))
                 self.dropdown.options = options
                 self.dropdown.value = str(self.value) if self.value else (EMPTY if self.optional else None)
-                self.dropdown.hint_text = tr('pokemon.search_49c266', 'Search')
+                self.picked = icon_choices(self.app, self.dropdown, names, ribbon=self.kind == "ribbons")
+                self.dropdown.hint_text = self.hint or tr('pokemon.search_49c266', 'Search')
                 self.dropdown.disabled = False
             try:
                 self.dropdown.update()

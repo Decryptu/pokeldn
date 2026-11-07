@@ -379,6 +379,8 @@ what a retail console produced.
 The language index comes from the table at `0x02067650` (game language to 0..8). Ribbon bytes go to
 `0x00775d50`; indices above 127 set nothing. A record with zero ribbon bytes names ribbon 0
 thirty-two times: fill the list with `0xFF`.
+The app's Build your own lists the ribbons below the first mark (`RibbonIndex` 0 to 52) by name and
+icon; each picked ribbon goes in once, in the order picked (`pokeldn.swsh.gift_builder.ribbon_list`).
 
 The parser does not read the level or the met level; both offsets come from claimed cards.
 
