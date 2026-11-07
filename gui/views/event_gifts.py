@@ -133,7 +133,7 @@ class EventGiftPicker:
         disabled = self.busy or (self.limit > 1 and len(self.values) >= self.limit)
         shiny = event["shiny"] == "always"
         why, warned = problem(event), warning(event)
-        head = [t.text(event["title"], 13, weight=ft.FontWeight.W_600, max_lines=1,
+        head = [t.text(translate(event["title"]), 13, weight=ft.FontWeight.W_600, max_lines=1,
                        overflow=ft.TextOverflow.ELLIPSIS, expand=True)]
         if shiny:
             head.append(t.pixel_icon("sparkles", size=12, color=t.AMBER, tooltip=tr('event_gifts.shiny_039a0a', 'Shiny')))
