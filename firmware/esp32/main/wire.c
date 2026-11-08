@@ -7,8 +7,9 @@
 #include <string.h>
 
 /* S3, C3 and C6 use native USB Serial/JTAG; ESP32 uses UART0. Connect the matching USB port.
+   The S3's UART build (POKELDN_UART) uses UART0 on its TX/RX pins instead.
    docs/hardware_esp32.md, Supported boards. */
-#if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
+#if (CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6) && !POKELDN_UART
 #define WIRE_USB 1
 #include "driver/usb_serial_jtag.h"
 #else
@@ -26,6 +27,17 @@
 
 #if !WIRE_USB
 #define WIRE_UART UART_NUM_0
+#if POKELDN_UART
+/* XIAO ESP32S3 D6 (TX) and D7 (RX). A bridge carries the stream over TCP with no line rate, and the
+   host sends no BAUD over socket://, so the board starts at the host's usual run rate. */
+#define WIRE_UART_TX 43
+#define WIRE_UART_RX 44
+#define WIRE_UART_START_BAUD 921600
+#else
+#define WIRE_UART_TX 1
+#define WIRE_UART_RX 3
+#define WIRE_UART_START_BAUD 115200
+#endif
 #endif
 #define MSG_LOG 0x83
 #define MSG_CREDIT 0x8B
@@ -356,7 +368,7 @@ static void reader(void *arg)
     ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_config));
 #else
     const uart_config_t config = {
-        .baud_rate = 115200,
+        .baud_rate = WIRE_UART_START_BAUD,
         .data_bits = UART_DATA_8_BITS,
         .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
@@ -365,8 +377,8 @@ static void reader(void *arg)
     };
     ESP_ERROR_CHECK(uart_driver_install(WIRE_UART, 16384, 16384, WIRE_UART_EVENTS, &s_uart_events, 0));
     ESP_ERROR_CHECK(uart_param_config(WIRE_UART, &config));
-    /* With CONFIG_ESP_CONSOLE_NONE nothing routes UART0 to GPIO1/3; the board stays mute without this. */
-    ESP_ERROR_CHECK(uart_set_pin(WIRE_UART, 1, 3, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    /* With CONFIG_ESP_CONSOLE_NONE nothing routes UART0 to its pins; the board stays mute without this. */
+    ESP_ERROR_CHECK(uart_set_pin(WIRE_UART, WIRE_UART_TX, WIRE_UART_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     /* The driver drains the 128-byte FIFO at 120 by default: 8 bytes, 53 us at 1500000, and a
        Scarlet seat's opening overflowed it 235 times. At 32 the margin is 640 us.
        docs/hardware_esp32.md, The serial ceiling. */

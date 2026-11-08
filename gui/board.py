@@ -181,6 +181,9 @@ def ports() -> list[Port]:
             continue
         bridge = BRIDGES.get((info.vid, info.pid), f"USB serial {info.vid:04x}:{info.pid:04x}")
         found.append(Port(info.device, bridge, info.serial_number or "", (info.vid, info.pid) == NATIVE_USB))
+    # POKELDN_BRIDGE=HOST:PORT lists the network bridge as one more board (docs/docker.md).
+    if address := os.environ.get("POKELDN_BRIDGE", "").strip():
+        found.append(Port(f"socket://{address}", "Wi-Fi bridge", "", True))
     return sorted(found, key=lambda p: p.device)
 
 

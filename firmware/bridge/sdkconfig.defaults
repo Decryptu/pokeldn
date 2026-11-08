@@ -1,0 +1,16 @@
+# Targets: esp32s3 (XIAO ESP32S3) or esp32c5; idf.py set-target picks one, and
+# sdkconfig.defaults.<target> adds to this file.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+# The UART pins carry the radio's stream: logs go to USB Serial/JTAG, never to UART0's pins.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_FREERTOS_HZ=1000
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+CONFIG_LWIP_MAX_SOCKETS=16
+# The host's frames are small and latency-bound.
+CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=n
+CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=n
+# The radio's stream to the host waits out a short Wi-Fi stall in these instead of in the UART ring.
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=16384
+CONFIG_LWIP_TCP_WND_DEFAULT=16384

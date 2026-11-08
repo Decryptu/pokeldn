@@ -1,5 +1,12 @@
 idf_build_get_property(idf_target IDF_TARGET)
-if(idf_target STREQUAL "esp32s3" OR idf_target STREQUAL "esp32c3" OR idf_target STREQUAL "esp32c6")
+# POKELDN_UART=1 in the environment of idf.py: an S3 takes the host link on its TX/RX pins instead of
+# USB, for a second board that carries it to the network. docs/hardware_esp32.md, The UART build.
+if(DEFINED ENV{POKELDN_UART} AND NOT idf_target STREQUAL "esp32s3")
+    message(FATAL_ERROR "POKELDN_UART is for the esp32s3 target; the classic ESP32 always uses UART")
+endif()
+if(DEFINED ENV{POKELDN_UART})
+    set(wire_driver esp_driver_uart)
+elseif(idf_target STREQUAL "esp32s3" OR idf_target STREQUAL "esp32c3" OR idf_target STREQUAL "esp32c6")
     set(wire_driver esp_driver_usb_serial_jtag)
 elseif(idf_target STREQUAL "esp32")
     set(wire_driver esp_driver_uart)
@@ -44,4 +51,8 @@ endif()
 # sdkconfig.defaults.ble. docs/hardware_esp32.md, Bluetooth.
 if(DEFINED ENV{POKELDN_BLE})
     target_compile_definitions(${COMPONENT_LIB} PRIVATE POKELDN_BLE=1)
+endif()
+
+if(DEFINED ENV{POKELDN_UART})
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE POKELDN_UART=1)
 endif()

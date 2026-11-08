@@ -103,6 +103,15 @@ class ReliableLink:
         gating sends on that throttles for nothing."""
         return sum(1 for e in self.unacked.values() if not e[_E_ACKED])
 
+    def health(self):
+        """'rtt p50 X ms max Y ms, oldest resent N times': whether a stalled window waits on the round
+        trip or on frames lost and resent."""
+        s = sorted(self._rtt)
+        rtt = f"rtt p50 {s[len(s) // 2]:.0f} ms max {s[-1]:.0f} ms" if s else "no rtt sample yet"
+        pending = [e for _, e in sorted(self.unacked.items(), key=lambda i: (i[0] - self.window_lo) & 0xFFFF)
+                   if not e[_E_ACKED]]
+        return f"{rtt}, oldest resent {pending[0][_E_RESENDS]} times" if pending else rtt
+
     def send_low(self):
         return self.window_lo if self.unacked else self.out_seq
 

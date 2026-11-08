@@ -102,3 +102,7 @@ EVAL_RUN_NOTES.txt
 /gui/client/
 # The ARM-only Unicorn scripts/build_unicorn.py builds, with its source.
 /gui/unicorn/
+
+# Docker (docs/docker.md): the local .env names the bridge; docker-data/ and keys/ are already
+# covered by the top-level folder rule.
+/.env

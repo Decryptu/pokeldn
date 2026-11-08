@@ -6,7 +6,9 @@
 
 #include "sdkconfig.h"
 
-#if CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32S3
+/* Not in the S3's UART build: USB only powers it, and its host bytes would arm a restart that a
+   charger's missing SOF frames then trigger. */
+#if (CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32S3) && !POKELDN_UART
 #include <stdbool.h>
 #include <string.h>
 
