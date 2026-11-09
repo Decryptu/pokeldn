@@ -737,10 +737,10 @@ static void send_info(void)
 #else
 #define LINK_WORD ""
 #endif
-#ifdef POKELDN_DISPLAY_E32R40T
-#define DISPLAY_WORD " display=e32r40t"   /* gui/board.py Identity.stock: no OLED image offered over it */
-#else
+#ifdef POKELDN_DISPLAY_OLED
 #define DISPLAY_WORD ""
+#else
+#define DISPLAY_WORD " display=" POKELDN_DISPLAY_NAME   /* gui/board.py: the image for this board's screen */
 #endif
     snprintf(text, sizeof(text), "pokeldn-radio " CONFIG_IDF_TARGET " version=%s idf=" IDF_VER LINK_WORD DISPLAY_WORD,
              esp_app_get_description()->version);

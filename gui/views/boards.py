@@ -38,7 +38,6 @@ class Facts:
     detail: str = ""
     port: board.Port | None = None
     mac: str = ""
-    stock: bool = True      # False: a board-specific build the app's images would replace
     gift: bool = False      # a Mystery Gift kept on the board, sent with no computer
 
     @property
@@ -47,7 +46,7 @@ class Facts:
 
     @property
     def update(self) -> str:
-        return board.update_for(self.version, self.kind, self.chip) if self.state == "ready" and self.stock else ""
+        return board.update_for(self.version, self.kind, self.chip) if self.state == "ready" else ""
 
 
 class BoardView:
@@ -159,8 +158,7 @@ class BoardView:
         f = Facts(key, port=port, chip=self.app.chips.get(key, ""))
         ident = self.app.identities.get(key)
         if isinstance(ident, board.Identity):
-            f.kind, f.version, f.mac = "radio_ble" if ident.ble else "radio", ident.firmware_version, ident.sta_mac
-            f.stock = ident.stock
+            f.kind, f.version, f.mac = ident.kind, ident.firmware_version, ident.sta_mac
             f.gift = ident.gift_kept
             f.chip = ident.chip or f.chip
             f.state = "ready" if ident.current else "old"
@@ -295,7 +293,7 @@ class BoardView:
                 tr('boards.firmware_is_the_newest_this_app_includes_ae0469', '{value0} firmware {value1} is the newest this app includes.', value0=f.firmware.name, value1=f.version) if f.version else
                 tr('boards.firmware_8d2ff6', '{value0} firmware.', value0=f.firmware.name))
         if not self.installing and f.state == "ready":
-            if f.kind in ("radio", "radio_ble"):
+            if f.kind.startswith("radio"):
                 several = len(self.ports) > 1
                 if several and f.key != self.app.radio_port(self.ports):
                     action.append(t.secondary_button(tr('boards.use_for_trades_9f2fdb', 'Use for trades'), self._use, "check"))
@@ -375,7 +373,7 @@ class BoardView:
                                                                  tr('boards.save_the_name_4a4b36', 'Save the name'))], spacing=4)))
             buttons = [t.secondary_button(tr('boards.blink_the_led_8c40f1', 'Blink the LED'), self._blink, "lightbulb",
                                           disabled=self.app.busy)]
-            if f.kind in ("radio", "radio_ble") and f.port:
+            if f.kind.startswith("radio") and f.port:
                 buttons.append(t.secondary_button(tr('boards.test_the_radio', 'Test the radio'), self._radio_test_confirm,
                                                   "wifi", disabled=self.app.busy))
             rows.append(ft.Row(buttons, spacing=8, wrap=True))

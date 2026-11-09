@@ -29,6 +29,8 @@ def check() -> None:
     assert (root / "gui/firmware/pokeldn-radio-c6.bin").is_file()
     assert (root / "gui/firmware/pokeldn-radio-ble.bin").is_file()
     assert (root / "gui/firmware/pokeldn-radio-ble-c6.bin").is_file()
+    assert (root / "gui/firmware/pokeldn-radio-e32r40t.bin").is_file()
+    assert (root / "gui/firmware/pokeldn-radio-szpi.bin").is_file()
     assert not (root / "config/host.local.toml").exists()
     assert not (root / "scratchpad").exists()
     assert (root / "LICENSE").is_file()

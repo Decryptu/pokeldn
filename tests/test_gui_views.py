@@ -2101,7 +2101,7 @@ def test_the_line_after_an_install_ends_when_the_board_answers(monkeypatch, curr
     view.render()
     assert view.progress_text.value == "Installed. Checking the board..."
     monkeypatch.setattr(boards.board, "Identity", SimpleNamespace)
-    identities["COM3"] = SimpleNamespace(ble=False, firmware_version="1", sta_mac="", stock=False, gift_kept=False, chip="",
+    identities["COM3"] = SimpleNamespace(kind="radio_e32r40t", firmware_version="1", sta_mac="", gift_kept=False, chip="",
                                          current=current)
     view.render()
     assert view.progress_text.value == shown and not view.confirming

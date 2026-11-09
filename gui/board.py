@@ -49,6 +49,10 @@ FIRMWARE_BLE = {"ESP32": os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-bl
 # Bluetooth Classic. C3 and C6 cannot be a Switch controller.
 FIRMWARE_PAD = os.path.join(ROOT, "gui", "firmware", "pokeldn-pad-s3.bin")
 FIRMWARE_PAD_ESP32 = os.path.join(ROOT, "gui", "firmware", "pokeldn-pad.bin")
+# A colour screen board's radio build (docs/hardware_esp32.md, The screen): INFO says display=NAME and
+# the kind is radio_NAME.
+FIRMWARE_SCREEN = {"radio_e32r40t": os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-e32r40t.bin"),
+                   "radio_szpi": os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-szpi.bin")}
 
 
 
@@ -67,6 +71,8 @@ class Firmware:
 FIRMWARES = (
     Firmware("radio", tr('board.wireless_da1d2f', 'Wireless'), tr('board.the_board_is_the_radio_for_trades_mystery_gift_and_ever_9d0251', 'The board is the radio for trades, Mystery Gift and every tool on the Games page.'), "globe", ("ESP32", "ESP32-S3", "ESP32-C3", "ESP32-C6"), tr('board.the_radio_for_trades_a18fb5', 'the radio for trades')),
     Firmware("radio_ble", tr('board.bluetooth_wireless', 'Bluetooth wireless'), tr('board.bluetooth_wireless_summary', 'The radio for the iPhone app: the phone reaches the board over Bluetooth, and a computer still reaches it over USB.'), "radio", ("ESP32", "ESP32-C6"), tr('board.the_radio_for_the_iphone_app', 'the radio for the iPhone app')),
+    Firmware("radio_e32r40t", tr('board.wireless_e32r40t', 'Wireless, 4-inch screen'), tr('board.wireless_e32r40t_summary', 'The radio for the E32R40T board, its 4-inch screen showing each trade and Mystery Gift.'), "monitor", ("ESP32",), tr('board.the_radio_for_trades_a18fb5', 'the radio for trades')),
+    Firmware("radio_szpi", tr('board.wireless_szpi', 'Wireless, 2-inch screen and speaker'), tr('board.wireless_szpi_summary', 'The radio for the LCKFB szpi ESP32-S3 board, its 2-inch screen showing each trade and Mystery Gift, with sounds.'), "monitor", ("ESP32-S3",), tr('board.the_radio_for_trades_a18fb5', 'the radio for trades')),
     Firmware("pad", tr('board.controller_31df66', 'Controller'), tr('board.the_board_is_a_controller_for_the_switch_this_computer__6feaec', 'The board is a controller for the Switch: this computer presses its buttons and plays macros from the Control page.'), "joystick", ("ESP32-S3", "ESP32"),
              tr('board.a_controller_for_the_switch_889ffc', 'a controller for the Switch')),
 )
@@ -79,6 +85,8 @@ def image_for(kind: str, chip: str) -> str:
         return FIRMWARE_PAD if chip == "ESP32-S3" else FIRMWARE_PAD_ESP32
     if kind == "radio_ble":
         return FIRMWARE_BLE[chip]
+    if kind in FIRMWARE_SCREEN:
+        return FIRMWARE_SCREEN[kind]
     return bundled_firmware(chip)
 
 
@@ -166,9 +174,14 @@ class Identity:
         return "link=ble" in self.firmware.split()
 
     @property
-    def stock(self) -> bool:
-        """A build for one board's own screen says `display=NAME`: the app's images are not for it."""
-        return not any(word.startswith("display=") for word in self.firmware.split())
+    def display(self) -> str:
+        """A colour screen board's build says `display=NAME` (firmware radio.c send_info); "" for the OLED one."""
+        return next((w[8:] for w in self.firmware.split() if w.startswith("display=")), "")
+
+    @property
+    def kind(self) -> str:
+        """The firmware kind this build is, FIRMWARE_BY_KIND's key when the app knows it."""
+        return "radio_ble" if self.ble else f"radio_{self.display}" if self.display else "radio"
 
 
 def ports() -> list[Port]:
@@ -328,7 +341,8 @@ def download_firmware(say=print, folder: str = os.path.dirname(FIRMWARE)) -> str
     if not isinstance(releases, list):
         raise OSError(tr('board.the_firmware_response_holds_no_releases_98ae8a', 'the firmware response holds no releases'))
     known = [os.path.basename(f) for f in (FIRMWARE, FIRMWARE_S3, FIRMWARE_C3, FIRMWARE_C6, FIRMWARE_PAD,
-                                           FIRMWARE_PAD_ESP32, *FIRMWARE_BLE.values())]
+                                           FIRMWARE_PAD_ESP32, *FIRMWARE_BLE.values(),
+                                           *FIRMWARE_SCREEN.values())]
     for release in releases:
         if not isinstance(release, dict) or not isinstance(release.get("assets"), list):
             continue
@@ -397,6 +411,8 @@ def flash(port: str, firmware: str = "", kind: str = "radio", from_loader: bool 
         pad_image = FIRMWARE_PAD if chip.CHIP_NAME == "ESP32-S3" else FIRMWARE_PAD_ESP32
         if kind == "radio_ble" and chip.CHIP_NAME not in FIRMWARE_BLE:
             raise esptool.FatalError(tr('board.bluetooth_firmware_chips', 'The Bluetooth firmware is built for an ESP32 or an ESP32-C6, not an {value0}.', value0=chip.CHIP_NAME))
+        if kind in FIRMWARE_SCREEN and chip.CHIP_NAME not in FIRMWARE_BY_KIND[kind].chips:
+            raise esptool.FatalError(tr('board.screen_firmware_chips', 'The {value0} firmware is built for an {value1}, not an {value2}.', value0=FIRMWARE_BY_KIND[kind].name, value1=FIRMWARE_BY_KIND[kind].chips[0], value2=chip.CHIP_NAME))
         path = firmware or (pad_image if kind == "pad" else image_for(kind, chip.CHIP_NAME))
         if not os.path.isfile(path):
             raise esptool.FatalError(tr('board.missing_firmware_for_c62c63', 'Missing firmware for {value0}: {value1}', value0=chip.CHIP_NAME, value1=path))
@@ -431,7 +447,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=tr('board.flash_pokeldn_firmware_for_the_connected_chip_6c0357', 'Flash pokeldn firmware for the connected chip.'))
     parser.add_argument("--port", required=True)
     parser.add_argument("--firmware", default="", help=tr('board.custom_merged_image_default_bundled_firmware_8495cf', 'custom merged image; default: bundled firmware'))
-    parser.add_argument("--kind", choices=("radio", "radio_ble", "pad"), default="radio",
+    parser.add_argument("--kind", choices=tuple(FIRMWARE_BY_KIND), default="radio",
                         help=tr('board.radio_wireless_trades_pad_the_s3_as_a_switch_controller_04c7e1', 'radio: wireless trades; pad: the S3 as a Switch controller'))
     parser.add_argument("--from-loader", action="store_true",
                         help=tr('board.the_controller_firmware_already_restarted_the_board_int_fc7961', 'the controller firmware already restarted the board into its ROM loader'))

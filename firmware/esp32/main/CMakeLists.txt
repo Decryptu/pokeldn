@@ -8,19 +8,24 @@ else()
 endif()
 
 # The screen's panel, POKELDN_DISPLAY in the environment of idf.py: OLED (the default, an SSD1306 on
-# I2C, probed) or E32R40T (that board's ST7796S, classic ESP32). docs/hardware_esp32.md, The screen.
+# I2C, probed), E32R40T (that board's ST7796S, classic ESP32) or SZPI (the LCKFB szpi board's ST7789 and
+# its ES8311 speaker, ESP32-S3). docs/hardware_esp32.md, The screen.
 set(POKELDN_DISPLAY "$ENV{POKELDN_DISPLAY}")
 if(NOT POKELDN_DISPLAY)
     set(POKELDN_DISPLAY OLED)
 endif()
 if(POKELDN_DISPLAY STREQUAL "E32R40T" AND idf_target STREQUAL "esp32")
-    set(panel_source "panel_e32r40t.c")
+    set(panel_source "panel_spi.c")
     set(panel_driver esp_driver_spi)
+elseif(POKELDN_DISPLAY STREQUAL "SZPI" AND idf_target STREQUAL "esp32s3")
+    set(panel_source "panel_spi.c" "board_szpi.c" "speaker_es8311.c" "sfx.c")
+    set(panel_driver esp_driver_spi esp_driver_i2c esp_driver_i2s)
+    set(speaker 1)
 elseif(POKELDN_DISPLAY STREQUAL "OLED")
     set(panel_source "panel_oled.c")
     set(panel_driver esp_driver_i2c)
 else()
-    message(FATAL_ERROR "POKELDN_DISPLAY=${POKELDN_DISPLAY}: OLED, or E32R40T on the esp32 target")
+    message(FATAL_ERROR "POKELDN_DISPLAY=${POKELDN_DISPLAY}: OLED, E32R40T on the esp32 target, or SZPI on esp32s3")
 endif()
 
 if(DEFINED ENV{POKELDN_BLE})
@@ -32,8 +37,13 @@ idf_component_register(
     INCLUDE_DIRS "."
     PRIV_REQUIRES esp_app_format esp_wifi wpa_supplicant ${wire_driver} esp_driver_ledc esp_driver_gpio ${panel_driver} esp_timer nvs_flash esp_event mbedtls zstd ${ble_component})
 
+string(TOLOWER "${POKELDN_DISPLAY}" display_name)
 target_compile_definitions(${COMPONENT_LIB} PRIVATE POKELDN_DISPLAY_${POKELDN_DISPLAY}
+                           POKELDN_DISPLAY_NAME="${display_name}"
                            POKELDN_FIRMWARE_VERSION="${POKELDN_FIRMWARE_VERSION}")
+if(speaker)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE POKELDN_SPEAKER=1)
+endif()
 
 # A diagnostic build: POKELDN_USB_BEACON=1 in the environment of idf.py (usbwatch.c).
 if(DEFINED ENV{POKELDN_USB_BEACON})

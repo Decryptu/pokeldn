@@ -446,13 +446,25 @@ probes 0x3C, then 0x3D, and with a screen draws a frame every 50 ms at 400 kHz.
 The common four-pin module carries its own regulator and pull-ups; its address resistor selects 0x3C
 (silkscreen 0x78) or 0x3D (0x7A). The firmware sets segment remap (`A1`), reversed COM scan (`C8`)
 and alternative COM pins (`DA 12`). The ESP32-C3 0.42-inch OLED board's 72x40 panel shows columns
-30..101 and rows 24..63 of the frame; a screen on those pins gets compact scenes (one 12-character
-line, half-size sprites), rendered offline by `tools/ldn/screen_preview.py --panel 72x40`.
+30..101 and rows 24..63 of the frame.
+
+Every panel runs the same scenes (`scene.c`), the same timings and the same sound cues; only the
+layout numbers differ. One function draws each scene from a `view_t` that holds the panel's size and
+where the parts go. The 72x40 view is compact: one 12-character title line and half-size sprites. A
+colour panel (`panel_spi.c`) draws the 128x64 frame at a whole scale, lit pixels `#47AEFA` on
+`#0B0B0D` (`screen.h` `SCREEN_LIT_RGB`, `SCREEN_DARK_RGB`), the same two colours the app's mirror
+uses. `tools/ldn/screen_preview.py OUT.gif [--panel 72x40]` renders a scripted session offline;
+`tests/test_screen_render.py` holds the app's mirror (`pokeldn.app.screen_render`) frame for frame and
+cue for cue to the firmware's code on both views.
+
+A ball rocks three times, left, right, left, in 900 ms, as one being caught: every 3 s while searching,
+every 4 s on the idle scene, and once when the received ball lands, before it opens.
 
 Without host commands the screen shows the radio's state: idle, joining or hosting, and linked, with
 the frames counted in each direction. It is at full brightness while the radio is active or an
 animation plays and for 60 s after the last DISPLAY, HELLO or BOOT press; then it dims to contrast 1
 with pre-charge `22` (`81 01 D9 22`), and after 600 s turns off (`AE`). Lower pre-charge flickers.
+A colour panel's backlight runs on LEDC PWM at 5 kHz: 95 % on, 12 % dimmed, 0 off.
 The idle scene shifts 2 pixels every 60 s against burn-in. `tests/test_esp32_screen.py` holds the
 timings.
 
@@ -469,7 +481,7 @@ DISPLAY (`0x0E`) carries one op:
 |---|---|---|
 | auto | 0 | the radio's state |
 | trade | 1 | slot 0 with "offering" and the line |
-| traded | 2 | slot 0 leaves in its ball (2.1 s), packets cross until the hold, a ball arrives and opens (1.6 s), then slot 1 "received" for 10 s |
+| traded | 2 | slot 0 leaves in its ball (2.1 s), packets cross until the hold, a ball drops in (0.6 s), wobbles (0.4 s) and opens (0.6 s), then slot 1 "received" for 10 s |
 | gift | 3 | a Wonder Card holding slot 2 |
 | gifted | 4 | the card leaves, then "delivered!" |
 | arrived | 5 | a traded show still waiting brings its ball in now |
@@ -498,11 +510,30 @@ species 386 and the default after, cropped, scaled to at most 64 (40 on a card) 
 one bit with the inner lines kept dark. `tools/ldn/esp32_screen.py --port PORT` plays a trade and a
 gift on a board; `tools/ldn/screen_preview.py OUT.gif` renders a scripted session offline.
 
+### Sounds
+
+`scene_sound()` names the cue each frame starts; a board with a speaker plays it, every other board
+ignores it. A cue cuts the last one short. `sfx.c` synthesises each one on the board: square waves of
+a set duty and noise, original sequences. `tools/ldn/screen_preview.py --sounds DIR` writes each cue
+and a whole session as WAV files.
+
+| cue | when, in ms after the show starts | sound |
+|---|---|---|
+| linked | a console seats (the frame the radio first counts one) | two rising notes |
+| recall | traded, 700 | a falling slide |
+| send | traded, 1100; gifted, 0 | a rising slide |
+| data | traded, every 1000 from 2600 to 300 before theirs comes in | a short blip |
+| arrive | theirs comes in | a falling slide |
+| wobble | 600 after it comes in | three clicks |
+| open | 1000 after it comes in | a click and a rising note |
+| received | 1600 after it comes in | a five-note jingle |
+| delivered | gifted, 900 | a three-note jingle |
+
 ### The E32R40T board
 
 The E32R40T (sold as the 4.0-inch ESP32-32E display) is a classic ESP32 with a 480x320 ST7796S panel
-on SPI. Its firmware is a separate build, `POKELDN_DISPLAY=E32R40T` in the environment of `idf.py`
-(the default is `OLED`); the release images are OLED builds.
+on SPI. Its firmware is a separate build, `POKELDN_DISPLAY=E32R40T` in the environment of `idf.py`;
+the release carries it as `pokeldn-radio-e32r40t.bin`.
 
 | signal | GPIO |
 |---|---|
@@ -510,8 +541,35 @@ on SPI. Its firmware is a separate build, `POKELDN_DISPLAY=E32R40T` in the envir
 | backlight, lit while high | 27 |
 | RGB LED, lit while low: red, green, blue | 22, 16, 17 |
 
-The panel shows the 128x64 frame at 3x (384x192), black on white, at 40 MHz SPI. GPIO2 is the
-panel's DC, so the board's LED is the blue one on GPIO17. The backlight goes off when the OLED would.
+The panel shows the 128x64 frame at 3x (384x192) at 40 MHz SPI. GPIO2 is the panel's DC, so the
+board's LED is the blue one on GPIO17.
+
+### The szpi board
+
+The LCKFB szpi ESP32-S3 board (立创·实战派, the xiaozhi `lichuang-dev` board) is an ESP32-S3-WROOM-1
+N16R8 with a 2.0-inch 320x240 ST7789 panel, an ES8311 codec driving a speaker, an ES7210 microphone
+ADC, a camera and an FT6336 touch controller. Its firmware is `POKELDN_DISPLAY=SZPI` on the esp32s3
+target; the release carries it as `pokeldn-radio-szpi.bin`. The microphone, camera and touch are not
+used. Pins are from the xiaozhi-esp32 board files.
+
+| part | pins |
+|---|---|
+| I2C, shared by the expander and the codec | SDA GPIO1, SCL GPIO2 |
+| PCA9557 expander at 0x19 | bit 0 LCD CS (low: selected), bit 1 amplifier (high: on), bit 2 camera power-down (high: off) |
+| ST7789 on SPI3, mode 2 | MOSI 40, SCLK 41, DC 39; MADCTL `60`, inversion on |
+| backlight, lit while low | GPIO42 |
+| ES8311 at 0x18, I2S | MCLK 38, BCLK 14, WS 13, DOUT 45 |
+| BOOT | GPIO0 |
+| WS2812 RGB LED | GPIO48 |
+
+The panel shows the 128x64 frame at 2x (256x128). The board's LED is a WS2812, which the PWM LED
+driver cannot run; this build has no LED. The codec runs at 16 kHz, 16 bits, MCLK 256 fs from the
+ESP32-S3, as a slave in I2S format at 0 dB; the amplifier is switched on for a cue and off 600 ms
+after the last one.
+
+- Never drive the backlight with a constant level: its boost converter needs a switching signal and
+  stays dark.
+- SPI mode 0 leaves the panel black; it needs mode 2.
 
 ## Building and flashing
 
@@ -706,3 +764,7 @@ Board page's log, which Copy board details includes.
   decoded no OFDM ([A board that decodes no OFDM](#a-board-that-decodes-no-ofdm)).
 - A Scarlet console joined to the board's access point can acknowledge the announcement and send no
   port 2 join ([Scarlet and Violet](sv.md#unresolved)).
+- The szpi build is unmeasured on the board: it is built and its scenes and sounds run offline. Whether
+  the board's USB-C reaches the ESP32-S3's own USB (the link the S3 build uses) or a bridge chip is
+  not stated in its published files.
+- The E32R40T build's PWM backlight and its two new colours are unmeasured on that board.

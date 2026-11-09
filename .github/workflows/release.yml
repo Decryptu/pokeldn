@@ -34,6 +34,13 @@ jobs:
           - target: esp32
             file: pokeldn-radio-ble.bin
             ble: true
+          # A colour screen board's own build (docs/hardware_esp32.md, The screen).
+          - target: esp32
+            file: pokeldn-radio-e32r40t.bin
+            display: E32R40T
+          - target: esp32s3
+            file: pokeldn-radio-szpi.bin
+            display: SZPI
     steps:
       - uses: actions/checkout@v7
       - name: Build and merge the image
@@ -45,12 +52,15 @@ jobs:
             export POKELDN_BLE=1
             set -- -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.ble"
           fi
+          if [ -n "${{ matrix.display }}" ]; then
+            export POKELDN_DISPLAY=${{ matrix.display }}
+          fi
           idf.py "$@" set-target ${{ matrix.target }}
           idf.py "$@" build
           idf.py "$@" merge-bin -o "$GITHUB_WORKSPACE/${{ matrix.file }}"
       - uses: actions/upload-artifact@v7
         with:
-          name: firmware-${{ matrix.target }}${{ matrix.ble && '-ble' || '' }}
+          name: firmware-${{ matrix.target }}${{ matrix.ble && '-ble' || '' }}${{ matrix.display && format('-{0}', matrix.display) || '' }}
           path: ${{ matrix.file }}
 
   # The controller firmware (docs/hardware_pad.md): an S3 over USB, a classic ESP32 over Bluetooth.
@@ -143,6 +153,14 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: firmware-esp32c6-ble
+          path: gui/firmware
+      - uses: actions/download-artifact@v8
+        with:
+          name: firmware-esp32-E32R40T
+          path: gui/firmware
+      - uses: actions/download-artifact@v8
+        with:
+          name: firmware-esp32s3-SZPI
           path: gui/firmware
       - name: Install
         run: python -m pip install -r gui/requirements.txt

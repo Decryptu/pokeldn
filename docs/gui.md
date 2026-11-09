@@ -711,6 +711,12 @@ for t in esp32:ble esp32c6:ble-c6; do
   idf.py -B build/$name merge-bin -o "$OUT/pokeldn-radio-$name.bin"
 done
 unset POKELDN_BLE
+for t in esp32:E32R40T esp32s3:SZPI; do   # the colour screen boards (hardware_esp32.md, The screen)
+  chip=${t%%:*}; name=$(echo ${t#*:} | tr A-Z a-z)
+  POKELDN_DISPLAY=${t#*:} idf.py -B build/$name -D SDKCONFIG="$PWD/build/$name/sdkconfig" set-target $chip
+  POKELDN_DISPLAY=${t#*:} idf.py -B build/$name -D SDKCONFIG="$PWD/build/$name/sdkconfig" build
+  idf.py -B build/$name merge-bin -o "$OUT/pokeldn-radio-$name.bin"
+done
 cd ../pad
 idf.py -B build -D SDKCONFIG="$PWD/build/sdkconfig" set-target esp32s3
 idf.py -B build -D SDKCONFIG="$PWD/build/sdkconfig" build

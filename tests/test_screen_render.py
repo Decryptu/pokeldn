@@ -26,6 +26,10 @@ class Radio(ctypes.Structure):
 @pytest.fixture
 def firmware(tmp_path):
     """A fresh build per test: scene.c keeps its packets and wake clock in statics."""
+    return build(tmp_path)
+
+
+def build(tmp_path):
     lib = tmp_path / ("libscene" + (".dylib" if sys.platform == "darwin" else ".so"))
     subprocess.run(["cc", "-O1", "-Wall", "-Werror", "-shared", "-fPIC",
                     f'-DPOKELDN_FIRMWARE_VERSION="{VERSION}"', "-o", str(lib), *map(str, SOURCES)],
@@ -37,6 +41,7 @@ def firmware(tmp_path):
     lib.scene_command.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_uint32]
     lib.scene_draw.argtypes = [ctypes.c_void_p, ctypes.POINTER(Radio), ctypes.c_uint32]
     lib.scene_panel.argtypes = [ctypes.c_uint8]
+    lib.scene_sound.restype = ctypes.c_uint8
     return lib
 
 
@@ -48,6 +53,9 @@ def sprite(w, h, seed):
     return rows
 
 
+heard: list[int] = []   # the sound cue of each frame of the last play()
+
+
 def play(lib, script, *, panel=0, start=1000, step=50, until=30000):
     """script: {ms after start: [("cmd", payload, expect) | ("radio", field, value) | ("reset",)]}."""
     py = Scene(VERSION)
@@ -56,6 +64,7 @@ def play(lib, script, *, panel=0, start=1000, step=50, until=30000):
     radio = Radio()
     fb = ctypes.create_string_buffer(1024)
     frames = 0
+    heard.clear()
     for at in range(0, until, step):
         now = start + at
         for event in script.get(at, ()):
@@ -70,6 +79,8 @@ def play(lib, script, *, panel=0, start=1000, step=50, until=30000):
         power = lib.scene_draw(fb, ctypes.byref(radio), now)
         frame, py_power = py.draw(radio.mode, radio.stations, radio.rx, radio.tx, radio.presses, now)
         assert (frame, py_power) == (fb.raw, power), f"frame at {at} ms differs"
+        assert py.sound == lib.scene_sound(), f"sound at {at} ms differs"
+        heard.append(py.sound)
         frames += 1
         radio.rx += (at // 700) % 3
         radio.tx += (at // 1100) % 2
@@ -152,3 +163,29 @@ def test_pixels_reads_the_page_order():
     rows = pixels(bytes(frame))
     assert len(rows) == 64 and len(rows[0]) == 128
     assert [(x, y) for y, row in enumerate(rows) for x, on in enumerate(row) if on] == [(5, 19)]
+
+
+def test_every_panel_plays_the_same_sounds_at_the_same_frames(tmp_path):
+    from pokeldn.app import screen_render as r
+    sounds = []
+    for panel in (0, 1):
+        (tmp_path / str(panel)).mkdir()
+        play(build(tmp_path / str(panel)), trade_script(), panel=panel)
+        sounds.append(list(heard))
+    assert sounds[0] == sounds[1]
+    cues = [(i * 50, c) for i, c in enumerate(sounds[0]) if c]
+    # traded at 6 s with a 30 s wait, cut at 12 s by ARRIVED: theirs comes in 6 s into the show.
+    assert cues == [(1000, r.SOUND_LINKED), (6700, r.SOUND_RECALL), (7100, r.SOUND_SEND),
+                    (8600, r.SOUND_DATA), (9600, r.SOUND_DATA), (10600, r.SOUND_DATA),
+                    (11600, r.SOUND_DATA), (12000, r.SOUND_ARRIVE), (12600, r.SOUND_WOBBLE),
+                    (13000, r.SOUND_OPEN), (13600, r.SOUND_RECEIVED)]
+
+
+def test_the_colour_panels_and_the_app_draw_in_the_same_two_colours():
+    import re
+    from gui import theme
+    from pokeldn.app import screen_render as r
+    header = (ROOT / "firmware/esp32/main/screen.h").read_text()
+    firmware = {name: int(value, 16) for name, value in re.findall(r"#define SCREEN_(LIT|DARK)_RGB 0x(\w+)", header)}
+    assert firmware == {"LIT": r.LIT_RGB, "DARK": r.DARK_RGB}
+    assert (theme.BLUE, theme.BG) == (f"#{r.LIT_RGB:06X}", f"#{r.DARK_RGB:06X}")

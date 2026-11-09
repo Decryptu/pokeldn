@@ -9,6 +9,11 @@
 #define SCREEN_H 64
 #define SCREEN_BYTES (SCREEN_W * SCREEN_H / 8)
 
+/* Every colour panel and the app's mirror draw lit pixels and the background in these two colours
+   (gui/theme.py BLUE and BG; tests/test_screen_render.py holds them equal). */
+#define SCREEN_LIT_RGB 0x47aefa
+#define SCREEN_DARK_RGB 0x0b0b0d
+
 void fb_clear(uint8_t *fb);
 void fb_pixel(uint8_t *fb, int x, int y, bool on);
 bool fb_get(const uint8_t *fb, int x, int y);
