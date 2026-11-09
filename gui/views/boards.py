@@ -187,6 +187,9 @@ class BoardView:
 
     # The page
 
+    def relayout(self) -> None:
+        self.render()
+
     def render(self) -> None:
         keys = self.keys()
         session_port = self.app.radio_port(self.ports)
@@ -335,12 +338,10 @@ class BoardView:
             else:
                 trailing = t.secondary_button(tr('boards.install_569ca4', 'Install'), lambda e, w=fw: self.confirm(w), "download",
                                               disabled=busy or not self.available(fw))
-            rows.append(ft.Container(ft.Row([
+            rows.append(ft.Container(t.text_row(
                 t.pixel_icon(fw.icon, size=24, color=t.BLUE if installed else t.MUTED),
-                ft.Column([t.text(fw.name, 14, weight=ft.FontWeight.W_600),
-                           t.text(fw.summary, 12, t.MUTED)], spacing=2, expand=True),
-                trailing,
-            ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                [t.text(fw.name, 14, weight=ft.FontWeight.W_600), t.text(fw.summary, 12, t.MUTED)],
+                [trailing], spacing=12),
                 padding=ft.Padding(12, 10, 12, 10), border_radius=12,
                 bgcolor=ft.Colors.with_opacity(0.04, "#FFFFFF") if installed else None))
         footer = [t.link_button(tr('boards.install_from_a_file_d6ca85', 'Install from a file...'), self._choose_file)]

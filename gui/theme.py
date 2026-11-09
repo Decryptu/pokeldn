@@ -376,6 +376,18 @@ def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, 
                         text_vertical_align=ft.VerticalAlignment.CENTER, **kwargs)
 
 
+def text_row(lead: ft.Control | None, body: list[ft.Control], actions: list[ft.Control], spacing: int = 14) -> ft.Control:
+    """An icon, a block of text and its buttons: side by side, or on a phone (compact) the buttons under
+    the text, so the text keeps the card's width. A view built with it re-renders in relayout()."""
+    text = ft.Column(body, spacing=4, expand=True)
+    buttons = ft.Row(actions, spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=compact)
+    top = ft.Row([*([lead] if lead else []), text], spacing=spacing, vertical_alignment=ft.CrossAxisAlignment.START)
+    if compact and actions:
+        return ft.Column([top, ft.Row([ft.Container(expand=True), buttons])], spacing=10)
+    top.controls.append(buttons)
+    return top
+
+
 def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, **kwargs) -> ft.Dropdown:
     # menu_height fixes the menu's height: a short list fills it with blank rows. No options yet means filled later.
     if options and len(options) * MENU_ROW < kwargs.get("menu_height", 0):

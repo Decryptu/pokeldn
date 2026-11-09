@@ -95,7 +95,10 @@ live, and back when widened; a desktop window keeps its title bar row above the 
 ## Phones
 
 Below 760 points wide, pages sit in a bottom tab bar and panels show one at a time on a switcher
-(Games, Options, Session). Android and iOS have no Control or Update page.
+(Games, Options, Session). Android and iOS have no Control or Update page. A card with text and
+buttons (`gui/theme.py` `text_row`) puts its buttons under the text, and the Bank's sort and filter
+menus take a row each; a view whose layout depends on the width re-renders in `relayout()` when the
+window crosses 760.
 
 ## The Games page
 
@@ -220,6 +223,26 @@ first.
 | removed | kept |
 |---|---|
 | `session/` (captures, traces, temporary offers), `logs/`, unused generated or imported offers in `pokemon/`, empty folders | offers under a minute old or referenced by saved settings and queues; received files, bank, saves, keys, firmware, settings; symlinks; files changed after the check |
+
+## Backup and restore
+
+Settings, Storage, Back up writes one zip (`pokeldn.app.backup`) with `pokeldn-backup.json` and these
+folders; Restore reads one back.
+
+| folder in the zip | from |
+|---|---|
+| `settings/settings.json` | the data folder's `settings.json` |
+| `pokemon/` | built and imported offers |
+| `received/` | the Received folder chosen in Settings |
+| `bank/`, `saves/`, `gts/`, `macros/` | the Bank, Saves, GTS and Macros folders |
+
+A `.keys` file is never written to a backup or restored from one, and plugins and their data are not
+in it. A restore first backs up the current files to the data folder's `backups/` (the newest three
+stay), then writes each file over its namesake; files the backup does not hold stay. The settings go
+to `settings.restore.json`, which the next launch puts in place before reading them. A member outside
+those folders, a link, a path with `..` or an unknown format refuses the whole restore before
+anything is written, and a member whose data does not match its CRC stops it; what it had written
+stays.
 
 ## Your saves
 

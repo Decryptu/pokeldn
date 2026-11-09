@@ -128,6 +128,8 @@ Contributors to this repository (GitHub does not list contributors on a fork):
   sprites
 - [axechaso](https://github.com/axechaso): the one-shot A press at an exact RNG frame behind the
   FireRed/LeafGreen Shiny Mewtwo boost, and the FireRed/LeafGreen RNG in the plugin API
+- [FrozenGEE](https://github.com/FrozenGEE): the ideas behind the LCKFB szpi ESP32-S3 board's screen and
+  speaker build, the board's sounds and ball wobble, backup and restore, and the phone layout fixes
 
 - [unlimitedcoder2](https://github.com/unlimitedcoder2): [ldnrs](https://github.com/unlimitedcoder2/ldnrs),
   the external Windows USB Wi-Fi daemon supported by the optional radio backend

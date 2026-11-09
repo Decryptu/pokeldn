@@ -196,6 +196,18 @@ def switch_ids_valid(tid: int, sid: int) -> bool:
 
 
 BAD = PATH.with_name("settings.json.bad")
+# A restore's settings (pokeldn.app.backup), put in place at the app's next launch: the running app
+# would save its own over them.
+STAGED = PATH.with_name("settings.restore.json")
+
+
+def apply_staged() -> bool:
+    """At launch, before the first load: True when a restore's settings replaced the current ones."""
+    try:
+        os.replace(STAGED, PATH)
+        return True
+    except FileNotFoundError:
+        return False
 # What the last load() could not use: {"path": the copy kept at BAD, "fields": the names reset, empty when
 # the whole file was unreadable}. It outlives later loads in the process (gui/main.py loads twice), so the
 # app can tell the player once.

@@ -28,7 +28,8 @@ if len(sys.argv) == 6 and sys.argv[1] == "--apply-update":
 os.environ.pop("POKELDN_RADIO", None)
 
 from pokeldn.app.i18n import select, t as tr  # noqa: E402
-from pokeldn.app.settings import load as load_settings  # noqa: E402
+from pokeldn.app.settings import apply_staged, load as load_settings  # noqa: E402
+apply_staged()   # a restore's settings, before anything reads them (pokeldn.app.backup)
 _launch_settings = load_settings()
 select(_launch_settings.app_language)
 
