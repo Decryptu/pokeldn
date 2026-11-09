@@ -1,16 +1,27 @@
-# pokeldn 0.60.2
+# pokeldn 0.61.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Update now refuses to replace a folder that holds anything besides pokeldn. An earlier app whose
-  files sat loose in another folder, such as `pokeldn.exe` and `_internal` placed straight on the
-  Desktop, replaced that whole folder and deleted the files in it. Keep pokeldn in a folder of its
-  own; this version's update helper refuses such a folder even when an older app starts it.
+- Backup and restore in Settings, Storage: one file with your settings, the bank, received and
+  built Pokemon, saves, GTS listings and macros. Your console keys and plugins are never in it. A
+  restore backs up your current files first; restored settings apply the next time pokeldn starts.
+- Every board screen shows the same scenes, timings and animations, whatever its size, and the
+  Session panel's copy of the screen matches them. A Poke Ball now wobbles while searching, on the
+  idle screen and when the received ball lands.
+- The LCKFB szpi ESP32-S3 board (2-inch 320x240 screen and speaker) has its own firmware, with
+  sounds for each step of a trade and a Mystery Gift. It is untested on a real board so far.
+- The E32R40T 4-inch board's screen now uses the app's blue on dark, dims like the others, and gets
+  its firmware updates from the Board page.
+- Every trade tool can keep the Pokemon the console shows during a trade, traded or not, in a Shown
+  folder beside Received (Advanced tab). Brilliant Diamond/Shining Pearl and the Sword/Shield joiner
+  now save a received Pokemon only once the trade completes.
+- On a phone, plugin and firmware cards put their buttons under the text, the Bank's sort and filter
+  menus take a row each, and the Android USB help can be translated.
 
-The radio firmware stays at 1.10.0; the controller firmware stays at 1.3.0.
+The radio firmware is 1.11.0; the controller firmware stays at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
@@ -30,7 +41,8 @@ Each app includes PKHeX.Core and firmware for classic ESP32, ESP32-S3, ESP32-C3 
 and ESP-IDF are bundled or unnecessary for running the app. Supply your own `prod.keys`.
 The separate `pokeldn-radio*.bin` (wireless; `-ble` for Bluetooth wireless) and `pokeldn-pad*.bin` (controller) files are merged
 firmware images for manual flashing at address `0x0`; the app selects the right image for the
-connected chip. `SHA256SUMS` covers all fourteen downloads.
+connected chip; `pokeldn-radio-e32r40t.bin` and `pokeldn-radio-szpi.bin` are for those screen boards.
+`SHA256SUMS` covers all sixteen downloads.
 
 Code signing policy: free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
 [SignPath Foundation](https://signpath.org); [what is signed, team roles and privacy](https://decryptu.github.io/pokeldn/code_signing.html).
