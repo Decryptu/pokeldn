@@ -18,7 +18,7 @@ typedef unsigned int u32;
 #define BLOCK 0x1000
 #define OP_LZ_START 6
 #define OP_LZ_DATA 7
-#define BUDGET 1000            /* per frame: a copied byte costs 1, a symbol SYMBOL_COST */
+#define BUDGET 900             /* per frame: a copied byte costs 1, a symbol SYMBOL_COST */
 #define SYMBOL_COST 6
 #define LOOKAHEAD 20           /* LZMA_REQUIRED_INPUT_MAX */
 #define IN_SIZE 1280
@@ -34,7 +34,7 @@ struct state {
     u32 pending, final, seq, primed;
     u32 in_len, in_pos;
     u32 staging0, nlive;
-    u16 live[160];
+    u16 live[336];                     /* every staging block; the state ends below 0x02020000 */
     u8 in[IN_SIZE];
     u16 p[N_PROBS];
 };

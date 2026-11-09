@@ -146,7 +146,7 @@ because the ROM copy is reloaded from RomFS at each application launch.
 
 1. installs the payload, which stops the m4a engine (`gSoundInfo.ident` and `SOUNDCNT_X` zeroed):
    the music otherwise reads song and wave data from the ROM being replaced;
-2. hashes all 4096 blocks of the ROM copy (`h = rotl(h, 1) ^ word`, 32 blocks per frame);
+2. hashes all 4096 blocks of the ROM copy (`h = rotl(h, 1) + word`, 32 blocks per frame; an XOR there hashed a 0x00 block and a 0xFF block alike, so a block of zeros over a block of 0xFF was never written);
 3. writes every block whose hash differs from the image, 62 messages per acknowledgement, each block
    read back through the ROM window; a run of blocks of one byte goes as one fill message of up to
    eight blocks;
@@ -297,7 +297,7 @@ client calls it again the next frame. A finished block is written with `swi 0x48
 The host encodes in a worker process while one-block surveys keep the link busy.
 
 The console drops a link block that arrives while it is still running the last message. The encoder
-records the decoder's cost per stream byte (a symbol 6 units, a copied byte 1, 1000 units a frame);
+records the decoder's cost per stream byte (a symbol 6 units, a copied byte 1, 900 units a frame, which keeps every call of the ten Latin streams under 100,000 instructions);
 a symbol decodes once the decoder holds its 20-byte lookahead, 25 bytes past the encoder's count, so
 its work falls on the message that brings those. Each data message carries the frames of decoding it
 causes plus 6 frames; the next message's header block may arrive during the decoding, its second
@@ -323,8 +323,25 @@ functions an emulated session executes (216 million host-side samples of the GBA
 transfer fall in 327 functions and 53 blocks), their direct callees, and the data their literal
 pools name. With every other block of the copy filled with `0xFF`, an emulated English FireRed
 session ran its writes and its check pass and printed its end message. Closing further over data
-pointers reaches nearly the whole ROM (3380 blocks at two levels). The other eleven cartridges have
-no measured set and are refused.
+pointers reaches nearly the whole ROM (3380 blocks at two levels).
+
+The other nine Latin cartridges carry BPRE's set by code matching (`tools/rse/live_blocks.py`): every
+cartridge holds FireRed's code apart from `bl` offsets and pool pointers, so 32-byte windows of BPRE's
+live blocks, with those words masked, are found in the cartridge, and each block moves by the shift its
+windows land with. A window counts only when a neighbour lands with the same shift. Every function
+address of the build table that the matched windows hold lands where the table puts it (29 of 29 on
+each cartridge), and the method run on BPRE gives back its 157 blocks.
+
+| cartridge | live blocks | | cartridge | live blocks |
+|---|---|---|---|---|
+| BPRE | 157 (measured) | | BPGE | 197 |
+| BPRF | 212 | | BPGF | 212 |
+| BPRD | 210 | | BPGD | 210 |
+| BPRI | 209 | | BPGI | 209 |
+| BPRS | 211 | | BPGS | 211 |
+
+The decoder's live table (`asm/rom-lzma.c` `live[336]`) holds one entry per staging block; its state
+ends below `0x02020000`, the end of `gDecompressionBuffer`. The Japanese cartridges are refused.
 
 ### Rates
 
@@ -430,5 +447,5 @@ Under unicorn, `RtcGetRawInfo` from the built ROM returned the expected date at 
   the error screen gave a black screen: the way back to the title runs from overwritten blocks, so a
   cut stream restarts from a relaunch.
 - What turns a logging stall into a link error. Forced stops of the same length caused none.
-- The live blocks of the eleven other cartridges.
+- A console session on a cartridge other than BPRE; their live blocks are carried by code matching.
 - A build for the Japanese cartridges.

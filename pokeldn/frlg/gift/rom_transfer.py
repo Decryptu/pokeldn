@@ -78,10 +78,10 @@ def code(build=None):
 
 
 def block_hash(data):
-    """asm/rom-transfer.s OP_SURVEY: h = rotl(h, 1) ^ word over the block's words."""
+    """asm/rom-transfer.s OP_SURVEY: h = rotl(h, 1) + word over the block's words."""
     h = 0
     for word in memoryview(bytes(data)).cast("I"):
-        h = (((h << 1) | (h >> 31)) & 0xFFFFFFFF) ^ word
+        h = ((((h << 1) | (h >> 31)) & 0xFFFFFFFF) + word) & 0xFFFFFFFF
     return h
 
 
@@ -398,7 +398,9 @@ class RomTransferServer(save_transfer._Server):
         staged = {start + i: n for i, n in enumerate(moved)}
         empty, out = block_hash(_EMPTY), []
         for m in range(BLOCKS):
-            if m < len(self.blocks) and hashes[m] == self.hashes[m]:
+            if m in RESERVED:                   # the decoder and its order table, written after the survey
+                out.append(None)
+            elif m < len(self.blocks) and hashes[m] == self.hashes[m]:
                 out.append(("target", m))
             elif m < len(self.base) and hashes[m] == self._base_patched_hashes[m]:
                 out.append(("base", m))

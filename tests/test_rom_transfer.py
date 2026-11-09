@@ -302,3 +302,49 @@ def test_with_no_cartridge_the_stream_is_lzma_all_the_same():
     assert server.outcome == "booted" and client.rebooted
     assert rom_of(client) == NEW_COPY.ljust(len(rom_of(client)), b"\xff")
     assert [m for m in sent if len(m) > 4 and m[4] == 7]
+
+
+def test_more_live_blocks_than_english_firered_has_still_decode_and_boot():
+    """Every Latin cartridge but BPRE has 197 to 212 live blocks [rom_live_blocks.json]; the decoder's
+    table once held 160, and the entries past it overwrote its input buffer."""
+    old, new, new_copy = image(3, 900, 2), image(4, 860, 1), image(4, 860, 2)
+    old = old[:0xAC] + b"BPRF" + old[0xB0:]
+    live = set(range(1, 215))
+    server = rom_transfer.RomTransferServer(new, live=live, base=b"", encoder_process=False)
+    client = run(server, old)
+    assert server.outcome == "booted" and client.rebooted
+    assert rom_of(client) == new_copy.ljust(len(rom_of(client)), b"\xff")
+
+
+def test_a_block_of_zeros_over_a_block_of_ff_is_written():
+    """French FireRed's copy holds 0xFF where Emerald holds zeros; a survey hash that XORs the words
+    gave both 0, and the host skipped the block as already written."""
+    old, new, new_copy = bytearray(OLD), bytearray(NEW), bytearray(NEW_COPY)
+    old[0x20000:0x22000] = b"\xff" * 0x2000
+    new[0x20000:0x22000] = new_copy[0x20000:0x22000] = bytes(0x2000)
+    assert rom_transfer.block_hash(bytes(0x1000)) != rom_transfer.block_hash(b"\xff" * 0x1000)
+    server = rom_transfer.RomTransferServer(bytes(new), live=LIVE)
+    client = run(server, bytes(old))
+    assert server.outcome == "booted"
+    assert rom_of(client) == bytes(new_copy).ljust(len(rom_of(client)), b"\xff")
+
+
+def test_a_match_crossing_into_the_next_block_never_reads_the_block_just_written():
+    """Blocks 21 and 20 copy from each other, so they go last and back to back. A match that starts in
+    21's last byte reads the console's old 21; at the boundary the console writes the new 21 over it."""
+    base = bytearray(image(1, 300, 1))
+    base[0xAC:0xB0] = b"BPRF"
+    rng = random.Random(9)
+    base[20 * 4096:22 * 4096] = rng.randbytes(2 * 4096)          # each run of it found only there
+    old = b"".join(rom_transfer.with_wrapper_patches(rom_transfer.blocks_of(base), "BPRF"))
+    p20, p21 = old[20 * 4096:21 * 4096], old[21 * 4096:22 * 4096]
+    new21 = p20[100:200] + rng.randbytes(4096 - 101) + p21[1000:1001]
+    new20 = p21[1001:1273] + rng.randbytes(4096 - 272)
+    new = bytearray(NEW)
+    new[20 * 4096:21 * 4096], new[21 * 4096:22 * 4096] = new20, new21
+    copy = bytearray(NEW_COPY)
+    copy[20 * 4096:21 * 4096], copy[21 * 4096:22 * 4096] = new20, new21
+    server = rom_transfer.RomTransferServer(bytes(new), live=LIVE, base=bytes(base), encoder_process=False)
+    client = run(server, old)
+    assert server.outcome == "booted"
+    assert rom_of(client) == bytes(copy).ljust(len(rom_of(client)), b"\xff")

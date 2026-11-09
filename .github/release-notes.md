@@ -1,27 +1,18 @@
-# pokeldn 0.61.0
+# pokeldn 0.62.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Backup and restore in Settings, Storage: one file with your settings, the bank, received and
-  built Pokemon, saves, GTS listings and macros. Your console keys and plugins are never in it. A
-  restore backs up your current files first; restored settings apply the next time pokeldn starts.
-- Every board screen shows the same scenes, timings and animations, whatever its size, and the
-  Session panel's copy of the screen matches them. A Poke Ball now wobbles while searching, on the
-  idle screen and when the received ball lands.
-- The LCKFB szpi ESP32-S3 board (2-inch 320x240 screen and speaker) has its own firmware, with
-  sounds for each step of a trade and a Mystery Gift. It is untested on a real board so far.
-- The E32R40T 4-inch board's screen now uses the app's blue on dark, dims like the others, and gets
-  its firmware updates from the Board page.
-- Every trade tool can keep the Pokemon the console shows during a trade, traded or not, in a Shown
-  folder beside Received (Advanced tab). Brilliant Diamond/Shining Pearl and the Sword/Shield joiner
-  now save a received Pokemon only once the trade completes.
-- On a phone, plugin and firmware cards put their buttons under the text, the Bank's sort and filter
-  menus take a row each, and the Android USB help can be translated.
+- A ROM transfer over FireRed/LeafGreen Mystery Gift now works on English, French, German, Italian
+  and Spanish FireRed and LeafGreen, not only English FireRed. Emerald swap 1.2.0 needs this version
+  to stream into those games.
+- Fixed two ROM transfer faults that could leave blocks wrong: a block of zeros over a block of 0xFF
+  was taken as already written, and a copy that ran from one block into the next could read the
+  block just rewritten. A transfer that hit either stopped at its final check with nothing booted.
 
-The radio firmware is 1.11.0; the controller firmware stays at 1.3.0.
+The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.

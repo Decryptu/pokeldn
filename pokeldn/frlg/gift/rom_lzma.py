@@ -23,7 +23,7 @@ HASH_BITS = 22
 # asm/rom-lzma.c's per-frame accounting: a symbol costs SYMBOL_COST, a copied byte 1, BUDGET a frame
 # (tests/test_rom_transfer.py reads both from the source).
 SYMBOL_COST = 6
-BUDGET = 1000
+BUDGET = 900
 MARK_STEP = 256
 
 NEXT_LIT = (0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 4, 5)
@@ -254,7 +254,12 @@ class Stream:
             room = min(MATCH_MAX, end - i)
 
             def run(src):
-                limit = room if src >= BASE else min(room, self._limit(src, current))
+                limit = room
+                if src < BASE:
+                    # The block finishing at the boundary is written to the ROM copy then: past it,
+                    # a match reads only bytes still there for the next block.
+                    edge = ((i - BASE) | (BLOCK - 1)) + 1 + BASE - i
+                    limit = min(room, self._limit(src, current), max(edge, self._limit(src, current + 1)))
                 n = 0
                 while n < limit and v[src + n] == v[i + n]:
                     n += 1
