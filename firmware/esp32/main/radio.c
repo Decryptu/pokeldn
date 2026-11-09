@@ -17,6 +17,7 @@
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
 
@@ -40,6 +41,9 @@ enum {
 /* A host that sent CMD_ALIVE and then nothing for this long is gone: the board leaves the network,
    so the console does not keep a seat nobody answers. docs/hardware_esp32.md, The host watchdog. */
 #define HOST_SILENT_US 5000000
+/* Idle with no host message for this long, the radio stops: its receiver is what heats an idle board.
+   Any host message starts it again. docs/hardware_esp32.md, Standby. */
+#define STANDBY_AFTER_US 30000000
 enum {
     MSG_INFO = 0x81, MSG_RESULT = 0x82, MSG_RX_MGMT = 0x84, MSG_RX_ETH = 0x85, MSG_LINK = 0x86,
     MSG_STA_JOINED = 0x87, MSG_STA_LEFT = 0x88, MSG_STATUS = 0x89, MSG_BENCH = 0x8A,
@@ -380,6 +384,9 @@ static void go_idle(void)
     start_sniffer();
 }
 
+static atomic_bool s_standby;
+static SemaphoreHandle_t s_standby_turn;   /* a host message against the main loop */
+
 static uint8_t s_sta_rate;   /* an index into AP_FIXED_RATES; 0 leaves rate control on */
 static uint8_t s_sta_power;  /* esp_wifi_set_max_tx_power units (0.25 dBm, 8..84); 0 leaves it */
 static uint8_t s_sta_flags;  /* 1 RTS on every frame, 2 no RTS before a retry */
@@ -417,6 +424,14 @@ static esp_err_t sta_join(const uint8_t *p, size_t n)
     esp_wifi_start();
     esp_wifi_set_tx_done_cb(tx_done);
     esp_wifi_set_ps(WIFI_PS_NONE);
+    /* Before the association: a board whose antenna distorts at full power never associates. */
+    if (s_sta_power) {
+        int8_t before = 0, after = 0;
+        esp_wifi_get_max_tx_power(&before);
+        const esp_err_t set = esp_wifi_set_max_tx_power((int8_t)s_sta_power);
+        esp_wifi_get_max_tx_power(&after);
+        wire_log("sta max tx power %u: %d, %d -> %d", s_sta_power, set, before, after);
+    }
     start_sniffer();
     wifi_config_t config = {0};
     memcpy(config.sta.ssid, p + 7, 32);
@@ -471,13 +486,6 @@ static void sta_install_keys(void)
         const int set = esp_wifi_internal_set_rts(&rts);
         esp_wifi_internal_get_rts(&rts);
         wire_log("sta rts after: %d thr %u retries %u", set, rts.thr, rts.retries_before_rts);
-    }
-    if (s_sta_power) {
-        int8_t before = 0, after = 0;
-        esp_wifi_get_max_tx_power(&before);
-        const esp_err_t set = esp_wifi_set_max_tx_power((int8_t)s_sta_power);
-        esp_wifi_get_max_tx_power(&after);
-        wire_log("sta max tx power %u: %d, %d -> %d", s_sta_power, set, before, after);
     }
     if (s_sta_rate)
         wire_log("sta fixed rate %u: %d", s_sta_rate,
@@ -631,7 +639,9 @@ static void button_pressed(uint32_t count, int64_t press_us)
 static void led_state(led_look_t *look, uint32_t *activity, uint32_t *alarm)
 {
     switch (atomic_load(&s_mode)) {
-    case MODE_IDLE: *look = (led_look_t){LED_BREATHE, 50, 4000}; break;
+    case MODE_IDLE:
+        *look = atomic_load(&s_standby) ? (led_look_t){LED_BREATHE, 12, 8000} : (led_look_t){LED_BREATHE, 50, 4000};
+        break;
     case MODE_STA_JOINING: *look = (led_look_t){LED_BLINK, 255, 250}; break;
     case MODE_AP:
         if (atomic_load(&s_ap_stations) <= 0) { *look = (led_look_t){LED_BREATHE, 110, 1500}; break; }
@@ -729,10 +739,10 @@ static void send_info(void)
 #else
 #define LINK_WORD ""
 #endif
-#ifdef POKELDN_DISPLAY_E32R40T
-#define DISPLAY_WORD " display=e32r40t"   /* gui/board.py Identity.stock: no OLED image offered over it */
-#else
+#ifdef POKELDN_DISPLAY_OLED
 #define DISPLAY_WORD ""
+#else
+#define DISPLAY_WORD " display=" POKELDN_DISPLAY_NAME   /* gui/board.py: the image for this board's screen */
 #endif
     snprintf(text, sizeof(text), "pokeldn-radio " CONFIG_IDF_TARGET " version=%s idf=" IDF_VER LINK_WORD DISPLAY_WORD,
              esp_app_get_description()->version);
@@ -949,11 +959,36 @@ static void beacon_command(const uint8_t *p, size_t n)
     default: result(CMD_BEACON, ESP_ERR_NOT_SUPPORTED);
     }
 }
+static void standby_enter(void)
+{
+    xSemaphoreTake(s_standby_turn, portMAX_DELAY);
+    /* Rechecked under the turn: a command that landed since the main loop looked keeps the radio on. */
+    if (atomic_load(&s_mode) == MODE_IDLE && esp_timer_get_time() - atomic_load(&s_host_seen) > STANDBY_AFTER_US) {
+        esp_wifi_stop();
+        atomic_store(&s_standby, true);
+    }
+    xSemaphoreGive(s_standby_turn);
+}
+
+static void standby_leave(void)
+{
+    if (atomic_load(&s_mode) != MODE_IDLE) return;   /* every frame of a link comes through here */
+    xSemaphoreTake(s_standby_turn, portMAX_DELAY);   /* a standby_enter already past its recheck finishes first */
+    if (atomic_load(&s_standby)) {
+        esp_wifi_start();
+        esp_wifi_set_ps(WIFI_PS_NONE);
+        start_sniffer();
+        atomic_store(&s_standby, false);
+    }
+    xSemaphoreGive(s_standby_turn);
+}
+
 static atomic_bool s_host_watched;    /* armed by CMD_ALIVE, disarmed by HELLO: an older host never sends it */
 
 static void command(uint8_t type, const uint8_t *p, size_t n)
 {
     atomic_store(&s_host_seen, esp_timer_get_time());
+    standby_leave();
     wire_set_host_away(false);
     if (atomic_load(&s_beacon_on) && (type == CMD_HELLO || type == CMD_CHANNEL || type == CMD_SNIFF ||
                                       type == CMD_STA_JOIN || type == CMD_STOP || type == CMD_AP_START)) {
@@ -1090,6 +1125,7 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     s_ap_joins = xQueueCreate(8, 6);
+    s_standby_turn = xSemaphoreCreateMutex();
     install_hooks();
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event, NULL));
     ESP_ERROR_CHECK(esp_wifi_start());
@@ -1128,6 +1164,10 @@ void app_main(void)
             atomic_store(&s_host_watched, false);
             if (!atomic_load(&s_beacon_on)) go_idle();   /* a beacon outlives its host */
             wire_set_host_away(true);   /* its queue and what is heard next go nowhere: no alarm */
+        }
+        if (atomic_load(&s_mode) == MODE_IDLE && !atomic_load(&s_standby) &&
+            esp_timer_get_time() - atomic_load(&s_host_seen) > STANDBY_AFTER_US) {
+            standby_enter();
         }
         if (atomic_load(&s_mode) == MODE_STA_JOINING) {
             if (atomic_load(&s_assoc_seen) && esp_wifi_sta_is_running_internal()) {

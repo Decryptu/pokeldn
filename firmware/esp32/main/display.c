@@ -9,6 +9,9 @@
 #include "display.h"
 #include "panel.h"
 #include "screen.h"
+#if POKELDN_SPEAKER
+#include "speaker.h"
+#endif
 
 #define FRAME_MS 50
 
@@ -36,6 +39,9 @@ static void display_task(void *arg)
         scene_radio_t state = {0};
         if (s_state) s_state(&state);
         const uint8_t power = scene_draw(s_frame, &state, now);
+#if POKELDN_SPEAKER
+        speaker_play(scene_sound());
+#endif
         /* The frame goes before the panel lights, so waking never shows the last one. */
         if (power != SCENE_OFF) panel_present(s_frame);
         if (power != s_power && panel_power(power))
@@ -47,6 +53,9 @@ static void display_task(void *arg)
 bool display_start(display_state_t state)
 {
     if (!panel_init()) return false;
+#if POKELDN_SPEAKER
+    speaker_start();   /* a speaker that does not answer leaves the screen as it is */
+#endif
     s_state = state;
     s_commands = xQueueCreate(8, sizeof(display_msg_t));
     xTaskCreatePinnedToCore(display_task, "display", 3072, NULL, 1, NULL, configNUMBER_OF_CORES - 1);

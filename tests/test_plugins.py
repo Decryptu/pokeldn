@@ -960,3 +960,17 @@ def test_a_plugin_tool_with_a_new_variant_joins_its_activity_row(isolated, tmp_p
     assert plugins.load()[0].loaded
     trade = next(a for a in activities(next(g for g in plugins.games() if g.key == "frlg")) if a.key == "trade")
     assert trade.pick({"role": "host"}, "link", "lan").key == "example-echo"
+
+
+def test_a_plugin_script_runs_a_launcher_and_gets_its_exit_status(tmp_path):
+    """run_launcher runs bin/ as the app would: a success, argparse's refusal, and sys.argv left alone."""
+    import sys
+    from pokeldn.plugins import run_launcher
+    argv = list(sys.argv)
+    out = tmp_path / "celebi.pokegift"
+    assert run_launcher("bin/frlg_mg_host.py", ["--gift", "celebi", "--export-gift", str(out)]) == 0
+    assert out.stat().st_size
+    assert run_launcher("bin/frlg_mg_host.py", ["--no-such-flag"]) == 2
+    assert sys.argv == argv
+    with pytest.raises(ValueError):
+        run_launcher("tools/rse/rom_mod.py", [])

@@ -42,10 +42,10 @@ def child(argv: list[str]) -> None:
             stream.reconfigure(encoding="utf-8", line_buffering=True)
     if sys.stdin and (os.environ.get("POKELDN_MANAGED_RUN") or os.environ.get("POKELDN_POPUPS")):
         threading.Thread(target=_read_the_app, daemon=True).start()
-    _execute(argv)
+    execute(argv)
 
 
-def _execute(argv: list[str]) -> None:
+def execute(argv: list[str]) -> None:
     mode, target, *args = argv
     if mode == "--run":
         path = os.path.join(ROOT, target)
@@ -212,7 +212,7 @@ class InProcess(Process):
             sys.stdout = sys.stderr = lines
             for hook in _before_run:
                 hook()
-            _execute(argv)
+            execute(argv)
         except SystemExit as error:
             if isinstance(error.code, int) or error.code is None:
                 code = error.code or 0
@@ -305,10 +305,13 @@ if os.environ.get("POKELDN_PLATFORM") in ("android", "ios"):   # neither starts 
 
 def base_env(settings, port: str, trace: str | None = None) -> dict:
     env = dict(os.environ, PYTHONUNBUFFERED="1", POKELDN_ESP32_BAUD=str(settings.baud),
-               POKELDN_MANAGED_RUN="1", POKELDN_HOME_TRACKER=settings.home_tracker)
+               POKELDN_MANAGED_RUN="1", POKELDN_HOME_TRACKER=settings.home_tracker,
+               POKELDN_ALLOW_ILLEGAL="1" if settings.allow_illegal else "0")
     env["POKELDN_RADIO"] = f"{settings.radio}:" if settings.radio else f"esp32:{port or 'auto'}"
     if trace:
         env["POKELDN_ESP32_TRACE"] = trace
+    if settings.tx_power:
+        env["POKELDN_ESP32_TX_POWER"] = f"{settings.tx_power:g}"
     if settings.board_screen:
         env["POKELDN_SCREEN_MIRROR"] = "1"
     return env

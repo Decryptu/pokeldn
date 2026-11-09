@@ -1,5 +1,7 @@
+import asyncio
 import copy
 import os
+import shutil
 import threading
 import time
 
@@ -9,9 +11,9 @@ from gui import theme as t
 from gui.app import keys_problem
 from pokeldn import __version__, console_trainer, pokemon, plugins
 from pokeldn.app.paths import SESSION
-from pokeldn.app.sprites import CACHE
+from pokeldn.app.sprites import CACHE, ITEMS, RIBBONS
 from pokeldn.app.settings import GEN3, VERSION_GAME, switch_ids_valid
-from pokeldn.app import preview, storage
+from pokeldn.app import backup, preview, storage
 from gui.views.widgets import PathField, open_folder
 from pokeldn.app.i18n import t as tr
 
@@ -59,11 +61,14 @@ class SettingsView:
         self.storage_work = False
         self.clear_button = t.button(tr('settings.clear_local_files_2f0392', 'Clear local files'), self._clear_local, "folder", filled=False,
                                      disabled=True)
+        self.backup_state = t.text("", 12, t.MUTED, visible=False)
+        self.backup_work = False
         self.shown = self.asked = False
         app.update_listeners.append(self._update_shown)
         self._update_text()
         self.show_advanced = False
-        self.trainer_game = "firered"     # the game a trainer per game edits
+        # The game a trainer per game edits; a restart must not look like the trainer was forgotten.
+        self.trainer_game = app.settings.last_edited(dict(TRAINER_GAMES)) or "firered"
         self.column = ft.Column(spacing=t.GAP)
         self.scroll = t.readable(self.column, 760)
         self.control = self.scroll
@@ -88,6 +93,10 @@ class SettingsView:
         self._keys(s.keys, update=False)
         speed = t.dropdown([("921600", tr('settings.921600_default_1702d5', '921600 (default)')), ("1500000", tr('settings.1500000_faster_needs_a_good_cable_f5b9b7', '1500000 (faster, needs a good cable)'))],
                            str(s.baud), on_select=lambda e: self.save("baud", int(e.control.value)))
+        power = t.dropdown([("0", tr('settings.automatic_default', 'Automatic (default)')),
+                            ("20", tr('settings.full_20_dbm', 'Full (20 dBm)')), ("15", "15 dBm"), ("11", "11 dBm"),
+                            ("8.5", "8.5 dBm")],
+                           f"{s.tx_power:g}", on_select=lambda e: self.save("tx_power", float(e.control.value)))
 
         trainer = self._trainer()
 
@@ -104,11 +113,18 @@ class SettingsView:
 
         advanced = [
             t.card(tr('settings.serial_speed_1ed128', 'Serial speed'), speed, tr('settings.how_fast_the_computer_talks_to_the_board_keep_the_defau_4942ca', 'How fast the computer talks to the board. Keep the default unless a guide says otherwise.')),
+            t.card(tr('settings.transmit_power', 'Transmit power'), power, tr('settings.transmit_power_help', "The board's radio strength. Automatic uses 8.5 dBm on an ESP32-C3, since small C3 boards (Super Mini, 0.42-inch screen) only reach the console at that power, and full power on other boards, dropping to 8.5 dBm when a join fails.")),
             switch("board_trace", tr('settings.record_the_board_s_serial_traffic_e599a1', "Record the board's serial traffic"),
                    tr('settings.adds_the_board_s_counters_and_every_serial_message_to_t_615de0', "Adds the board's counters and every serial message to the session record. Only for radio problems someone asked you to report.")),
             t.card(tr('settings.home_tracker_2e98ab', 'HOME tracker'), t.dropdown([("empty", tr('settings.leave_it_empty_default_3eca45', 'Leave it empty (default)')), ("made", tr('settings.make_one_495c86', 'Make one'))],
                                               s.home_tracker, on_select=lambda e: self._home_tracker(e.control.value)),
                    tr('settings.what_the_bank_the_pokemon_builder_and_mystery_gift_simu_2ba22b', 'What the bank, the Pokemon builder and Mystery Gift - Simulated put in the HOME tracker of a Pokemon moved to another game or received from a Mystery Gift. PKHeX flags an empty one; HOME refuses a made one.')),
+            t.card(tr('settings.allow_illegal', 'Allow non-legal Pokemon'), None,
+                   tr('settings.allow_illegal_detail', "Build, import, keep and trade Pokemon PKHeX finds illegal: any level, moves, ability, ball or shininess. When no legal Pokemon has what you asked for, the builder makes it anyway and marks it Not legal. A broken Pokemon can crash the other game when it is drawn, so back your save up. The GTS still takes legal Pokemon only."),
+                   trailing=t.switch(s.allow_illegal, lambda e: self._allow_illegal(e.control.value))),
+            t.card(tr('settings.bank_illegal', 'Import non-legal Pokemon into the bank'), None,
+                   tr('settings.bank_illegal_detail', "Keep a Pokemon PKHeX finds illegal when you import a file or a save into your bank, marked Not legal. Moving it to a game or trading it still needs Allow non-legal Pokemon. The GTS takes legal Pokemon only."),
+                   trailing=t.switch(s.bank_illegal, lambda e: self._bank_illegal(e.control.value))),
             t.card(tr('settings.pokemon_sprites_bba928', 'Pokemon sprites'), ft.Row([t.button(tr('settings.clear_the_cache_883bc1', 'Clear the cache'), self._clear_sprites, "refresh",
                                                         filled=False), self.sprite_state], spacing=10),
                    tr('settings.pixel_art_sprites_come_from_pokeapi_and_are_kept_on_thi_a49320', 'Pixel-art sprites come from PokeAPI and are kept on this computer after the first download. The app works without them.'),
@@ -145,6 +161,14 @@ class SettingsView:
                 self.storage_result,
             ], spacing=8),
                    tr('settings.free_space_used_by_session_records_logs_temporary_offer_f7ffba', 'Free space used by session records, logs, temporary offers and unused built Pokemon. Your received Pokemon, selected offers, keys, firmware and settings are kept.')),
+            t.card(tr('settings.backup', 'Backup and restore'), ft.Column([
+                ft.Row([t.button(tr('settings.backup_make', 'Back up...'), self._backup, "download", filled=False,
+                                 disabled=self.backup_work),
+                        t.button(tr('settings.backup_restore', 'Restore...'), self._pick_restore, "upload", filled=False,
+                                 disabled=self.backup_work)], spacing=10, wrap=True),
+                self.backup_state,
+            ], spacing=8),
+                   tr('settings.backup_detail', 'One file with your settings, the bank, received and built Pokemon, saves, GTS listings and macros. Your console keys and plugins are never in it.')),
             section(tr('settings.bug_reports_aa0e58', 'Bug reports')),
             t.card(tr('settings.record_every_session_f5f9d8', 'Record every session'), ft.Row([t.button(tr('settings.open_the_records_6fade1', 'Open the records'), lambda e: open_folder(
                 str(SESSION / "captures")), "folder", filled=False)]),
@@ -262,6 +286,14 @@ class SettingsView:
             self.save("plugins", [*self.app.settings.plugins, plugin_id])
         self.save("app_language", plugin_id)
 
+    def _allow_illegal(self, value: bool) -> None:
+        self.save("allow_illegal", value)
+        pokemon.SERVICE.allow_illegal = value
+
+    def _bank_illegal(self, value: bool) -> None:
+        self.save("bank_illegal", value)
+        pokemon.SERVICE.bank_illegal = value
+
     def _home_tracker(self, value: str) -> None:
         self.save("home_tracker", value)
         pokemon.SERVICE.home_tracker = value
@@ -296,7 +328,7 @@ class SettingsView:
         self.asked = False
 
     def _clear_sprites(self, e) -> None:
-        self.sprite_state.value = tr('settings.files_removed_78e092', '{value0} files removed', value0=CACHE.clear())
+        self.sprite_state.value = tr('settings.files_removed_78e092', '{value0} files removed', value0=CACHE.clear() + ITEMS.clear() + RIBBONS.clear())
         self.sprite_state.update()
 
     def _storage_refresh(self, inventory=None) -> None:
@@ -343,6 +375,102 @@ class SettingsView:
         self.storage_result.visible = bool(self.storage_result.value)
         if self.shown:
             self.control.update()
+
+    def _backup_say(self, text: str, color=t.MUTED) -> None:
+        self.backup_state.value, self.backup_state.color, self.backup_state.visible = text, color, bool(text)
+        if self.shown:
+            self.control.update()
+
+    def _backup_busy(self, busy: bool) -> None:
+        self.backup_work = busy
+        self.render()
+
+    async def _backup(self, e) -> None:
+        if self.backup_work:
+            return
+        self._backup_busy(True)
+        self._backup_say(tr('settings.backup_making', 'Making the backup...'))
+        name = backup.default_name()
+        made = backup.safety_path().with_name(name)   # in the data folder until the player picks a place
+        received = self.app.settings.received
+        try:
+            summary = await asyncio.to_thread(backup.create, made, received)
+            data = made.read_bytes()
+        except OSError as error:
+            made.unlink(missing_ok=True)
+            self._backup_busy(False)
+            self._backup_say(tr('settings.backup_failed', 'The backup failed: {value0}', value0=error), t.RED)
+            return
+        path = await self.app.picker.save_file(dialog_title=tr('settings.backup_make', 'Back up...'), file_name=name,
+                                               file_type=ft.FilePickerFileType.CUSTOM, allowed_extensions=["zip"],
+                                               src_bytes=data)
+        try:
+            if path:
+                path += "" if path.lower().endswith(".zip") else ".zip"
+                shutil.move(made, path)
+        except OSError as error:
+            path, failed = "", error
+        else:
+            failed = None
+        finally:
+            made.unlink(missing_ok=True)
+        self._backup_busy(False)
+        if failed:
+            self._backup_say(tr('settings.backup_failed', 'The backup failed: {value0}', value0=failed), t.RED)
+        elif path:
+            self._backup_say(tr('settings.backup_made', 'Backed up {value0} files ({value1}) to {value2}.', value0=summary.files,
+                                value1=storage.size_text(summary.size), value2=path))
+        else:     # cancelled, or a browser or a phone's web view saved src_bytes itself
+            self._backup_say("")
+
+    async def _pick_restore(self, e) -> None:
+        if self.backup_work:
+            return
+        files = await self.app.picker.pick_files(dialog_title=tr('settings.backup_restore', 'Restore...'),
+                                                 allowed_extensions=["zip"], file_type=ft.FilePickerFileType.CUSTOM)
+        if not files or not files[0].path:
+            return
+        source = files[0].path
+        try:
+            summary = backup.inspect(source)
+        except backup.BackupError as error:
+            self._backup_say(str(error), t.RED)
+            return
+
+        def go(_):
+            self.app.page.pop_dialog()
+            self._restore(source)
+
+        self.app.page.show_dialog(t.dialog(
+            title=t.text(tr('settings.backup_restore_title', 'Restore this backup?'), 17, weight=ft.FontWeight.W_600),
+            content=ft.Column([t.text(line, 13, t.MUTED) for line in (
+                tr('settings.backup_restore_what', '{value0} files ({value1}) from {value2}.', value0=summary.files,
+                   value1=storage.size_text(summary.size), value2=os.path.basename(source)),
+                tr('settings.backup_restore_overwrite', 'Files with the same name are replaced; your other files stay. Your settings are replaced the next time pokeldn starts.'),
+                tr('settings.backup_restore_safety', 'Your files as they are now are backed up first, in the backups folder of the app data folder.'),
+            )], tight=True, spacing=8, width=420),
+            actions=[t.secondary_button(tr('settings.cancel', 'Cancel'), lambda _: self.app.page.pop_dialog()),
+                     t.button(tr('settings.backup_restore_go', 'Restore'), go, "upload")]))
+
+    def _restore(self, source: str) -> None:
+        self._backup_busy(True)
+        self._backup_say(tr('settings.backup_restoring', 'Restoring...'))
+        received = self.app.settings.received
+
+        def work():
+            try:
+                summary = backup.restore(source, received, safety=backup.safety_path())
+                text, color = tr('settings.backup_restored', 'Restored {value0} files. Restart pokeldn to use the restored settings.',
+                                 value0=summary.files), t.GREEN
+            except (backup.BackupError, OSError) as error:
+                text, color = tr('settings.backup_restore_failed', 'The restore stopped: {value0}', value0=error), t.RED
+
+            def done():
+                self._backup_busy(False)
+                self._backup_say(text, color)
+            self.app.ui(done)
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _clear_local(self, e) -> None:
         if self.storage_work:

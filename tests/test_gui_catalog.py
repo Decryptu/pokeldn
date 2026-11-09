@@ -103,12 +103,12 @@ QUEUES = [(tool, f) for tool in TOOLS for f in tool.fields if f.kind == "pokemon
 
 @pytest.mark.parametrize("tool, field", QUEUES, ids=[t.key for t, _ in QUEUES])
 def test_a_queue_reaches_the_entry_point_as_every_offer_in_order(tool, field):
-    files = [f"/tmp/queued-{n}.bin" for n in range(1, field.queue + 1)]
-    args = build(tool, {field.key: [{"file": f} for f in files] + [{"file": "/tmp/past-the-limit"}]},
+    files = [f"/offers/queued-{n}.bin" for n in range(1, field.queue + 1)]
+    args = build(tool, {field.key: [{"file": f} for f in files] + [{"file": "/offers/past-the-limit"}]},
                  {}, Settings())
     parsed = vars(parser_of(tool.script).parse_args(args))
     given = [v for value in parsed.values() for v in (value if isinstance(value, list) else [value])
-             if isinstance(v, str) and v.startswith("/tmp/")]
+             if isinstance(v, str) and v.startswith("/offers/")]
     assert given == files
     if field.count:
         assert parsed[field.count.lstrip("-")] == field.queue
@@ -175,6 +175,37 @@ def test_the_session_panel_finds_every_file_a_run_saves_and_none_from_another_ru
     saved("20261001-115959")
     found = session_files(str(tmp_path), "20261001-120000")
     assert ours and sorted(map(os.path.normpath, found)) == sorted(map(os.path.normpath, ours))   # Windows mixes / and \
+
+
+SHOWING = [(game, tool) for game in GAMES for tool in game.tools
+           if any(f.flag == "--save-shown" for f in tool.fields)]
+
+
+def test_every_trade_title_offers_save_shown_in_both_roles():
+    """Hard rule 13: a feature built on one title is built on every title."""
+    trades = {(game.key, dict(tool.variant).get("role")) for game, tool in SHOWING
+              if tool.activity == "trade"}
+    assert trades >= {(game.key, role) for game in GAMES if game.key != "rse"
+                      for role in ("host", "join")
+                      if any(t.activity == "trade" and dict(t.variant).get("role") == role for t in game.tools)}
+
+
+@pytest.mark.parametrize("game, tool", SHOWING, ids=[tool.key for _, tool in SHOWING])
+def test_save_shown_writes_beside_received_where_no_session_finds_it(game, tool, tmp_path):
+    """The switch passes the Shown folder next to Received: a Pokemon only shown never counts as one
+    the run received, so the bank never takes it in."""
+    from pokeldn.app.received import session_files
+    from pokeldn.pokemon import EXTENSIONS, RECORD_SIZES, save_shown
+    received = tmp_path / "Received"
+    stamp = "20261001-120000"
+    args = build(tool, {"--save-shown {shown}": True}, {}, Settings(received=str(received)), stamp=stamp)
+    assert "--save-shown" in accepted(tool.script)
+    folder = args[args.index("--save-shown") + 1]
+    assert folder == str(tmp_path / "Shown"), args
+    record = bytes([0xC1]) * RECORD_SIZES[game.key][1]
+    assert save_shown(game.key, folder, record) == str(tmp_path / "Shown" / f"{game.key}-c1c1c1c1.{EXTENSIONS[game.key]}")
+    assert session_files(str(received), stamp) == []
+    assert build(tool, {}, {}, Settings(received=str(received)), stamp=stamp).count("--save-shown") == 0
 
 
 def test_an_event_raid_reaches_the_host_as_its_folder_den_and_catch_override():

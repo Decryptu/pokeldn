@@ -2847,10 +2847,10 @@ index ca3be25..dd10c6f 100644
      SetCursorFlashing(FALSE);
      TryStartButtonFlash(BUTTON_COUNT, FALSE, TRUE);
 diff --git a/src/save.c b/src/save.c
-index 3f519fb..50c18e7 100644
+index 3f519fb..e4fc043 100644
 --- a/src/save.c
 +++ b/src/save.c
-@@ -11,6 +11,9 @@
+@@ -11,9 +11,23 @@
  #include "trainer_hill.h"
  #include "link.h"
  #include "constants/game_stat.h"
@@ -2860,7 +2860,30 @@ index 3f519fb..50c18e7 100644
  
  static u16 CalculateChecksum(void *, u16);
  static bool8 ReadFlashSector(u8, struct SaveSector *);
-@@ -229,6 +232,11 @@ static u8 HandleWriteSectorNBytes(u8 sectorId, u8 *data, u16 size)
++#if REVISION >= 0xA
++#define FRLG_SAVEBLOCK2_CHUNK 0xF24
++#define FRLG_SAVEBLOCK1_END_CHUNK 0xEE8
++// The newest FireRed/LeafGreen copy's slot plus one: Emerald never loads or writes it, so the title
++// keeps its way back [docs/rse_switch_build.md, The FireRed copy].
++EWRAM_DATA static u8 sFireRedSlot = 0;
++static void IncrementSaveCounter(void);
++#define INCREMENT_SAVE_COUNTER() IncrementSaveCounter()
++#else
++#define INCREMENT_SAVE_COUNTER() gSaveCounter++
++#endif
+ static u8 GetSaveValidStatus(const struct SaveSectorLocation *);
+ static u8 CopySaveSlotData(u16, struct SaveSectorLocation *);
+ static u8 TryWriteSector(u8, u8 *);
+@@ -156,7 +170,7 @@ static u8 WriteSaveSectorOrSlot(u16 sectorId, const struct SaveSectorLocation *l
+         gLastSaveCounter = gSaveCounter;
+         gLastWrittenSector++;
+         gLastWrittenSector = gLastWrittenSector % NUM_SECTORS_PER_SLOT;
+-        gSaveCounter++;
++        INCREMENT_SAVE_COUNTER();
+         status = SAVE_STATUS_OK;
+ 
+         for (i = 0; i < NUM_SECTORS_PER_SLOT; i++)
+@@ -229,6 +243,11 @@ static u8 HandleWriteSectorNBytes(u8 sectorId, u8 *data, u16 size)
  
  static u8 TryWriteSector(u8 sector, u8 *data)
  {
@@ -2872,7 +2895,7 @@ index 3f519fb..50c18e7 100644
      if (ProgramFlashSectorAndVerify(sector, data)) // is damaged?
      {
          // Failed
-@@ -241,6 +249,7 @@ static u8 TryWriteSector(u8 sector, u8 *data)
+@@ -241,6 +260,7 @@ static u8 TryWriteSector(u8 sector, u8 *data)
          SetDamagedSectorBits(DISABLE, sector);
          return SAVE_STATUS_OK;
      }
@@ -2880,7 +2903,16 @@ index 3f519fb..50c18e7 100644
  }
  
  static u32 RestoreSaveBackupVarsAndIncrement(const struct SaveSectorLocation *locations)
-@@ -339,6 +348,11 @@ static u8 HandleReplaceSector(u16 sectorId, const struct SaveSectorLocation *loc
+@@ -250,7 +270,7 @@ static u32 RestoreSaveBackupVarsAndIncrement(const struct SaveSectorLocation *lo
+     gLastSaveCounter = gSaveCounter;
+     gLastWrittenSector++;
+     gLastWrittenSector %= NUM_SECTORS_PER_SLOT;
+-    gSaveCounter++;
++    INCREMENT_SAVE_COUNTER();
+     gIncrementalSectorId = 0;
+     gDamagedSaveSectors = 0;
+     return 0;
+@@ -339,6 +359,11 @@ static u8 HandleReplaceSector(u16 sectorId, const struct SaveSectorLocation *loc
  
      gReadWriteSector->checksum = CalculateChecksum(data, size);
  
@@ -2892,7 +2924,7 @@ index 3f519fb..50c18e7 100644
      // Erase old save data
      EraseFlashSector(sector);
  
-@@ -389,6 +403,7 @@ static u8 HandleReplaceSector(u16 sectorId, const struct SaveSectorLocation *loc
+@@ -389,6 +414,7 @@ static u8 HandleReplaceSector(u16 sectorId, const struct SaveSectorLocation *loc
              return SAVE_STATUS_OK;
          }
      }
@@ -2900,24 +2932,151 @@ index 3f519fb..50c18e7 100644
  }
  
  static u8 WriteSectorSignatureByte_NoOffset(u16 sectorId, const struct SaveSectorLocation *locations)
-@@ -759,9 +774,16 @@ u8 HandleSavingData(u8 saveType)
+@@ -512,6 +538,31 @@ static u8 CopySaveSlotData(u16 sectorId, struct SaveSectorLocation *locations)
+     return SAVE_STATUS_OK;
+ }
+ 
++#if REVISION >= 0xA
++static void IncrementSaveCounter(void)
++{
++    gSaveCounter++;
++    if (sFireRedSlot != 0 && gSaveCounter % NUM_SAVE_SLOTS == sFireRedSlot - 1)
++        gSaveCounter++;
++}
++
++// Only ids 0 and 4 differ. An Emerald copy fails id 4: ResetWaldaWallpaper fills colors past FireRed's chunk.
++static bool8 IsFireRedSector(struct SaveSector *sector, const struct SaveSectorLocation *locations)
++{
++    u16 size = locations[sector->id].size;
++    if (sector->id == SECTOR_ID_SAVEBLOCK2)
++        size = FRLG_SAVEBLOCK2_CHUNK;
++    else if (sector->id == SECTOR_ID_SAVEBLOCK1_END)
++        size = FRLG_SAVEBLOCK1_END_CHUNK;
++    return sector->checksum == CalculateChecksum(sector->data, size);
++}
++
++static u32 CounterWithNoCopy(void)
++{
++    return sFireRedSlot == 1 ? 1 : 0;
++}
++#endif
++
+ static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
+ {
+     u16 i;
+@@ -522,6 +573,13 @@ static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
+     bool8 signatureValid = FALSE;
+     u8 saveSlot1Status;
+     u8 saveSlot2Status;
++#if REVISION >= 0xA
++    u32 fireRedSectorFlags = 0;
++    bool8 slot1IsFireRed = FALSE;
++    bool8 slot2IsFireRed = FALSE;
++
++    sFireRedSlot = 0;
++#endif
+ 
+     // Check save slot 1
+     for (i = 0; i < NUM_SECTORS_PER_SLOT; i++)
+@@ -536,6 +594,10 @@ static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
+                 saveSlot1Counter = gReadWriteSector->counter;
+                 validSectorFlags |= 1 << gReadWriteSector->id;
+             }
++#if REVISION >= 0xA
++            if (IsFireRedSector(gReadWriteSector, locations))
++                fireRedSectorFlags |= 1 << gReadWriteSector->id;
++#endif
+         }
+     }
+ 
+@@ -552,6 +614,15 @@ static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
+         saveSlot1Status = SAVE_STATUS_EMPTY;
+     }
+ 
++#if REVISION >= 0xA
++    if (fireRedSectorFlags == (1 << NUM_SECTORS_PER_SLOT) - 1)
++    {
++        slot1IsFireRed = TRUE;
++        saveSlot1Status = SAVE_STATUS_EMPTY;
++    }
++    fireRedSectorFlags = 0;
++#endif
++
+     validSectorFlags = 0;
+     signatureValid = FALSE;
+ 
+@@ -568,6 +639,10 @@ static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
+                 saveSlot2Counter = gReadWriteSector->counter;
+                 validSectorFlags |= 1 << gReadWriteSector->id;
+             }
++#if REVISION >= 0xA
++            if (IsFireRedSector(gReadWriteSector, locations))
++                fireRedSectorFlags |= 1 << gReadWriteSector->id;
++#endif
+         }
+     }
+ 
+@@ -584,6 +659,20 @@ static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
+         saveSlot2Status = SAVE_STATUS_EMPTY;
+     }
+ 
++#if REVISION >= 0xA
++    if (fireRedSectorFlags == (1 << NUM_SECTORS_PER_SLOT) - 1)
++    {
++        slot2IsFireRed = TRUE;
++        saveSlot2Status = SAVE_STATUS_EMPTY;
++    }
++    if (slot1IsFireRed && slot2IsFireRed)
++        sFireRedSlot = (saveSlot1Counter + 1) < (saveSlot2Counter + 1) ? 2 : 1;
++    else if (slot1IsFireRed)
++        sFireRedSlot = 1;
++    else if (slot2IsFireRed)
++        sFireRedSlot = 2;
++#endif
++
+     if (saveSlot1Status == SAVE_STATUS_OK && saveSlot2Status == SAVE_STATUS_OK)
+     {
+         if ((saveSlot1Counter == -1 && saveSlot2Counter ==  0)
+@@ -626,13 +715,21 @@ static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
+     if (saveSlot1Status == SAVE_STATUS_EMPTY
+      && saveSlot2Status == SAVE_STATUS_EMPTY)
+     {
++#if REVISION >= 0xA
++        gSaveCounter = CounterWithNoCopy();
++#else
+         gSaveCounter = 0;
++#endif
+         gLastWrittenSector = 0;
+         return SAVE_STATUS_EMPTY;
+     }
+ 
+     // Both slots errored
++#if REVISION >= 0xA
++    gSaveCounter = CounterWithNoCopy();
++#else
+     gSaveCounter = 0;
++#endif
+     gLastWrittenSector = 0;
+     return SAVE_STATUS_CORRUPT;
+ }
+@@ -759,9 +856,16 @@ u8 HandleSavingData(u8 saveType)
          WriteSaveSectorOrSlot(FULL_SAVE_SLOT, gRamSaveSectorLocations);
          break;
      }
 +#if REVISION >= 0xA
-+    gTrainerHillVBlankCounter = backupVar;
-+    svc_FinishSave();
-+    return 0;
-+}
-+#else
      gTrainerHillVBlankCounter = backupVar;
++    svc_FinishSave();
      return 0;
  }
++#else
++    gTrainerHillVBlankCounter = backupVar;
++    return 0;
++}
 +#endif
  
  u8 TrySavingData(u8 saveType)
  {
-@@ -821,6 +843,9 @@ bool8 LinkFullSave_ReplaceLastSector(void)
+@@ -821,6 +925,9 @@ bool8 LinkFullSave_ReplaceLastSector(void)
  bool8 LinkFullSave_SetLastSectorSignature(void)
  {
      CopySectorSignatureByte(NUM_SECTORS_PER_SLOT, gRamSaveSectorLocations);
@@ -2927,7 +3086,7 @@ index 3f519fb..50c18e7 100644
      if (gDamagedSaveSectors)
          DoSaveFailedScreen(SAVE_NORMAL);
      return FALSE;
-@@ -861,6 +886,9 @@ bool8 WriteSaveBlock1Sector(void)
+@@ -861,6 +968,9 @@ bool8 WriteSaveBlock1Sector(void)
          // are the same for all valid sectors it doesn't matter.
          WriteSectorSignatureByte(sectorId, gRamSaveSectorLocations);
          finished = TRUE;
@@ -2937,7 +3096,7 @@ index 3f519fb..50c18e7 100644
      }
  
      if (gDamagedSaveSectors)
-@@ -965,9 +993,15 @@ u32 TryWriteSpecialSaveSector(u8 sector, u8 *src)
+@@ -965,9 +1075,15 @@ u32 TryWriteSpecialSaveSector(u8 sector, u8 *src)
      savData = &gSaveDataBuffer.data[4]; // data[4] to skip past SPECIAL_SECTOR_SENTINEL
      for (; i <= size; i++)
          savData[i] = src[i];
@@ -2953,7 +3112,7 @@ index 3f519fb..50c18e7 100644
  }
  
  #define tState         data[0]
-@@ -987,6 +1021,10 @@ void Task_LinkFullSave(u8 taskId)
+@@ -987,6 +1103,10 @@ void Task_LinkFullSave(u8 taskId)
          tState = 1;
          break;
      case 1:
@@ -2964,7 +3123,7 @@ index 3f519fb..50c18e7 100644
          SetLinkStandbyCallback();
          tState = 2;
          break;
-@@ -1022,6 +1060,10 @@ void Task_LinkFullSave(u8 taskId)
+@@ -1022,6 +1142,10 @@ void Task_LinkFullSave(u8 taskId)
          tState = 7;
          break;
      case 7:
@@ -2975,7 +3134,7 @@ index 3f519fb..50c18e7 100644
          if (!tInBattleTower)
              ClearContinueGameWarpStatus2();
          SetLinkStandbyCallback();
-@@ -1035,6 +1077,10 @@ void Task_LinkFullSave(u8 taskId)
+@@ -1035,6 +1159,10 @@ void Task_LinkFullSave(u8 taskId)
          }
          break;
      case 9:
@@ -4279,3 +4438,105 @@ index e001c2c..27581d2 100644
  	.include "bg.o"
  	.align 4
  	.include "window.o"
+diff --git a/src/rtc.c b/src/rtc.c
+index 54c176d..3711a07 100644
+--- a/src/rtc.c
++++ b/src/rtc.c
+@@ -8,6 +8,9 @@ static u16 sErrorStatus;
+ static struct SiiRtcInfo sRtc;
+ static u8 sProbeResult;
+ static u16 sSavedIme;
++#if REVISION >= 0xA
++static bool8 sSoftClock;
++#endif
+ 
+ // iwram common
+ COMMON_DATA struct Time gLocalTime = {0};
+@@ -32,6 +35,44 @@ static const s32 sNumDaysInMonths[MONTH_COUNT] =
+     [MONTH_DEC - 1] = 31,
+ };
+ 
++#if REVISION >= 0xA
++// The Switch application attaches its clock only to a ROM it loaded at launch; a ROM streamed into a
++// session has none, and the time is the save's play time [docs/rse_switch_build.md, The real-time clock].
++#define GPIO_READ_ENABLE_PORT (*(vu16 *)0x80000C8)
++#define SOFT_CLOCK_YEAR 1
++#define SOFT_CLOCK_MAX_HOURS 999
++
++static u8 BinaryToBcd(u32 value)
++{
++    return ((value / 10) << 4) | (value % 10);
++}
++
++static void SoftClockGetDateTime(struct SiiRtcInfo *rtc)
++{
++    u32 seconds = 0, days;
++    s32 month = 0;
++
++    if (gSaveBlock2Ptr != NULL)
++    {
++        u32 hours = gSaveBlock2Ptr->playTimeHours;
++        if (hours > SOFT_CLOCK_MAX_HOURS)
++            hours = SOFT_CLOCK_MAX_HOURS;
++        seconds = hours * 3600 + gSaveBlock2Ptr->playTimeMinutes * 60 + gSaveBlock2Ptr->playTimeSeconds;
++    }
++    days = seconds / 86400;
++    seconds %= 86400;
++    rtc->dayOfWeek = (1 + days) % 7;    // 2001 Jan 1 was a Monday
++    while (days >= sNumDaysInMonths[month])
++        days -= sNumDaysInMonths[month++];
++    rtc->year = BinaryToBcd(SOFT_CLOCK_YEAR);
++    rtc->month = BinaryToBcd(month + 1);
++    rtc->day = BinaryToBcd(days + 1);
++    rtc->hour = BinaryToBcd(seconds / 3600);
++    rtc->minute = BinaryToBcd(seconds / 60 % 60);
++    rtc->second = BinaryToBcd(seconds % 60);
++}
++#endif
++
+ void RtcDisableInterrupts(void)
+ {
+     sSavedIme = REG_IME;
+@@ -100,6 +141,14 @@ void RtcInit(void)
+ 
+     RtcDisableInterrupts();
+     SiiRtcUnprotect();
++#if REVISION >= 0xA
++    sSoftClock = GPIO_READ_ENABLE_PORT != TRUE;
++    if (sSoftClock)
++    {
++        RtcRestoreInterrupts();
++        return;
++    }
++#endif
+     sProbeResult = SiiRtcProbe();
+     RtcRestoreInterrupts();
+ 
+@@ -133,6 +182,13 @@ void RtcGetInfo(struct SiiRtcInfo *rtc)
+ 
+ void RtcGetDateTime(struct SiiRtcInfo *rtc)
+ {
++#if REVISION >= 0xA
++    if (sSoftClock)
++    {
++        SoftClockGetDateTime(rtc);
++        return;
++    }
++#endif
+     RtcDisableInterrupts();
+     SiiRtcGetDateTime(rtc);
+     RtcRestoreInterrupts();
+@@ -140,6 +196,13 @@ void RtcGetDateTime(struct SiiRtcInfo *rtc)
+ 
+ void RtcGetStatus(struct SiiRtcInfo *rtc)
+ {
++#if REVISION >= 0xA
++    if (sSoftClock)
++    {
++        rtc->status = SIIRTCINFO_24HOUR;
++        return;
++    }
++#endif
+     RtcDisableInterrupts();
+     SiiRtcGetStatus(rtc);
+     RtcRestoreInterrupts();

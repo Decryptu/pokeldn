@@ -78,6 +78,11 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
         help=("write the .sav FILE onto the console: beside its newest save, every sector read "
               "back, then the game loads it and saves; anything short of that keeps the old save"))
     payload_group.add_argument(
+        "--save-restore-emerald", metavar="FILE",
+        help=("write the Emerald .sav FILE beside the console's newest save and stop there, for an "
+              "Emerald ROM transfer after it; the running game keeps its own save "
+              "[docs/rse_switch_build.md, Delivery without Atmosphere]"))
+    payload_group.add_argument(
         "--rom-transfer", metavar="ROM",
         help=("write the .gba ROM into the console's ROM copy, then soft-reset into it; it lasts "
               "until the game is relaunched [docs/rse_switch_build.md, Delivery without Atmosphere]"))
@@ -88,7 +93,8 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
     parser.add_argument(
         "--rom-base", metavar="ROM",
         help=("with --rom-transfer: the console's own cartridge ROM (from its RomFS); the stream "
-              "then goes as LZMA against the console's copy, about a third of the bytes"))
+              "then goes as LZMA against the console's copy, about a third of the bytes; 'none': "
+              "LZMA with no cartridge, about half of them"))
     parser.add_argument(
         "--rom-no-boot", action="store_true",
         help="with --rom-transfer: write and check every block, then end the session without booting")
@@ -902,6 +908,13 @@ def _save_to_board(parser, args, config, plan):
 def _save_session(parser, args, config):
     if args.export_gift:
         parser.error("--export-gift saves a gift; a save session sends none")
+    if args.save_restore_emerald:
+        from pokeldn.frlg.save import sav
+        try:
+            with open(args.save_restore_emerald, "rb") as handle:
+                sav.emerald_first(handle.read())
+        except (OSError, sav.SaveError) as exc:
+            parser.error(f"--save-restore-emerald: {exc}")
     if args.save_restore:
         from pokeldn.frlg.save import sav
         try:
@@ -912,7 +925,8 @@ def _save_session(parser, args, config):
         if not summary.sound:
             parser.error("--save-restore: the save has no whole copy of a game in it")
     app = SaveTransferHostApplication(
-        config, backup=args.save_backup, restore=args.save_restore,
+        config, backup=args.save_backup, restore=args.save_restore or args.save_restore_emerald,
+        emerald=bool(args.save_restore_emerald),
         resume_dir=args.save_resume_dir, transport_factory=host_cli.transport_factory(parser, args),
         log=trade_runtime.ConsoleLog(args.verbose))
     app.run()
@@ -932,7 +946,9 @@ def _rom_session(parser, args, config):
         with open(args.rom_transfer, "rb") as handle:
             image = handle.read()
         base = None
-        if args.rom_base:
+        if args.rom_base == "none":
+            base = b""
+        elif args.rom_base:
             with open(args.rom_base, "rb") as handle:
                 base = handle.read()
         rom_transfer.blocks_of(image)
@@ -974,7 +990,7 @@ def main(argv=None):
     config = build_run_config(parser, args)
     if args.rom_transfer:
         return _rom_session(parser, args, config)
-    if args.save_backup or args.save_restore:
+    if args.save_backup or args.save_restore or args.save_restore_emerald:
         if args.save_to_board:
             parser.error("--save-to-board keeps a gift; a save session sends none")
         return _save_session(parser, args, config)

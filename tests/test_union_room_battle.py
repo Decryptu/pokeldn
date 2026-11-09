@@ -14,12 +14,9 @@ from pokeldn.frlg.text import charmap  # noqa: E402
 
 
 def _mon():
-    """A real party mon, so the serialiser is exercised against genuine substructs."""
-    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                        "scratchpad", "TREECKO.pk3")
-    if not os.path.exists(path):
-        pytest.skip("scratchpad/TREECKO.pk3 is not in this checkout")
-    return monmod.Mon.from_file(path)
+    """A whole party mon, so the serialiser is exercised against encrypted substructs."""
+    from tests.frlg_party import treecko
+    return treecko()
 
 
 def test_the_stored_size_always_adds_a_whole_word():

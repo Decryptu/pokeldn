@@ -1,4 +1,4 @@
-/* The panel the display task draws on: one of panel_oled.c or panel_e32r40t.c, picked by
+/* The panel the display task draws on: panel_oled.c or panel_spi.c, picked by
    POKELDN_DISPLAY at build time. docs/hardware_esp32.md, The screen. */
 #pragma once
 

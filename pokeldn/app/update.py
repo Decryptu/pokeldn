@@ -35,6 +35,7 @@ TIMEOUT = 5.0
 MAX_BYTES = 1_000_000
 # The archive names .github/workflows/release.yml publishes; tests/test_app_update.py pins them.
 ASSETS = {("darwin", "arm64"): "pokeldn-macos-arm64.zip",
+          ("darwin", "x64"): "pokeldn-macos-x64.zip",
           ("win32", "x64"): "pokeldn-windows-x64.zip",
           ("linux", "x64"): "pokeldn-linux-x64.tar.gz"}
 
@@ -139,6 +140,26 @@ def executable_in(root: Path, system: str = sys.platform) -> Path:
     return root / ("pokeldn.exe" if system == "win32" else "pokeldn")
 
 
+# What a packed app holds at its top level; anything else there means the folder is not ours alone.
+APP_ENTRIES = {"darwin": {"Contents", ".DS_Store"}, "win32": {"pokeldn.exe", "_internal"},
+               "linux": {"pokeldn", "_internal"}}
+
+
+def foreign(root: Path, system: str = sys.platform, new: Path | None = None) -> list[str]:
+    """The entries in root no pokeldn app ships. The swap renames root and deletes it whole, so a
+    root that holds any (pokeldn.exe left loose on the Desktop) is never replaced."""
+    system = "linux" if system.startswith("linux") else system
+    if system == "darwin" and root.suffix != ".app":
+        return [root.name]
+    allowed = set(APP_ENTRIES.get(system, ()))
+    if new is not None:
+        allowed |= {entry.name for entry in new.iterdir()}
+    try:
+        return sorted(entry.name for entry in root.iterdir() if entry.name not in allowed)
+    except OSError as error:
+        return [str(error)]
+
+
 def _writable(folder: Path, entry: str = "file") -> bool:
     # os.access on Windows reads only the read-only attribute, never the folder's ACL: create one.
     probe = folder / f".pokeldn-write-{os.getpid()}"
@@ -161,6 +182,9 @@ def blocker(root: Path | None, system: str = sys.platform) -> str:
     if "AppTranslocation" in root.parts:
         # macOS runs a quarantined app from Downloads out of a random read-only copy.
         return "Move pokeldn to your Applications folder, open it from there, then update."
+    if foreign(root, system):
+        return (f"{root} holds other files besides pokeldn. Put pokeldn in a folder of its own, "
+                "open it from there, then update.")
     if not needs_admin(root, system) and not (_writable(root.parent, "folder") and _writable(root)):
         return f"pokeldn cannot write to {root.parent}."
     return ""
@@ -531,6 +555,14 @@ def apply(new: Path, target: Path, pid: int, version: str, system: str = sys.pla
         outcome.write_text(json.dumps({"version": version, "error": error, "helper": helper}))
 
     old = target.parent / f".{target.name}.old"
+    # Older apps pass the exe's folder unchecked: pokeldn.exe loose on a Desktop names the Desktop.
+    others = foreign(target, system, new)
+    if others:
+        _record(outcome, version, f"{target} holds files that are not pokeldn ({', '.join(others[:5])}); "
+                                  "nothing was changed")
+        if wait_for_exit(pid, EXIT_WAIT):
+            relaunch(target)
+        return False
     if not wait_for_exit(pid, EXIT_WAIT):
         _record(outcome, version, "the old app did not quit")
         return False
@@ -574,7 +606,8 @@ def finish(root: Path | None, outcome: Path = OUTCOME, work: Path = WORK) -> dic
     found = found if isinstance(found, dict) else None
     outcome.unlink(missing_ok=True)      # the helper closes its window when this file goes
     (work / READY.name).unlink(missing_ok=True)
-    shutil.rmtree(root.parent / f".{root.name}.old", ignore_errors=True)
+    if not foreign(root):
+        shutil.rmtree(root.parent / f".{root.name}.old", ignore_errors=True)
     helper = found.get("helper") if found else None
 
     def remove_new():

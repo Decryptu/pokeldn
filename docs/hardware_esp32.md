@@ -183,6 +183,17 @@ command again; otherwise each queued message costs a 500 ms write, a `wire_dropp
 constant `flash3` on the LED. With the host killed during a FireRed trade room, the console shows
 2318-0006 and a later JOIN search lists no host.
 
+### Standby
+
+From firmware 1.10.0 a board in idle that has read no host message for 30 s (`STANDBY_AFTER_US`)
+calls `esp_wifi_stop`. In idle the receiver otherwise runs without pause, in promiscuous mode with
+power save off. The first host message of any kind runs `esp_wifi_start` before it is handled: on a
+classic ESP32 the first HELLO after 36 s of silence took 8.2 ms against 1.6 ms awake, and the radio
+then heard 81 to 315 frames per channel in 3 s of census. A host in a run
+sends ALIVE every second, so the board never sleeps under one; a stored beacon and a hosted network
+are out of idle and stay up. The CPU clock is unchanged. The LED breathes at peak 12 over 8 s
+instead of peak 50 over 4 s. The current drawn in standby has not been measured.
+
 ## Portable beacon
 
 From firmware 1.8.0 the board stores one LDN advertisement cycle in NVS and sends it with no host.
@@ -410,7 +421,8 @@ The LED runs LEDC PWM (13 bits, 5 kHz) every 10 ms with gamma 2.2 and 150 ms cro
 | flash3 | 5 | 1000 ms | three flashes in the first 60 % of the period |
 | ramp-up, ramp-down, pulse | 6, 7, 8 | 1000, 1000, 1200 ms | once |
 
-The automatic look: one pulse at boot, a dim 4 s breathe idle, a 250 ms blink while joining, a
+The automatic look: one pulse at boot, a dim 4 s breathe idle, a dimmer 8 s breathe in
+[standby](#standby), a 250 ms blink while joining, a
 brighter 1.5 s breathe hosting with no station, dim on when linked, off while sniffing.
 
 Every frame flickers the LED on top. A failed join, a refused key, a dropped board-to-host message or
@@ -434,13 +446,25 @@ probes 0x3C, then 0x3D, and with a screen draws a frame every 50 ms at 400 kHz.
 The common four-pin module carries its own regulator and pull-ups; its address resistor selects 0x3C
 (silkscreen 0x78) or 0x3D (0x7A). The firmware sets segment remap (`A1`), reversed COM scan (`C8`)
 and alternative COM pins (`DA 12`). The ESP32-C3 0.42-inch OLED board's 72x40 panel shows columns
-30..101 and rows 24..63 of the frame; a screen on those pins gets compact scenes (one 12-character
-line, half-size sprites), rendered offline by `tools/ldn/screen_preview.py --panel 72x40`.
+30..101 and rows 24..63 of the frame.
+
+Every panel runs the same scenes (`scene.c`), the same timings and the same sound cues; only the
+layout numbers differ. One function draws each scene from a `view_t` that holds the panel's size and
+where the parts go. The 72x40 view is compact: one 12-character title line and half-size sprites. A
+colour panel (`panel_spi.c`) draws the 128x64 frame at a whole scale, lit pixels `#47AEFA` on
+`#0B0B0D` (`screen.h` `SCREEN_LIT_RGB`, `SCREEN_DARK_RGB`), the same two colours the app's mirror
+uses. `tools/ldn/screen_preview.py OUT.gif [--panel 72x40]` renders a scripted session offline;
+`tests/test_screen_render.py` holds the app's mirror (`pokeldn.app.screen_render`) frame for frame and
+cue for cue to the firmware's code on both views.
+
+A ball rocks three times, left, right, left, in 900 ms, as one being caught: every 3 s while searching,
+every 4 s on the idle scene, and once when the received ball lands, before it opens.
 
 Without host commands the screen shows the radio's state: idle, joining or hosting, and linked, with
 the frames counted in each direction. It is at full brightness while the radio is active or an
 animation plays and for 60 s after the last DISPLAY, HELLO or BOOT press; then it dims to contrast 1
 with pre-charge `22` (`81 01 D9 22`), and after 600 s turns off (`AE`). Lower pre-charge flickers.
+A colour panel's backlight runs on LEDC PWM at 5 kHz: 95 % on, 12 % dimmed, 0 off.
 The idle scene shifts 2 pixels every 60 s against burn-in. `tests/test_esp32_screen.py` holds the
 timings.
 
@@ -457,7 +481,7 @@ DISPLAY (`0x0E`) carries one op:
 |---|---|---|
 | auto | 0 | the radio's state |
 | trade | 1 | slot 0 with "offering" and the line |
-| traded | 2 | slot 0 leaves in its ball (2.1 s), packets cross until the hold, a ball arrives and opens (1.6 s), then slot 1 "received" for 10 s |
+| traded | 2 | slot 0 leaves in its ball (2.1 s), packets cross until the hold, a ball drops in (0.6 s), wobbles (0.4 s) and opens (0.6 s), then slot 1 "received" for 10 s |
 | gift | 3 | a Wonder Card holding slot 2 |
 | gifted | 4 | the card leaves, then "delivered!" |
 | arrived | 5 | a traded show still waiting brings its ball in now |
@@ -486,11 +510,30 @@ species 386 and the default after, cropped, scaled to at most 64 (40 on a card) 
 one bit with the inner lines kept dark. `tools/ldn/esp32_screen.py --port PORT` plays a trade and a
 gift on a board; `tools/ldn/screen_preview.py OUT.gif` renders a scripted session offline.
 
+### Sounds
+
+`scene_sound()` names the cue each frame starts; a board with a speaker plays it, every other board
+ignores it. A cue cuts the last one short. `sfx.c` synthesises each one on the board: square waves of
+a set duty and noise, original sequences. `tools/ldn/screen_preview.py --sounds DIR` writes each cue
+and a whole session as WAV files.
+
+| cue | when, in ms after the show starts | sound |
+|---|---|---|
+| linked | a console seats (the frame the radio first counts one) | two rising notes |
+| recall | traded, 700 | a falling slide |
+| send | traded, 1100; gifted, 0 | a rising slide |
+| data | traded, every 1000 from 2600 to 300 before theirs comes in | a short blip |
+| arrive | theirs comes in | a falling slide |
+| wobble | 600 after it comes in | three clicks |
+| open | 1000 after it comes in | a click and a rising note |
+| received | 1600 after it comes in | a five-note jingle |
+| delivered | gifted, 900 | a three-note jingle |
+
 ### The E32R40T board
 
 The E32R40T (sold as the 4.0-inch ESP32-32E display) is a classic ESP32 with a 480x320 ST7796S panel
-on SPI. Its firmware is a separate build, `POKELDN_DISPLAY=E32R40T` in the environment of `idf.py`
-(the default is `OLED`); the release images are OLED builds.
+on SPI. Its firmware is a separate build, `POKELDN_DISPLAY=E32R40T` in the environment of `idf.py`;
+the release carries it as `pokeldn-radio-e32r40t.bin`.
 
 | signal | GPIO |
 |---|---|
@@ -498,8 +541,35 @@ on SPI. Its firmware is a separate build, `POKELDN_DISPLAY=E32R40T` in the envir
 | backlight, lit while high | 27 |
 | RGB LED, lit while low: red, green, blue | 22, 16, 17 |
 
-The panel shows the 128x64 frame at 3x (384x192), black on white, at 40 MHz SPI. GPIO2 is the
-panel's DC, so the board's LED is the blue one on GPIO17. The backlight goes off when the OLED would.
+The panel shows the 128x64 frame at 3x (384x192) at 40 MHz SPI. GPIO2 is the panel's DC, so the
+board's LED is the blue one on GPIO17.
+
+### The szpi board
+
+The LCKFB szpi ESP32-S3 board (立创·实战派, the xiaozhi `lichuang-dev` board) is an ESP32-S3-WROOM-1
+N16R8 with a 2.0-inch 320x240 ST7789 panel, an ES8311 codec driving a speaker, an ES7210 microphone
+ADC, a camera and an FT6336 touch controller. Its firmware is `POKELDN_DISPLAY=SZPI` on the esp32s3
+target; the release carries it as `pokeldn-radio-szpi.bin`. The microphone, camera and touch are not
+used. Pins are from the xiaozhi-esp32 board files.
+
+| part | pins |
+|---|---|
+| I2C, shared by the expander and the codec | SDA GPIO1, SCL GPIO2 |
+| PCA9557 expander at 0x19 | bit 0 LCD CS (low: selected), bit 1 amplifier (high: on), bit 2 camera power-down (high: off) |
+| ST7789 on SPI3, mode 2 | MOSI 40, SCLK 41, DC 39; MADCTL `60`, inversion on |
+| backlight, lit while low | GPIO42 |
+| ES8311 at 0x18, I2S | MCLK 38, BCLK 14, WS 13, DOUT 45 |
+| BOOT | GPIO0 |
+| WS2812 RGB LED | GPIO48 |
+
+The panel shows the 128x64 frame at 2x (256x128). The board's LED is a WS2812, which the PWM LED
+driver cannot run; this build has no LED. The codec runs at 16 kHz, 16 bits, MCLK 256 fs from the
+ESP32-S3, as a slave in I2S format at 0 dB; the amplifier is switched on for a cue and off 600 ms
+after the last one.
+
+- Never drive the backlight with a constant level: its boost converter needs a switching signal and
+  stays dark.
+- SPI mode 0 leaves the panel black; it needs mode 2.
 
 ## Building and flashing
 
@@ -508,7 +578,8 @@ reported in INFO as `version=...`; an unversioned build shows `version unknown` 
 serial protocol matches. The protocol number is separate and changes only with the wire contract.
 
 ESP-IDF v6.1 (tag `v6.1`, commit `fff9895c82d744c7237be8847347bdd1b07c6643`) builds all four targets.
-Install its tools with `install.sh esp32,esp32s3,esp32c3,esp32c6`, then activate the IDF environment.
+Install its tools with `install.sh esp32,esp32s3,esp32c3,esp32c6`, then activate the IDF environment
+(`. scripts/esp_env.sh`).
 
     cd firmware/esp32
     idf.py set-target esp32   # esp32s3, esp32c3 or esp32c6 for those chips
@@ -534,8 +605,8 @@ CDC `SET_CONTROL_LINE_STATE` instead.
 A build with `POKELDN_BLE=1` also carries the host link over Bluetooth LE, for the iOS app, which
 cannot open a USB serial device; the board then needs USB only for power.
 
-    POKELDN_BLE=1 idf.py -B ../../scratchpad/esp/build-ble \
-        -D SDKCONFIG=../../scratchpad/esp/build-ble/sdkconfig \
+    POKELDN_BLE=1 idf.py -B BUILD_DIR \
+        -D SDKCONFIG=BUILD_DIR/sdkconfig \
         -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.ble" build
 
 The board advertises only its name, `POKELDN-RADIO`; the iOS app scans with no service filter. The
@@ -761,10 +832,48 @@ broadcasts need the firmware's forwarding ([A station's broadcasts](ldn.md#a-sta
 authentication and association; `LINK` comes up 0.23 to 0.34 s later. A retail Sword's network can
 fail an attempt (`LINK` down, reason `0xc9` or `0x2`) while its advertisements are still heard, and a
 new attempt then associates, so the host sends `STA_JOIN` up to three times
-(`pokeldn.ldn.esp32_wlan.JOIN_ATTEMPTS`). Why an attempt misses is unknown.
+(`pokeldn.ldn.esp32_wlan.JOIN_ATTEMPTS`). Why an attempt misses is unknown. After the last refused
+attempt the host sends `STOP`: a scan's `CHANNEL` that follows is refused until the board is idle.
+
+### Transmit power
+
+`POKELDN_ESP32_TX_POWER` caps the board's transmit power in dBm (2 to 20); the host sends it in
+0.25 dBm units as the power byte of `STA_JOIN` and `AP_START`, and the desktop app's Settings,
+Transmit power sets it. From firmware 1.9.3 the station's cap is set before the association; earlier
+images set it once `LINK` was up. ESP32-C3 Super Mini boards are reported in hobbyist forums to
+associate with access points only at 8.5 dBm, an antenna fault of those boards; on the ESP32-C3
+0.42-inch OLED board the effect is unmeasured.
+
+With no power chosen (Settings, Automatic), the host picks it (`pokeldn.ldn.esp32_wlan.board_tx_power`):
+
+| board | power |
+|---|---|
+| the HELLO reply names `esp32c3` | 8.5 dBm in both roles; a Super Mini and a XIAO ESP32C3 report the same chip and USB ids, so every C3 gets it |
+| any other | the driver's maximum; after `JOIN_ATTEMPTS` refused joins, one more `STA_JOIN` at 8.5 dBm, kept for the rest of the run when it associates |
+
+Settings, Full (20 dBm) restores the maximum on a C3.
+
+### The radio test
+
+The desktop app's Board page, Test the radio (`pokeldn.ldn.esp32_radio_test`), checks a board's two
+directions with no console run and no second board:
+
+| phase | what the board does | what the player reads |
+|---|---|---|
+| hearing, about 20 s | on channels 1, 6 and 11: 3 s idle, where LDN advertisements reach the host as `RX_MGMT`, then 3 s of census (`SNIFF` to `ff:ff:ff:ff:ff:ff`) | each channel's Switch transmitters and Wi-Fi beacons with their best RSSI, frame and damaged counts, the median noise floor |
+| being heard, 60 s | a hidden access point (`AP_START`) at the trades' power, and from it an open `POKELDN-TEST` beacon every 100 ms by `RAW_TX` | whether a phone's Wi-Fi list shows `POKELDN-TEST` near the board |
+
+A console waiting in a local play menu that hosts shows up as a Switch on its channel. Wi-Fi heard
+with no Switch points at the console; nothing heard at all points at the board's receiver. A phone
+that never lists `POKELDN-TEST` beside the board points at its transmitter. A Mac's scan lists the beacon
+only with a running timestamp and the TIM element, and misses it in some scans; a beacon of only SSID,
+rates and channel was never listed. The results go to the
+Board page's log, which Copy board details includes.
 
 ## Unresolved
 
+- Whether a XIAO ESP32C3 trades at the automatic 8.5 dBm is unmeasured; it traded at the driver's
+  maximum ([Transmit power](#transmit-power)).
 - The softAP negotiates WMM, which a Switch host does not; trades complete with and without it
   (`POKELDN_ESP32_AP_FLAGS=2`, `AP_FLAG_NO_QOS`, clears the station's QoS flag).
 - What in the access point's receive path misses a station's OFDM first copies is unknown
@@ -774,3 +883,7 @@ new attempt then associates, so the host sends `STA_JOIN` up to three times
   decoded no OFDM ([A board that decodes no OFDM](#a-board-that-decodes-no-ofdm)).
 - A Scarlet console joined to the board's access point can acknowledge the announcement and send no
   port 2 join ([Scarlet and Violet](sv.md#unresolved)).
+- The szpi build is unmeasured on the board: it is built and its scenes and sounds run offline. Whether
+  the board's USB-C reaches the ESP32-S3's own USB (the link the S3 build uses) or a bridge chip is
+  not stated in its published files.
+- The E32R40T build's PWM backlight and its two new colours are unmeasured on that board.

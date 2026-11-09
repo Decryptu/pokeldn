@@ -3,13 +3,13 @@
 in an emulator or on an Atmosphere SD card [docs/rse_switch_build.md, Running it]. The title's own files
 and saves are untouched; removing the mod restores the game.
 
-    ./.venv/bin/python tools/rse/rom_mod.py install ROM --title 0100554023408000
+    ./.venv/bin/python tools/rse/rom_mod.py install ROM --title 0100554023408000 --data FOLDER
     ./.venv/bin/python tools/rse/rom_mod.py install ROM --title 0100554023408000 --sd /Volumes/SWITCH
-    ./.venv/bin/python tools/rse/rom_mod.py remove --title 0100554023408000 [--sd ...]
-    ./.venv/bin/python tools/rse/rom_mod.py status [--sd ...]
+    ./.venv/bin/python tools/rse/rom_mod.py remove --title 0100554023408000 --data FOLDER
+    ./.venv/bin/python tools/rse/rom_mod.py status --sd /Volumes/SWITCH
 
 The ROM must be built for the title's cartridge (emerald_switch_build.py --cart): BPRE for English
-FireRed. --data names an emulator data folder other than the default.
+FireRed. --data names the emulator's data folder.
 """
 import argparse
 import os
@@ -22,8 +22,6 @@ TITLES = {"0100554023408000": ("FireRed_e.gba", "BPRE"),
           "01004B3023412000": ("FireRed_f.gba", "BPRF"),
           "010087C02342E000": ("LeafGreen_f.gba", "BPGF")}
 MOD = "pokeldn_rom"
-DEFAULT_DATA = {"darwin": "~/Library/Application Support/Ryujinx",
-                "win32": "~/AppData/Roaming/Ryujinx"}.get(sys.platform, "~/.config/Ryujinx")
 
 
 def mod_dir(args, title):
@@ -38,9 +36,11 @@ def main():
     ap.add_argument("action", choices=("install", "remove", "status"))
     ap.add_argument("rom", nargs="?")
     ap.add_argument("--title", default="0100554023408000", choices=sorted(TITLES))
-    ap.add_argument("--data", default=DEFAULT_DATA, help="emulator data folder")
+    ap.add_argument("--data", help="the emulator's data folder")
     ap.add_argument("--sd", help="root of an Atmosphere SD card, instead of the emulator")
     args = ap.parse_args()
+    if not args.data and not args.sd:
+        ap.error("name the emulator's data folder with --data, or the SD card with --sd")
 
     if args.action == "status":
         for title, (name, cart) in sorted(TITLES.items()):

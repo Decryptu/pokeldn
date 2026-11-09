@@ -75,9 +75,12 @@ def test_a_friendship_past_255_or_empty_is_not_sent(typed, sent):
 
 
 class StubPicker:
-    def __init__(self, app, game, value, on_change, version="", on_team=None, on_more=None, glow=None):
-        self.on_change, self.on_team, self.on_more = on_change, on_team, on_more
-        self.control, self.applied = SimpleNamespace(), None
+    def __init__(self, app, game, value, on_change, version="", on_team=None, on_more=None, glow=None, on_duplicate=None):
+        self.on_change, self.on_team, self.on_more, self.on_duplicate = on_change, on_team, on_more, on_duplicate
+        self.control, self.applied, self.value, self.built = SimpleNamespace(), None, value, False
+
+    def _build(self, e):
+        self.built = True
 
     def _apply_set(self, found, notes):
         self.applied = found
@@ -125,6 +128,20 @@ def test_a_queue_keeps_each_trades_pokemon_in_order_through_add_and_remove(monke
     queue._remove(queue.slots[0])
     queue._remove(queue.slots[0])
     assert saved[-1] == [{"file": "c.pk9"}]
+
+
+def test_a_duplicated_trade_is_rebuilt_unless_it_came_from_a_file(monkeypatch):
+    """Two trades from one built file would carry one PID; a copy from someone's file stays that file."""
+    monkeypatch.setattr(pokemon, "PokemonPicker", StubPicker)
+    saved = []
+    built = {"species": 19, "level": "3", "options": {"nature": 3}, "file": "a.pk9", "summary": "Rattata", "gender": 1}
+    queue = stub_queue([built, {"species": 4, "file": "c.pk9", "source": "c.pk9"}], 3, saved.append)
+    queue.slots[0]["picker"].on_duplicate(dict(built))
+    copy = queue.slots[1]
+    assert copy["picker"].built and copy["value"] == {"species": 19, "level": "3", "options": {"nature": 3}}
+    assert [v.get("species") for v in saved[-1]] == [19, 19, 4]
+    queue.slots[2]["picker"].on_duplicate(dict(queue.slots[2]["value"]))
+    assert len(queue.slots) == 3 and queue.count.value.startswith("One session trades at most 3")
 
 
 def test_files_dropped_on_a_trade_or_on_add_a_trade_fill_untouched_trades_then_new_ones(monkeypatch):
@@ -376,7 +393,7 @@ def test_the_released_firmware_lands_only_when_every_image_matches_its_checksum(
 def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch, form):
     import asyncio
     monkeypatch.setattr(pokemon.SERVICE, "species", lambda game: [{"id": 25, "name": "Pikachu"}])
-    monkeypatch.setattr(pokemon.SERVICE, "import_file", lambda game, path, trainer=None: {
+    monkeypatch.setattr(pokemon.SERVICE, "import_file", lambda game, path, trainer=None, receiver=None: {
         "file": path, "species": "Charizard", "species_id": 6, "form_id": form,
         "level": 50, "shiny": True, "legal": True,
         "encounter": "", "moves": [], "report": ""})
@@ -2084,7 +2101,7 @@ def test_the_line_after_an_install_ends_when_the_board_answers(monkeypatch, curr
     view.render()
     assert view.progress_text.value == "Installed. Checking the board..."
     monkeypatch.setattr(boards.board, "Identity", SimpleNamespace)
-    identities["COM3"] = SimpleNamespace(ble=False, firmware_version="1", sta_mac="", stock=False, gift_kept=False, chip="",
+    identities["COM3"] = SimpleNamespace(kind="radio_e32r40t", firmware_version="1", sta_mac="", gift_kept=False, chip="",
                                          current=current)
     view.render()
     assert view.progress_text.value == shown and not view.confirming

@@ -368,11 +368,14 @@ _radio = contextvars.ContextVar("radio")
 
 
 @contextlib.contextmanager
-def _two_boards(refuse_joins=0):
+def _two_boards(refuse_joins=0, tx_power=0, boards=lambda host, station: None):
     air = esp32_sim.Air()
     host_board, station_board = esp32_sim.SimulatedBoard(air), esp32_sim.SimulatedBoard(air)
     station_board.refuse_joins = refuse_joins
+    boards(host_board, station_board)
     radios = esp32.Radio(host_board.host_stream()), esp32.Radio(station_board.host_stream())
+    for radio in radios:
+        radio.info = radio.hello()   # as Radio.open_serial keeps it
     ports = {}
 
     @contextlib.asynccontextmanager
@@ -383,7 +386,8 @@ def _two_boards(refuse_joins=0):
 
     @contextlib.asynccontextmanager
     async def factory():
-        esp = esp32_wlan.EspFactory(_radio.get(), port_factory=port_factory, join_timeout=5)
+        esp = esp32_wlan.EspFactory(_radio.get(), port_factory=port_factory, join_timeout=5,
+                                    tx_power=tx_power or esp32_wlan.board_tx_power(_radio.get()))
         try:
             yield esp
         finally:
@@ -489,6 +493,148 @@ def test_ldn_host_and_station_run_on_simulated_boards(refused):
             assert any(f[24:28] == b"\x7f\x00\x22\xaa" for f in host_board.sent_raw)
 
     trio.run(main)
+
+
+# The ESP32-C3 boards with a 0.42-inch screen are reported to associate only at 8.5 dBm
+# (docs/hardware_esp32.md, Transmit power): the app's setting has to reach both commands.
+def test_the_apps_transmit_power_reaches_the_boards_join_and_access_point(monkeypatch):
+    from pokeldn.app.runner import base_env
+    from pokeldn.app.settings import Settings
+
+    env = base_env(Settings(tx_power=8.5), "auto")
+    monkeypatch.setenv("POKELDN_ESP32_TX_POWER", env["POKELDN_ESP32_TX_POWER"])
+    power = esp32_wlan.tx_power_from_environment()
+
+    async def main():
+        with _two_boards(tx_power=power) as ((host_radio, station_radio), ports, host_board):
+            up, done = trio.Event(), trio.Event()
+
+            async def host():
+                _radio.set(host_radio)
+                param = ldn.CreateNetworkParam(keys=KEYS, channel=6, local_communication_id=0x0100ABCD00000000,
+                                               name=b"POKELDN", app_version=1)
+                async with ldn.create_network(param):
+                    up.set()
+                    await done.wait()
+
+            async def station():
+                _radio.set(station_radio)
+                await up.wait()
+                network, = await ldn.scan(KEYS, channels=[6], dwell_time=0.5)
+                async with ldn.connect(ldn.ConnectNetworkParam(network=network, keys=KEYS, name=b"B",
+                                                               app_version=1)):
+                    done.set()
+
+            with trio.fail_after(20):
+                async with trio.open_nursery() as nursery:
+                    nursery.start_soon(host)
+                    nursery.start_soon(station)
+            assert [board.tx_power for board in host_board.air.boards] == [34, 34]
+
+    trio.run(main)
+
+
+def test_a_join_refused_every_time_leaves_the_board_stopped_for_the_next_scan():
+    """A joiner scans again after a refused seat; the board must be idle for the scan's CHANNEL."""
+    async def main():
+        with _two_boards(esp32_wlan.JOIN_ATTEMPTS + 1) as ((host_radio, station_radio), ports, host_board):
+            station_board = host_board.air.boards[1]
+            up = trio.Event()
+            refused = []
+
+            async def host():
+                _radio.set(host_radio)
+                param = ldn.CreateNetworkParam(keys=KEYS, channel=6, local_communication_id=0x0100ABCD00000000,
+                                               name=b"POKELDN", app_version=1)
+                async with ldn.create_network(param):
+                    up.set()
+                    while not refused:
+                        await trio.sleep(0.05)
+
+            async def station():
+                _radio.set(station_radio)
+                await up.wait()
+                network, = await ldn.scan(KEYS, channels=[6], dwell_time=0.5)
+                with pytest.raises(ConnectionError, match="reason 0xc9"):
+                    async with ldn.connect(ldn.ConnectNetworkParam(network=network, keys=KEYS, name=b"B",
+                                                                   app_version=1)):
+                        pass
+                refused.append(True)
+
+            with trio.fail_after(20):
+                async with trio.open_nursery() as nursery:
+                    nursery.start_soon(host)
+                    nursery.start_soon(station)
+            joins = [i for i, t in enumerate(station_board.commands) if t == esp32.CMD_STA_JOIN]
+            assert len(joins) == esp32_wlan.JOIN_ATTEMPTS + 1   # the last at LOW_TX_POWER
+            assert esp32.CMD_STOP in station_board.commands[joins[-1]:]
+
+    trio.run(main)
+
+
+def _join_once(boards, tx_power=0):
+    """Our host and our station on simulated boards; returns (host board, station board, STA_JOINs)."""
+    async def main():
+        with _two_boards(tx_power=tx_power, boards=boards) as ((host_radio, station_radio), ports, host_board):
+            up, done = trio.Event(), trio.Event()
+
+            async def host():
+                _radio.set(host_radio)
+                param = ldn.CreateNetworkParam(keys=KEYS, channel=6, local_communication_id=0x0100ABCD00000000,
+                                               name=b"POKELDN", app_version=1)
+                async with ldn.create_network(param):
+                    up.set()
+                    await done.wait()
+
+            async def station():
+                _radio.set(station_radio)
+                await up.wait()
+                network, = await ldn.scan(KEYS, channels=[6], dwell_time=0.5)
+                async with ldn.connect(ldn.ConnectNetworkParam(network=network, keys=KEYS, name=b"B",
+                                                               app_version=1)):
+                    done.set()
+
+            with trio.fail_after(20):
+                async with trio.open_nursery() as nursery:
+                    nursery.start_soon(host)
+                    nursery.start_soon(station)
+            host_board, station_board = host_board.air.boards
+            return host_board, station_board, station_board.commands.count(esp32.CMD_STA_JOIN)
+
+    return trio.run(main)
+
+
+def _super_mini(board):
+    board.target, board.power_limit = "esp32c3", esp32_wlan.LOW_TX_POWER
+
+
+# A Super Mini associates only at 8.5 dBm (docs/hardware_esp32.md, Transmit power); with no power
+# chosen, an ESP32-C3 hosts and joins at it from the first command.
+@pytest.mark.parametrize("role", ["host", "station"])
+def test_a_super_mini_hosts_and_joins_with_no_power_chosen(role):
+    host, station, joins = _join_once(lambda h, s: _super_mini(h if role == "host" else s))
+    assert (host.tx_power, station.tx_power, joins) == (
+        (esp32_wlan.LOW_TX_POWER, 0, 1) if role == "host" else (0, esp32_wlan.LOW_TX_POWER, 1))
+
+
+def test_a_board_refused_at_full_power_joins_at_low_power_after_the_full_attempts():
+    def boards(host, station):
+        station.power_limit = esp32_wlan.LOW_TX_POWER   # a distorting board that names no C3
+    host, station, joins = _join_once(boards)
+    assert (station.tx_power, joins) == (esp32_wlan.LOW_TX_POWER, esp32_wlan.JOIN_ATTEMPTS + 1)
+
+
+def test_full_power_chosen_on_a_super_mini_is_sent_and_never_lowered():
+    seen = []
+
+    def boards(host, station):
+        _super_mini(station)
+        seen.append(station)
+    with pytest.raises(BaseExceptionGroup) as raised:
+        _join_once(boards, tx_power=80)
+    assert raised.group_contains(ConnectionError, match="reason 0x2", depth=None)
+    station, = seen
+    assert (station.tx_power, station.commands.count(esp32.CMD_STA_JOIN)) == (80, esp32_wlan.JOIN_ATTEMPTS)
 
 
 def test_userspace_stack_carries_udp_both_ways_on_simulated_boards():
@@ -1193,14 +1339,15 @@ def test_the_lets_go_joiner_trades_its_queue_on_one_seat_on_simulated_boards(tmp
         ["--keys", str(keys_file), "--channel", "6", "--seconds", str(70 * scale), "--grace", "0",
          "--first", "echo", "--lead", "1", "--result-after", "2",
          "--offer", host_offers[0], "--next-offer", host_offers[1],
-         "--received", str(tmp_path / "host_got.pb7"),
+         "--received", str(tmp_path / "host_got.pb7"), "--save-shown", str(tmp_path / "host_shown"),
          "--capture", str(tmp_path / "host.jsonl")])), daemon=True)
     threads["join"] = threading.Thread(target=lambda: result.setdefault("join", lgpe_join.main(
         ["--keys", str(keys_file), "--channels", "6", "--dwell", "0.5", "--connect",
          "--connect-seconds", str(60 * scale), "--hold-after-trade", "1", "--grace", "0", "--facts", str(tmp_path / "facts.json"),
          "--capture", str(tmp_path / "join.jsonl"), "--ack-peer-clock", "--ack-re-announce",
          "--offer", join_offers[0], "--offer", join_offers[1],
-         "--received", str(tmp_path / "join_got.pb7")])), daemon=True)
+         "--received", str(tmp_path / "join_got.pb7"), "--save-shown", str(tmp_path / "join_shown")])),
+        daemon=True)
     wlan.set_factory(factory)
     try:
         threads["host"].start()
@@ -1232,6 +1379,10 @@ def test_the_lets_go_joiner_trades_its_queue_on_one_seat_on_simulated_boards(tmp
     assert got == [25, 95], (got, files)
     got = [species(n) for n in ("host_got.pb7", "host_got-2.pb7") if (tmp_path / n).exists()]
     assert got == [133, 1], (got, files)
+    # --save-shown: every offer as it arrived, each under its encryption constant.
+    shown = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.glob("*_shown/*"))
+    assert shown == ["host_shown/lgpe-33333333.pb7", "host_shown/lgpe-44444444.pb7",
+                     "join_shown/lgpe-11111111.pb7", "join_shown/lgpe-22222222.pb7"], shown
     # The joiner's answers, as the host read them: identity, offer, commits 1 and 2, then trade 2 on
     # kinds 4 and 5. After the last queued trade it sends no kind 6.
     assert sent("host.jsonl") == [(1, 1), (2, 2), (3, 3), (3, 4), (4, 5), (4, 6), (5, 7), (5, 8)], sent("host.jsonl")
@@ -1679,11 +1830,13 @@ def test_sword_host_and_joiner_trade_on_simulated_boards(tmp_path, monkeypatch):
         ["--keys", str(keys_file), "--channel", "6", "--seconds", "120", "--accept-first",
          "--lead", "3",
          "--snapshot", str(tmp_path / "snapshot.bin"), "--received", str(tmp_path / "host.pk8"),
+         "--save-shown", str(tmp_path / "host_shown"),
          "--offer-file", str(tmp_path / "offer0.pk8"), "--offer-file", str(tmp_path / "offer1.pk8")])),
         daemon=True)
     threads["join"] = threading.Thread(target=lambda: result.setdefault("join", swsh_connect.main(
         ["--keys", str(keys_file), "--preset", "trade", "--channels", "6", "--dwell", "0.5",
          "--hold", "90", "--hold-after-trade", "1", "--save-offered", str(tmp_path / "join.pk8"),
+         "--save-shown", str(tmp_path / "join_shown"),
          "--offer-file", str(tmp_path / "offer2.pk8"), "--offer-file", str(tmp_path / "offer3.pk8")])),
         daemon=True)
     wlan.set_factory(factory)
@@ -1702,6 +1855,9 @@ def test_sword_host_and_joiner_trade_on_simulated_boards(tmp_path, monkeypatch):
         return pokemon.read(pokemon.encrypt(gen8.load((tmp_path / name).read_bytes())))["species"]
     assert [species(n) for n in ("join.pk8", "join-2.pk8")] == [94, 95]
     assert [species(n) for n in ("host.pk8", "host-2.pk8")] == [96, 97]
+    # --save-shown: each side keeps every offer it was shown, traded or not.
+    assert sorted(species(p.relative_to(tmp_path)) for p in (tmp_path / "join_shown").iterdir()) == [94, 95]
+    assert sorted(species(p.relative_to(tmp_path)) for p in (tmp_path / "host_shown").iterdir()) == [96, 97]
 
 
 @pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
@@ -1713,3 +1869,46 @@ def test_the_board_needs_no_privilege_on_any_platform(monkeypatch, platform):
     assert esp32_wlan.default_port_factory() is userspace_ip.userspace_port
     monkeypatch.setenv("POKELDN_L2", "tap")
     assert esp32_wlan.default_port_factory() is esp32_wlan.kernel_tap
+
+
+def test_the_radio_test_hears_a_switch_and_shows_a_network_a_census_receives():
+    """A board advertising LDN on channel 6 is heard there and nowhere else; the test network's
+    beacons reach another board's census at the chosen power."""
+    from pokeldn.ldn import esp32_radio_test
+
+    air = esp32_sim.Air()
+    console, tested, phone = (esp32_sim.SimulatedBoard(air) for _ in range(3))
+    radios = [esp32.Radio(board.host_stream()) for board in (console, tested, phone)]
+    console_radio, tested_radio, phone_radio = radios
+    stop = threading.Event()
+
+    def advertise():
+        console_radio.set_channel(6)
+        frame = (b"\xd0\x00\x00\x00" + b"\xff" * 6 + console.sta_mac * 2 + b"\x00\x00"
+                 + b"\x7f\x00\x22\xaa" + bytes(32))
+        while not stop.is_set():
+            console_radio.send_raw(frame)
+            time.sleep(0.02)
+    advertiser = threading.Thread(target=advertise, daemon=True)
+    advertiser.start()
+    try:
+        heard = esp32_radio_test.hear(tested_radio, dwell=0.3)
+        assert [sorted(c.switches) for c in heard] == [[], [console.sta_mac.hex(":")], []]
+        assert "The board hears a Switch." in esp32_radio_test.summary(heard)
+        stop.set()
+        advertiser.join()
+
+        phone_radio.sniff(6, "ff:ff:ff:ff:ff:ff")
+        census = []
+        phone_radio.subscribe(lambda t, p: census.append(p) if t == esp32.MSG_RX_CENSUS else None)
+        sent = esp32_radio_test.show_network(tested_radio, 0.5, power=esp32_wlan.LOW_TX_POWER)
+        assert tested.tx_power == esp32_wlan.LOW_TX_POWER and tested.mode == esp32_sim.IDLE
+        beacons = [f for f in tested.sent_raw if f[0] == 0x80]
+        assert sent == len(beacons) >= 3
+        # the SSID element, as a phone's scan reads it: tag 0 after the 24 + 12 byte fixed part
+        assert beacons[0][36:38 + len(esp32_radio_test.TEST_SSID)] == b"\x00\x0cPOKELDN-TEST"
+        assert len(census) == sent and all(p[13] == 0x80 for p in census)
+    finally:
+        stop.set()
+        for radio in radios:
+            radio.close()

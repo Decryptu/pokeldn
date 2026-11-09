@@ -253,6 +253,7 @@ class TradeEngine:
         confirm -> anim -> commit; after the last, cancel-to-leave."""
         assert mpid == 1, f"sim must be the RIGHT-seat Follower (mpId==1), got mpId={mpid}"
         self.party = list(party)
+        self.on_party = None    # called with the host's 600-byte party once it has all arrived
         self.trade_slot = trade_slot
         self.mpid = mpid
         # Chair1 [data/scripts/cable_club.inc:644-649]; no emitted byte may depend on it.
@@ -630,6 +631,8 @@ class TradeEngine:
                 self._host_party[i * 200:(i + 1) * 200] = data[:200]
                 self._host_party_blocks += 1
                 self.log(f"host party block #{i + 1}/3")
+                if self._host_party_blocks == 3 and self.on_party is not None:
+                    self.on_party(bytes(self._host_party))
                 if self._host_party_blocks == 3 and self.state == S1_LINK:
                     self.state = S4_PARTY
         elif count in (COUNT_MAIL, COUNT_RIBBON):

@@ -1,4 +1,4 @@
-"""ROM addresses read off the console; tests needing the scratchpad/ dumps skip when they are absent."""
+"""ROM addresses read off the console; tests reading the French FireRed image skip without it."""
 
 import os
 import sys
@@ -10,15 +10,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pokeldn.frlg.rom import rom_map, special_names  # noqa: E402
 
 
-SCRATCH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scratchpad")
+IMAGE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     "scratchpad", "frlg_languages", "FireRed_f.gba")
 
 
-def _dump(name):
-    path = os.path.join(SCRATCH, name)
-    if not os.path.exists(path):
-        pytest.skip(f"{name} is a hardware capture; not in the repo")
-    with open(path, "rb") as handle:
-        return handle.read()
+def _rom(address, size):
+    if not os.path.exists(IMAGE):
+        pytest.skip("no French FireRed image (tools/frlg/extract_cartridges.py)")
+    with open(IMAGE, "rb") as handle:
+        handle.seek(address - 0x08000000)
+        return handle.read(size)
 
 
 def test_the_table_and_the_anchor_agree():
@@ -48,8 +49,8 @@ def test_the_server_table_follows_the_client_table_and_names_five():
     assert rom_map.client_func("Server_Init") == 0x08148DF0
 
 
-def test_the_server_table_is_where_bs12_read_it():
-    dump = _dump("bs12_dump.bin")
+def test_the_server_table_is_in_the_cartridge():
+    dump = _rom(rom_map.S_CLIENT_FUNCS, 0x40)
     start = 4 * len(rom_map.CLIENT_FUNCS)
     for i, (_name, address) in enumerate(rom_map.SERVER_FUNCS):
         value = int.from_bytes(dump[start + 4 * i:start + 4 * i + 4], "little")
@@ -63,8 +64,8 @@ def test_the_map_says_which_build_it_belongs_to():
         rom_map.client_func("Client_Nope")
 
 
-def test_the_cartridge_header_bs07_read_is_the_build_the_map_describes():
-    lines = "\n".join(rom_map.describe_header(_dump("bs07_dump.bin")))
+def test_the_cartridge_header_is_the_build_the_map_describes():
+    lines = "\n".join(rom_map.describe_header(_rom(0x08000000, 0x100)))
     assert "b'POKEMON FIRE'" in lines
     assert "b'BPRF'" in lines
     assert "version    0x0A" in lines
@@ -74,23 +75,23 @@ def test_the_cartridge_header_bs07_read_is_the_build_the_map_describes():
 
 
 def test_a_header_from_another_build_is_rejected():
-    header = bytearray(_dump("bs07_dump.bin"))
+    header = bytearray(_rom(0x08000000, 0x100))
     header[0xAC:0xB0] = b"BPGF"                 # LeafGreen, French
     lines = "\n".join(rom_map.describe_header(bytes(header)))
     assert "NOT the build rom_map.py describes" in lines
     assert "MISMATCH: this is not a whole header" in lines   # the checksum no longer covers it
 
 
-def test_the_client_func_table_bs12_read_is_the_one_in_the_map():
+def test_the_client_func_table_in_the_cartridge_is_the_one_in_the_map():
     """Entry 7 read from ROM is the function whose return address the CPU handed back."""
-    read = rom_map.read_client_funcs(_dump("bs12_dump.bin"))
+    read = rom_map.read_client_funcs(_rom(rom_map.S_CLIENT_FUNCS, 0x40))
 
     assert [(name, address) for name, address, _thumb in read] == list(rom_map.CLIENT_FUNCS)
     assert all(is_thumb for _n, _a, is_thumb in read)
     assert read[7][1] == rom_map.CLIENT_RUN_BUFFER_SCRIPT
 
 
-BS39_DUMP_AT = 0x0824CDC0            # the --dump-address the run was launched with
+SPECIES_WINDOW = 0x0824CDC0
 
 
 def test_the_species_table_address_reproduces_bs38s_three_hits():
@@ -128,9 +129,9 @@ def test_create_mon_is_thumb_and_callable():
 
 
 def test_the_species_table_dump_is_the_table():
-    """A 1024-byte dump from 60 before the base: Bulbasaur's entry starts one stride in."""
-    dump = _dump("bs39_dump.bin")
-    start = rom_map.GSPECIES_INFO - BS39_DUMP_AT
+    """1024 bytes from 60 before the base: Bulbasaur's entry starts one stride in."""
+    dump = _rom(SPECIES_WINDOW, 1024)
+    start = rom_map.GSPECIES_INFO - SPECIES_WINDOW
 
     bulbasaur = dump[start + rom_map.SPECIES_INFO_STRIDE:][:10]
     assert list(bulbasaur) == [45, 49, 49, 45, 65, 65, 12, 3, 45, 64]

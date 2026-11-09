@@ -117,15 +117,19 @@ def test_a_short_payload_is_refused_rather_than_read_as_a_short_party():
         pokemon.party(bytes(pokemon.PARTY_BLOCK - 1))
 
 
-def test_building_a_party_record_from_a_template_keeps_every_byte_nothing_asked_for():
-    """A party record built from a template keeps every byte not asked for."""
+@pytest.mark.parametrize("form", ["encrypted", "pkhex_export"])
+def test_building_a_party_record_from_a_template_keeps_every_byte_nothing_asked_for(form):
+    """A party record built from a template keeps every byte not asked for. PKHeX saves a .pk8
+    decrypted; `bin/swsh_connect.py --offer-file` refused one with a checksum error."""
     template = pokemon.encrypt(a_record())
+    if form == "pkhex_export":
+        template = pokemon.decrypt(template)
     made = pokemon.build_from(template, species=25, nickname="PIKA", level=50,
                               stats=(120, 80, 70, 90, 85, 75))
     r = pokemon.read(made)
     assert (r["species"], r["nickname"], r["level"]) == (25, "PIKA", 50)
     assert r["stats"]["hp"] == 120 and r["stats"]["special_defence"] == 75
     assert r["is_nicknamed"] is True, "a name the flag does not enable is one the console never draws"
-    before, after = pokemon.decrypt(template), pokemon.decrypt(made)
+    before, after = gen8.load(template), pokemon.decrypt(made)
     untouched = [i for i in range(0xA0, 0xF8) if before[i] != after[i]]
     assert untouched == [], f"bytes changed that nothing asked for: {untouched}"

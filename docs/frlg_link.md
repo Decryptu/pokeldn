@@ -146,6 +146,17 @@ cartridge's addresses before delivery.
 `CloseLink()`, then a soft reset under Mystery Gift or `RfuReloadSave()` [link.c:1674]: Switch error
 2318-0006. A death with the host clean at the RFU level points at LDN/Pia.
 
+The word `svc_51` returns comes from the session object's failure handler, `main + 0x051004`: twelve
+call sites hand it an `nn::Result`, and a failure of module `0x13E` (318, the `2318-` errors) past
+its filter of expected codes is stored at session `+0x3404`, which `svc_51` reads and clears, and at
+`+0x277C`, which keeps the first. The object is freed when the network closes; the code can be read
+only while it lives, at a breakpoint.
+
+A `Communication error` also comes from the game alone, with `svc_51` silent. A failed Mystery Gift
+receive check calls `LinkRfu_FatalError` [mystery_gift_link.c:104,109,141,199], which leaves
+`errorInfo` `0x9000` (`F_RFU_ERROR_5 | F_RFU_ERROR_8`) [link_rfu_2.c:998]; the first word of
+`sLinkErrorBuffer` (`0x02022850` on BPRE) reads `0x90000000` on the error screen.
+
 | SVC | called from | what it does |
 |---|---|---|
 | `swi 0x45` | librfu_rfu.c:667,749 | hands the emulator `gRfuLinkStatus` |

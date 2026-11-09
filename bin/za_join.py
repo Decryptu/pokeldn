@@ -269,6 +269,7 @@ class GameStreams:
             # Its first after a trade: back on its box, the animation over (docs/za.md).
             self.arrived()
             self.host_offers += 1
+            pokemon_service.save_shown("za", getattr(self.args, "save_shown", None), inner)
             if inner[-1:] == bytes([OFFER_PICK]):
                 self.received = bytes(inner)
             if inner[-1:] == bytes([OFFER_PICK]) and self.offer and not self.picked:
@@ -388,6 +389,7 @@ def build_parser():
                          "so a save that took this record before takes it again")
     ap.add_argument("--offer-out", help="write the host's offered PA9 here; trade N > 1 writes "
                                          "FILE-N")
+    launcher.add_save_shown_argument(ap)
     ap.add_argument("--trade-offer", action="append", default=[],
                     help="a 354-byte offer message to send once the streams are open. Repeatable, "
                          "one per trade in the seat; the last serves every later trade")
@@ -843,7 +845,7 @@ def main(argv=None):
             try:
                 nets = trio.run(find)
             except Exception as exc:
-                print(f"[za] the scan raised: {exc}")
+                print(f"[za] the scan raised: {launcher.error_text(exc)}")
                 time.sleep(0.5)
                 continue
             # A scan that never returns reads like a console that stopped hosting: log every pass.

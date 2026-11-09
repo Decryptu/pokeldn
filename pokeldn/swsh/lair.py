@@ -186,6 +186,16 @@ def legendaries():
     return sorted({row[0] for row in table() if row[2]})
 
 
+SCENE = 50000
+
+
+def is_scene(scene):
+    """Over LDN a lobby's scene is 50000 + a value (0, or 480 = Uxie seen), + 1000 with a flag
+    (`0x00bd7fdc`); docs/swsh_raid.md, Dynamax Adventures."""
+    rest = (scene - SCENE) % 1000 if SCENE <= scene < SCENE + 2000 else -1
+    return rest == 0 or rest in legendaries()
+
+
 MASK64 = (1 << 64) - 1
 
 

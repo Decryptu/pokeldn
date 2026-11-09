@@ -85,8 +85,10 @@ def build_parser():
                     help="answer the ready-ok, after which the console writes its save")
     ap.add_argument("--trainer", default="POKELDN:41234:23117", metavar="NAME:TID:SID",
                     help="our trade trainer record")
+    launcher.add_save_shown_argument(ap)
     ap.add_argument("--save-theirs", default=None, metavar="PREFIX",
-                    help="write the Pokemon the console offers in trade N to PREFIX_N.pb8")
+                    help="write the Pokemon the console traded in trade N to PREFIX_N.pb8, once "
+                         "the trade completes")
     ap.add_argument("--approach-delay", type=float, default=0.0,
                     help="seconds after the player's trade emote before our character approaches (no walk)")
     launcher.add_linux_arguments(ap, host=True)
@@ -162,7 +164,9 @@ def main(argv=None):
         remote = receiver_gift.ReceiverGift("bdsp", *receiving, notify=receiver_gift.pop_up())
     partner = TradePartner(offers or bytes(0), tname, int(tid), int(sid), complete=args.complete_trade,
                            approach_delay=args.approach_delay, state=args.state,
-                           recruiting=args.recruiting, save_theirs=save_theirs, record=record,
+                           recruiting=args.recruiting, save_theirs=save_theirs,
+                           shown=lambda raw: pokemon_service.save_shown("bdsp", args.save_shown, raw),
+                           record=record,
                            remote=remote)
     trading = bool(offers) or remote is not None
     on_game = partner.game if trading else None

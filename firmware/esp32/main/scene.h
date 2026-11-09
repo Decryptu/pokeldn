@@ -39,9 +39,26 @@ enum scene_panel { PANEL_128X64, PANEL_72X40 };
 #define SMALL_W 72
 #define SMALL_H 40
 
+/* The sound a frame starts, which scene_sound returns after scene_draw: the same cues on every board;
+   one with a speaker plays them (speaker.h), the others ignore them. */
+enum scene_sound {
+    SOUND_NONE,
+    SOUND_LINKED,       /* a console seats */
+    SOUND_RECALL,       /* ours goes back into its ball */
+    SOUND_SEND,         /* a ball or a card leaves through the link */
+    SOUND_DATA,         /* a blip a second while the console runs its trade animation */
+    SOUND_ARRIVE,       /* theirs drops in from the link */
+    SOUND_WOBBLE,       /* it lands and rocks */
+    SOUND_OPEN,         /* the ball opens */
+    SOUND_RECEIVED,     /* theirs is on screen */
+    SOUND_DELIVERED,    /* a Mystery Gift has gone */
+    SOUNDS,
+};
+
 void scene_panel(uint8_t panel);
 /* False for a malformed command. */
 bool scene_command(const uint8_t *payload, size_t length, uint32_t now_ms);
 /* Back to the radio's own scenes and no sprites: a new host session. */
 void scene_reset(void);
 uint8_t scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now_ms);
+uint8_t scene_sound(void);

@@ -13,8 +13,8 @@ from pokeldn.app import i18n
 def test_english_presentation_keeps_module_text_and_identifiers():
     i18n.select()
     summary = "Pikachu · level 50 · shiny · 'Eevee' · Hardy · holding Light Ball"
-    assert localization.summary_text(summary) == summary
-    assert localization.summary_lines(summary) == ("Pikachu · level 50 · shiny", "'Eevee' · Hardy · holding Light Ball")
+    assert localization.summary_text(summary) == "Pikachu · Level 50 · Shiny · 'Eevee' · Hardy · Holding Light Ball"
+    assert localization.summary_lines(summary) == ("Pikachu · Level 50 · Shiny", "'Eevee' · Hardy · Holding Light Ball")
     assert localization.translate("Left its Light Ball behind.") == "Left its Light Ball behind."
     assert localization.error_message(ValueError("unknown button 'Eevee'")) == "unknown button 'Eevee'"
     assert localization.app_log("[done] trade 1 complete") == "[done] trade 1 complete"
@@ -123,7 +123,7 @@ def test_a_pack_translates_a_whole_message_then_each_sentence_then_its_game_term
         "It walks behind you. Coupe les boosts.")
     assert localization.translate("A Squirtle appears") == "A Carapuce appears"
     assert localization.summary_lines("Squirtle · level 50 · shiny · 'Squirtle' · Hardy") == (
-        "Carapuce · niveau 50 · shiny", "'Squirtle' · Hardi")
+        "Carapuce · Niveau 50 · Shiny", "'Squirtle' · Hardi")
 
 
 @pytest.mark.parametrize("localized", [False, True])

@@ -318,7 +318,7 @@ def callable_function(name):
                    + ", ".join(sorted(CALLABLE)))
 
 
-# --- more workers, extracted with scratchpad/handler_workers.py -----------------------------------
+# --- more workers ---------------------------------------------------------------------------------
 # Every `bl` a handler makes, in order, against the decomp's body for that command. Two of the warp
 # workers name themselves: the specials table calls 0x08081CC8 DoDiveWarp and 0x08081DA0
 # DoFallWarp, so the two tables confirm each other without either being assumed.

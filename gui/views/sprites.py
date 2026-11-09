@@ -4,7 +4,7 @@ import flet as ft
 
 from gui import theme as t
 from gui.views.widgets import PixelActivity
-from pokeldn.app.sprites import CACHE
+from pokeldn.app.sprites import CACHE, ITEMS, RIBBONS, pixels
 from pokeldn.app.sprite_forms import sprite_key
 from pokeldn.app.i18n import t as tr
 
@@ -104,5 +104,52 @@ class Sprite:
         if update:
             try:
                 self.frame.update()
+            except RuntimeError:    # the picker was closed, or is not on the page yet
+                pass
+
+
+class Icon:
+    """An item, ball or ribbon icon by the helper's "icon" name, cropped to its visible pixels and scaled
+    to fill `size`; an empty slot while it loads, offline or when PokeAPI has none."""
+
+    def __init__(self, app, name: str | None, ribbon: bool = False, size: int = 24, fetch: bool = True):
+        """`fetch` False shows only a cached image: a list's rows, which the cache's prefetch fills in."""
+        self.app, self.size, self.cache = app, size, RIBBONS if ribbon else ITEMS
+        self.token = 0
+        self.control = ft.Container(width=size, height=size, alignment=ft.Alignment.CENTER)
+        self.show(name, update=False, fetch=fetch)
+
+    def show(self, name: str | None, update: bool = True, fetch: bool = True) -> None:
+        self.token += 1
+        token = self.token
+        self.cache.online = bool(self.app.settings.sprites)
+        data = self.cache.cached(name) if name else None
+        self._set(data, name, update)
+        if data or not fetch or not name or not self.cache.online or self.cache.known_missing(name):
+            return
+
+        def load():
+            if token != self.token:
+                return
+            found = self.cache.get(name)
+            self.app.ui(lambda: token == self.token and found and self._set(found, name))
+        WORKERS.submit(load)
+
+    def _set(self, data: bytes | None, name: str | None, update: bool = True) -> None:
+        if data is None:
+            self.control.content = None
+        else:
+            width, height = (pixels(data) or (self.size, self.size, ()))[:2]
+            x0, y0, x1, y1 = self.cache.crop(name, False, data) or (0, 0, width, height)
+            scale = self.size / max(x1 - x0, y1 - y0)
+            self.control.content = ft.Stack([ft.Image(
+                src=t.image_src(data), width=width * scale, height=height * scale, fit=ft.BoxFit.FILL,
+                left=round(self.size / 2 - (x0 + x1) / 2 * scale), top=round(self.size / 2 - (y0 + y1) / 2 * scale),
+                filter_quality=ft.FilterQuality.NONE if scale >= 1 else ft.FilterQuality.MEDIUM,
+                anti_alias=False, gapless_playback=True)],
+                width=self.size, height=self.size, clip_behavior=ft.ClipBehavior.HARD_EDGE)
+        if update:
+            try:
+                self.control.update()
             except RuntimeError:    # the picker was closed, or is not on the page yet
                 pass

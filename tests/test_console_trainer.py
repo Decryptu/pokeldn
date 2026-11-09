@@ -40,6 +40,30 @@ def test_a_za_host_with_no_gift_fills_the_switch_row_from_the_consoles_identity(
     assert fresh.ids("za") == (5071, 14217)
 
 
+def test_find_mine_on_a_version_takes_a_run_that_named_only_the_game(fresh):
+    fresh.per_game_trainer = True
+    fresh.found({"game": "sv", "source": "session", "ot": "Varshan", "tid": 1, "sid": 2})
+    assert fresh.take_found("violet")["ot"] == "Varshan" and fresh.own("violet")["ot"] == "Varshan"
+
+
+def test_find_mine_on_a_version_leaves_the_other_versions_trainer(fresh):
+    fresh.per_game_trainer = True
+    fresh.found({"game": "sv", "source": "pokemon", "ot": "Scar", "tid": 1, "sid": 2, "version": 50})
+    assert fresh.take_found("violet") is None
+
+
+def test_a_restart_finds_the_game_edited_last(fresh):
+    fresh.per_game_trainer = True
+    fresh.set_own("firered", "ot", "Red")
+    fresh.set_own("violet", "ot", "Varshan")
+    fresh.set_own("firered", "ot", "Leaf")
+    fresh.set_own("violet", "tid", 794395)
+    again = settings_mod.load()
+    assert again.last_edited(("firered", "violet")) == "violet"
+    assert again.own("violet")["ot"] == "Varshan" and again.own("violet")["tid"] == 794395
+    assert again.last_edited(("sword",)) is None
+
+
 def test_find_mine_for_one_game_fills_only_that_games_trainer(fresh, capsys):
     """With a trainer per game, the Z-A console's identity becomes Z-A's trainer; the other games keep theirs."""
     from pokeldn.za import reference

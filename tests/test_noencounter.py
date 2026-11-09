@@ -14,7 +14,7 @@ FLAG = 0x020386D8
 STANDARD_WILD_ENCOUNTER = 0x08086528
 GET_HEADER_ID = 0x080861A0               # GetCurrentMapWildMonHeaderId, its first call
 STOP = 0x02030000
-ROM = pathlib.Path("scratchpad/FireRed_f.gba")
+ROM = pathlib.Path("scratchpad/frlg_languages/FireRed_f.gba")
 
 
 def test_every_frame_sets_the_flag_and_runs_the_game_handler_once():
@@ -37,8 +37,8 @@ def test_every_frame_sets_the_flag_and_runs_the_game_handler_once():
 
 
 @pytest.mark.parametrize("cartridge, encounter, header", [
-    ("scratchpad/FireRed_f.gba", STANDARD_WILD_ENCOUNTER, GET_HEADER_ID),
-    ("scratchpad/LeafGreen_f.gba", 0x080864FC, 0x08086174)])
+    ("scratchpad/frlg_languages/FireRed_f.gba", STANDARD_WILD_ENCOUNTER, GET_HEADER_ID),
+    ("scratchpad/frlg_languages/LeafGreen_f.gba", 0x080864FC, 0x08086174)])
 @pytest.mark.parametrize("flag, reaches_header", [(1, False), (0, True)])
 def test_the_cartridge_standardwildencounter_stops_on_this_flag(flag, reaches_header, cartridge,
                                                                 encounter, header):

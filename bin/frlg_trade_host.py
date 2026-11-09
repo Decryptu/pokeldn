@@ -35,6 +35,7 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
                         help="1..6 host party .pk3/.ek3 files")
     parser.add_argument("-o", "--out", default="received.pk3",
                         help="received-mon output path")
+    launcher.add_save_shown_argument(parser)
     parser.add_argument("--out-size", type=int, choices=(80, 100), default=100)
     parser.add_argument("--out-format", choices=("pk3", "ek3"), default="pk3")
     parser.add_argument("--slot", type=int, default=1,
@@ -164,7 +165,8 @@ def build_run_config(parser, args):
             trades=trades, anim_delay=args.anim_delay,
             player_ids_repeat_frames=args.player_ids_repeat_frames,
             link_player_idle_frames=args.link_player_idle_frames,
-            save_rounds=_save_rounds(args), trust_pia=args.trust_pia)
+            save_rounds=_save_rounds(args), trust_pia=args.trust_pia,
+            shown_path=args.save_shown)
         return configmod.TradeRunConfig(profile, plan, ldn, options)
     except ValueError as exc:
         parser.error(str(exc))

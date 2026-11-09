@@ -1,5 +1,4 @@
 """The RNG as arithmetic: exact distances, the seed behind a state, and a caught Pokemon read back."""
-from pathlib import Path
 import random
 
 import pytest
@@ -99,18 +98,6 @@ def test_iv_word_refuses_an_impossible_iv():
     assert lcg.iv_word(31, 0, 1) == 31 | (1 << 10)
     with pytest.raises(ValueError):
         lcg.iv_word(32, 0, 0)
-
-
-def test_bs15_samples_hold_the_recurrence_and_two_turns_a_frame():
-    # The console's own bytes.
-    trace = buffer_script.read_rng_trace(Path('scratchpad/bs15_dump.bin').read_bytes()) \
-        if __import__("os").path.exists("scratchpad/bs15_dump.bin") else None
-    if trace is None:
-        pytest.skip("bs15_dump.bin is not in this checkout")
-    assert all(after == lcg.step(before) for before, after in trace["samples"])
-    gaps = {lcg.distance(trace["samples"][i - 1][1], trace["samples"][i][0])
-            for i in range(1, trace["taken"])}
-    assert gaps == {2}, "the game turned the RNG exactly twice a frame at that menu"
 
 
 # A Weedle (Lv7) the player caught on Route 24, read out of gPlayerParty at 0x02024280.

@@ -8,7 +8,7 @@
     ./.venv/bin/python tools/frlg/english_build.py --plan         # what to dump to close it
 
 Method and results: docs/frlg_leafgreen.md. A name from here is a deduction, never a call target.
-The build is a ROM, made by scratchpad/legacy_linux/build_decomp.sh; both sha1s must match the decomp's.
+The build is a ROM made from the decomp; both sha1s must match the decomp's.
 """
 import argparse
 import collections
@@ -38,7 +38,7 @@ def check_build(console):
     """-> None, or the reason this build cannot be trusted. The sha1 the decomp pins is the check."""
     rom = build_path(console, ".gba")
     if not os.path.exists(rom):
-        return f"{rom} does not exist - run scratchpad/legacy_linux/build_decomp.sh"
+        return f"{rom} does not exist - build the decomp"
     want = open(os.path.join(BUILD, BUILDS[console][1])).read().split()[0]
     got = subprocess.run(["sha1sum", rom], capture_output=True, text=True).stdout.split()[0]
     return None if got == want else f"{rom} is {got}, the decomp pins {want}"

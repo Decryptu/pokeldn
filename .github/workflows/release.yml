@@ -34,6 +34,13 @@ jobs:
           - target: esp32
             file: pokeldn-radio-ble.bin
             ble: true
+          # A colour screen board's own build (docs/hardware_esp32.md, The screen).
+          - target: esp32
+            file: pokeldn-radio-e32r40t.bin
+            display: E32R40T
+          - target: esp32s3
+            file: pokeldn-radio-szpi.bin
+            display: SZPI
     steps:
       - uses: actions/checkout@v7
       - name: Build and merge the image
@@ -45,12 +52,15 @@ jobs:
             export POKELDN_BLE=1
             set -- -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.ble"
           fi
+          if [ -n "${{ matrix.display }}" ]; then
+            export POKELDN_DISPLAY=${{ matrix.display }}
+          fi
           idf.py "$@" set-target ${{ matrix.target }}
           idf.py "$@" build
           idf.py "$@" merge-bin -o "$GITHUB_WORKSPACE/${{ matrix.file }}"
       - uses: actions/upload-artifact@v7
         with:
-          name: firmware-${{ matrix.target }}${{ matrix.ble && '-ble' || '' }}
+          name: firmware-${{ matrix.target }}${{ matrix.ble && '-ble' || '' }}${{ matrix.display && format('-{0}', matrix.display) || '' }}
           path: ${{ matrix.file }}
 
   # The controller firmware (docs/hardware_pad.md): an S3 over USB, a classic ESP32 over Bluetooth.
@@ -93,6 +103,8 @@ jobs:
           # Flet's own CI builds its macOS client here; macos-14's rsync 2.6.9 fails Flutter's plugin copy.
           - os: macos-26
             asset: pokeldn-macos-arm64.zip
+          - os: macos-26-intel
+            asset: pokeldn-macos-x64.zip
           - os: windows-latest
             asset: pokeldn-windows-x64.zip
           - os: ubuntu-22.04
@@ -142,6 +154,14 @@ jobs:
         with:
           name: firmware-esp32c6-ble
           path: gui/firmware
+      - uses: actions/download-artifact@v8
+        with:
+          name: firmware-esp32-E32R40T
+          path: gui/firmware
+      - uses: actions/download-artifact@v8
+        with:
+          name: firmware-esp32s3-SZPI
+          path: gui/firmware
       - name: Install
         run: python -m pip install -r gui/requirements.txt
       # The wheel's prebuilt run.exe is shared with much PyInstaller malware; Defender's ML flagged 0.31.0.
@@ -160,7 +180,7 @@ jobs:
           path: |
             gui/client/*
             !gui/client/flet
-          key: flet-client-${{ runner.os }}-${{ hashFiles('requirements.txt', 'gui/requirements.txt', 'gui/flet_client.py', 'scripts/build_client.py', 'gui/flet_drop/**') }}
+          key: flet-client-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('requirements.txt', 'gui/requirements.txt', 'gui/flet_client.py', 'scripts/build_client.py', 'gui/flet_drop/**') }}
       - name: Restore the ARM-only Unicorn
         id: unicorn
         uses: actions/cache@v6
@@ -168,7 +188,7 @@ jobs:
           path: |
             gui/unicorn/lib
             gui/unicorn/pokeldn-unicorn
-          key: unicorn-${{ runner.os }}-${{ hashFiles('requirements.txt', 'scripts/build_unicorn.py') }}
+          key: unicorn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('requirements.txt', 'scripts/build_unicorn.py') }}
       # The app runs its own build of Flet's client, which takes files dropped on it (scripts/build_client.py).
       - name: Flutter version
         if: steps.client.outputs.cache-hit != 'true' || runner.os == 'Linux'

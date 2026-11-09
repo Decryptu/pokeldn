@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Renders the board's screen offline: compiles firmware/esp32/main/scene.c and screen.c for this
 machine, plays a scripted session through them and writes an animated GIF (needs a C compiler and
-Pillow). docs/hardware_esp32.md, The screen.
+Pillow), or each of the speaker's sounds (sfx.c) as a WAV file. docs/hardware_esp32.md, The screen.
 
     ./.venv/bin/python tools/ldn/screen_preview.py OUT.gif [--offer 25] [--receive 150] [--gift 151]
         [--panel 72x40]   the 0.42-inch ESP32-C3 board's window
+    ./.venv/bin/python tools/ldn/screen_preview.py --sounds DIR    one WAV per sound, and the session's
 """
 import argparse
 import ctypes
@@ -18,7 +19,11 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from pokeldn.ldn import esp32  # noqa: E402
 
-SOURCES = [ROOT / "firmware/esp32/main/scene.c", ROOT / "firmware/esp32/main/screen.c"]
+SOURCES = [ROOT / "firmware/esp32/main/scene.c", ROOT / "firmware/esp32/main/screen.c",
+           ROOT / "firmware/esp32/main/sfx.c"]
+# scene.h enum scene_sound, from 1
+SOUNDS = ("linked", "recall", "send", "data", "arrive", "wobble", "open", "received", "delivered")
+SFX_RATE = 16000
 FIRMWARE_VERSION = (ROOT / "firmware/esp32/version.txt").read_text(encoding="ascii").strip()
 MODES = {"idle": 0, "joining": 1, "joined": 2, "hosting": 3, "sniffing": 4}
 # scene.h: enum scene_panel, and the window (x, y, w, h) of the frame each panel shows.
@@ -46,6 +51,11 @@ class Scene:
         self.lib.scene_command.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_uint32]
         self.lib.scene_draw.argtypes = [ctypes.c_void_p, ctypes.POINTER(Radio), ctypes.c_uint32]
         self.lib.scene_panel.argtypes = [ctypes.c_uint8]
+        self.lib.scene_sound.restype = ctypes.c_uint8
+        self.lib.sfx_length.restype = ctypes.c_size_t
+        self.lib.sfx_length.argtypes = [ctypes.c_uint8]
+        self.lib.sfx_render.restype = ctypes.c_size_t
+        self.lib.sfx_render.argtypes = [ctypes.c_uint8, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_size_t]
         self.lib.scene_panel(PANELS[panel][0])
         self.lib.scene_reset()
         self.radio = Radio()
@@ -62,6 +72,22 @@ class Scene:
     def advance(self, ms: int) -> None:
         self.now += ms
 
+    def sound(self, cue: int) -> list[int]:
+        """sfx.c's samples of one cue, rendered in 160-sample chunks as speaker.c does."""
+        out, buf = [], (ctypes.c_int16 * 160)()
+        while n := self.lib.sfx_render(cue, len(out), buf, 160):
+            out += buf[:n]
+        return out
+
+
+def write_wav(path, samples: list[int]) -> None:
+    import wave
+    with wave.open(str(path), "wb") as f:
+        f.setnchannels(1)
+        f.setsampwidth(2)
+        f.setframerate(SFX_RATE)
+        f.writeframes(b"".join(int(s).to_bytes(2, "little", signed=True) for s in samples))
+
 
 def pixel(fb: bytes, x: int, y: int) -> bool:
     return bool(fb[x + 128 * (y >> 3)] >> (y & 7) & 1)
@@ -70,8 +96,9 @@ def pixel(fb: bytes, x: int, y: int) -> bool:
 def image(fb: bytes, scale: int = 4, panel: str = "128x64"):
     from PIL import Image
     x0, y0, w, h = PANELS[panel][1]
-    img = Image.new("RGB", (w * scale, h * scale), (6, 8, 14))
-    lit = Image.new("RGB", (scale - 1, scale - 1), (90, 180, 255))
+    from pokeldn.app.screen_render import DARK_RGB, LIT_RGB
+    img = Image.new("RGB", (w * scale, h * scale), DARK_RGB.to_bytes(3, "big"))   # the boards' own colours
+    lit = Image.new("RGB", (scale - 1, scale - 1), LIT_RGB.to_bytes(3, "big"))
     for y in range(h):
         for x in range(w):
             if pixel(fb, x0 + x, y0 + y):
@@ -79,8 +106,9 @@ def image(fb: bytes, scale: int = 4, panel: str = "128x64"):
     return img
 
 
-def session(scene: Scene, offer: int, receive: int, gift: int, frame_ms: int = 50):
-    """A host session: idle, waiting, a console seats, a trade, then a Mystery Gift."""
+def session(scene: Scene, offer: int, receive: int, gift: int, frame_ms: int = 50, sounds: list | None = None):
+    """A host session: idle, waiting, a console seats, a trade, then a Mystery Gift. `sounds` collects
+    each frame's cue."""
     from pokeldn.app.screen import sprite_bits
     frames = []
 
@@ -89,6 +117,8 @@ def session(scene: Scene, offer: int, receive: int, gift: int, frame_ms: int = 5
             scene.radio.rx += rx_rate
             scene.radio.tx += tx_rate
             frames.append(scene.frame())
+            if sounds is not None:
+                sounds.append(scene.lib.scene_sound())
             scene.advance(frame_ms)
 
     play(1500)
@@ -114,13 +144,32 @@ def session(scene: Scene, offer: int, receive: int, gift: int, frame_ms: int = 5
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("out")
+    parser.add_argument("out", nargs="?")
+    parser.add_argument("--sounds", metavar="DIR", help="write each sound, and the session's soundtrack, as WAV")
     parser.add_argument("--offer", type=int, default=25)
     parser.add_argument("--receive", type=int, default=150)
     parser.add_argument("--gift", type=int, default=151)
     parser.add_argument("--panel", choices=PANELS, default="128x64")
     args = parser.parse_args()
     scene = Scene(panel=args.panel)
+    if args.sounds:
+        folder = Path(args.sounds)
+        folder.mkdir(parents=True, exist_ok=True)
+        for cue, name in enumerate(SOUNDS, 1):
+            write_wav(folder / f"{cue}_{name}.wav", scene.sound(cue))
+        cues: list[int] = []
+        session(scene, args.offer, args.receive, args.gift, sounds=cues)
+        track = [0] * (len(cues) * SFX_RATE // 20 + SFX_RATE)
+        for i, cue in enumerate(cues):   # a new cue cuts the last one short, as on the board
+            if cue:
+                at = i * SFX_RATE // 20
+                clip = scene.sound(cue)
+                track[at:] = clip + [0] * (len(track) - at - len(clip))
+        write_wav(folder / "session.wav", track)
+        print(f"{len(SOUNDS)} sounds and session.wav -> {folder}")
+        return
+    if not args.out:
+        parser.error("OUT.gif or --sounds DIR")
     frames = [image(fb, panel=args.panel) for fb in session(scene, args.offer, args.receive, args.gift)]
     frames[0].save(args.out, save_all=True, append_images=frames[1:], duration=50, loop=0)
     print(f"{len(frames)} frames -> {args.out}")

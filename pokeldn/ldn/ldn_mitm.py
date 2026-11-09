@@ -86,7 +86,7 @@ def parse(data):
 NODE_INFO_VERSION_OFF = 0x2E
 
 
-def build_node_info(ip, mac, name=b"RyuPlayer", version=0):
+def build_node_info(ip, mac, name=b"POKELDN", version=0):
     """The 0x40-byte NodeInfo of a Connect: IPv4 little-endian, the MAC, a one, the user name, and
     the local communication version at +0x2E (docs/za.md)."""
     packed = socket.inet_aton(ip)[::-1]

@@ -47,6 +47,8 @@ def make_engine(run_config, lg, *, default_anim_delay=None):
         offered_slots=plan.offered_slots,
         refuse_partner_deoxys_mew=options.refuse_illegit,
         trust_pia=plan.trust_pia, log=elog)
+    if plan.shown_path:
+        eng.on_party = runtime.shown_party(plan.shown_path)
     lg(f"  seat=RIGHT (Follower / mpId={eng.mpid}); trades={eng.trades}, "
        f"offered_slots={eng.offered_slots}")
     return eng
@@ -402,6 +404,7 @@ def build_parser():
     ap.add_argument("-o", "--out", default="received.pk3",
                     help="save the received mon here (trades=1); for trades>1 this is a base/prefix "
                          "and each received mon is saved as <stem>_trade<k>_<species>.pk3")
+    launcher.add_save_shown_argument(ap)
     ap.add_argument("--out-size", type=int, choices=(80, 100), default=100,
                     help="received file size (100=party, 80=box)")
     ap.add_argument("--out-format", choices=("pk3", "ek3"), default="pk3",
@@ -478,7 +481,7 @@ def _build_run_config(ap, args):
             trade_slot=args.slot,
             offered_slots=None if offered_slots is None else tuple(offered_slots),
             trades=trades, anim_delay=args.anim_delay,
-            trust_pia=args.trust_pia)
+            trust_pia=args.trust_pia, shown_path=args.save_shown)
         ldn = configmod.LdnConfig(
             password=host_cli.parse_hex_bytes(ap, "--password", args.password),
             phy=args.phy,

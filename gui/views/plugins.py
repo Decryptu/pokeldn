@@ -111,7 +111,6 @@ class PluginsView:
             ("browse", tr('plugins.tab_browse', 'Browse · {value0}', value0=available), "package"),
             ("sources", tr('plugins.tab_sources', 'Sources · {value0}', value0=len(listings)), "globe"),
         ], self.tab, self._tab, wrap=True)
-        tabs = ft.Container(tabs, padding=4, border_radius=999, bgcolor=ft.Colors.with_opacity(0.05, "#FFFFFF"))
         if self.tab == "browse":
             self.column.controls = [header, ft.Row([tabs]), self.notice, *self._browse(listings)]
         elif self.tab == "sources":
@@ -339,10 +338,7 @@ class PluginsView:
         icon = ft.Container(ft.Image(src=entry.icon, width=48, height=48, fit=ft.BoxFit.CONTAIN,
                                      error_content=plugin_icon()), width=48, height=48, border_radius=48 * 0.22,
                             clip_behavior=ft.ClipBehavior.ANTI_ALIAS) if entry.icon else plugin_icon()
-        return t.surface(ft.Container(ft.Row([
-            icon, ft.Column(lines, spacing=4, expand=True),
-            ft.Row(actions, spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-        ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START), padding=ft.Padding(16, 14, 12, 14)))
+        return t.surface(ft.Container(t.text_row(icon, lines, actions), padding=ft.Padding(16, 14, 12, 14)))
 
     def _sources(self, listings: list) -> list[ft.Control]:
         add = t.card(tr('plugins.add_a_source', 'Add a source'), ft.Row([

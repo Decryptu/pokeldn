@@ -7,7 +7,8 @@ from collections import deque
 from pokeldn import console_trainer
 from pokeldn.frlg.gift import ereader_trainer, mg_link, mg_script, wonder_card, wonder_news
 from pokeldn.frlg.link import linkplayer
-from pokeldn.frlg.rom import buffer_script, mystery_event
+from pokeldn.frlg.rom import buffer_script, builds, mystery_event
+from pokeldn.frlg.save import sav
 from pokeldn.frlg.text import charmap
 from pokeldn.gba import barrier as barriermod, block, rfu
 from pokeldn.frlg.gift import mystery_gift as mg
@@ -529,12 +530,18 @@ class MysteryGiftClientEngine:
                   f"{run.instructions} instructions, returned {run.returned}, "
                   f"left 0x{run.param:08X} in param")
 
+    def _save_counter_word(self):
+        """gSaveCounter as this console's load left it [save.c GetSaveValidStatus]."""
+        build = builds.resolve(self.build or self.game_code.decode())
+        newest = sav.describe(self.flash).newest
+        return {build.save_counter: (newest.counter if newest else 0).to_bytes(4, "little")}
+
     def _run_on_session_machine(self, code, armed_size, armed_ident):
         if self.machine is None:
             self.machine = buffer_script.session_machine(
                 code, param=self.param or 0, sav2=self._save_block2_image(), send_size=armed_size,
                 send_ident=armed_ident, build=self.build or self.game_code.decode(),
-                memory={buffer_script.FLASH_BASE: self.flash, **self.rom_stubs})
+                memory={buffer_script.FLASH_BASE: self.flash, **self._save_counter_word(), **self.rom_stubs})
         else:
             self.machine.load(code, param=self.param or 0, send_size=armed_size, send_ident=armed_ident)
         instructions = 0

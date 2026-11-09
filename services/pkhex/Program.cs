@@ -48,6 +48,7 @@ static partial class Program
         // The app's HOME tracker setting (docs/gui.md, The bank): "empty" leaves a tracker HOME would have issued unset
         // and accepts PKHeX's one complaint about it; "made" fills it. HOME 3.1.0 refuses a tracker it did not issue.
         var emptyTracker = true;
+        var allowIllegal = false;   // the app's Allow non-legal Pokemon setting (docs/gui.md, Non-legal Pokemon)
         var madeTrackers = new HashSet<ulong>();
 
         while (Console.ReadLine() is { } line)
@@ -60,6 +61,8 @@ static partial class Program
                 displayLanguage = DisplayLanguage((string?)request["display_language"]);
                 strings = GameInfo.GetStrings(displayLanguage);
                 emptyTracker = (string?)request["home_tracker"] != "made";
+                // The bank import also keeps one under Import non-legal Pokemon into the bank (bank_illegal).
+                allowIllegal = (bool?)request["allow_illegal"] == true || (bool?)request["bank_illegal"] == true;
                 madeTrackers.Clear();
                 var game = games[(string)request["game"]!];
                 reply = (string)request["cmd"]! switch
@@ -83,6 +86,7 @@ static partial class Program
                     "sav_edit" => SaveEdit(game, request),
                     "import" => Import(request),
                     "move" => Move(game, request),
+                    "convert" => Convert_(game, request),
                     "destinations" => Destinations(game, request),
                     "raid_scan" => RaidScan.Run(request),
                     "raid_boss" => RaidBoss(game, request),
@@ -146,6 +150,29 @@ static partial class Program
             return [.. found, .. gifts];
         }
 
+        // PokeAPI's sprite file name for an English item, ball or ribbon name: "Poké Ball" poke-ball, "King's Rock" kings-rock.
+        // Legends Arceus's own balls are PokeAPI's "la" files: lapoke-ball, lagigaton-ball.
+        static string BallIcon(int ball) =>
+            (ball >= (int)Ball.LAPoke ? "la" : "") + IconName(GameInfo.GetStrings("en").balllist[ball]);
+
+        static string IconName(string english)
+        {
+            // Invariant globalization: Normalize keeps the é, so the accents PKHeX's English names use go by hand.
+            var plain = english.ToLowerInvariant().Replace('é', 'e').Replace('♀', 'f').Replace('♂', 'm');
+            plain = System.Text.RegularExpressions.Regex.Replace(plain, "[^a-z0-9 -]", "");
+            plain = System.Text.RegularExpressions.Regex.Replace(plain.Trim(), "[ -]+", "-");
+            // Where PokeAPI keeps an older or later name.
+            return plain switch
+            {
+                "leek" => "stick",
+                "itemfinder" => "dowsing-machine",
+                "upgrade" => "up-grade",
+                "health-feather" or "muscle-feather" or "resist-feather" or "genius-feather" or "clever-feather"
+                    or "swift-feather" or "pretty-feather" => plain.Replace("-feather", "-wing"),
+                _ => plain,
+            };
+        }
+
         JsonObject GenderRatio(Game game, JsonObject request)
         {
             var species = checked((ushort)(int)request["species"]!);
@@ -168,10 +195,24 @@ static partial class Program
             }
             var blank = game.Blank();
             var names = new JsonArray();
-            void Add(int id, string name)
+            var english = GameInfo.GetStrings("en");
+            // A Gen 3 item's later English name, which PokeAPI files go by ("Paralyze Heal", not "Parlyz Heal"); null for
+            // an id with no later item (mail, key items), which keeps its own name.
+            string? Item3(int i)
             {
-                if (!string.IsNullOrWhiteSpace(name))
-                    names.Add(new JsonObject { ["id"] = id, ["name"] = name });
+                if (game.Context != EntityContext.Gen3)
+                    return null;
+                var later = ItemConverter.GetItemFuture3((ushort)i);
+                return ItemConverter.GetItemOld3(later) == i ? english.itemlist[later] : null;
+            }
+            void Add(int id, string name, string? icon = null)
+            {
+                if (string.IsNullOrWhiteSpace(name))
+                    return;
+                var entry = new JsonObject { ["id"] = id, ["name"] = name };
+                if (!string.IsNullOrEmpty(icon))
+                    entry["icon"] = icon;
+                names.Add(entry);
             }
             switch (list)
             {
@@ -186,28 +227,38 @@ static partial class Program
                     // FireRed's table ends at 374 [pokefirered include/constants/items.h]; 375-376 are Emerald's.
                     var names3 = strings.GetItemStrings(game.Context, game.Versions[0]);
                     var last = game.Context == EntityContext.Gen3 ? 374 : blank.MaxItemID;
+                    // A Gen 3 id is named after its later item for the icon: PokeAPI has "Paralyze Heal", not "Parlyz Heal".
+                    string ItemIcon(int i) => IconName(Item3(i) ?? english.GetItemStrings(game.Context, game.Versions[0])[i]);
                     for (var i = 1; i <= last && i < names3.Length; i++)
                         if (names3[i] != "???")
-                            Add(i, names3[i]);
+                            Add(i, names3[i], ItemIcon(i));
                     break;
                 case "bag" when game.Context == EntityContext.Gen8:
                     foreach (var i in GiftItems().Order())
-                        Add(i, strings.itemlist[i]);
+                        Add(i, strings.itemlist[i], IconName(english.itemlist[i]));
                     break;
                 case "bag" when game.Context == EntityContext.Gen9:
                     // What a Tera Raid reward may give: every pouch but the key items, unreleased items left out.
                     foreach (var i in RaidRewardItems().Order())
-                        Add(i, strings.itemlist[i]);
+                        Add(i, strings.itemlist[i], IconName(english.itemlist[i]));
                     break;
                 case "held":
                     var items = strings.GetItemStrings(game.Context, game.Versions[0]);
+                    var englishItems = english.GetItemStrings(game.Context, game.Versions[0]);
                     for (var i = 1; i < items.Length; i++)
                         if (ItemRestrictions.IsHeldItemAllowed(i, game.Context))
-                            Add(i, items[i]);
+                            Add(i, items[i], IconName(Item3(i) ?? englishItems[i]));
                     break;
                 case "balls":
                     for (var b = 1; b <= blank.MaxBallID; b++)
-                        Add(b, strings.balllist[b]);
+                        Add(b, strings.balllist[b], BallIcon(b));
+                    break;
+                case "ribbons" when game.Context == EntityContext.Gen8:
+                    // The ribbons a WC8 card's list may carry, by RibbonIndex; the marks after them are a wild roll.
+                    for (var r = 0; r < (int)RibbonIndex.MarkLunchtime; r++)
+                        if (strings.Ribbons.GetNameSafe($"Ribbon{(RibbonIndex)r}", out var ribbon)
+                            && english.Ribbons.GetNameSafe($"Ribbon{(RibbonIndex)r}", out var englishRibbon))
+                            Add(r, ribbon, IconName(englishRibbon + " Ribbon"));
                     break;
                 case "national":
                     for (var s = 1; s < strings.specieslist.Length; s++)
@@ -260,7 +311,8 @@ static partial class Program
                 ? Encounters(blank, trainer, ReadOnlyMemory<ushort>.Empty, versions, IsAlpha).Count > 0 : null;
             var balls = new JsonArray();
             foreach (var ball in permitted.Order())
-                balls.Add(new JsonObject { ["id"] = (int)ball, ["name"] = strings.balllist[(int)ball] });
+                balls.Add(new JsonObject { ["id"] = (int)ball, ["name"] = strings.balllist[(int)ball],
+                                           ["icon"] = BallIcon((int)ball) });
             // An ability is listed when a legal Pokemon of the species can carry it (Let's Go has no hidden ability to give).
             var abilities = new JsonArray();
             // Legends Z-A has no abilities in battle.
@@ -311,11 +363,12 @@ static partial class Program
                 ["tera"] = teras,
                 ["base"] = new JsonArray(detail.HP, detail.ATK, detail.DEF, detail.SPA, detail.SPD, detail.SPE),
                 ["natures"] = natures,
-                ["abilities"] = abilities,
+                ["abilities"] = allowIllegal && game.Context != EntityContext.Gen9a && blank.Format >= 6
+                    ? Names(game, "abilities")["names"]!.DeepClone() : abilities,
                 ["gendered"] = !detail.Genderless && !detail.OnlyFemale && !detail.OnlyMale,
                 ["effort"] = effort,
                 ["held"] = Names(game, "held")["names"]!.DeepClone(),
-                ["balls"] = balls,
+                ["balls"] = allowIllegal ? Names(game, "balls")["names"]!.DeepClone() : balls,
                 ["alpha"] = alpha,
             };
         }
@@ -410,7 +463,7 @@ static partial class Program
             });
         }
 
-        JsonObject Make(Game game, JsonObject request)
+        JsonObject Make(Game game, JsonObject request, bool forge = true)
         {
             var species = checked((ushort)(int)request["species"]!);
             var first = FirstForm(game, species) ?? throw new ArgumentException("This species is absent from the selected game.");
@@ -437,14 +490,20 @@ static partial class Program
                     options["form"] = (int)f;
                     try
                     {
-                        return Make(game, probe);
+                        return Make(game, probe, false);
                     }
                     catch (InvalidOperationException e)
                     {
                         refused ??= e;
                     }
                 }
-                throw refused!;
+                if (!allowIllegal)
+                    throw refused!;
+                var forged = request.DeepClone().AsObject();
+                if (forged["options"] is not JsonObject chosen)
+                    forged["options"] = chosen = [];
+                chosen["form"] = (int)first;
+                return Make(game, forged);
             }
             var form = wish.Form.Value;
             if (!game.Table.IsPresentInGame(species, form))
@@ -565,6 +624,8 @@ static partial class Program
                             pk.SetNickname(nickname);
                         wish.Apply(pk);
                         var la = Mend(pk, evolved, encounter, trainer, wish);
+                        if (evolved || pk.CurrentLevel > built.CurrentLevel)
+                            (pk, la) = Learned(pk, la, encounter, wish, game.Versions[0]);
                         var unmet = wish.Unmet(pk, strings);
                         if (Accepted(pk, la) && unmet is null)
                         {
@@ -579,6 +640,8 @@ static partial class Program
                     }
                 }
             }
+            if (allowIllegal && forge)
+                return Forged(game, request, blank, species, form, level, shiny, nickname, wish);
             var name = strings.specieslist[species];
             throw new InvalidOperationException(firstProblem is not null
                 ? $"No legal {name} with these choices. {firstProblem}"
@@ -655,6 +718,32 @@ static partial class Program
             return la;
         }
 
+        // Tackle at level 100 is legal, so Mend leaves a raised Pokemon its catch-level moves. This takes the species' last
+        // four level-up moves, else PKHeX's suggestion, which mixes in pre-evolutions' moves. An event keeps its fixed moves.
+        (PKM, LegalityAnalysis) Learned(PKM pk, LegalityAnalysis la, IEncounterTemplate encounter, Wish wish, GameVersion version)
+        {
+            if (wish.Moves.Length > 0 || encounter is MysteryGift || pk.IsEgg || !Accepted(pk, la))
+                return (pk, la);
+            var top = new ushort[4];
+            GameData.GetLearnSource(version).GetLearnset(pk.Species, pk.Form).SetEncounterMoves(pk.CurrentLevel, top);
+            foreach (var moves in new[] { top, null })
+            {
+                var moved = pk.Clone();
+                try
+                {
+                    Refit(moved, wish, moves);
+                }
+                catch (IndexOutOfRangeException)
+                {
+                    continue;   // the learnset gap Mend steps over
+                }
+                var result = Refresh(moved, wish);
+                if (Accepted(moved, result) && wish.Unmet(moved, strings) is null)
+                    return (moved, result);
+            }
+            return (pk, la);
+        }
+
         // The method that turned the species before this one into the record's species, if PKHeX has one.
         static EvolutionMethod? HowEvolved(PKM pk)
         {
@@ -720,10 +809,12 @@ static partial class Program
             }
         }
 
-        void Refit(PKM pk, Wish wish)
+        void Refit(PKM pk, Wish wish, ushort[]? moves = null)
         {
             // Moves the request names stay; PKHeX suggests the rest.
-            if (wish.Moves.Length > 0)
+            if (moves is not null)
+                pk.SetMoves(moves);
+            else if (wish.Moves.Length > 0)
                 pk.SetMoves(wish.Moveset());
             else
                 pk.SetMoveset();
@@ -805,6 +896,53 @@ static partial class Program
                 ["ht_language"] = pk is IHandlerLanguage handler ? handler.HandlingTrainerLanguage : 0,
                 ["version"] = (int)pk.Version,
             };
+        }
+
+        // What was asked for with no legality check, on the record of an encounter: of the species, or of the first
+        // the game has, for its met data. Only a build no legal Pokemon can satisfy comes here.
+        JsonObject Forged(Game game, JsonObject request, PKM blank, ushort species, byte form, int level, bool shiny,
+                          string nickname, Wish wish)
+        {
+            var (versions, trainer) = Trainer(game, request);
+            PKM? Base(PKM template)
+            {
+                foreach (var encounter in Encounters(template, trainer, ReadOnlyMemory<ushort>.Empty, versions))
+                    if (encounter is IEncounterConvertible convertible && !encounter.IsEgg
+                        && convertible.ConvertToPKM(trainer) is var pk && pk.GetType() == blank.GetType())
+                        return pk;
+                return null;
+            }
+            var made = Base(blank);
+            for (ushort s = 1; made is null && s <= game.Table.MaxSpeciesID; s++)
+                if (FirstForm(game, s) is { } f)
+                {
+                    var other = game.Blank();
+                    other.Species = s;
+                    other.Form = f;
+                    made = Base(other);
+                }
+            if (made is null)
+                throw new InvalidOperationException($"PKHeX has no record to start {strings.specieslist[species]} from.");
+            made.Species = species;
+            made.Form = form;
+            made.ClearNickname();
+            made.Gender = made.GetSaneGender();
+            if (made.Format >= 6)
+                made.RefreshAbility(0);
+            made.CurrentLevel = (byte)(level > 0 ? level : Math.Max((int)made.CurrentLevel, 50));
+            made.MetLevel = Math.Min(made.MetLevel, made.CurrentLevel);
+            if (nickname.Length > 0)
+                made.SetNickname(nickname);
+            wish.Force(made, shiny);
+            made.HealPP();
+            made.ResetPartyStats();
+            if (made is PB7 pb7)
+            {
+                pb7.ResetPartyStats();
+                ResetSizes(pb7);
+            }
+            made.RefreshChecksum();
+            return Describe(game, made, new LegalityAnalysis(made));
         }
 
         // Shininess is the PID against the trainer's IDs. From Gen 7 the PID fixes nothing else, so its high half moves
@@ -969,7 +1107,7 @@ static partial class Program
                 pk.RefreshChecksum();
                 la = new LegalityAnalysis(pk);
             }
-            return Accepted(pk, la) ? (pk, la, "") : (pk, la, Plain(la));
+            return Accepted(pk, la) || allowIllegal ? (pk, la, "") : (pk, la, Plain(la));
         }
 
         // A Pokemon file or a game save, each Pokemon in it as the bank would keep it (docs/gui.md, Importing). A
@@ -1046,20 +1184,10 @@ static partial class Program
             return reply;
         }
 
-        (string Game, PKM Pokemon, LegalityAnalysis Legality, JsonArray Notes) Banked(JsonObject request, PKM source)
+        // What HOME's way in takes off: the held item goes back to the bag, and Pal Park and Poke Transfer
+        // refuse a Pokemon knowing an HM. The file is left as it is, so the item and moves stay in that game.
+        JsonArray WayIn(PKM source)
         {
-            if (!source.ChecksumValid)
-                throw new InvalidDataException("The Pokemon checksum is invalid.");
-            source.ResetPartyStats();
-            source.RefreshChecksum();
-            foreach (var (key, game) in games)
-                if (source.GetType() == game.Blank().GetType())
-                {
-                    var la = new LegalityAnalysis(source);
-                    return Accepted(source, la) ? (key, source, la, []) : throw new InvalidDataException(Plain(la));
-                }
-            // What HOME's way in takes off: the held item goes back to the bag, and Pal Park and Poke Transfer
-            // refuse a Pokemon knowing an HM. The file is left as it is, so the item and moves stay in that game.
             var notes = new JsonArray();
             if (source.HeldItem != 0)
             {
@@ -1076,8 +1204,24 @@ static partial class Program
             }
             source.RefreshChecksum();
             // HOME's games replace moves a game lacks; a move its own game never allowed is no such move.
-            if (new LegalityAnalysis(source) is { Valid: false } own)
+            if (!allowIllegal && new LegalityAnalysis(source) is { Valid: false } own)
                 throw new InvalidDataException(Plain(own));
+            return notes;
+        }
+
+        (string Game, PKM Pokemon, LegalityAnalysis Legality, JsonArray Notes) Banked(JsonObject request, PKM source)
+        {
+            if (!source.ChecksumValid)
+                throw new InvalidDataException("The Pokemon checksum is invalid.");
+            source.ResetPartyStats();
+            source.RefreshChecksum();
+            foreach (var (key, game) in games)
+                if (source.GetType() == game.Blank().GetType())
+                {
+                    var la = new LegalityAnalysis(source);
+                    return Accepted(source, la) || allowIllegal ? (key, source, la, []) : throw new InvalidDataException(Plain(la));
+                }
+            var notes = WayIn(source);
             var refusals = new List<string>();
             foreach (var key in new[] { "frlg", "sv", "swsh", "bdsp", "pla", "za" })
             {
@@ -1111,6 +1255,27 @@ static partial class Program
             if (pk is null || la is null || refusal.Length > 0)
                 throw new InvalidDataException(refusal);
             return Describe(game, pk, la);
+        }
+
+        // A Pokemon file of any format PKHeX reads (.pk4, .pk7, another title's), taken to `game` as the bank moves one
+        // (Converted); "from" names the format it was read as (PK4).
+        JsonObject Convert_(Game game, JsonObject request)
+        {
+            var data = Convert.FromBase64String((string)request["data"]!);
+            if (!FileUtil.TryGetPKM(data, out var source, Path.GetExtension((string?)request["name"] ?? "")))
+                throw new InvalidDataException("PKHeX reads no Pokemon in this file.");
+            var transfer = source.GetType() != game.Blank().GetType();
+            if (!source.ChecksumValid)
+                throw new InvalidDataException("The Pokemon checksum is invalid.");
+            var notes = transfer ? WayIn(source) : [];
+            var (pk, la, refusal) = Converted(source, game, (ulong)Random.Shared.NextInt64(1, long.MaxValue),
+                                              Trainer(game, request).Item2, transfer);
+            if (pk is null || la is null || refusal.Length > 0)
+                throw new InvalidDataException(refusal);
+            var reply = Describe(game, pk, la);
+            reply["from"] = source.GetType().Name;
+            reply["notes"] = notes;
+            return reply;
         }
 
         // Every game the banked Pokemon could go to, `game` being the one it is in now.
@@ -1560,6 +1725,13 @@ static partial class Program
             if (best is null)
                 throw new ArgumentException("No den seed gives this boss.");
             best.SetMoves(source.Moves);
+            // A den's level is below a boss built past it: a move learned between the two makes the catch illegal.
+            if (new LegalityAnalysis(best).Info.Moves.Any(m => !m.Valid))
+            {
+                var top = new ushort[4];
+                GameData.GetLearnSource(GameVersion.SW).GetLearnset(best.Species, best.Form).SetEncounterMoves(best.CurrentLevel, top);
+                best.SetMoves(top);
+            }
             best.HealPP();
             best.ResetPartyStats();
             return new JsonObject
@@ -1905,6 +2077,7 @@ static partial class Program
                 ["form_id"] = pk.Form,
                 ["level"] = pk.CurrentLevel,
                 ["shiny"] = pk.IsShiny,
+                ["gender"] = pk.Gender,
                 ["alpha"] = pk is IAlphaReadOnly { IsAlpha: true },
                 ["nickname"] = pk.Nickname,
                 ["is_nicknamed"] = pk.IsNicknamed,
@@ -2122,6 +2295,45 @@ record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effor
             if (exp < next)
                 pk.EXP = exp;
         }
+    }
+
+    // Apply, then what a legal build gets from its encounter or leaves out: every value set as asked, the game's limits
+    // on the record the only ones left. Gen 3 keeps nature and gender in the PID and an ability in its species' slots.
+    public void Force(PKM pk, bool shiny)
+    {
+        if (pk is G3PKM)
+        {
+            var tsv = (uint)(pk.TID16 ^ pk.SID16);
+            for (var tries = 0; tries < 1_000_000; tries++)
+            {
+                var low = (uint)Random.Shared.Next(0x10000);
+                var high = shiny ? low ^ tsv ^ (uint)Random.Shared.Next(8) : (uint)Random.Shared.Next(0x10000);
+                pk.PID = high << 16 | low;
+                if (pk.IsShiny == shiny && (Nature is not { } n || pk.Nature == n) && (Gender is not { } g || pk.Gender == (byte)g))
+                    break;
+            }
+        }
+        else
+        {
+            if (shiny != pk.IsShiny)
+                pk.SetIsShiny(shiny);
+            if (Nature is { } nature)
+                pk.Nature = pk.StatAlignment = nature;
+            if (Gender is { } gender)
+                pk.Gender = (byte)gender;
+            if (Ability is { } ability)
+                pk.Ability = ability;
+        }
+        Apply(pk);
+        for (var i = 0; i < 6; i++)
+            if (IVs[i] >= 0)
+                _ = i switch
+                {
+                    0 => pk.IV_HP = IVs[i], 1 => pk.IV_ATK = IVs[i], 2 => pk.IV_DEF = IVs[i],
+                    3 => pk.IV_SPA = IVs[i], 4 => pk.IV_SPD = IVs[i], _ => pk.IV_SPE = IVs[i],
+                };
+        if (Alpha is { } alpha && pk is IAlpha a)
+            a.IsAlpha = alpha;
     }
 
     public void ApplyEffort(PKM pk)

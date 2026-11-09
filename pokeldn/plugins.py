@@ -31,7 +31,7 @@ def __getattr__(name):
 
 # docs/plugins.md, Versions: a removal or a change of meaning raises the major, an addition the level.
 API_VERSION = 1                    # the major this pokeldn serves
-API_LEVEL = 12                     # 1.12 a tool's activity and variant; docs/plugins.md, Versions
+API_LEVEL = 13                     # 1.13 run_launcher, switch.cartridge; docs/plugins.md, Versions
 API_OLDEST = 1                     # an older major is refused
 DEPRECATED: dict[int, str] = {}    # a served major due for removal -> the release that drops it
 ENTRY_POINT_GROUP = "pokeldn.plugins"
@@ -172,6 +172,25 @@ class API:
             raise ValueError("an offer edit is a function from bytes to bytes")
         _offer_edits.append(OfferEdit(game, label or self.plugin.name, edit, self.plugin.id))
         self.plugin.offer_edits.append(game)
+
+
+def run_launcher(script: str, argv) -> int:
+    """Runs a built-in launcher (`bin/NAME.py`) inside this run, as the app would, and returns its exit
+    status (1.13). The tool's run owns the radio; the launcher takes it for as long as it runs."""
+    if not re.fullmatch(r"bin/\w+\.py", script):
+        raise ValueError(f"{script!r} is not a launcher")
+    from pokeldn.app import runner
+    saved = sys.argv, list(sys.path)
+    try:
+        runner.execute(["--run", script, *argv])
+        return 0
+    except SystemExit as stopped:
+        if stopped.code is None or isinstance(stopped.code, int):
+            return stopped.code or 0
+        print(stopped.code, file=sys.stderr)
+        return 1
+    finally:
+        sys.argv, sys.path[:] = saved
 
 
 def parse_api(value) -> tuple | None:

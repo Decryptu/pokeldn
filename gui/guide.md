@@ -30,7 +30,8 @@ With several boards plugged in, Use this board picks the one sessions use.
 
 More options, under the species, sets the nature, ability, gender, held item, ball, friendship, IVs and
 EVs (AVs in Let's Go, effort levels in Legends Arceus). Empty fields stay random. The lists hold only
-what the species can legally have in that game, and Build refuses a combination PKHeX finds illegal,
+what the species can legally have in that game, and Build refuses a combination PKHeX finds illegal
+(Settings, Advanced, Allow non-legal Pokemon lifts both),
 with the reason. A traded Pokemon keeps its friendship only when Your trainer, in Settings, is the
 console's player; FireRed and LeafGreen set it to 70 on every trade.
 

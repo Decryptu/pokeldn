@@ -26,6 +26,15 @@ RECORD_SIZES = {"frlg": (80, 100), "rse": (80, 100), "lgpe": (232, 260), "bdsp":
 NATURES = ("Hardy", "Lonely", "Brave", "Adamant", "Naughty", "Bold", "Docile", "Relaxed", "Impish",
            "Lax", "Timid", "Hasty", "Serious", "Jolly", "Naive", "Modest", "Mild", "Quiet", "Bashful",
            "Rash", "Calm", "Gentle", "Sassy", "Careful", "Quirky")   # the index every record stores
+# Pokemon files of other games PKHeX reads; the offer converts one to its own game (Service.import_file).
+FOREIGN = re.compile(r"\.(pk[1-9]|pb7|pb8|pa8|pa9|ck3|xk3|bk4|rk4|sk2)$", re.IGNORECASE)
+
+
+def foreign(game: str, path: str) -> bool:
+    """Whether the file at `path` is another game's Pokemon, to convert before `game` takes it."""
+    return bool(FOREIGN.search(path)) and not path.lower().endswith("." + EXTENSIONS[game])
+
+
 CHECK_TIMEOUT = 10.0
 RECORD_LIMIT = 768
 
@@ -92,9 +101,12 @@ class Service:
         self.species_cache: dict[str, list[dict]] = {}
         # Settings.home_tracker; the app sets it, a run inherits it through the environment.
         self.home_tracker = os.environ.get("POKELDN_HOME_TRACKER") or "empty"
+        # Settings.allow_illegal, reaching a run the same way; the GTS asks PKHeX itself and stays legal.
+        self.allow_illegal = os.environ.get("POKELDN_ALLOW_ILLEGAL") == "1"
+        self.bank_illegal = False   # Settings.bank_illegal: only the bank's import reads it
 
     def _ask(self, request: dict) -> dict:
-        request = {**request, "home_tracker": self.home_tracker}
+        request = {**request, "home_tracker": self.home_tracker, "allow_illegal": self.allow_illegal}
         with self.lock:
             for attempt in range(2):
                 if self.proc is None or self.proc.poll() is not None:
@@ -164,7 +176,7 @@ class Service:
     def options(self, game: str, species: int, trainer: dict, version: str = "", form: int = 0) -> dict:
         """The forms, natures, abilities, held items, balls and effort kind an offer of this species can ask for;
         alpha is whether it has an Alpha encounter, None in a game with no Alphas."""
-        key = f"{game}:options:{species}:{form}:{version}"
+        key = f"{game}:options:{species}:{form}:{version}:{self.allow_illegal}"
         if key not in self.species_cache:
             self.species_cache[key] = self._ask({"cmd": "options", "game": game, "species": species,
                                                  "form": form, "trainer": trainer, "version": version})
@@ -235,11 +247,22 @@ class Service:
         data = entity_bytes(game, data)
         return self._ask({"cmd": "owner", "game": game, "data": base64.b64encode(data).decode()})
 
-    def import_file(self, game: str, path: str, trainer: dict | None = None) -> dict:
+    def import_file(self, game: str, path: str, trainer: dict | None = None, receiver: dict | None = None) -> dict:
         """The Pokemon in the file at `path`, kept, or BuilderError; `trainer` ({ot, tid, sid, gender}, as
-        settings.trainer gives it) replaces its original trainer and keeps its shine (services/pkhex Retrain)."""
-        reply = self.check(game, path, {"trainer": trainer} if trainer else None)
-        if not reply["legal"]:
+        settings.trainer gives it) replaces its original trainer and keeps its shine (services/pkhex Retrain).
+        A record of another format (FOREIGN) first goes to `game` as the bank moves one, received by `receiver`."""
+        if foreign(game, path):
+            data = Path(path).expanduser().read_bytes()
+            if len(data) > RECORD_LIMIT:
+                raise BuilderError("This file is too big to be one Pokemon.")
+            moved = self._ask({"cmd": "convert", "game": game, "name": Path(path).name,
+                               "trainer": receiver or trainer or {}, "data": base64.b64encode(data).decode()})
+            reply = self.check_bytes(game, base64.b64decode(moved["data"]),
+                                     fields={"trainer": trainer} if trainer else None)
+            reply["converted_from"] = moved["from"]
+        else:
+            reply = self.check(game, path, {"trainer": trainer} if trainer else None)
+        if not reply["legal"] and not self.allow_illegal:
             raise BuilderError(reply["report"])
         reply["file"] = self.keep(game, reply)
         return reply
@@ -248,11 +271,11 @@ class Service:
         """Each Pokemon in a Pokemon file or a game save, as the bank would keep it [services/pkhex Import].
         `trainers` maps every game to the trainer who receives a Pokemon HOME moves there."""
         return self._ask({"cmd": "import", "game": "sv", "name": name, "trainers": trainers,
-                          "data": base64.b64encode(data).decode()})
+                          "data": base64.b64encode(data).decode(), "bank_illegal": self.bank_illegal})
 
     def prepare(self, game: str, data: bytes, *, fresh=False, fields=None) -> bytes:
         reply = self.check_bytes(game, data, fresh=fresh, fields=fields)
-        if not reply["legal"]:
+        if not reply["legal"] and not self.allow_illegal:
             raise BuilderError(reply["report"])
         if reply.get("note"):
             print(f"[pokemon] the offer {reply['note']}", flush=True)
@@ -465,3 +488,21 @@ def save_received(game, path, data):
     if game == "lgpe" and len(data) == 232:
         data += bytes(28)
     write_file(path, data)
+
+
+def save_shown(game, folder, data):
+    """Writes a Pokemon the console showed on its trade screen to `folder`, traded or not, named by its
+    encryption constant (a PK3's PID): a record shown again replaces its file. -> the path, or None."""
+    if not folder or not data:
+        return None
+    from pokeldn.host_support import write_file
+    data = entity_bytes(game, data)
+    if game == "lgpe" and len(data) == 232:
+        data += bytes(28)
+    if len(data) not in RECORD_SIZES[game]:
+        return None
+    path = os.path.join(os.path.expanduser(folder), f"{game}-{data[:4][::-1].hex()}.{EXTENSIONS[game]}")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    write_file(path, data)
+    print(f"[pokemon] saved the Pokemon the console showed, {path}", flush=True)
+    return path

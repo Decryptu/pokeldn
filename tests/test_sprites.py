@@ -347,3 +347,32 @@ def test_hostile_pngs_are_rejected_without_rendering_or_caching(host, tmp_path, 
     host.routes = {"/pokemon/25.png": (200, data)}
     cache = sprites.SpriteCache(tmp_path, host.url)
     assert cache.get(25) is None and not list(tmp_path.rglob("*.png"))
+
+
+def test_prefetch_downloads_a_list_once_in_order_and_reports_in_batches(host, tmp_path, monkeypatch):
+    monkeypatch.setattr(sprites, "PACE", 0)
+    monkeypatch.setattr(sprites, "BATCH", 2)
+    names = ["master-ball", "poke-ball", "leftovers", "no-such-item", "great-ball"]
+    host.routes = {f"/pokemon/{n}.png": (200, png(i)) for i, n in enumerate(names) if n != "no-such-item"}
+    cache = sprites.SpriteCache(tmp_path, host.url, key=sprites.ICON_KEY)
+    assert cache.get("poke-ball") == png(1)                  # already cached: never asked again
+    batches = []
+    cache.prefetch(names + ["../escape"], lambda: batches.append(len(host.requests)))
+    cache.prefetcher.submit(lambda: None).result(timeout=5)     # the one thread runs calls in order
+    assert host.requests == ["/pokemon/poke-ball.png"] + [f"/pokemon/{n}.png" for n in names if n != "poke-ball"]
+    assert batches == [3, 5]                                 # after two new images, then the last one
+    assert [cache.cached(n) is not None for n in names] == [True, True, True, False, True]
+    cache.prefetch(names, lambda: batches.append("again"))
+    cache.prefetcher.shutdown(wait=True)
+    assert len(host.requests) == 5 and batches == [3, 5]     # cached and known-missing names are skipped
+
+
+def test_prefetch_stops_when_the_network_is_gone(tmp_path, monkeypatch):
+    monkeypatch.setattr(sprites, "PACE", 0)
+    cache = sprites.SpriteCache(tmp_path, dead_url(), key=sprites.ICON_KEY)
+    calls = []
+    real = cache._download
+    monkeypatch.setattr(cache, "_download", lambda *a: calls.append(a) or real(*a))
+    cache.prefetch([f"item-{n}" for n in range(50)])
+    cache.prefetcher.shutdown(wait=True)
+    assert len(calls) == 1                                   # one failure, then the cooldown ends the run

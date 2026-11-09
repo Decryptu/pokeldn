@@ -29,16 +29,16 @@ load-time patches ([frlg_rom.md](frlg_rom.md), The breakpoint hooks); `0x0900000
 open bus (each halfword its own address halved). The English pair (`BPRE`, `BPGE`) is byte-identical
 to `pret/pokefirered`'s `pokefirered_switch.gba` and `pokeleafgreen_switch.gba`.
 
-`scratchpad/base_romfs.py` reads the Program NCA's single CTR RomFS section:
+`tools/frlg/extract_cartridges.py` reads the Program NCA's single CTR RomFS section of each package
+and writes its image:
 
-    ./.venv/bin/python scratchpad/base_romfs.py "$NSP" --list
-    ./.venv/bin/python scratchpad/base_romfs.py "$NSP" --extract /FireRed_f.gba --out scratchpad/FireRed_f.gba
+    ./.venv/bin/python tools/frlg/extract_cartridges.py --packages DIR --keys PROD_KEYS --out DIR
 
 ## EWRAM is at the same addresses in both builds
 
 The English ELF's EWRAM symbols are the French cartridge's (`gDecompressionBuffer` 0x0201C000,
 `gPlayerParty` 0x02024280, `gPlayerPartyCount` 0x02024025). IWRAM differs. No symbol claims
-0x0203FBAC (highest symbol end) to 0x02040000 (`scratchpad/ram_survey.py`).
+0x0203FBAC (highest symbol end) to 0x02040000.
 
 ## The English cartridges
 
@@ -64,7 +64,7 @@ English values: `gRngValue` 0x030042D0, `gSaveBlock1Ptr` 0x030042D8, `gSaveBlock
 `gIntrTable[4]` 0x030027E0, `gLastWrittenSector` 0x03004650, `gSaveCounter` 0x03004660. English
 LeafGreen's RAM is English FireRed's; of a resident hook's addresses only `m4aSoundMain` moves
 (0x081E07C4 against 0x081E07E8). `tests/test_frlg_english_cartridges.py` runs the payloads through
-each image's `Client_RunBufferScript` (skipped without `scratchpad/frlg_en/`).
+each image's `Client_RunBufferScript` (skipped without the images, `tools/frlg/extract_cartridges.py`).
 
 ## The BIOS wrappers
 
@@ -94,7 +94,7 @@ it helps only data over 1024 bytes.
 
 `MysteryGiftClient_CallFunc` at 0x08148C94 indexes `sClientFuncs` (0x0845DBD0, eight entries) by
 `client->funcId`. Every other address is reached from literal pools, `bl` targets and pointer tables,
-each landing on a known prologue (`scratchpad/rom_read.py`).
+each landing on a known prologue.
 
 ## The four function tables
 
@@ -149,9 +149,9 @@ A handler's `bl` targets in address order are the decomp's calls in source order
     FlagClear            0x08071F1C      AddPCItem            0x0809DDB4
     FlagGet              0x08071F44      IncrementGameStat    0x080587A4
 
-`gSpecialVar_Result` is 0x020370CC; `Random` is 0x080486B0. `scratchpad/handler_workers.py` prints a
-handler's `bl` targets; `tools/frlg/rom_functions.py --table specials|field|mystery-event|callable`
-does it across a table and plans the next `--dump-address` windows.
+`gSpecialVar_Result` is 0x020370CC; `Random` is 0x080486B0.
+`tools/frlg/rom_functions.py --table specials|field|mystery-event|callable` prints the `bl` targets
+of a table's handlers and plans the next `--dump-address` windows.
 
 The ROM is agbcc-built and ends a THUMB function `pop {r4,r5,r6}; pop {r1}; bx r1` (BC70 BC02 4708),
 never `pop {..., pc}`. `pokeldn/frlg/rom/thumb.py` matches `bx Rn` and treats a return as the end
@@ -340,7 +340,7 @@ Spanish FireRed base v0 (`0100EB702342C000`) contains `FireRed_s.gba`, game code
 The badge checks point to message scripts at 0x081C1901, 0x081C19F5 and 0x081C1ADE;
 `EventScript_CurrentTooFast` starts at `0x081AA346` (`lockall`). Translated text moves each resume
 script. `tests/test_frlg_english_cartridges.py`, `tests/test_noclip.py` and `tests/test_follower.py`
-use `scratchpad/frlg_es/FireRed_s.gba` when present.
+use the Spanish image when present.
 
 # The French Easy Chat vocabulary
 
@@ -386,7 +386,6 @@ easychat_french.check(ids, strict=True)              # raises on anything unread
     POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/frlg_mg_host.py --live --keys PROD_KEYS \
         --buffer-script string-gather --gather-address 0x083DF5C0 --gather-count 42 \
         --gather-stride 12 --dump-file DUMP.bin --version firered    # one group per run
-    ./.venv/bin/python scratchpad/ec_words.py --group 4 DUMP.bin
 
 LeafGreen's Easy Chat region is FireRed's at −0x1C4 with identical vocabulary.
 

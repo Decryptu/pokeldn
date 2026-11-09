@@ -35,10 +35,12 @@ DATA_HEADER = 12
 SAVE_STATUS_OK = 1                     # LoadGameSave's SAVE_STATUS_OK [include/save.h]
 BACKUP_FIRST, BACKUP_SEND_QUEUE = 0x004, 0x008
 RESTORE_LOAD_GAME_SAVE = 0x008
+RESTORE_SAVE_COUNTER = 0x00C            # asm/save-restore.s 0x00C: &gSaveCounter
 
 BACKED_UP = _encode_message("Your save was copied to\nthe computer.", None)
 RESTORED = _encode_message("The save from the computer\nis in. Saving it now.", None)
 NOT_RESTORED = _encode_message("The save could not be written.\nNothing was saved.", None)
+EMERALD_WRITTEN = _encode_message("The Emerald save is written.\nThis game keeps its own.", None)
 REFUSED = _encode_message("This save is for another\ncartridge. Nothing changed.", None)
 
 
@@ -52,6 +54,7 @@ def backup_code(build, first=0):
 def restore_code(build):
     code = bytearray(PAYLOADS[RESTORE][0])
     code[RESTORE_LOAD_GAME_SAVE:RESTORE_LOAD_GAME_SAVE + 4] = (build.load_game_save | 1).to_bytes(4, "little")
+    code[RESTORE_SAVE_COUNTER:RESTORE_SAVE_COUNTER + 4] = build.save_counter.to_bytes(4, "little")
     return bytes(code)
 
 
@@ -295,8 +298,9 @@ class SaveRestoreServer(_Server):
     """Write `save` beside the chip's newest copy, check each sector, then load it; the success
     message makes the game save it [docs/frlg_gift.md, Save backup and restore]."""
 
-    def __init__(self, save, **kwargs):
+    def __init__(self, save, *, emerald=False, **kwargs):
         self.save = sav.normalize(save)
+        self.emerald = emerald
         self.failed = None
         self.loaded = None
         super().__init__(**kwargs)
@@ -306,7 +310,11 @@ class SaveRestoreServer(_Server):
         if build is None:
             yield from self._finished()
         try:
-            sav.check_restorable(self.save, japanese=build.language == "japanese")
+            if self.emerald:
+                first = sav.emerald_first(self.save)
+            else:
+                first = None
+                sav.check_restorable(self.save, japanese=build.language == "japanese")
         except sav.SaveError as exc:
             self.outcome = "refused"
             self.info(f"Nothing was written: {exc}.")
@@ -319,7 +327,7 @@ class SaveRestoreServer(_Server):
         newest = sav.chip_newest(footers)
         self.info("The chip's newest copy is " + (f"slot {newest[0]}, counter {newest[1]}"
                                                   if newest else "missing") + ".")
-        plan = sav.sectors_to_write(self.save, footers)
+        plan = sav.sectors_to_write(self.save, footers, first, keep_game_copy=self.emerald)
         self.progress(0, len(plan))
         written = 0
         for batch in restore_batches(plan):
@@ -338,6 +346,13 @@ class SaveRestoreServer(_Server):
                           "it had.")
                 yield from self._end(NOT_RESTORED, False, SVR_MSG_NOTHING_SENT)
                 yield from self._finished()
+        if self.emerald:
+            # FireRed's load fails on Emerald's checksums and its save would destroy the copy.
+            self.outcome = "written"
+            self.info(f"All {len(plan)} sectors written and read back; the running game keeps its own "
+                      "save, and Emerald loads this one at its boot.")
+            yield from self._end(EMERALD_WRITTEN, False, SVR_MSG_NOTHING_SENT)
+            yield from self._finished()
         yield self.send(MG_LINKID_CLIENT_SCRIPT, C.client_script(*_reporting(MG_LINKID_NEWS)))
         yield self.send(MG_LINKID_NEWS, finish_message())
         status = yield ("recv", MG_LINKID_RESPONSE)

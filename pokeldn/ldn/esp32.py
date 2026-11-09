@@ -240,6 +240,12 @@ class Info:
     text: str
 
     @property
+    def target(self) -> str:
+        """The IDF target HELLO names: "pokeldn-radio esp32c3 version=..." gives "esp32c3"."""
+        words = self.text.split()
+        return words[1] if len(words) > 1 and "=" not in words[1] else ""
+
+    @property
     def firmware_version(self) -> str:
         return next((part.removeprefix("version=") for part in self.text.split()
                      if part.startswith("version=")), "")

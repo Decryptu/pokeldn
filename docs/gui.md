@@ -95,7 +95,10 @@ live, and back when widened; a desktop window keeps its title bar row above the 
 ## Phones
 
 Below 760 points wide, pages sit in a bottom tab bar and panels show one at a time on a switcher
-(Games, Options, Session). Android and iOS have no Control or Update page.
+(Games, Options, Session). Android and iOS have no Control or Update page. A card with text and
+buttons (`gui/theme.py` `text_row`) puts its buttons under the text, and the Bank's sort and filter
+menus take a row each; a view whose layout depends on the width re-renders in `relayout()` when the
+window crosses 760.
 
 ## The Games page
 
@@ -148,6 +151,11 @@ square, star or plain shine; a PID the encounter fixes (Gen 3's nature, ability 
 overworld or raid seed) stays, and the card says the shine changed. A Pokemon legal only with its own
 trainer, an event with a fixed one, is refused with PKHeX's reason.
 
+A Pokemon file of another game (`.pk4` to `.pk7`, `.pb7`, any title's format PKHeX reads,
+`pokeldn.pokemon.FOREIGN`) goes to the offer's game as [the bank](#importing) moves one: PKHeX's
+`convert` drops its held item and Gen 3/4 HM moves, then takes it through HOME's conversion
+(`Converted`). A species or form the game lacks is refused with the reason.
+
 ### Find your trainer
 
 Find mine fills one row's ID and secret ID, with the name, gender and language, from the newest
@@ -174,7 +182,11 @@ picked version's trainer. `settings.json` holds the switch as `per_game_trainer`
 `game_trainers`, game or version key to the fields that differ, and each game's picked version as `played`. `Settings.own(game)` is the trainer a game sees; `Settings.ids`,
 `Settings.name`, `Settings.trainer` and the launch tokens `{ot}`, `{tid}`, `{sid}`, `{language}`,
 `{gender}` read through it (`tests/test_gui_catalog.py`). Find mine on a game takes the newest trainer
-read off that game.
+read off that game. Settings opens on the game edited last.
+
+`settings.json` sits in the data folder, apart from the app, so an update leaves it in place:
+`%APPDATA%\pokeldn` on Windows, `~/Library/Application Support/pokeldn` on macOS, `~/.local/share/pokeldn` on
+Linux. The phone apps keep it in their private storage, which uninstalling erases.
 
 ## Windows USB drivers
 
@@ -211,6 +223,26 @@ first.
 | removed | kept |
 |---|---|
 | `session/` (captures, traces, temporary offers), `logs/`, unused generated or imported offers in `pokemon/`, empty folders | offers under a minute old or referenced by saved settings and queues; received files, bank, saves, keys, firmware, settings; symlinks; files changed after the check |
+
+## Backup and restore
+
+Settings, Storage, Back up writes one zip (`pokeldn.app.backup`) with `pokeldn-backup.json` and these
+folders; Restore reads one back.
+
+| folder in the zip | from |
+|---|---|
+| `settings/settings.json` | the data folder's `settings.json` |
+| `pokemon/` | built and imported offers |
+| `received/` | the Received folder chosen in Settings |
+| `bank/`, `saves/`, `gts/`, `macros/` | the Bank, Saves, GTS and Macros folders |
+
+A `.keys` file is never written to a backup or restored from one, and plugins and their data are not
+in it. A restore first backs up the current files to the data folder's `backups/` (the newest three
+stay), then writes each file over its namesake; files the backup does not hold stay. The settings go
+to `settings.restore.json`, which the next launch puts in place before reading them. A member outside
+those folders, a link, a path with `..` or an unknown format refuses the whole restore before
+anything is written, and a member whose data does not match its CRC stops it; what it had written
+stays.
 
 ## Your saves
 
@@ -279,6 +311,25 @@ the held, the missing, or those with no shiny yet. A held species opens the box 
 Edit allows what the game allows: nickname, level upward, moves, held item. The helper's `check`
 refuses an edit that makes a legal Pokemon illegal. Queued Pokemon are not editable.
 `tests/test_bank.py` covers moves, refusals, edits and imports through the real helper.
+
+### Non-legal Pokemon
+
+Settings, Advanced, Allow non-legal Pokemon (`Settings.allow_illegal`, off by default) sends
+`allow_illegal` with every helper request; a run inherits it as `POKELDN_ALLOW_ILLEGAL`. The builder
+still tries every encounter first. With no legal result the helper's `Forged` takes an encounter's
+record and writes the species, form, level, shininess, nickname, nature, gender, ability, IVs, moves,
+item and ball as asked; the record is marked Not legal. The ability and ball lists then offer every
+value in the game. A Gen 3 record keeps nature and gender in its PID, which is rerolled until they
+match, and takes only its species' abilities.
+
+The setting also lifts the refusals on an illegal file, a bank edit, a move between games and a trade.
+A species or form the game does not have stays refused. The GTS keeps legal Pokemon only, since a
+listing reaches other players, and an illegal Pokemon can crash the game drawing it.
+
+Settings, Advanced, Import non-legal Pokemon into the bank (`Settings.bank_illegal`, off by default)
+sends `bank_illegal` with the helper's `import` request only. The import then keeps a record PKHeX
+flags, in its own format or after HOME's conversion, and the bank marks it Not legal. Moving it out of
+the bank or trading it still follows Allow non-legal Pokemon.
 
 ### The HOME tracker setting
 
@@ -418,6 +469,14 @@ firmware's 50 ms frame, dims with the board and turns off after its ten idle min
 Images come from [PokeAPI](https://github.com/PokeAPI/sprites) on demand, cached in `sprites/`.
 Settings, Pokemon sprites disables downloads and clears the cache. A missing image shows a
 placeholder; a missing shiny falls back to normal.
+
+Item, ball and ribbon pickers show icons from the same repository (`sprites/items/`,
+`sprites/ribbons/generation-viii/`), cached in `sprites/items/` and `sprites/ribbons/`. The helper names
+each file from the English name (`IconName`: "Poké Ball" `poke-ball`; a Gen 3 item by its later name; Legends
+Arceus's own balls `la`-prefixed). Every row shows its icon once cached; a list opened with icons
+missing has them downloaded one at a time in list order, 0.05 s apart, on one thread per cache
+(`SpriteCache.prefetch`), and redraws after every 24. A network failure ends the run; the next list
+resumes. A name PokeAPI lacks (TMs, most Legends Z-A items) shows none.
 
 ## Raid events
 
@@ -591,11 +650,18 @@ detects corruption and does not authenticate the release.
 | Windows, `C:\Program Files` | Update now behind UAC (`ShellExecuteExW` `runas`) |
 | Windows, the root of another drive (`D:\pokeldn`) | Update now without UAC: the swap only adds folders beside the app, which a volume's root allows users. A release before 0.34.0 probed the root with a file, asked for UAC there, and a standard user's update stopped on "Windows did not give pokeldn permission to change D:\"; from such a release the next version is downloaded once by hand |
 | Windows, a mapped or `subst` drive | the drive letter is kept; the helper finds the old app's processes under either spelling; behind UAC the helper gets the folder the letter stands for, since an elevated process sees no letter the user's session mapped |
+| the app's folder holds entries a packed app does not ship (`pokeldn.exe` and `_internal` loose on a Desktop) | Download only; the helper refuses the same folder from an older app, since the swap renames the folder and deletes it whole |
 | a session, flash or cleanup running | asks to finish first |
 
 `scripts/check_update.py ARCHIVE FOLDER` tests a packed app's update against 127.0.0.1;
 `POKELDN_UPDATE_URL` replaces the endpoint (`tests/test_app_update.py`). Whether macOS asks for App
 Management permission in `/Applications` is unmeasured.
+
+## Duplicating a trade
+
+A trade's copy button inserts the same Pokemon as the next trade. A built Pokemon is built again from
+the same choices, so the copy has its own PID; Brilliant Diamond and Shining Pearl refuse an offer whose
+PID the save already holds. A Pokemon from a file is copied byte for byte.
 
 ## File drops
 
@@ -668,6 +734,12 @@ for t in esp32:ble esp32c6:ble-c6; do
   idf.py -B build/$name merge-bin -o "$OUT/pokeldn-radio-$name.bin"
 done
 unset POKELDN_BLE
+for t in esp32:E32R40T esp32s3:SZPI; do   # the colour screen boards (hardware_esp32.md, The screen)
+  chip=${t%%:*}; name=$(echo ${t#*:} | tr A-Z a-z)
+  POKELDN_DISPLAY=${t#*:} idf.py -B build/$name -D SDKCONFIG="$PWD/build/$name/sdkconfig" set-target $chip
+  POKELDN_DISPLAY=${t#*:} idf.py -B build/$name -D SDKCONFIG="$PWD/build/$name/sdkconfig" build
+  idf.py -B build/$name merge-bin -o "$OUT/pokeldn-radio-$name.bin"
+done
 cd ../pad
 idf.py -B build -D SDKCONFIG="$PWD/build/sdkconfig" set-target esp32s3
 idf.py -B build -D SDKCONFIG="$PWD/build/sdkconfig" build

@@ -499,7 +499,7 @@ class GtsView:
 
 
 def own_text(entry: bank.Entry) -> str:
-    name, level = summary_text(entry.summary).split(' · ')[:2]
+    name, level = (translate(part) for part in entry.summary.split(' · ')[:2])    # mid-sentence: no capital
     if entry.shiny:
         return tr('gts.own_shiny_7d21c4', '{value0}, {value1}, shiny ({value2})', value0=name, value1=level, value2=NAMES[entry.game])
     return tr('gts._99a2ff', '{value0}, {value1} ({value2})', value0=name, value1=level, value2=NAMES[entry.game])

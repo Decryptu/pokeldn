@@ -261,6 +261,23 @@ def test_a_finished_ladder_is_not_a_stalled_one():
     assert swsh_connect.LADDER_FINAL_PHASE == 4
 
 
+def test_a_ladder_waiting_on_a_legendary_countdown_gets_our_pair_at_a_current_clock():
+    """An emulated Shield sat at `02000200` for 53 s while our last pair aged; re-sent once a second
+    at the elapsed clock, it published `02000300` 2.4 s later (docs/swsh_trade.md)."""
+    env = swsh_connect.CONFIRMATION_ENVELOPE
+    st = {"ladder_finished": False, "confirm_seen_at": 46.93, "confirm_last_step": 46.93,
+          "ladder_refreshed": None, "rpc_pair_sent": set()}
+    assert swsh_connect.ladder_refresh(st, 48.0, 1.0) is None, "our pair was never answered"
+    st["rpc_pair_sent"].add(env)
+    assert swsh_connect.ladder_refresh(st, 47.5, 1.0) is None, "the ladder is still moving"
+    assert swsh_connect.ladder_refresh(st, 47.96, 1.0) == 62
+    assert swsh_connect.ladder_refresh(st, 48.5, 1.0) is None, "one refresh per period"
+    assert swsh_connect.ladder_refresh(st, 49.03, 1.0) == 126
+    assert swsh_connect.ladder_refresh(st, 60.0, 0.0) is None, "the flag is off"
+    st["ladder_finished"] = True
+    assert swsh_connect.ladder_refresh(st, 70.0, 1.0) is None, "phase 4 waits on nothing"
+
+
 class _OfferArgs:
     """The four flags `offer_edits` reads, with the launcher's own defaults."""
 

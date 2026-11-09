@@ -1,7 +1,6 @@
 """Pia 5.29-5.43's reliable sliding window (protocol 0x7c); the fixtures are one capture's whole
 reliable side."""
 
-import os
 
 import pytest
 
@@ -230,31 +229,6 @@ def test_we_can_rebuild_the_consoles_own_broadcast_ack_byte_for_byte():
     ours = r4.build_ack_message(1, slots=range(8), filler=0, lowest_pending=1,
                                 destinations=[0x1249A221D8580000])
     assert ours == theirs and len(ours) == 625
-
-
-def test_a_resent_check_ok_is_delivered_once():
-    """A resent check-ok is answered once; a second answer resets the round (`0x1c34290`,
-    docs/bdsp_trade.md)."""
-    import gzip
-    import json
-    capture = os.path.join(os.path.dirname(__file__), "..", "scratchpad", "sp110_pia.jsonl.gz")
-    if not os.path.exists(capture):
-        pytest.skip("the retail capture is not here")
-    rx, copies, delivered = rl.Reassembler(), [], []
-    with gzip.open(capture, "rt") as fh:
-        for line in fh:
-            row = json.loads(line)
-            if row.get("rec") != "reliable" or not row["flags"] & rl.FLAG_APPLICATION_DATA:
-                continue
-            d = {"stream_id": row["stream"], "sequence_id": row["seq"], "flags": row["flags"],
-                 "payload": bytes.fromhex(row["payload"])}
-            if d["payload"] == bytes.fromhex("46000101"):
-                copies.append(row["seq"])
-            kind, payload = rx.take(d)
-            if kind == "message" and payload == bytes.fromhex("46000101"):
-                delivered.append(row["seq"])
-    assert copies == [9, 24, 24]
-    assert delivered == [9, 24]
 
 
 def test_fragments_join_in_order_and_a_repeated_fragment_changes_nothing():

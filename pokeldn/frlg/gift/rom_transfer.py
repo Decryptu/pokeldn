@@ -9,6 +9,13 @@ soft-resets. A cut session resumes: every session starts by hashing the console'
 
 import concurrent.futures
 import itertools
+import os
+import pickle
+import shutil
+import subprocess
+import sys
+import tempfile
+import weakref
 
 from pokeldn.frlg.gift import rom_lzma, save_transfer
 from pokeldn.frlg.gift.mg_server import SVR_MSG_NOTHING_SENT, _encode_message
@@ -71,10 +78,10 @@ def code(build=None):
 
 
 def block_hash(data):
-    """asm/rom-transfer.s OP_SURVEY: h = rotl(h, 1) ^ word over the block's words."""
+    """asm/rom-transfer.s OP_SURVEY: h = rotl(h, 1) + word over the block's words."""
     h = 0
     for word in memoryview(bytes(data)).cast("I"):
-        h = (((h << 1) | (h >> 31)) & 0xFFFFFFFF) ^ word
+        h = ((((h << 1) | (h >> 31)) & 0xFFFFFFFF) + word) & 0xFFFFFFFF
     return h
 
 
@@ -208,15 +215,10 @@ class _Inline:
         pass
 
 
-def _worker_load(image, base, code):
-    """The encoder process's copy of both images, sent once at its start, before any session."""
-    _WORKER.update(blocks=with_wrapper_patches(blocks_of(image), code),
-                   base=with_wrapper_patches(blocks_of(base), code))
-
-
-def _worker_encode(sources, top, slots):
+def _worker_encode(code, sources, top, slots):
     """sources[m]: ("target", n), ("base", m), ("ff",) or None: what block m of the copy holds."""
-    blocks, base = _WORKER["blocks"], _WORKER["base"]
+    blocks = with_wrapper_patches(blocks_of(_WORKER["image"]), code)
+    base = with_wrapper_patches(blocks_of(_WORKER["base"]), code) if _WORKER["base"] else []
     copy, known = bytearray(BLOCKS * BLOCK), [False] * BLOCKS
     for m, source in enumerate(sources):
         if source is not None:
@@ -227,6 +229,56 @@ def _worker_encode(sources, top, slots):
     refs = rom_lzma.Stream(copy, known, targets, range(top, -1, -1), slots, free=True).references()
     order = rom_lzma.order(refs, targets, slots)
     return order, rom_lzma.Stream(copy, known, targets, order, slots).chunks()
+
+
+class _Child:
+    """The encoder as a child process of the app (runner.command): the session's loop cannot stop for
+    the encoder, and a packaged app carries no multiprocessing (scripts/pack_app.py)."""
+
+    def __init__(self, image, base):
+        self.folder = tempfile.mkdtemp(prefix="pokeldn-rom-")
+        for name, data in (("image", image), ("base", base)):
+            with open(os.path.join(self.folder, name), "wb") as handle:
+                handle.write(data)
+        self.proc = None
+        self._close = weakref.finalize(self, shutil.rmtree, self.folder, True)
+
+    def submit(self, fn, *args):
+        with open(os.path.join(self.folder, "job"), "wb") as handle:
+            pickle.dump(args, handle)
+        from pokeldn.app import runner
+        env = {k: v for k, v in os.environ.items() if k not in ("POKELDN_MANAGED_RUN", "POKELDN_POPUPS")}
+        with open(os.path.join(self.folder, "errors"), "wb") as errors:
+            self.proc = subprocess.Popen(
+                runner.command("--module", "pokeldn.frlg.gift.rom_transfer", self.folder), env=env,
+                stdin=subprocess.DEVNULL, stdout=errors, stderr=errors,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        return self
+
+    def done(self):
+        return self.proc.poll() is not None
+
+    def result(self):
+        if self.proc.wait():
+            with open(os.path.join(self.folder, "errors"), encoding="utf-8", errors="replace") as handle:
+                raise RuntimeError(f"the ROM encoder stopped: {handle.read()[-500:]}")
+        with open(os.path.join(self.folder, "result"), "rb") as handle:
+            return pickle.load(handle)
+
+    def shutdown(self, wait=True):
+        if self.proc is not None and self.proc.poll() is None:
+            self.proc.kill()
+            self.proc.wait()
+        self._close()
+
+
+def encoder(image, base, process=True):
+    """-> what runs _worker_encode: a child process, a thread where the app is one process (a phone),
+    or the caller."""
+    if process and os.environ.get("POKELDN_PLATFORM") not in ("android", "ios"):
+        return _Child(image, base)
+    _WORKER.update(image=image, base=base)
+    return concurrent.futures.ThreadPoolExecutor(max_workers=1) if process else _Inline()
 
 
 def survey_message(first, count, tag):
@@ -269,7 +321,8 @@ def batches(items):
 class RomTransferServer(save_transfer._Server):
     """Write `image` into the ROM copy, then boot it. `live` are the blocks the console's own session
     runs from, or {game code: blocks}, picked once the console names its cartridge; `boot=False`
-    stops before the boot op, with everything written and checked."""
+    stops before the boot op, with everything written and checked. `base` is the console's cartridge,
+    or empty for LZMA with no help from it (1.7 times the bytes); None sends uncompressed tokens."""
 
     def __init__(self, image, *, live=(), boot=True, base=None, encoder_process=True, **kwargs):
         # Every hash is taken here, before the link: the session's loop cannot stop for seconds.
@@ -280,13 +333,7 @@ class RomTransferServer(save_transfer._Server):
             self.base = blocks_of(base)
             self._base_hashes = [block_hash(raw) for raw in self.base]
             self.base_code = bytes(base[0xAC:0xB0]).decode("ascii", "replace")
-            if encoder_process:
-                self._pool = concurrent.futures.ProcessPoolExecutor(
-                    max_workers=1, initializer=_worker_load, initargs=(bytes(image), bytes(base), self.base_code))
-                self._pool.submit(int).result()
-            else:
-                _worker_load(bytes(image), bytes(base), self.base_code)
-                self._pool = _Inline()
+            self._pool = encoder(bytes(image), bytes(base), encoder_process)
         self.live_by_code = live if isinstance(live, dict) else None
         self.live = frozenset(() if self.live_by_code is not None else live)
         self.boot = boot
@@ -351,7 +398,9 @@ class RomTransferServer(save_transfer._Server):
         staged = {start + i: n for i, n in enumerate(moved)}
         empty, out = block_hash(_EMPTY), []
         for m in range(BLOCKS):
-            if m < len(self.blocks) and hashes[m] == self.hashes[m]:
+            if m in RESERVED:                   # the decoder and its order table, written after the survey
+                out.append(None)
+            elif m < len(self.blocks) and hashes[m] == self.hashes[m]:
                 out.append(("target", m))
             elif m < len(self.base) and hashes[m] == self._base_patched_hashes[m]:
                 out.append(("base", m))
@@ -376,7 +425,7 @@ class RomTransferServer(save_transfer._Server):
         top = max([n for n, _ in direct] + [n for n in moved if slot_of[n] in dict(staged)])
         slots = {n: s for n, s in slot_of.items() if n <= top}
         self.info(f"Encoding blocks 0 to 0x{top:03X} as LZMA against the console's copy.")
-        job = self._pool.submit(_worker_encode, self._sources(hashes, start, moved), top, slots)
+        job = self._pool.submit(_worker_encode, build.game_code, self._sources(hashes, start, moved), top, slots)
         tag = next(self._tags)
         while not job.done():
             yield self.send(MG_LINKID_CLIENT_SCRIPT, save_transfer.passes_script(1))
@@ -409,9 +458,10 @@ class RomTransferServer(save_transfer._Server):
         try:
             self.blocks, self.hashes = self._patched(self._raw, self._raw_hashes, build.game_code)
             if self.base is not None:
-                if build.game_code != self.base_code:
+                if self.base and build.game_code != self.base_code:
                     raise ValueError(f"the base ROM is {self.base_code} and the console runs {build.game_code}")
-                self.base, self._base_patched_hashes = self._patched(self.base, self._base_hashes, build.game_code)
+                if self.base:
+                    self.base, self._base_patched_hashes = self._patched(self.base, self._base_hashes, build.game_code)
         except ValueError as exc:
             self.outcome = "refused"
             self.info(f"Nothing was written: {exc}.")
@@ -458,3 +508,17 @@ class RomTransferServer(save_transfer._Server):
         self.info(f"Boot sent: {len(moved)} live blocks move into place, blocks 0x{len(self.blocks):03X} "
                   "on become 0xFF, then the console soft-resets into the new ROM.")
         yield from self._finished()
+
+
+def _child_main(folder):
+    with open(os.path.join(folder, "job"), "rb") as handle:
+        args = pickle.load(handle)
+    with open(os.path.join(folder, "image"), "rb") as image, open(os.path.join(folder, "base"), "rb") as base:
+        _WORKER.update(image=image.read(), base=base.read())
+    result = _worker_encode(*args)
+    with open(os.path.join(folder, "result"), "wb") as handle:
+        pickle.dump(result, handle)
+
+
+if __name__ == "__main__":
+    _child_main(sys.argv[1])

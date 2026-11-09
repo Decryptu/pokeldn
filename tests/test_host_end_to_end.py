@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pokeldn.frlg.link import linkplayer, trade
+from pokeldn.frlg.link import linkplayer, trade, trade_runtime
 from pokeldn.frlg.save import mon
 from pokeldn.gba import block, gbaframe, ni, rfu
 from pokeldn.ldn import reliable
@@ -346,11 +346,13 @@ class LeaderStack:
 
 
 def _run_full_stack(trades=2, *, save_rounds=None, console_rounds=6, version=linkplayer.VERSION_FIRE_RED,
-                    require_completion=True):
+                    require_completion=True, make=_mon, shown=None):
     max_ms = 6000 * trades
-    host_original = [_mon(0x11 + n) for n in range(trades)]
-    child_original = [_mon(0x21 + n) for n in range(trades)]
+    host_original = [make(0x11 + n) for n in range(trades)]
+    child_original = [make(0x21 + n) for n in range(trades)]
     host = LeaderStack(host_original, trades, save_rounds=save_rounds)
+    if shown is not None:
+        host.trade.on_party = trade_runtime.shown_party(shown)
     child = ScriptedFireRedChild(child_original, offered=range(trades), trades=trades,
                                  save_rounds=console_rounds, version=version)
     radio = ImpairedRadio()
@@ -418,6 +420,27 @@ def test_queued_trades_survive_loss_duplicate_reordering_and_close_cleanly(trade
     assert radio.reordered > 0
     assert all(radio.attempts[key] >= 2 for key in radio.drop_once)
     assert elapsed < 6000 * trades
+
+
+def _valid_mon(marker):
+    """A party Pokemon whose checksum holds: species `marker`, PID and OT id apart."""
+    pk3 = bytearray(mon.PARTY_MON_SIZE)
+    pk3[0:4] = (0x01020300 + marker).to_bytes(4, "little")
+    pk3[4:8] = (0x0A0B0C00 + marker).to_bytes(4, "little")
+    pk3[32:34] = marker.to_bytes(2, "little")
+    pk3[28:30] = (sum(int.from_bytes(pk3[i:i + 2], "little") for i in range(32, 80, 2)) & 0xFFFF).to_bytes(2, "little")
+    return mon.Mon(mon.to_encrypted(bytes(pk3)))
+
+
+def test_save_shown_writes_the_consoles_party_as_it_arrives(tmp_path):
+    """--save-shown: the trade menu's party, each Pokemon decrypted under its PID's name, from the
+    party blocks the console sends before any selection; each later refresh holds the Pokemon the
+    trades gave it."""
+    *_stack, host_original, child_original, _elapsed = _run_full_stack(
+        2, make=_valid_mon, shown=str(tmp_path))
+    written = {p.name: p.read_bytes() for p in tmp_path.iterdir()}
+    shown = [*child_original, *host_original]
+    assert written == {f"frlg-{m.pid:08x}.pk3": mon.to_decrypted(m.raw) for m in shown}, sorted(written)
 
 
 def test_leader_cumulatively_acks_connect_before_opening_with_a():

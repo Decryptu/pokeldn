@@ -192,7 +192,9 @@ A tool that completes several trades on one seat takes up to six Pokemon, offere
 | Legends Z-A | `--trade-offer`, repeated | the last again, under a new PID with `--fresh-pid` |
 
 Each completed trade calls `pokeldn.ldn.show_done()`, which flashes the LED and prints
-`[done] trade N complete`; the Session panel counts that line. Trade N above 1 writes to the output
+`[done] trade N complete`; the Session panel counts that line. Every trade host and joiner writes
+the Pokemon it received only once that trade completes, never at the console's offer: a player
+can still withdraw an offer, and the app banks every file in Received. Trade N above 1 writes to the output
 path with a suffix: `_tradeN_` and the species (FireRed/LeafGreen), `.N` (Scarlet/Violet), `_N`
 (Brilliant Diamond/Shining Pearl host), `-N` (Legends Z-A, Sword/Shield).
 
@@ -226,6 +228,28 @@ offered Onix, then took the Kubfu back for the Onix in trade 2 and left on B.
 
 `--trade-back` refuses `--online`, the gift made for the receiving player, and the raid, lair and
 Union Circle modes. Mystery Gift - Simulated never offers it.
+
+### Pokemon the console shows
+
+`--save-shown FOLDER`, on every trade host and joiner (the app's Save the Pokemon the console shows
+switch, on All options), writes each Pokemon record the console sends during a trade as it arrives,
+before any confirmation. A player who backs out keeps the Pokemon and the file stays, so a seed or
+legality check can read a Pokemon without trading it. `pokeldn.pokemon.save_shown` names a file
+`<game>-<encryption constant>.<ext>` (a PK3's PID); a record sent again under the same constant
+replaces its file.
+
+| title | records written |
+|---|---|
+| FireRed/LeafGreen | the console's whole party, each decrypted to a 100-byte PK3, once its three party blocks arrive; the party is sent again after each trade (`pokeldn.frlg.link.trade_runtime.shown_party`) |
+| Let's Go | each offer on the round's offer kind |
+| Sword/Shield | each Pokemon-trade message carrying a PK8 |
+| Brilliant Diamond/Shining Pearl | each `NetTradePokeData` |
+| Legends Arceus | each trade box record, showing (the cursor) and offering |
+| Scarlet/Violet | each offer body |
+| Legends Z-A | each offer message, preview (the cursor) and pick |
+
+The app writes to a `Shown` folder beside the Received folder; nothing there counts as received or
+enters the bank.
 
 ### Ending a run
 

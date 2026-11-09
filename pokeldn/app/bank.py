@@ -217,7 +217,7 @@ def edit(entry: Entry, fields: dict) -> Entry:
     or BuilderError with the reason. A legal Pokemon stays legal: an edit PKHeX rejects is refused."""
     from pokeldn.pokemon import SERVICE, BuilderError, summary
     reply = SERVICE.check_bytes(entry.game, data(entry), fields=fields)
-    if entry.legal and not reply["legal"]:
+    if entry.legal and not reply["legal"] and not SERVICE.allow_illegal:
         raise BuilderError(reply["problems"])
     content = base64.b64decode(reply["data"])
     path = Path(entry.path)

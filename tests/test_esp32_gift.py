@@ -40,6 +40,7 @@ KICK = ctypes.CFUNCTYPE(None, P, P)
 EVENT = ctypes.CFUNCTYPE(None, P, ctypes.c_int, ctypes.c_int)
 
 EVENT_JOINED, EVENT_LINKED, EVENT_RESULT, EVENT_LEFT, EVENT_REFUSED = range(1, 6)
+CLOCK = 5                       # the board's clock and the console's frames, against real time
 
 
 class Platform(ctypes.Structure):
@@ -130,7 +131,7 @@ def engine(tmp_path_factory):
 
 
 def _now_us():
-    return time.monotonic_ns() // 1000
+    return time.monotonic_ns() * CLOCK // 1000
 
 
 class FirmwareBoard:
@@ -259,8 +260,10 @@ def console_on_air(monkeypatch):
     stream at its own Session type 6 (`fb11`: 20 ms after it, before any RTT), and it resolves the
     host with an ARP, a broadcast (docs/ldn.md, A station's broadcasts)."""
     from ldn import wlan
+    import frlg_mg_client
     from pokeldn.ldn import esp32, esp32_sim, esp32_wlan, pia_connect, userspace_ip
     monkeypatch.setenv("POKELDN_RADIO", "esp32:simulated")
+    monkeypatch.setattr(frlg_mg_client, "PERIOD", frlg_mg_client.PERIOD / CLOCK)
     init = userspace_ip.Stack.__init__
 
     def console_stack(self, *args, **kwargs):

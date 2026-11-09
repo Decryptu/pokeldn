@@ -229,11 +229,12 @@ def test_the_joiner_answers_the_hosts_pick_and_not_its_cursor(tmp_path, capsys):
     args = argparse.Namespace(game_dir=str(tmp_path),
                               trade_offer=[str(tmp_path / "offer.bin"), str(tmp_path / "second.bin")],
                               selection_count=0, offer_out=str(tmp_path / "theirs.pa9"),
+                              save_shown=str(tmp_path / "shown"),
                               selection_delay=0.0, selection_period=1.0, offer_delay=1.0)
 
     def theirs(species, mark):
         plain = bytearray(za.pokemon.SIZE_PARTY)
-        plain[8] = species
+        plain[0] = plain[8] = species       # its encryption constant names its --save-shown file
         return za.pokemon.build_offer(offer[:9], bytes(plain), bytes([mark]))
     sent = []
     game = za_join.GameStreams(args, lambda proto, body, **kw: sent.append((proto, body)),
@@ -264,6 +265,8 @@ def test_the_joiner_answers_the_hosts_pick_and_not_its_cursor(tmp_path, capsys):
 
     assert game.traded_at is None
     assert not list(tmp_path.glob("theirs*"))     # a pick can still be withdrawn: no file before the trade
+    # --save-shown keeps every Pokemon the host's cursor previewed, and its pick, before any trade.
+    assert sorted(za.pokemon.read(p.read_bytes())["species"] for p in (tmp_path / "shown").iterdir()) == [1, 2, 3]
     commit_at = t
     game.on_message(za_join.GAME_RELIABLE,
                     reliable.build_reliable(seq, seq, bytes.fromhex("0104b90100"),

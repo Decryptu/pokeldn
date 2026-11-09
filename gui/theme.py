@@ -22,6 +22,7 @@ MUTED = "#A1A1A6"
 FAINT = "#98989D"   # 4.8:1 on HOVER, the lightest surface it sits on (WCAG AA for small text)
 BLUE = "#47AEFA"
 RED = "#FD474D"
+PINK = "#F77FBE"
 GREEN = "#3DD68C"
 AMBER = "#FF9F0A"
 SILVER = "#BCC3CE"
@@ -106,6 +107,8 @@ def panel(content: ft.Control, width: float | None = None, expand=None, padding=
     return glass(ft.Container(content, padding=padding), width=width, expand=expand)
 
 
+TRACK = ft.Colors.with_opacity(0.35, "#000000")   # behind a group of tabs, on any surface
+MENU_ROW = 48   # at least one dropdown row, padding shared
 TOOLBAR_ITEM = 32   # the icon buttons are this size
 TOOLBAR_INSET = 4
 
@@ -187,7 +190,7 @@ class Panes:
 
     def _render(self) -> None:
         self.switcher.content = notch(segmented([(str(i), self.panes[i][0], self.panes[i][1]) for i in self.switched],
-                                                str(self.index), lambda value: self.show(int(value))))
+                                                str(self.index), lambda value: self.show(int(value)), track=False))
 
     def show(self, index: int, update: bool = True) -> None:
         if index not in self.switched or index == self.index:
@@ -373,7 +376,22 @@ def field(label: str = "", value: str = "", hint: str = "", mono: bool = False, 
                         text_vertical_align=ft.VerticalAlignment.CENTER, **kwargs)
 
 
+def text_row(lead: ft.Control | None, body: list[ft.Control], actions: list[ft.Control], spacing: int = 14) -> ft.Control:
+    """An icon, a block of text and its buttons: side by side, or on a phone (compact) the buttons under
+    the text, so the text keeps the card's width. A view built with it re-renders in relayout()."""
+    text = ft.Column(body, spacing=4, expand=True)
+    buttons = ft.Row(actions, spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=compact)
+    top = ft.Row([*([lead] if lead else []), text], spacing=spacing, vertical_alignment=ft.CrossAxisAlignment.START)
+    if compact and actions:
+        return ft.Column([top, ft.Row([ft.Container(expand=True), buttons])], spacing=10)
+    top.controls.append(buttons)
+    return top
+
+
 def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, **kwargs) -> ft.Dropdown:
+    # menu_height fixes the menu's height: a short list fills it with blank rows. No options yet means filled later.
+    if options and len(options) * MENU_ROW < kwargs.get("menu_height", 0):
+        del kwargs["menu_height"]
     if on_select and kwargs.get("editable"):
         chosen = on_select
 
@@ -489,9 +507,11 @@ def chip(label: str, icon: str | None = None, color: str = MUTED) -> ft.Containe
                         bgcolor=ft.Colors.with_opacity(0.06, "#FFFFFF"))
 
 
-def segmented(options: list[tuple[str, str, str]], value: str, on_change, wrap: bool = False) -> ft.Row:
-    """The capsule switcher (Basic / Advanced); it sits on the glass toolbar. `wrap` lets a long one break
-    onto a second line: each capsule is then sized by its padding, since a centred one fills the line."""
+def segmented(options: list[tuple[str, str, str]], value: str, on_change, wrap: bool = False,
+              track: bool = True) -> ft.Control:
+    """The capsule switcher: a group of tabs on one dark track, or bare with `track` off where the glass toolbar
+    is the track. `wrap` lets a long one break onto a second line: each capsule is then sized by its padding,
+    since a centred one fills the line."""
     row = ft.Row(spacing=0, tight=True, wrap=wrap, run_spacing=4)
     size = ({"padding": ft.Padding(12, 8, 14, 8)} if wrap else
             {"height": TOOLBAR_ITEM, "padding": ft.Padding(12, 0, 14, 0), "alignment": ft.Alignment.CENTER})
@@ -512,15 +532,34 @@ def segmented(options: list[tuple[str, str, str]], value: str, on_change, wrap: 
         on_change(key)
 
     render(value)
-    return row
+    return ft.Container(row, bgcolor=TRACK, border_radius=TOOLBAR_ITEM / 2 + 3, padding=3) if track else row
 
 
 def choice_row(label: str, options: list[tuple[str, str, str]], value: str, on_change) -> ft.Column:
     """A labelled capsule switcher on a card: one of a few ways to run the same thing (Hosts / Joins)."""
-    track = ft.Container(segmented(options, value, on_change, wrap=True), bgcolor=FIELD,
-                         border_radius=TOOLBAR_ITEM / 2 + 3, padding=3)
     # No aligned Container around the label: alignment fills the width, and the rows sit side by side.
-    return ft.Column([text(label, 11, MUTED), track], spacing=4, tight=True)
+    return ft.Column([text(label, 11, MUTED), segmented(options, value, on_change, wrap=True)], spacing=4, tight=True)
+
+
+def choice_field(options: list[tuple[str, str]], value: str, on_change) -> ft.Container:
+    """A field whose few values are all on show, one click each: it lines up with the dropdowns beside it."""
+    row = ft.Row(spacing=0, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
+
+    def render(selected):
+        row.controls = [
+            ft.Container(text(label, 12, TEXT if key == selected else MUTED, weight=ft.FontWeight.W_600, no_wrap=True),
+                         expand=True, alignment=ft.Alignment.CENTER, border_radius=CONTROL_RADIUS - 2,
+                         bgcolor=ft.Colors.with_opacity(0.14, "#FFFFFF") if key == selected else None,
+                         on_click=lambda e, k=key: pick(k))
+            for key, label in options]
+
+    def pick(key):
+        render(key)
+        row.update()
+        on_change(key)
+
+    render(value)
+    return ft.Container(row, height=CONTROL_HEIGHT, bgcolor=FIELD, border_radius=CONTROL_RADIUS, padding=2)
 
 
 def fade(scrollable: ft.ScrollableControl, size: float = 24) -> ft.ShaderMask:

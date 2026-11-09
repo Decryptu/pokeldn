@@ -8,6 +8,8 @@ import time
 import serial
 from serial.serialutil import PortNotOpenError, SerialBase, SerialException, Timeout
 
+from pokeldn.app.i18n import t as tr
+
 PORT = "android://board"
 
 
@@ -176,8 +178,26 @@ def usb_state() -> str:
     return str(bridge().usbState())
 
 
+def _otg_hint() -> str:
+    from java import jclass
+    maker = str(jclass("android.os.Build").MANUFACTURER or "").lower()
+    if "oneplus" in maker:
+        return tr('app.android_otg_oneplus', 'OnePlus phones switch USB devices off after a while. Open Settings, search for "OTG connection" and turn it on. The board lights up without replugging.')
+    if "oppo" in maker or "realme" in maker:
+        return tr('app.android_otg_oppo', 'This phone may have an "OTG connection" switch. Open Settings and search for "OTG"; turn it on if it is there.')
+    return tr('app.android_otg', 'Some phones have a USB host or "OTG" switch. Open Settings and search for "OTG"; turn it on if it is there.')
+
+
 def usb_guidance(state: str) -> str:
-    return str(bridge().guidance(state))
+    """What the player does for a usb_state(), in the app's language (Setup.java keeps the English for
+    the diagnostic activity)."""
+    if state == "bridge":
+        return tr('app.android_bridge', 'This board talks through a USB-to-serial chip the phone app does not drive (it drives the CP210x only). Use this board with the desktop app.')
+    if state == "permission":
+        return tr('app.android_permission', "Android asks once whether pokeldn may use the board. Tap Allow USB access, then OK on Android's prompt.")
+    if state == "denied":
+        return tr('app.android_denied', 'Without USB access the app cannot reach the board. Tap Allow USB access and choose OK. Ticking "Always open" skips the question next time.')
+    return tr('app.android_connect_board', 'Connect an ESP32-S3, C3 or C6 board by its native USB port, or a classic ESP32 with a CP210x USB chip, to the phone with a data cable (some cables only charge).') + "\n\n" + _otg_hint()
 
 
 def ask_permission() -> None:

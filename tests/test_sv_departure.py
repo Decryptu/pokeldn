@@ -338,11 +338,15 @@ def test_the_joiner_leaves_its_trade_seat_with_the_retail_leave(monkeypatch, tmp
     monkeypatch.setattr(trio.lowlevel, 'wait_readable', wait_readable)
     args = sv_join.build_parser().parse_args([
         '--ip-join', '--hold', '60', '--no-clock', '--rtt-period', '0',
-        '--trade-offer', str(tmp_path / 'joiner.bin'), *extra])
+        '--trade-offer', str(tmp_path / 'joiner.bin'), '--offer-out', str(tmp_path / 'got.pk9'),
+        '--save-shown', str(tmp_path / 'shown'), *extra])
     trio.run(sv_join.run_session, args, host.keys, HOST_IP, HOST_MAC, JOIN_IP, JOIN_MAC,
              lambda **row: rows.append(row))
     traded = [r['t'] for r in rows if r['rec'] == 'trade_done']
     left = [r for r in rows if r['rec'] == why]
+    # --save-shown kept the host's offer as the trade's own --offer-out file did.
+    shown = list((tmp_path / 'shown').iterdir())
+    assert [p.read_bytes() for p in shown] == [(tmp_path / 'got.pk9').read_bytes()], shown
     assert len(traded) == 1 and host.stage.done
     assert left and left[0]['answered'], "the joiner dropped its seat without the leave"
     assert len(host.leaves) == 1
@@ -404,9 +408,13 @@ def test_the_host_closes_hold_after_trade_seconds_after_the_trade(monkeypatch, t
         'sv_host', '--ip-host', '--seconds', '120', '--no-net-probe', '--scarlet-response',
         '--no-session-update', '--session-flags', '0x00', '--no-identity',
         '--send-at', '0.5:0x7c:1:' + trade.table_update(trade.KEY_TRADE, True).hex(),
-        '--trade-offer', str(tmp_path / 'host.bin'), '--hold-after-trade', '2'])
+        '--trade-offer', str(tmp_path / 'host.bin'), '--hold-after-trade', '2',
+        '--offer-out', str(tmp_path / 'got.pk9'), '--save-shown', str(tmp_path / 'shown')])
     assert sv_host.main() == 0
     assert len(done) == 1 and console.stage.done
+    # --save-shown kept the console's offer as the trade's own --offer-out file did.
+    shown = list((tmp_path / 'shown').iterdir())
+    assert [p.read_bytes() for p in shown] == [(tmp_path / 'got.pk9').read_bytes()], shown
     assert not console.leaves
     assert stopped and 2.0 <= stopped[0] - done[0] < 2.5
     assert stopped[0] - start < 120 / 2

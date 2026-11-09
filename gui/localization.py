@@ -54,7 +54,11 @@ def error_message(error: Exception | str) -> str:
 
 def summary_text(value: str) -> str:
     """pokeldn.pokemon.summary as shown; a quoted nickname stays as the player typed it."""
-    return " · ".join(part if part[:1] == "'" else translate(part) for part in value.split(" · "))
+    return " · ".join(part if part[:1] == "'" else _capital(translate(part)) for part in value.split(" · "))
+
+
+def _capital(part: str) -> str:
+    return part[:1].upper() + part[1:]
 
 
 def summary_lines(value: str) -> tuple[str, str]:

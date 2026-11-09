@@ -294,10 +294,10 @@ def test_the_committed_resident_stubs_are_what_the_sources_assemble_to():
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.parametrize("code, cartridge", [("BPRF", "scratchpad/FireRed_f.gba"),
-                                              ("BPGF", "scratchpad/LeafGreen_f.gba"),
-                                              ("BPRE", "scratchpad/frlg_en/FireRed_e.gba"),
-                                              ("BPGE", "scratchpad/frlg_en/LeafGreen_e.gba")])
+@pytest.mark.parametrize("code, cartridge", [("BPRF", "scratchpad/frlg_languages/FireRed_f.gba"),
+                                              ("BPGF", "scratchpad/frlg_languages/LeafGreen_f.gba"),
+                                              ("BPRE", "scratchpad/frlg_languages/FireRed_e.gba"),
+                                              ("BPGE", "scratchpad/frlg_languages/LeafGreen_e.gba")])
 def test_the_sound_mixer_is_the_one_each_cartridges_vblankintr_calls(code, cartridge):
     """m4aSoundMain moves on French LeafGreen; the bl 0x56 bytes into VBlankIntr is decoded on the
     cartridge."""

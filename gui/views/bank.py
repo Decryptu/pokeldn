@@ -106,18 +106,7 @@ class BankView:
             ], spacing=0, expand=True), width=t.SIDEBAR_WIDTH)),
             (tr('bank.pane_box', 'Box'), "package", drop.target(ft.Container(ft.Column([
                 ft.Row([self.search], spacing=8),
-                box_tools := ft.Row([
-                    t.dropdown([("newest", tr('bank.sort_newest', 'Newest first')),
-                                ("oldest", tr('bank.sort_oldest', 'Oldest first')),
-                                ("dex", tr('bank.sort_dex', 'Pokedex number')),
-                                ("name", tr('bank.sort_name', 'Name'))], self.sort,
-                               on_select=lambda e: self._sorted(e.control.value)),
-                    t.dropdown([("any", tr('bank.only_any', 'Every Pokemon')),
-                                ("shiny", tr('bank.only_shiny', 'Shiny')),
-                                ("queued", tr('bank.only_queued', 'Waiting to trade')),
-                                ("illegal", tr('bank.only_illegal', 'Not legal'))], self.only,
-                               on_select=lambda e: self._only(e.control.value)),
-                    self.pick_button], spacing=8),
+                box_tools := ft.Column(spacing=8),
                 dex_tools := ft.Row([
                     t.dropdown([("all", tr('bank.dex_all', 'Every species')),
                                 ("have", tr('bank.dex_have', 'In the bank')),
@@ -137,6 +126,17 @@ class BankView:
                              padding=ft.Padding(18, 8, 18, 18), expand=True),
             ], spacing=0, expand=True), width=t.SESSION_WIDTH)))
         self.box_tools, self.dex_tools = box_tools, dex_tools
+        self.sort_menu = t.dropdown([("newest", tr('bank.sort_newest', 'Newest first')),
+                                     ("oldest", tr('bank.sort_oldest', 'Oldest first')),
+                                     ("dex", tr('bank.sort_dex', 'Pokedex number')),
+                                     ("name", tr('bank.sort_name', 'Name'))], self.sort,
+                                    on_select=lambda e: self._sorted(e.control.value))
+        self.only_menu = t.dropdown([("any", tr('bank.only_any', 'Every Pokemon')),
+                                     ("shiny", tr('bank.only_shiny', 'Shiny')),
+                                     ("queued", tr('bank.only_queued', 'Waiting to trade')),
+                                     ("illegal", tr('bank.only_illegal', 'Not legal'))], self.only,
+                                    on_select=lambda e: self._only(e.control.value))
+        self.relayout()
         self.grid_box, self.dex_box = grid_box, dex_box   # the grids' fades: a hidden grid's fade would still fill
         self.control = self.panes.control
         self.panes.show(1, update=False)   # a phone opens on the box itself
@@ -158,6 +158,14 @@ class BankView:
         return folder
 
     # The listing
+
+    def relayout(self) -> None:
+        """Side by side, or on a phone each menu on its own row with Select under them: two menus and a
+        button in a phone's width cut the menus' text."""
+        if t.compact:
+            self.box_tools.controls = [ft.Row([self.sort_menu]), ft.Row([self.only_menu]), ft.Row([self.pick_button])]
+        else:
+            self.box_tools.controls = [ft.Row([self.sort_menu, self.only_menu, self.pick_button], spacing=8)]
 
     def refresh(self, update: bool = True) -> None:
         self.items = bank.entries()

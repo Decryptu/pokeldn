@@ -5,7 +5,7 @@ The gift screen scans and never joins: the card rides the 0x180-byte advertise d
 per advertisement.
 
     sudo ./bin/swsh_gift_host.py --species 25 --level 25 --nickname POKELDN --ot POKELDN
-    sudo ./bin/swsh_gift_host.py --record scratchpad/card.bin --dwell 0.5
+    sudo ./bin/swsh_gift_host.py --record card.bin --dwell 0.5
     POKELDN_RADIO=esp32:auto ./bin/swsh_gift_host.py --record card.pokegift --save-to-board
 
     (them) Mystery Gift -> Recevoir un Cadeau Mystere -> Via communication sans fil locale

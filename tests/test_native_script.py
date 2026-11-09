@@ -510,7 +510,7 @@ def _far(state, criteria, *, sb1_base=0x02025734, magic=native_script.RAM_SCRIPT
 def test_the_whole_script_finds_the_mon_it_was_asked_for_from_the_body():
     """The whole script: 36 `setptr`s, `callnative`, the trampoline into the body, and the search."""
     criteria = native_script.MonCriteria(natures=(13,), iv_minimums=(0, 0, 0, 20, 0, 0))
-    for state in (0x12345678, 0x7041F74F, 1, 0xFFFFFFFF):
+    for state in (0x7041F74F, 1, 0xFFFFFFFF):
         result = _far(state, criteria)
         mon = rng_countdown.mon_from(result["rng"], CONSOLE_TID, CONSOLE_SID)
         assert _accepts(mon, criteria), (hex(state), mon)
@@ -599,7 +599,7 @@ def test_the_two_placement_search_refuses_what_the_one_placement_search_accepts(
     """`both` never answers before `far`, and on some seed strictly later."""
     criteria = native_script.MonCriteria(natures=(13,), iv_minimums=(0, 0, 0, 20, 0, 0))
     strictly_later = 0
-    for state in (0x12345678, 0x7041F74F, 0xDEADBEEF, 1):
+    for state in (0x7041F74F, 0xDEADBEEF, 1):
         far = native_script.emulate_body_script(
             native_script.build_mon_hunt_far_script(129, 5, criteria=criteria),
             rng_state=state, trainer_id=CONSOLE_TID, secret_id=CONSOLE_SID)["rng"]

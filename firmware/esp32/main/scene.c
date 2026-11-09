@@ -10,8 +10,11 @@
 #define DOT_MS 900          /* a packet's time from one end of a cable to the other */
 #define DOT_GAP_MS 70       /* at most one packet drawn per direction per gap */
 #define LEAVE_MS 2100       /* ours flashes, returns to its ball and leaves */
+#define LAND_MS 600         /* theirs drops in and lands; it wobbles until the ball opens */
 #define REVEAL_MS 1600      /* theirs comes in and its ball opens */
 #define RECEIVED_MS 10000   /* then it stays */
+#define DATA_MS 1000        /* one data blip a second while the console runs its animation */
+#define WOBBLE_MS 900       /* three rocks of a ball, as one being caught */
 #define DIM_MS 60000        /* an idle radio's screen dims after a minute with nothing happening */
 #define OFF_MS 600000       /* and goes dark after ten */
 #define ORBIT_MS 60000      /* the idle scene moves one step of ORBIT a minute: no pixel lit for hours */
@@ -30,12 +33,45 @@ typedef struct {
     char title[TEXT_MAX], line[TEXT_MAX];
 } show_t;
 
+/* Where each scene puts its parts on a panel. Every scene is drawn by one function for both panels;
+   only these numbers differ. docs/hardware_esp32.md, The screen. */
+typedef struct {
+    int w, h;
+    bool compact;           /* one title line and half-size sprites */
+    int cx, cy;             /* the centre of the trade's ball */
+    int ball, small_ball;   /* a ball's radius in the open, and while it travels */
+    int bottom;             /* a sprite's bottom row */
+    int link_x, link_y;     /* the console icon of the link: console, cable, our ball */
+    int link_r;
+    int cable_x0, cable_x1, cable_y;
+    int ring_min, ring_span;    /* the search rings around the ball */
+    int splash_x, splash_y, splash_r, logo_x, logo_y, logo_scale, rule_y, text_y, text_step;
+} view_t;
+
+static const view_t VIEWS[] = {
+    [PANEL_128X64] = {
+        .w = SCREEN_W, .h = SCREEN_H, .compact = false, .cx = 64, .cy = 36, .ball = 10, .small_ball = 6,
+        .bottom = 64, .link_x = 2, .link_y = 22, .link_r = 7, .cable_x0 = 27, .cable_x1 = 108, .cable_y = 34,
+        .ring_min = 8, .ring_span = 26, .splash_x = 14, .splash_y = 15, .splash_r = 9, .logo_x = 30,
+        .logo_y = 9, .logo_scale = 2, .rule_y = 28, .text_y = 36, .text_step = 10,
+    },
+    [PANEL_72X40] = {
+        .w = SMALL_W, .h = SMALL_H, .compact = true, .cx = 36, .cy = 25, .ball = 8, .small_ball = 5,
+        .bottom = 40, .link_x = 0, .link_y = 14, .link_r = 5, .cable_x0 = 24, .cable_x1 = 59, .cable_y = 20,
+        .ring_min = 6, .ring_span = 14, .splash_x = 8, .splash_y = 8, .splash_r = 6, .logo_x = 19,
+        .logo_y = 5, .logo_scale = 1, .rule_y = 17, .text_y = 21, .text_step = 10,
+    },
+};
+
 static struct {
     show_t now, next;       /* next: a lasting show that waits for a timed one to end */
     bool has_next;
     uint8_t radio_mode;     /* the last frame's, to see a session end */
+    bool linked;            /* the last frame's, to hear a console seat */
     uint32_t started;
     uint32_t reveal;        /* a traded show: ms after its start when theirs starts coming in */
+    int32_t heard;          /* the show's ms at the last frame, for its sounds; -1 before the first */
+    uint8_t sound;          /* enum scene_sound the last frame started */
     sprite_t sprite[SLOTS];
     struct {
         uint8_t stars, joined, seats;
@@ -69,19 +105,28 @@ static float ease(float x)
 
 static int lerp(int a, int b, float x) { return a + (int)((b - a) * ease(x)); }
 
+/* A ball's tilt `t` ms into a wobble: three rocks, left, right, left, each one smaller. */
+static int wobble(uint32_t t)
+{
+    static const int8_t TILT[] = {-1, -2, -1, 0, 2, 1, 0, -1, 0};
+    return t < WOBBLE_MS ? TILT[t * 9 / WOBBLE_MS] : 0;
+}
+
 /* ---- shapes ---------------------------------------------------------------------------------- */
 
-static void poke_ball(uint8_t *fb, int cx, int cy, int r)
+/* The seam leans `tilt` quarters of a pixel per pixel; tilt 0 is a ball at rest. */
+static void poke_ball(uint8_t *fb, int cx, int cy, int r, int tilt)
 {
     fb_circle(fb, cx, cy, r, true, false);
     fb_circle(fb, cx, cy, r, false, true);
-    for (int y = cy - r; y < cy; ++y)
-        for (int x = cx - r; x <= cx + r; ++x)
-            if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r) fb_pixel(fb, x, y, true);
-    fb_fill(fb, cx - r, cy, 2 * r + 1, 1, true);
-    const int button = r > 5 ? r / 3 + 1 : 1;
-    fb_circle(fb, cx, cy, button, true, false);
-    fb_circle(fb, cx, cy, button, false, true);
+    for (int y = -r; y <= r; ++y)
+        for (int x = -r; x <= r; ++x)
+            if (x * x + y * y <= r * r && 4 * y < tilt * x) fb_pixel(fb, cx + x, cy + y, true);
+    fb_line(fb, cx - r, cy - r * tilt / 4, cx + r, cy + r * tilt / 4);
+    /* The button rolls with the tilt, along the seam: the rock reads even on a small ball. */
+    const int button = r > 5 ? r / 3 + 1 : 1, bx = cx + tilt, by = cy + tilt * tilt / 4;
+    fb_circle(fb, bx, by, button, true, false);
+    fb_circle(fb, bx, by, button, false, true);
 }
 
 /* The ball split at its seam, the top `lift` pixels up. */
@@ -101,8 +146,10 @@ static void console_icon(uint8_t *fb, int x, int y)   /* 22x12: a handheld with 
 {
     fb_fill(fb, x, y + 1, 4, 10, true);
     fb_fill(fb, x + 18, y + 1, 4, 10, true);
-    fb_pixel(fb, x, y + 1, false);
+    fb_pixel(fb, x, y + 1, false);           /* the controllers' rounded outer corners */
     fb_pixel(fb, x + 21, y + 1, false);
+    fb_pixel(fb, x, y + 10, false);
+    fb_pixel(fb, x + 21, y + 10, false);
     fb_rect(fb, x + 4, y, 14, 12);
     fb_fill(fb, x + 6, y + 2, 10, 8, true);
     fb_pixel(fb, x + 1, y + 4, false);
@@ -152,15 +199,30 @@ static void bit_glyph(uint8_t *fb, int x, int y, bool one)
             if (ROWS[one][r] >> (2 - c) & 1) fb_pixel(fb, x + c, y + r, true);
 }
 
-static bool sprite_draw(uint8_t *fb, int slot, int cx, int bottom)
+/* A sprite with its bottom centre at (cx, bottom); a compact view draws it at half size, a pixel lit
+   when two of its 2x2 block are. */
+static bool sprite_draw(uint8_t *fb, const view_t *v, int slot, int cx, int bottom)
 {
     const sprite_t *p = &s.sprite[slot];
     if (!p->w) return false;
     const int stride = (p->w + 7) / 8;
-    const int x0 = cx - p->w / 2, y0 = bottom - p->h;
-    for (int y = 0; y < p->h; ++y)
-        for (int x = 0; x < p->w; ++x)
-            if (p->bits[y * stride + x / 8] >> (7 - x % 8) & 1) fb_pixel(fb, x0 + x, y0 + y, true);
+    if (!v->compact) {
+        const int x0 = cx - p->w / 2, y0 = bottom - p->h;
+        for (int y = 0; y < p->h; ++y)
+            for (int x = 0; x < p->w; ++x)
+                if (p->bits[y * stride + x / 8] >> (7 - x % 8) & 1) fb_pixel(fb, x0 + x, y0 + y, true);
+        return true;
+    }
+    const int w = (p->w + 1) / 2, h = (p->h + 1) / 2;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            int count = 0;
+            for (int k = 0; k < 4; ++k) {
+                const int sx = 2 * x + (k & 1), sy = 2 * y + (k >> 1);
+                if (sx < p->w && sy < p->h) count += p->bits[sy * stride + sx / 8] >> (7 - sx % 8) & 1;
+            }
+            if (count >= 2) fb_pixel(fb, cx - w / 2 + x, bottom - h + y, true);
+        }
     return true;
 }
 
@@ -217,77 +279,107 @@ static void cable(uint8_t *fb, int x0, int x1, int y)
     }
 }
 
-/* ---- scenes ---------------------------------------------------------------------------------- */
-
-static void header(uint8_t *fb, const char *left, const char *right)
+/* The console, the cable with its packets, and our ball. */
+static void link_strip(uint8_t *fb, const view_t *v)
 {
+    console_icon(fb, v->link_x, v->link_y);
+    poke_ball(fb, v->w - 10 + (v->compact ? 4 : 0), v->link_y + 6, v->link_r, 0);
+    cable(fb, v->cable_x0, v->cable_x1, v->cable_y);
+}
+
+/* ---- text ------------------------------------------------------------------------------------ */
+
+/* One line centred across the view, moved `dx` pixels; the compact view cuts it to its 12 characters. */
+static void line_centered(uint8_t *fb, const view_t *v, int dx, int y, const char *text)
+{
+    char cut[32];
+    snprintf(cut, sizeof(cut), "%.*s", v->compact ? SMALL_W / 6 : 31, text);
+    fb_text(fb, (v->w - fb_text_width(cut, 1)) / 2 + dx, y, cut, 1);
+}
+
+/* The scene's title: a header with a rule on the full panel, the word that matters on the compact one
+   (`right` when there is one). */
+static void title(uint8_t *fb, const view_t *v, const char *left, const char *right)
+{
+    if (v->compact) {
+        line_centered(fb, v, 0, 0, right ? right : left);
+        return;
+    }
     fb_text(fb, 0, 0, left, 1);
     if (right) fb_text(fb, SCREEN_W - fb_text_width(right, 1), 0, right, 1);
     fb_fill(fb, 0, 9, SCREEN_W, 1, true);
 }
 
-static void centered(uint8_t *fb, const int8_t *o, int y, const char *text)
+/* A title over the left half, the right half the sprite's; the compact panel shows `fallback`. */
+static void half_title(uint8_t *fb, const view_t *v, const char *text, const char *fallback)
 {
-    fb_text(fb, (SCREEN_W - fb_text_width(text, 1)) / 2 + o[0], y + o[1], text, 1);
-}
-
-static void radio_scene(uint8_t *fb, const scene_radio_t *r, uint32_t now)
-{
-    char text[32];
-    const bool linked = r->mode == SCENE_JOINED || (r->mode == SCENE_HOSTING && r->stations);
-    if (linked) {
-        header(fb, r->mode == SCENE_JOINED ? "joined" : "hosting", "linked");
-        console_icon(fb, 2, 22);
-        poke_ball(fb, 118, 28, 7);
-        cable(fb, 27, 108, 34);
-        snprintf(text, sizeof(text), "in %lu  out %lu", (unsigned long)r->rx, (unsigned long)r->tx);
-        fb_text_centered(fb, 52, text, 1);
+    if (v->compact) {
+        line_centered(fb, v, 0, 0, fallback);
         return;
     }
-    if (r->mode == SCENE_JOINING || r->mode == SCENE_HOSTING) {
-        header(fb, "pokeldn", r->mode == SCENE_JOINING ? "joining" : "hosting");
-        const uint32_t t = now % 1500;
-        for (int k = 0; k < 3; ++k) {
-            const int radius = 8 + (int)((t + k * 500) % 1500) * 26 / 1500;
-            fb_circle(fb, 64, 34, radius, false, true);
-        }
-        fb_fill(fb, 50, 22, 29, 25, false);
-        poke_ball(fb, 64, 34, 9);
-        fb_fill(fb, 0, 54, SCREEN_W, 10, false);
-        fb_text_centered(fb, 56, r->mode == SCENE_JOINING ? "looking for a console" : "waiting for a console", 1);
-        return;
-    }
-    static const int8_t ORBIT[][2] = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
-    const int8_t *o = ORBIT[now / ORBIT_MS % 4];
-    poke_ball(fb, 14 + o[0], 15 + o[1] + (int)(now / 400 % 2), 9);
-    fb_text(fb, 30 + o[0], 9 + o[1], "pokeldn", 2);
-    fb_fill(fb, 0, 28 + o[1], SCREEN_W, 1, true);
-    if (r->mode == SCENE_SNIFFING) {
-        centered(fb, o, 36, "sniffing");
-        snprintf(text, sizeof(text), "%lu frames", (unsigned long)r->rx);
-        centered(fb, o, 50, text);
-    } else {
-        centered(fb, o, 36, "radio ready");
-        centered(fb, o, 46, "start a trade or gift");
-        char version[24];
-        snprintf(version, sizeof(version), "v%s", POKELDN_FIRMWARE_VERSION);
-        centered(fb, o, 56, version);
-    }
-}
-
-/* A title over the left half: the right half is the sprite's, all 64 rows of it. */
-static void half_header(uint8_t *fb, const char *title)
-{
     char cut[11];
-    snprintf(cut, sizeof(cut), "%s", title);   /* 10 characters stop at the sprite's half */
+    snprintf(cut, sizeof(cut), "%s", text);   /* 10 characters stop at the sprite's half */
     fb_text(fb, 0, 0, cut, 1);
     fb_fill(fb, 0, 9, 62, 1, true);
 }
 
-static void trade_scene(uint8_t *fb, uint32_t now)
+/* ---- scenes ---------------------------------------------------------------------------------- */
+
+static void radio_scene(uint8_t *fb, const view_t *v, const scene_radio_t *r, uint32_t now)
 {
-    half_header(fb, s.now.title[0] ? s.now.title : "trade");
-    if (!sprite_draw(fb, SLOT_OURS, 96, 64 - (int)(now / 500 % 2))) poke_ball(fb, 96, 34, 12);
+    char text[32];
+    const bool linked = r->mode == SCENE_JOINED || (r->mode == SCENE_HOSTING && r->stations);
+    if (linked) {
+        title(fb, v, r->mode == SCENE_JOINED ? "joined" : "hosting", "linked");
+        link_strip(fb, v);
+        if (v->compact) snprintf(text, sizeof(text), "%lu/%lu", (unsigned long)r->rx, (unsigned long)r->tx);
+        else snprintf(text, sizeof(text), "in %lu  out %lu", (unsigned long)r->rx, (unsigned long)r->tx);
+        line_centered(fb, v, 0, v->h - 8 - (v->compact ? 0 : 4), text);
+        return;
+    }
+    if (r->mode == SCENE_JOINING || r->mode == SCENE_HOSTING) {
+        const uint32_t t = now % 1500;
+        for (int k = 0; k < 3; ++k)
+            fb_circle(fb, v->cx, v->cy - 2 * !v->compact,
+                      v->ring_min + (int)((t + k * 500) % 1500) * v->ring_span / 1500, false, true);
+        const int r_ball = v->compact ? 6 : 9, cy = v->cy - 2 * !v->compact;
+        fb_circle(fb, v->cx, cy, r_ball + 1, true, false);   /* the rings stop at the ball's outline */
+        poke_ball(fb, v->cx, cy, r_ball, wobble(now % 3000));
+        fb_fill(fb, 0, 0, v->w, 10, false);
+        title(fb, v, "pokeldn", r->mode == SCENE_JOINING ? "joining" : "hosting");
+        if (!v->compact) {
+            fb_fill(fb, 0, 54, SCREEN_W, 10, false);
+            line_centered(fb, v, 0, 56, r->mode == SCENE_JOINING ? "looking for a console" : "waiting for a console");
+        }
+        return;
+    }
+    static const int8_t ORBIT[][2] = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
+    const int8_t *o = ORBIT[now / ORBIT_MS % 4];
+    poke_ball(fb, v->splash_x + o[0], v->splash_y + o[1], v->splash_r, wobble(now % 4000));
+    fb_text(fb, v->logo_x + o[0], v->logo_y + o[1], "pokeldn", v->logo_scale);
+    fb_fill(fb, 0, v->rule_y + o[1], v->w, 1, true);
+    const int y = v->text_y + o[1];
+    if (r->mode == SCENE_SNIFFING) {
+        line_centered(fb, v, o[0], y, "sniffing");
+        snprintf(text, sizeof(text), v->compact ? "%lu fr" : "%lu frames", (unsigned long)r->rx);
+        line_centered(fb, v, o[0], y + v->text_step + 4 * !v->compact, text);
+        return;
+    }
+    line_centered(fb, v, o[0], y, "radio ready");
+    if (!v->compact) line_centered(fb, v, o[0], y + v->text_step, "start a trade or gift");
+    line_centered(fb, v, o[0], y + v->text_step * (v->compact ? 1 : 2), "v" POKELDN_FIRMWARE_VERSION);
+}
+
+static void trade_scene(uint8_t *fb, const view_t *v, uint32_t now)
+{
+    const int bob = (int)(now / 500 % 2);
+    if (v->compact) {
+        line_centered(fb, v, 0, 0, s.now.line[0] ? s.now.line : "offering");
+        if (!sprite_draw(fb, v, SLOT_OURS, v->cx, v->bottom - bob)) poke_ball(fb, v->cx, v->cy, 9, 0);
+        return;
+    }
+    half_title(fb, v, s.now.title[0] ? s.now.title : "trade", "");
+    if (!sprite_draw(fb, v, SLOT_OURS, 96, 64 - bob)) poke_ball(fb, 96, 34, 12, 0);
     fb_text(fb, 0, 14, "offering", 1);
     text_wrapped(fb, 0, 24, 10, s.now.line);
     console_icon(fb, 0, 47);
@@ -308,87 +400,114 @@ static int lobby_lines(char lines[4][TEXT_MAX])
     return n;
 }
 
-static void lobby_scene(uint8_t *fb, uint32_t now)
+static void lobby_scene(uint8_t *fb, const view_t *v, uint32_t now)
 {
     char lines[4][TEXT_MAX], cut[11];
-    half_header(fb, s.now.title);
-    if (!sprite_draw(fb, SLOT_OURS, 96, 64 - (int)(now / 500 % 2))) poke_ball(fb, 96, 34, 12);
     const int n = lobby_lines(lines);
+    if (v->compact) {
+        for (int i = 0; i < n; ++i) line_centered(fb, v, 0, 10 * i, lines[i]);
+        return;
+    }
+    half_title(fb, v, s.now.title, "");
+    if (!sprite_draw(fb, v, SLOT_OURS, 96, 64 - (int)(now / 500 % 2))) poke_ball(fb, 96, 34, 12, 0);
     for (int i = 0; i < n; ++i) {
         snprintf(cut, sizeof(cut), "%.10s", lines[i]);   /* the left half: 10 characters */
         fb_text(fb, 0, 14 + 12 * i, cut, 1);
     }
 }
 
-static void traded_scene(uint8_t *fb, uint32_t now)
+static void traded_scene(uint8_t *fb, const view_t *v, uint32_t now)
 {
+    static const int8_t DIR[8][2] = {{1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1}};
     const uint32_t t = elapsed(now);
+    const int cx = v->cx, cy = v->cy, sb = v->small_ball;
     if (t < 1100) {   /* ours flashes, then goes back into its ball */
         if (t < 400 || (t < 700 && t / 80 % 2 == 0)) {
-            if (!sprite_draw(fb, SLOT_OURS, 64, 64)) poke_ball(fb, 64, 36, 10);
+            if (!sprite_draw(fb, v, SLOT_OURS, cx, v->bottom)) poke_ball(fb, cx, cy, v->ball, 0);
         } else if (t >= 700) {
-            poke_ball(fb, 64, 36, 6);
-            const int ray = (int)(t - 700) / 40;
-            for (int k = 0; k < 8; ++k) {
-                static const int8_t DIR[8][2] = {{1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1}};
-                fb_line(fb, 64 + DIR[k][0] * (8 + ray), 36 + DIR[k][1] * (8 + ray),
-                        64 + DIR[k][0] * (11 + ray), 36 + DIR[k][1] * (11 + ray));
-            }
+            poke_ball(fb, cx, cy, sb, 0);
+            const int ray = (int)(t - 700) / (v->compact ? 60 : 40), in = sb + 2, out = sb + (v->compact ? 4 : 5);
+            for (int k = 0; k < 8; ++k)
+                fb_line(fb, cx + DIR[k][0] * (in + ray), cy + DIR[k][1] * (in + ray),
+                        cx + DIR[k][0] * (out + ray), cy + DIR[k][1] * (out + ray));
         }
-        fb_text_centered(fb, 0, "go!", 1);
+        line_centered(fb, v, 0, 0, "go!");
     } else if (t < LEAVE_MS) {   /* up and away through the link */
         const float x = (t - 1100) / 1000.0f;
-        const int bx = lerp(64, 140, x), by = lerp(36, 6, x);
-        poke_ball(fb, bx, by, 6);
-        for (int k = 1; k < 4; ++k) bit_glyph(fb, bx - 10 * k, by + 4 * k, (t / 90 + k) % 2);
+        const int bx = lerp(cx, v->w + 12, x), by = lerp(cy, v->compact ? 4 : 6, x);
+        poke_ball(fb, bx, by, sb, 0);
+        for (int k = 1; k < 4; ++k)
+            bit_glyph(fb, bx - (v->compact ? 8 : 10) * k, by + (v->compact ? 3 : 4) * k, (t / 90 + k) % 2);
     } else if (t < s.reveal) {   /* the exchange, for as long as the console's animation runs */
-        fb_text_centered(fb, 6, "trading...", 1);
-        console_icon(fb, 2, 26);
-        poke_ball(fb, 118, 32, 7);
+        title(fb, v, "trading...", NULL);
         if (t / 60 % 2) dot_spawn(t / 120 % 2 ? 1 : -1);
-        cable(fb, 27, 108, 38);
-    } else if (t < s.reveal + 1000) {   /* theirs comes in */
-        const float x = (t - s.reveal) / 1000.0f;
-        poke_ball(fb, lerp(-12, 64, x), lerp(6, 36, x), 6);
+        link_strip(fb, v);
+    } else if (t < s.reveal + LAND_MS) {   /* theirs drops in from the link */
+        const float x = (t - s.reveal) / (float)LAND_MS;
+        poke_ball(fb, lerp(-12, cx, x), lerp(v->compact ? 4 : 6, cy, x), sb, 0);
+    } else if (t < s.reveal + 1000) {   /* lands, and wobbles */
+        const uint32_t k = t - s.reveal - LAND_MS;
+        poke_ball(fb, cx, cy, sb, wobble(k * WOBBLE_MS / (1000 - LAND_MS)));
     } else if (t < s.reveal + REVEAL_MS) {   /* and opens */
         const int k = (int)(t - s.reveal - 1000);
-        open_ball(fb, 64, 40, 8, k / 60);
-        const int flash = k * 70 / 600;
-        fb_circle(fb, 64, 36, flash, true, true);
-        if (flash > 6) fb_circle(fb, 64, 36, flash - 6, true, false);
+        open_ball(fb, cx, cy + (v->compact ? 3 : 4), sb + 2, k / (v->compact ? 80 : 60));
+        const int flash = k * (v->compact ? 40 : 70) / 600, ring = v->compact ? 4 : 6;
+        fb_circle(fb, cx, cy, flash, true, true);
+        if (flash > ring) fb_circle(fb, cx, cy, flash - ring, true, false);
+    } else if (v->compact) {
+        line_centered(fb, v, 0, 0, s.now.line[0] ? s.now.line : "received");
+        if (!sprite_draw(fb, v, SLOT_THEIRS, cx, v->bottom)) poke_ball(fb, cx, cy, 9, 0);
+        sparkles(fb, 14, 10, 44, 30, t);
     } else {
-        half_header(fb, s.now.title[0] ? s.now.title : "trade");
-        if (!sprite_draw(fb, SLOT_THEIRS, 96, 64)) poke_ball(fb, 96, 34, 12);
+        half_title(fb, v, s.now.title[0] ? s.now.title : "trade", "");
+        if (!sprite_draw(fb, v, SLOT_THEIRS, 96, 64)) poke_ball(fb, 96, 34, 12, 0);
         sparkles(fb, 68, 4, 56, 56, t);
         fb_text(fb, 0, 18, "received", 1);
         text_wrapped(fb, 0, 30, 10, s.now.line);
     }
 }
 
-static void card(uint8_t *fb, int x, int y)   /* a Wonder Card, 58x48 */
+/* A Wonder Card: 58x48, or 38x31 on the compact panel. */
+static void card(uint8_t *fb, const view_t *v, int x, int y)
 {
-    fb_fill(fb, x, y, 58, 48, false);
-    fb_rect(fb, x, y, 58, 48);
-    fb_rect(fb, x + 2, y + 2, 54, 44);
-    for (int i = 4; i < 54; i += 4) fb_pixel(fb, x + i, y + 4, true);
-    if (!sprite_draw(fb, SLOT_GIFT, x + 29, y + 44)) gift_box(fb, x + 29, y + 26);
+    const int w = v->compact ? 38 : 58, h = v->compact ? 31 : 48;
+    fb_fill(fb, x, y, w, h, false);
+    fb_rect(fb, x, y, w, h);
+    if (!v->compact) fb_rect(fb, x + 2, y + 2, w - 4, h - 4);
+    if (!sprite_draw(fb, v, SLOT_GIFT, x + w / 2, y + h - (v->compact ? 2 : 4)))
+        gift_box(fb, x + w / 2, y + (v->compact ? 18 : 26));
 }
 
-static void gift_scene(uint8_t *fb, uint32_t now)
+static void gift_scene(uint8_t *fb, const view_t *v, uint32_t now)
 {
-    header(fb, s.now.title[0] ? s.now.title : "Mystery Gift", "gift");
-    card(fb, 0, 14 - (int)(now / 600 % 2));
+    const int bob = (int)(now / 600 % 2);
+    if (v->compact) {
+        line_centered(fb, v, 0, 0, s.now.line[0] ? s.now.line : s.now.title[0] ? s.now.title : "Mystery Gift");
+        card(fb, v, 17, 9 - bob);
+        return;
+    }
+    title(fb, v, s.now.title[0] ? s.now.title : "Mystery Gift", "gift");
+    card(fb, v, 0, 14 - bob);
     text_wrapped(fb, 63, 16, 10, s.now.line);
     console_icon(fb, 105, 50);
     cable(fb, 103, 62, 56);
 }
 
-static void gifted_scene(uint8_t *fb, uint32_t now)
+static void gifted_scene(uint8_t *fb, const view_t *v, uint32_t now)
 {
     const uint32_t t = elapsed(now);
-    if (t < 900) {
-        card(fb, lerp(0, 132, t / 900.0f), 14);
-        for (int k = 0; k < 4; ++k) bit_glyph(fb, (int)(t / 6) - 20 * k, 20 + 9 * k, (t / 70 + k) % 2);
+    if (t < 900) {   /* the card flies off through the link */
+        const int x0 = v->compact ? 17 : 0, y = v->compact ? 9 : 14;
+        card(fb, v, lerp(x0, v->w + 4, t / 900.0f), y);
+        for (int k = 0; k < (v->compact ? 3 : 4); ++k)
+            bit_glyph(fb, (int)(t / (v->compact ? 10 : 6)) - (v->compact ? 16 : 20) * k,
+                      (v->compact ? 12 : 20) + 9 * k, (t / 70 + k) % 2);
+        return;
+    }
+    if (v->compact) {
+        line_centered(fb, v, 0, 0, "delivered!");
+        gift_box(fb, v->cx, 27);
+        sparkles(fb, 8, 12, 56, 28, t);
         return;
     }
     fb_text_centered(fb, 6, "delivered!", 2);
@@ -397,155 +516,7 @@ static void gifted_scene(uint8_t *fb, uint32_t now)
     fb_text_centered(fb, 56, s.now.line, 1);
 }
 
-/* ---- the 72x40 panel: drawn at the origin, then moved into the window it shows ---------------- */
-
-/* A sprite at half size: a pixel is lit when two of its 2x2 block are. */
-static bool sprite_half(uint8_t *fb, int slot, int cx, int bottom)
-{
-    const sprite_t *p = &s.sprite[slot];
-    if (!p->w) return false;
-    const int stride = (p->w + 7) / 8, w = (p->w + 1) / 2, h = (p->h + 1) / 2;
-    for (int y = 0; y < h; ++y)
-        for (int x = 0; x < w; ++x) {
-            int count = 0;
-            for (int k = 0; k < 4; ++k) {
-                const int sx = 2 * x + (k & 1), sy = 2 * y + (k >> 1);
-                if (sx < p->w && sy < p->h) count += p->bits[sy * stride + sx / 8] >> (7 - sx % 8) & 1;
-            }
-            if (count >= 2) fb_pixel(fb, cx - w / 2 + x, bottom - h + y, true);
-        }
-    return true;
-}
-
-/* One line of at most 12 characters, centred across the window and moved `dx` pixels. */
-static void small_text(uint8_t *fb, int dx, int y, const char *text)
-{
-    char cut[13];
-    snprintf(cut, sizeof(cut), "%s", text);
-    fb_text(fb, (SMALL_W - fb_text_width(cut, 1)) / 2 + dx, y, cut, 1);
-}
-
-static void small_radio(uint8_t *fb, const scene_radio_t *r, uint32_t now)
-{
-    char text[32];
-    const bool linked = r->mode == SCENE_JOINED || (r->mode == SCENE_HOSTING && r->stations);
-    if (linked) {
-        small_text(fb, 0, 0, "linked");
-        console_icon(fb, 0, 14);
-        poke_ball(fb, 66, 20, 5);
-        cable(fb, 24, 59, 20);
-        snprintf(text, sizeof(text), "%lu/%lu", (unsigned long)r->rx, (unsigned long)r->tx);
-        small_text(fb, 0, 32, text);
-        return;
-    }
-    if (r->mode == SCENE_JOINING || r->mode == SCENE_HOSTING) {
-        const uint32_t t = now % 1500;
-        for (int k = 0; k < 3; ++k)
-            fb_circle(fb, 36, 25, 6 + (int)((t + k * 500) % 1500) * 14 / 1500, false, true);
-        fb_fill(fb, 28, 17, 17, 17, false);
-        poke_ball(fb, 36, 25, 6);
-        fb_fill(fb, 0, 0, SMALL_W, 10, false);
-        small_text(fb, 0, 0, r->mode == SCENE_JOINING ? "joining" : "hosting");
-        return;
-    }
-    static const int8_t ORBIT[][2] = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
-    const int8_t *o = ORBIT[now / ORBIT_MS % 4];
-    poke_ball(fb, 8 + o[0], 8 + o[1] + (int)(now / 400 % 2), 6);
-    fb_text(fb, 19 + o[0], 5 + o[1], "pokeldn", 1);
-    fb_fill(fb, 0, 17 + o[1], SMALL_W, 1, true);
-    if (r->mode == SCENE_SNIFFING) {
-        small_text(fb, o[0], 21 + o[1], "sniffing");
-        snprintf(text, sizeof(text), "%lu fr", (unsigned long)r->rx);
-        small_text(fb, o[0], 31 + o[1], text);
-    } else {
-        small_text(fb, o[0], 21 + o[1], "radio ready");
-        small_text(fb, o[0], 31 + o[1], "v" POKELDN_FIRMWARE_VERSION);
-    }
-}
-
-static void small_trade(uint8_t *fb, uint32_t now)
-{
-    small_text(fb, 0, 0, s.now.line[0] ? s.now.line : "offering");
-    if (!sprite_half(fb, SLOT_OURS, 36, 40 - (int)(now / 500 % 2))) poke_ball(fb, 36, 25, 9);
-}
-
-static void small_lobby(uint8_t *fb)
-{
-    char lines[4][TEXT_MAX];
-    const int n = lobby_lines(lines);
-    for (int i = 0; i < n; ++i) small_text(fb, 0, 10 * i, lines[i]);
-}
-
-static void small_traded(uint8_t *fb, uint32_t now)
-{
-    const uint32_t t = elapsed(now);
-    if (t < 1100) {
-        if (t < 400 || (t < 700 && t / 80 % 2 == 0)) {
-            if (!sprite_half(fb, SLOT_OURS, 36, 40)) poke_ball(fb, 36, 25, 8);
-        } else if (t >= 700) {
-            poke_ball(fb, 36, 25, 5);
-            const int ray = (int)(t - 700) / 60;
-            for (int k = 0; k < 8; ++k) {
-                static const int8_t DIR[8][2] = {{1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1}};
-                fb_line(fb, 36 + DIR[k][0] * (7 + ray), 25 + DIR[k][1] * (7 + ray),
-                        36 + DIR[k][0] * (9 + ray), 25 + DIR[k][1] * (9 + ray));
-            }
-        }
-        small_text(fb, 0, 0, "go!");
-    } else if (t < LEAVE_MS) {
-        const float x = (t - 1100) / 1000.0f;
-        const int bx = lerp(36, 84, x), by = lerp(25, 4, x);
-        poke_ball(fb, bx, by, 5);
-        for (int k = 1; k < 4; ++k) bit_glyph(fb, bx - 8 * k, by + 3 * k, (t / 90 + k) % 2);
-    } else if (t < s.reveal) {
-        small_text(fb, 0, 0, "trading...");
-        console_icon(fb, 0, 14);
-        poke_ball(fb, 66, 20, 5);
-        if (t / 60 % 2) dot_spawn(t / 120 % 2 ? 1 : -1);
-        cable(fb, 24, 59, 20);
-    } else if (t < s.reveal + 1000) {
-        const float x = (t - s.reveal) / 1000.0f;
-        poke_ball(fb, lerp(-8, 36, x), lerp(4, 25, x), 5);
-    } else if (t < s.reveal + REVEAL_MS) {
-        const int k = (int)(t - s.reveal - 1000);
-        open_ball(fb, 36, 28, 6, k / 80);
-        const int flash = k * 40 / 600;
-        fb_circle(fb, 36, 25, flash, true, true);
-        if (flash > 4) fb_circle(fb, 36, 25, flash - 4, true, false);
-    } else {
-        small_text(fb, 0, 0, s.now.line[0] ? s.now.line : "received");
-        if (!sprite_half(fb, SLOT_THEIRS, 36, 40)) poke_ball(fb, 36, 25, 9);
-        sparkles(fb, 14, 10, 44, 30, t);
-    }
-}
-
-static void small_card(uint8_t *fb, int x, int y)   /* 38x31 */
-{
-    fb_fill(fb, x, y, 38, 31, false);
-    fb_rect(fb, x, y, 38, 31);
-    if (!sprite_half(fb, SLOT_GIFT, x + 19, y + 29)) gift_box(fb, x + 19, y + 18);
-}
-
-static void small_gift(uint8_t *fb, uint32_t now)
-{
-    small_text(fb, 0, 0, s.now.line[0] ? s.now.line : s.now.title[0] ? s.now.title : "Mystery Gift");
-    small_card(fb, 17, 9 - (int)(now / 600 % 2));
-}
-
-static void small_gifted(uint8_t *fb, uint32_t now)
-{
-    const uint32_t t = elapsed(now);
-    if (t < 900) {
-        small_card(fb, lerp(17, 76, t / 900.0f), 9);
-        for (int k = 0; k < 3; ++k) bit_glyph(fb, (int)(t / 10) - 16 * k, 12 + 9 * k, (t / 70 + k) % 2);
-        return;
-    }
-    small_text(fb, 0, 0, "delivered!");
-    gift_box(fb, 36, 27);
-    sparkles(fb, 8, 12, 56, 28, t);
-}
-
-/* The frame drawn at the origin, moved into the panel's window; what fell outside it is dropped. */
+/* The compact view drawn at the origin, moved into the panel's window; what fell outside it is dropped. */
 static void to_window(uint8_t *fb)
 {
     static uint8_t drawn[SCREEN_BYTES];
@@ -554,6 +525,36 @@ static void to_window(uint8_t *fb)
     for (int y = 0; y < SMALL_H; ++y)
         for (int x = 0; x < SMALL_W; ++x)
             if (fb_get(drawn, x, y)) fb_pixel(fb, SMALL_X + x, SMALL_Y + y, true);
+}
+
+/* ---- sounds ---------------------------------------------------------------------------------- */
+
+/* True when `at` ms into the show falls in this frame: after the last frame's ms, up to `t`. */
+static bool due(int64_t at, uint32_t t) { return at > s.heard && at <= (int64_t)t; }
+
+/* The cue a show's frame at `t` ms starts, the latest when two fall in one frame. */
+static uint8_t show_sound(uint32_t t)
+{
+    uint8_t cue = SOUND_NONE;
+    if (s.now.show == SHOW_TRADED) {
+        if (due(700, t)) cue = SOUND_RECALL;
+        if (due(1100, t)) cue = SOUND_SEND;
+        /* The data blips run from half a second into the exchange to 300 ms before theirs comes in. */
+        const int64_t first = LEAVE_MS + 500, last = (int64_t)s.reveal - 300;
+        if (t >= first && s.heard < last) {
+            const int64_t from = s.heard < first ? 0 : (s.heard - first) / DATA_MS + 1;
+            const int64_t at = first + from * DATA_MS;
+            if (at <= t && at <= last) cue = SOUND_DATA;
+        }
+        if (due(s.reveal, t)) cue = SOUND_ARRIVE;
+        if (due(s.reveal + LAND_MS, t)) cue = SOUND_WOBBLE;
+        if (due(s.reveal + 1000, t)) cue = SOUND_OPEN;
+        if (due(s.reveal + REVEAL_MS, t)) cue = SOUND_RECEIVED;
+    } else if (s.now.show == SHOW_GIFTED) {
+        if (due(0, t)) cue = SOUND_SEND;
+        if (due(900, t)) cue = SOUND_DELIVERED;
+    }
+    return cue;
 }
 
 /* ---- commands -------------------------------------------------------------------------------- */
@@ -580,6 +581,7 @@ static void start(const show_t *show, uint32_t now)
 {
     s.now = *show;
     s.started = now;
+    s.heard = -1;
     /* A traded show's hold is the wait before theirs comes in: the console's animation. */
     const uint32_t wait = show->hold_s * 1000u;
     s.reveal = wait > LEAVE_MS + 1000 ? wait : LEAVE_MS + 1000;
@@ -645,6 +647,7 @@ void scene_panel(uint8_t panel) { s_panel = panel; }
 void scene_reset(void)
 {
     memset(&s, 0, sizeof(s));
+    s.heard = -1;
     wake.pending = true;
 }
 
@@ -675,27 +678,24 @@ uint8_t scene_draw(uint8_t *fb, const scene_radio_t *radio, uint32_t now)
         radio->mode == SCENE_IDLE && s.radio_mode != SCENE_IDLE)
         s.now.show = SHOW_AUTO;
     s.radio_mode = radio->mode;
+    const bool linked = radio->mode == SCENE_JOINED || (radio->mode == SCENE_HOSTING && radio->stations);
+    s.sound = show_sound(elapsed(now));
+    if (linked && !s.linked && s.sound == SOUND_NONE) s.sound = SOUND_LINKED;
+    s.linked = linked;
+    s.heard = s.now.show == SHOW_TRADED || s.now.show == SHOW_GIFTED ? (int32_t)elapsed(now) : -1;
     dots_step(radio->rx, radio->tx, now);
     fb_clear(fb);
-    if (s_panel == PANEL_72X40) {
-        switch (s.now.show) {
-        case SHOW_TRADE: small_trade(fb, now); break;
-        case SHOW_TRADED: small_traded(fb, now); break;
-        case SHOW_GIFT: small_gift(fb, now); break;
-        case SHOW_GIFTED: small_gifted(fb, now); break;
-        case SHOW_LOBBY: small_lobby(fb); break;
-        default: small_radio(fb, radio, now); break;
-        }
-        to_window(fb);
-    } else {
-        switch (s.now.show) {
-        case SHOW_TRADE: trade_scene(fb, now); break;
-        case SHOW_TRADED: traded_scene(fb, now); break;
-        case SHOW_GIFT: gift_scene(fb, now); break;
-        case SHOW_GIFTED: gifted_scene(fb, now); break;
-        case SHOW_LOBBY: lobby_scene(fb, now); break;
-        default: radio_scene(fb, radio, now); break;
-        }
+    const view_t *v = &VIEWS[s_panel == PANEL_72X40 ? PANEL_72X40 : PANEL_128X64];
+    switch (s.now.show) {
+    case SHOW_TRADE: trade_scene(fb, v, now); break;
+    case SHOW_TRADED: traded_scene(fb, v, now); break;
+    case SHOW_GIFT: gift_scene(fb, v, now); break;
+    case SHOW_GIFTED: gifted_scene(fb, v, now); break;
+    case SHOW_LOBBY: lobby_scene(fb, v, now); break;
+    default: radio_scene(fb, v, radio, now); break;
     }
+    if (v->compact) to_window(fb);
     return power(radio, now);
 }
+
+uint8_t scene_sound(void) { return s.sound; }

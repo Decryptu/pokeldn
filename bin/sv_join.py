@@ -266,8 +266,7 @@ def build_parser():
                          "the game on port 0 only once ours is announced (docs/sv.md)")
     ap.add_argument("--record-set", metavar="DIR",
                     help="send this directory's records as our own on 0x81 port 1, in sequence "
-                         "order, in place of --mirror-records. `scratchpad/sv_extract_records.py` "
-                         "writes one from a station's own log, so a whole real identity can be "
+                         "order, in place of --mirror-records, so a whole real identity can be "
                          "replayed rather than the host's mirrored back; by default the recorded "
                          "set in pokeldn.sv.reference")
     ap.add_argument("--trainer-name", default="POKELDN",
@@ -315,6 +314,7 @@ def build_parser():
     ap.add_argument("--offer-out", default=None,
                     help="a file to write the host's own offer to, the 348-byte body of its "
                          "80 00 02 00 message, as hex text")
+    launcher.add_save_shown_argument(ap)
     ap.add_argument("--offer-after-open", type=float, default=None,
                     help="seconds after the host's key-0x80 open at which the joiner offers "
                          "first, before the host does; without it the joiner answers the host's "
@@ -626,7 +626,7 @@ def main(argv=None):
             try:
                 nets = trio.run(find)
             except Exception as exc:
-                print(f"[sv] the scan raised: {exc}")
+                print(f"[sv] the scan raised: {launcher.error_text(exc)}")
                 time.sleep(0.5)
                 continue
             target = None
@@ -742,6 +742,8 @@ def host_argv(args, channel, seconds):
         argv.append("--trade-back")
     if args.offer_out:
         argv += ["--offer-out", args.offer_out]
+    if args.save_shown:
+        argv += ["--save-shown", args.save_shown]
     if args.capture:
         root, ext = os.path.splitext(args.capture)
         argv += ["--capture", f"{root}_host{ext or '.jsonl'}"]
@@ -1478,6 +1480,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                             body = stage.host_offers[offers_seen]
                             offers_seen += 1
                             print(f"[sv] {host_ip}: offers {describe_offer(body)}")
+                            pokemon_service.save_shown("sv", args.save_shown, body)
                         if stage.trades > traded:
                             traded = stage.trades
                             if args.offer_out and stage.host_offers:

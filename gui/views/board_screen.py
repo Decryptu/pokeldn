@@ -15,8 +15,8 @@ WIDTH, HEIGHT = 128, 64
 SCALE = 2
 FRAME_S = 0.05            # display.c FRAME_MS
 ON, DIM, OFF = 0, 1, 2    # scene.h enum scene_power
-LIT = bytes.fromhex(t.BLUE[1:])
-DARK = bytes.fromhex("0B0B0D")
+LIT = screen_render.LIT_RGB.to_bytes(3, "big")
+DARK = screen_render.DARK_RGB.to_bytes(3, "big")
 
 
 def png(rows: list[list[bool]]) -> bytes:
@@ -40,7 +40,7 @@ class BoardScreen:
         self.image = ft.Image(src=t.image_src(png([[False] * WIDTH] * HEIGHT)), width=WIDTH * SCALE,
                               height=HEIGHT * SCALE, fit=ft.BoxFit.FILL, filter_quality=ft.FilterQuality.NONE,
                               anti_alias=False, gapless_playback=True)
-        self.control = ft.Container(self.image, bgcolor="#0B0B0D", border_radius=10, padding=10,
+        self.control = ft.Container(self.image, bgcolor=f"#{screen_render.DARK_RGB:06X}", border_radius=10, padding=10,
                                     border=ft.Border.all(1, t.BORDER), alignment=ft.Alignment.CENTER,
                                     visible=False)
 

@@ -97,6 +97,13 @@ def keep_received(args, peer_offer):
         save_received("lgpe", args.received, peer_offer)
 
 
+def keep_shown(args, body):
+    """--save-shown: the peer's offer as it arrives, before any commit (pokeldn.pokemon.save_shown)."""
+    if getattr(args, "save_shown", None):
+        from pokeldn.pokemon import save_shown
+        save_shown("lgpe", args.save_shown, body)
+
+
 def answer_console(args, state, msg, send, tag="[lg]"):
     """A joiner's answer to one game message of the console host. Trade r, from 0, offers on kind
     2 + 2r, commits on 3 + 2r and ends on 4 + 2r, which is trade r + 1's offer channel: its first
@@ -133,6 +140,7 @@ def _answer_offer(args, state, msg, send, tag="[lg]", kind=pb7.OFFER_MESSAGE):
         print(f"{tag} offer: the peer's structure did not verify; not answering")
         return
     state["peer_offer"] = msg["body"]
+    keep_shown(args, msg["body"])
     plain = pb7.decrypt(msg["body"])
     peer_species = int.from_bytes(plain[8:10], "little")
     print(f"{tag} offer: the peer holds species "

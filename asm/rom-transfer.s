@@ -11,7 +11,8 @@
 @                  write goes to 0x08000000 + n * 0x1000 and is read back. Answers STATUS.
 @   OP_SURVEY (3): +6 u16 first sector, +8 u16 count, +10 u16 sectors per run, +12 u32 tag. Each
 @                  run hashes the next sectors from where the last run with that tag stopped and
-@                  answers one word per sector: h = rotl(h, 1) ^ word over the sector's words.
+@                  answers one word per sector: h = rotl(h, 1) + word over the sector's words (an XOR cancels
+@                  a word repeated every 32: 0x00 and 0xFF sectors hashed alike).
 @   OP_FILL (5):   +5 the byte, +6 u16 first sector, +8 u16 count: each sector written with the
 @                  byte and read back. Answers STATUS.
 @   OP_LZ_START (6), OP_LZ_DATA (7): handed to the LZMA decoder (asm/rom-lzma.c), which the host
@@ -260,8 +261,8 @@ survey:
     mov     r0, #0
     mov     r2, #SECTOR
 3:  ldmia   r3!, {r1, r9}
-    eor     r0, r1, r0, ror #31
-    eor     r0, r9, r0, ror #31
+    add     r0, r1, r0, ror #31
+    add     r0, r9, r0, ror #31
     subs    r2, r2, #8
     bne     3b
     str     r0, [r7], #4

@@ -103,7 +103,7 @@ chaquopy {
             // esptool: the Board page installs firmware from the phone. Chaquopy builds cryptography
             // 42 and bitarray 3.0, so bitstring stays at 4.3.1 (4.4 needs tibs, which has no build).
             install './wheels/esptool-5.6.0-py3-none-any.whl'
-            install './wheels/esp_pylib-1.2.0-py3-none-any.whl'
+            install './wheels/esp_pylib-1.2.1-py3-none-any.whl'
             install 'bitstring==4.3.1'
             install 'bitarray==3.0.0'
             install 'cryptography==42.0.8'

@@ -61,7 +61,7 @@ advertisement.
 
     POKELDN_RADIO=esp32:auto ./.venv/bin/python bin/swsh_join.py --keys PROD_KEYS --scan-only
 
-scans a hosting screen and writes each advertisement to `scratchpad/swsh_net_facts.json`.
+scans a hosting screen and writes each advertisement to a JSON file.
 
 | screen | local communication id | version | scene | app version |
 |---|---|---|---|---|

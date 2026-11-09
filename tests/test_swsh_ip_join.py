@@ -80,7 +80,9 @@ def test_the_joiner_trades_with_an_ldn_mitm_host_on_loopback(tmp_path, monkeypat
     assert [species(n) for n in ("host.pk8", "host-2.pk8")] == [96, 97]
 
 
-def test_the_apps_dynamax_adventure_guest_seats_in_our_max_lair_host(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("scene", [50000, 50480])   # 50480: a player's retail lobby, docs/swsh_raid.md
+def test_the_apps_dynamax_adventure_guest_seats_in_our_max_lair_host(tmp_path, monkeypatch, capsys,
+                                                                      scene):
     """The app's Dynamax Adventure (Join) arguments against swsh_host.py --lair-legendary: the guest
     takes index 1, hears the legendary and leaves with the host's handover."""
     keys_file = _loopback(tmp_path, monkeypatch)
@@ -96,7 +98,7 @@ def test_the_apps_dynamax_adventure_guest_seats_in_our_max_lair_host(tmp_path, m
     result = {}
     host = threading.Thread(target=lambda: result.setdefault("host", swsh_host.main(
         ["--ip-host", "--our-ip", HOST_IP, "--keys", str(keys_file), "--seconds", "60",
-         "--lair-legendary", "144", "--lair-seed", "173502832"])), daemon=True)
+         "--lair-legendary", "144", "--lair-seed", "173502832", "--lair-scene", str(scene)])), daemon=True)
     join = threading.Thread(target=lambda: result.setdefault("join", swsh_connect.main(
         build(tool, {}, {}, Settings())
         + ["--keys", str(keys_file), "--ip-join", "--host-ip", HOST_IP, "--our-ip", JOIN_IP,
@@ -110,6 +112,7 @@ def test_the_apps_dynamax_adventure_guest_seats_in_our_max_lair_host(tmp_path, m
     assert result == {"host": 0, "join": 0}
     assert "[lair] the legendary is species 144" in out
     assert "we are index 1" in out
+    assert f"scene={scene} app_version" in out
 
 
 def test_the_apps_max_raid_guest_brings_its_pokemon_into_our_den_raid(tmp_path, monkeypatch, capsys):

@@ -14,6 +14,9 @@ from pokeldn.sv import raid_partners
 from pokeldn.app import raid_rewards
 
 
+CAPTURES = "captures"          # relative to the run's data folder
+
+
 @cache
 def accepted(script: str) -> frozenset[str]:
     return frozenset(f.option for f in flags_of(script))
@@ -184,7 +187,9 @@ def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = N
     game = tool.key.split("-")[0]
     tid, sid = settings.ids(game)
     trainer = settings.own(game)
-    tokens = {"{received}": os.path.expanduser(settings.received), "{stamp}": stamp,
+    received = os.path.expanduser(settings.received)
+    tokens = {"{received}": received, "{stamp}": stamp,
+              "{shown}": os.path.join(os.path.dirname(os.path.normpath(received)), "Shown"),
               "{src_var}": f"0x{random.getrandbits(32):08x}",
               "{ot}": settings.name(game), "{tid}": str(tid), "{sid}": str(sid),
               "{language}": str(trainer["language"]), "{gender}": str(trainer["gender"]),
@@ -210,7 +215,7 @@ def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = N
     if "--keys" in known and "--keys" not in args:
         args += ["--keys", os.path.expanduser(settings.keys)]
     if "--capture" in known and settings.capture:
-        args += ["--capture", f"captures/{tool.key}-{stamp}.jsonl"]
+        args += ["--capture", f"{CAPTURES}/{tool.key}-{stamp}.jsonl"]
     owned = (gift_builder.owned_flags(tool) if any(f.kind == "builder" for f in tool.fields)
              else frozenset())
     for flag, value in extra.items():
@@ -414,6 +419,7 @@ def code_error(field: Field, value, game: str = "sv") -> str:
 
 
 def missing_offer(tool: Tool, values: dict) -> str:
+    from pokeldn import pokemon
     for field in tool.fields:
         if field.kind != "pokemon" or not applies(field, tool, values):
             continue
@@ -427,7 +433,7 @@ def missing_offer(tool: Tool, values: dict) -> str:
                 return (tr("command.choose_gift", "Choose the Mystery Gift Pokemon first.") if field.events else
                         tr("command.build_offer_n", "Build the Pokemon to offer for trade {n} first.", n=n) if many else
                         tr("command.build_offer", "Build the Pokemon to offer first."))
-            if entry.get("legal") is False:
+            if entry.get("legal") is False and not pokemon.SERVICE.allow_illegal:
                 return (tr("command.offer_illegal_n", "The Pokemon for trade {n} is not legal.", n=n) if many else
                         tr("command.offer_illegal", "The Pokemon is not legal."))
     return ""

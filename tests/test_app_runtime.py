@@ -54,13 +54,14 @@ def test_packer_uses_tracked_defaults_and_requires_firmware(monkeypatch, tmp_pat
     monkeypatch.setattr(pack, "FIRMWARE_PAD_ESP32", tmp_path / "absent-pad.bin")
     monkeypatch.setattr(pack, "FIRMWARE_BLE", tmp_path / "absent-ble.bin")
     monkeypatch.setattr(pack, "FIRMWARE_BLE_C6", tmp_path / "absent-ble-c6.bin")
+    monkeypatch.setattr(pack, "FIRMWARE_SCREEN", (tmp_path / "absent-e32r40t.bin", tmp_path / "absent-szpi.bin"))
     monkeypatch.setattr(sys, "argv", ["pack_app.py"])
     import pytest
     with pytest.raises(SystemExit, match="Missing"):
         pack.main()
     # A release missing any target must fail before invoking the packer.
     images = (pack.FIRMWARE, pack.FIRMWARE_S3, pack.FIRMWARE_C3, pack.FIRMWARE_C6, pack.FIRMWARE_PAD,
-              pack.FIRMWARE_PAD_ESP32, pack.FIRMWARE_BLE, pack.FIRMWARE_BLE_C6)
+              pack.FIRMWARE_PAD_ESP32, pack.FIRMWARE_BLE, pack.FIRMWARE_BLE_C6, *pack.FIRMWARE_SCREEN)
     for missing in images:
         for present in images:
             if present != missing:

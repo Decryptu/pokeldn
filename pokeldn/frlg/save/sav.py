@@ -23,6 +23,10 @@ CHUNK_SIZES = {"latin": (3876, 3968, 3968, 3968, 3816, 3968, 3968, 3968, 3968, 3
                "japanese": (3876, 3968, 3968, 3968, 3776, 3968, 3968, 3968, 3968, 3968, 3968, 3968, 3968, 2000)}
 
 
+# Emerald's chunks by id [pokeemerald save.c]; pokeldn.rse.constants holds the same table.
+EMERALD_CHUNK_SIZES = (0xF2C, *(0xF80,) * 3, 0xF08, *(0xF80,) * 8, 0x7D0)
+
+
 class SaveError(ValueError):
     """Not a FireRed/LeafGreen save this host can read or write."""
 
@@ -183,6 +187,9 @@ def check_restorable(data, *, japanese):
     return summary
 
 
+GAME_COUNTER_AT = 2 * SLOT_SECTORS * FOOTER_BYTES     # after the footers, in save-restore.s's first answer
+
+
 def chip_newest(footers):
     """-> (slot, counter) of the chip's newest copy from the 28 footers save-restore.s reads, or
     None. A slot counts when its 14 sectors carry the signature and distinct ids."""
@@ -202,23 +209,55 @@ def chip_newest(footers):
     return best
 
 
-def sectors_to_write(data, footers):
-    """-> [(physical sector, 4096 bytes)] in write order.
+def emerald_first(data):
+    """-> the first physical sector of the copy Emerald loads; SaveError with no whole copy."""
+    data = normalize(data)
+    whole = []
+    for index in (0, 1):
+        ids, counter = set(), None
+        if slot(data, index).sound:             # a FireRed copy also passes Emerald's longer chunks
+            continue
+        for n in range(index * SLOT_SECTORS, (index + 1) * SLOT_SECTORS):
+            ident, checksum, signature, counter_here = footer(data, n)
+            if (signature == SECTOR_SIGNATURE and ident < SLOT_SECTORS
+                    and sector_checksum(sector(data, n), EMERALD_CHUNK_SIZES[ident]) == checksum):
+                ids.add(ident)
+                counter = counter_here
+        if len(ids) == SLOT_SECTORS:
+            whole.append(Slot(index, True, counter, ()))
+    if not whole:
+        raise SaveError("the save has no whole copy of an Emerald game in it")
+    return (whole[0] if len(whole) == 1 else _newer(*whole)).first
+
+
+def sectors_to_write(data, footers, first=None, keep_game_copy=False):
+    """-> [(physical sector, 4096 bytes)] in write order; `first` is the file's copy to write, by
+    default the one this game loads.
 
     The file's loaded copy goes in the slot beside the chip's newest, its counter one past that copy's,
     so the game's next load takes it [save.c:174]; then the four sectors past the slots. The game takes
     a slot whose 14 ids all pass, whatever their counters, so a half-written slot could load: the old
-    copy's id 0 there is erased first and the new id 0 written last."""
+    copy's id 0 there is erased first and the new id 0 written last.
+
+    `keep_game_copy`: the slot beside the running game's own copy instead, by the gSaveCounter
+    save-restore.s reports. An Emerald copy already on the chip can be the newest, and FireRed's copy
+    is the title's way back [docs/rse_switch_build.md, The FireRed copy]."""
     data = normalize(data)
-    summary = describe(data)
-    if not summary.sound:
-        raise SaveError("the save has no whole copy of a game in it")
+    if first is None:
+        summary = describe(data)
+        if not summary.sound:
+            raise SaveError("the save has no whole copy of a game in it")
+        first = summary.newest.first
     newest = chip_newest(footers)
-    counter = 0 if newest is None else (newest[1] + 1) & 0xFFFFFFFF
+    game_counter = _u32(footers, GAME_COUNTER_AT)
+    if keep_game_copy and game_counter:
+        counter = (game_counter + 1) & 0xFFFFFFFF
+    else:
+        counter = 0 if newest is None else (newest[1] + 1) & 0xFFFFFFFF
     target = counter % 2
     copy = []
     for i in range(SLOT_SECTORS):
-        raw = bytearray(sector(data, summary.newest.first + i))
+        raw = bytearray(sector(data, first + i))
         raw[SECTOR_COUNTER_OFF:SECTOR_COUNTER_OFF + 4] = counter.to_bytes(4, "little")
         copy.append((target * SLOT_SECTORS + i, bytes(raw)))
     out = []

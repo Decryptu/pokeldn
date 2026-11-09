@@ -366,9 +366,9 @@ trainer id.
 
 ### Restore
 
-1. The first message is the 620-byte image; `install` copies it to `gDecompressionBuffer + 0x400`
+1. The first message is the 636-byte image; `install` copies it to `gDecompressionBuffer + 0x400`
    and answers with the 12-byte footers (id, checksum, signature, counter at `+0xFF4`) of the 28 slot
-   sectors.
+   sectors, then the game's `gSaveCounter`.
 2. The host finds the newest whole slot as `GetSaveValidStatus` would and writes the file's copy into
    the other slot with counter `newest + 1`, then sectors 28 to 31 as the file has them.
 3. It erases the target slot's id-0 sector first and writes the new id 0 last, so the chip's own

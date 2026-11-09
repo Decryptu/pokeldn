@@ -199,13 +199,14 @@ def test_the_bdsp_joiner_leaves_as_a_retail_station_does_soon_after_its_queued_t
 def test_the_bdsp_joiner_offers_back_the_console_pokemon_byte_for_byte(monkeypatch, tmp_path):
     queued = a_pb8(0x0000E000, 41, "Nosferapti")
     console_first, console_second = a_pb8(0xCDBEB642, 25, "Pikachu"), a_pb8(0x12345678, 63, "Abra")
+    console_shown = a_pb8(0x0BADF00D, 129, "Magikarp")
     template = tmp_path / "queued.pb8"
     template.write_bytes(queued)
     args = bdsp_connect.build_parser().parse_args([
         "--phy", "none", "--scans", "1", "--listen-first", "0", "--hold", "20",
         "--trade-reply", "--complete-trade", "--security-repeat", "100", "--trade-back",
         "--trade-template", str(template), "--trade-save-poke", str(tmp_path / "received.pb8"),
-        "--src-var", hex(OUR_VAR)])
+        "--save-shown", str(tmp_path / "shown"), "--src-var", hex(OUR_VAR)])
     console = ScriptedConsole()
     offered = []
 
@@ -214,8 +215,17 @@ def test_the_bdsp_joiner_offers_back_the_console_pokemon_byte_for_byte(monkeypat
         offered.append(await console.trade(console_first))
         await trio.sleep(0.2)
         offered.append(await console.trade(console_second))
+        await console.send_data(room.build_trade_poke(console_shown))   # shown, then backed out of
+        await trio.sleep(0.3)
         nursery.cancel_scope.cancel()
 
     _run_joiner(monkeypatch, args, console, script)
     assert offered[0] == queued
     assert offered[1] == console_first
+    # --trade-save-poke: only the traded ones, once each trade completes.
+    assert sorted(p.name for p in tmp_path.glob("received*")) == ["received-2.pb8", "received.pb8"]
+    # --save-shown: each Pokemon the console offered, traded or not, under its encryption constant.
+    shown = {p.name: p.read_bytes() for p in (tmp_path / "shown").iterdir()}
+    assert shown == {"bdsp-cdbeb642.pb8": (tmp_path / "received.pb8").read_bytes(),
+                     "bdsp-12345678.pb8": (tmp_path / "received-2.pb8").read_bytes(),
+                     "bdsp-0badf00d.pb8": console_shown}, sorted(shown)

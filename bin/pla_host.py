@@ -233,9 +233,7 @@ def build_parser():
                          "exclusive-or to under 16, which is the Gen-6 rule and is untested here")
     ap.add_argument("--trade-box-nickname", default=None,
                     help="the nickname in the offered record")
-    ap.add_argument("--trade-box-collect", default=None,
-                    help="write every record the console shows or offers to this directory, one "
-                         "file per distinct record, named by species and nickname")
+    launcher.add_save_shown_argument(ap)
     ap.add_argument("--offer-out", default=None,
                     help="write the record the console traded to this file, -N before the extension "
                          "for trade N above 1")
@@ -413,9 +411,6 @@ def main():
         for n, state in enumerate(box_states, start=1):
             print(f"[pla] trade {n} offers {pla_pokemon.describe(pla_pokemon.decrypt(state['record']))}")
         screen.offer("pla", box_states[0]["record"])
-    if args.trade_box_collect:
-        os.makedirs(os.path.expanduser(args.trade_box_collect), exist_ok=True)
-    collected = set()
     console_offer = {}      # the record each console last offered (selector 4), the one a trade delivers
     rx_windows = {}
     tx_window = reliable5.SendWindow(GAME_CHANNEL_RESEND)
@@ -760,23 +755,8 @@ def main():
                                            hex=offered["record"].hex(), t=time.time())
                                     if offered["selector"] == trade_box.SELECTOR_OFFERING:
                                         console_offer[src_ip] = offered["record"]
-                                    if args.trade_box_collect and offered["record"] not in collected:
-                                        collected.add(offered["record"])
-                                        try:
-                                            fields = pla_pokemon.read(
-                                                pla_pokemon.decrypt(offered["record"]))
-                                            stem = (f"{fields['species']:04d}_{fields['nickname']}"
-                                                    f"_lv{fields['level']}_{fields['ot_name']}"
-                                                    f"_{offered['record'][:4].hex()}")
-                                        except ValueError:
-                                            stem = f"unreadable_{len(collected):02d}"
-                                        stem = "".join(c if c.isalnum() or c in "_-" else "_"
-                                                       for c in stem)
-                                        path = os.path.join(os.path.expanduser(args.trade_box_collect),
-                                                            f"{stem}.pa8")
-                                        with open_output(path, "wb") as fh:
-                                            fh.write(offered["record"])
-                                        print(f"[pla] wrote {path}")
+                                    pokemon_service.save_shown("pla", args.save_shown,
+                                                               offered["record"])
                                 # Announce back every key the console opens on port 1; it sends on a
                                 # key only once the peer has (pokeldn.pla.channel_table).
                                 if announced:

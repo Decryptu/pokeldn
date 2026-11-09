@@ -14,7 +14,7 @@
 pokeldn trades with retail Pokémon games on Switch and Switch 2 through an ESP32 board connected to a
 computer by USB. Nothing is installed on the console.
 
-The desktop app runs on macOS (Apple silicon), Windows and Linux. The same app runs on Android, with
+The desktop app runs on macOS (Apple silicon and Intel), Windows and Linux. The same app runs on Android, with
 the board on the phone's USB port, and on iPhone and iPad, with the board reached over Bluetooth.
 Command-line tools run from source, and the docs describe the games' local wireless protocols. AI tools helped reverse engineer
 those protocols and write parts of the code.
@@ -128,6 +128,8 @@ Contributors to this repository (GitHub does not list contributors on a fork):
   sprites
 - [axechaso](https://github.com/axechaso): the one-shot A press at an exact RNG frame behind the
   FireRed/LeafGreen Shiny Mewtwo boost, and the FireRed/LeafGreen RNG in the plugin API
+- [FrozenGEE](https://github.com/FrozenGEE): the ideas behind the LCKFB szpi ESP32-S3 board's screen and
+  speaker build, the board's sounds and ball wobble, backup and restore, and the phone layout fixes
 
 - [unlimitedcoder2](https://github.com/unlimitedcoder2): [ldnrs](https://github.com/unlimitedcoder2/ldnrs),
   the external Windows USB Wi-Fi daemon supported by the optional radio backend

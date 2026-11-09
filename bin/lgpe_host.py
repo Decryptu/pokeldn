@@ -24,7 +24,7 @@ from pokeldn import launcher
 from pokeldn import pokemon as pokemon_service
 from pokeldn.ldn import clone, pia3, pia4, reliable3, station4, station9, sync_clock
 from pokeldn.lgpe import pb7
-from pokeldn.lgpe.trade import (keep_received, TRADE_IN_PROGRESS, _answer_offer, _send_step,
+from pokeldn.lgpe.trade import (keep_received, keep_shown, TRADE_IN_PROGRESS, _answer_offer, _send_step,
                                 _warn_if_mid_trade, show_offer)
 from pokeldn import receiver_gift, trade_back
 from pokeldn.app import screen
@@ -106,6 +106,7 @@ def build_parser():
     ap.add_argument("--scene-id", type=int, default=None,
                     help="the advertised scene id, in place of the one --code gives")
     ap.add_argument("--received", help="write the peer's offered PB7 here")
+    launcher.add_save_shown_argument(ap)
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer every --offer and --next-offer structure under a new PID and encryption constant, "
                          "shiny state kept, so a save that took it before takes it again")
@@ -938,6 +939,7 @@ class Session:
             self.trade["done"] = False
             if pb7.valid(msg["body"]):
                 self.trade["peer_offer"] = msg["body"]
+                keep_shown(self.args, msg["body"])
             print(f"[lgh] offer: the peer answered ours under step {msg['step']}")
             if self.args.lead is not None:
                 self.lead_vote_at = time.monotonic() + self.args.lead
@@ -946,6 +948,7 @@ class Session:
             if msg["step"] > self.trade.get("answered_step", 0) and pb7.valid(msg["body"]):
                 self.console_offer = msg
                 self.trade["peer_offer"] = msg["body"]
+                keep_shown(self.args, msg["body"])
                 self.trade["done"] = False
                 self.partner.offer(msg["body"])
         elif msg["kind"] == self.offer_kind:

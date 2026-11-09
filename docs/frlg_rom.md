@@ -231,7 +231,7 @@ settings. [Mystery Gift files](gifts.md#console-code) documents packaging and sh
 Offline first, every time:
 
     ./.venv/bin/python -m pytest tests/test_buffer_script.py -q
-    ./.venv/bin/python scratchpad/mg_client_harness.py --buffer-script -v
+    ./.venv/bin/python -m pytest tests/test_mystery_gift_flow.py -q
 
 On hardware the console waits on Mystery Gift -> Wonder Cards -> Friend and joins the host. In the
 run lines below, `HOST` stands for
@@ -260,7 +260,7 @@ table), this is the only unclaimed EWRAM span; the rest are three- and eight-byt
 `_calloc_r` and `_free_r` are inside libc). A 0xA5 fill there survived menus, walking and a whole wild
 battle on the French FireRed under mGBA. The GB-Link Team cards keep their relocated script there
 ([frlg_gift.md](frlg_gift.md#gb-link-team-cards)).
-`scratchpad/ewram_symbol.py ADDR LEN` checks an address.
+The decomp's link map names what sits at an address.
 
 Never pick an address because it reads zero. 0x0202B280, 0x020185C4 and 0x0203B0E9 read tens of
 kilobytes of zeros and are the battle and box buffers, the run-up to `gDecompressionBuffer`, and
@@ -966,7 +966,7 @@ column is what one issue from the Mystery Gift client with `sloop-svc` showed.
 | 0x4E | jump-table entry `0x147` | falls through to the dispatcher's exit: the syscall does nothing | |
 | 0x4F | `main + 0x057248` -> `main + 0x058B54` | builds `{u16 tag 0x4757; u32 value = r0}` on its stack; the tagged-property dispatcher `main + 0x4EBD0` and setter `main + 0x058BB4` store the value unvalidated at `component + 0x6052A0` | writing 3 and `0x7FFFFFFF`, each followed by 0x49 and 0x4A, changed nothing observable |
 | 0x50 | getter `main + 0x058BA4` | reads the same 4-byte count back | |
-| 0x51 | `main + 0x057270` -> `main + 0x0511BC` | reads `component + 0x3404` into an out-parameter and clears it; the out-parameter is always the dispatcher's own stack slot | |
+| 0x51 | `main + 0x057270` -> `main + 0x0511BC` | reads session `+0x3404` (`[component + 0xD0]`) into an out-parameter and clears it; the out-parameter is always the dispatcher's own stack slot | |
 | 0x52 | `main + 0x05728C` | folds guest `r0` through the bus object's region table (`[component + 0xE0] + 0x50`) and calls the region's `+0x48` fold. A non-zero guest `r1` also runs the pointer resolver `main + 0x562CC`: it reads `[[bus] + 0x50 + (r1 >> 24) * 8]` with the index unbounded 0..255, calls the value's `+0x48` as a virtual, then returns `backing + offset` when `offset < size`. The handler is the resolver's only caller, discards its result and returns `r0 = 0`, so guest `r1` reads back 0. The 256 entries read live are main's own method pointers, negative values and zeros, none an object with a `+0x48` method | |
 | 0x53 | `main + 0x0572D4` | answers `component + 0x2770 == 0` (through `[component + 0xD0]`) | |
 | 0x54 | `main + 0x0572EC` | `svc_CommsAllowedByParentalControls` [sloopsvc.c:182] | returns 1 |
@@ -1805,8 +1805,8 @@ zeroed buffer. The answer is 116 bytes (four header words, the 100-byte `struct 
 `*param` is the personality.
 
 The substructs are encrypted with `personality ^ otId` and checksummed, so a valid checksum proves the
-two words. `check_create_mon` checks species, level and IVs; `scratchpad/verify_create_mon.py`
-predicts the thirteen derived fields: exp from `gExperienceTables[growthRate][level]`, friendship and
+two words. `check_create_mon` checks species, level and IVs. The
+thirteen derived fields follow from the species and level: exp from `gExperienceTables[growthRate][level]`, friendship and
 ability slot from `gSpeciesInfo`, moves and PP from the learnset, six stats from `CalculateMonStats`.
 The nickname comes from `gSpeciesNames` [pokemon.c:1810], the cartridge's French table, and is read,
 never predicted. Three fields measure the console:

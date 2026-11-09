@@ -111,6 +111,12 @@ def wrap(keys, our_mac, our_constant, nonce8, payload, protocol, station, port=0
     return pia4.build_packet(keys.session_key, iv, body, station=station, nonce8=nonce8)
 
 
+def scene_matches(args, scene):
+    if args.lair_join and args.scene == swsh_lair.SCENE:
+        return swsh_lair.is_scene(scene)
+    return args.scene in (None, scene)
+
+
 async def find_radio(args):
     """-> (SessionKeys, target record, seat context) for the matching search on the air, or an exit
     code. The seat yields (host_ip, host_mac, our_ip, our_mac)."""
@@ -127,7 +133,7 @@ async def find_radio(args):
             print(f"[cx] saw comm_id=0x{n.local_communication_id:016x} ch={n.channel} "
                   f"scene={n.scene_id} {n.num_participants}/{n.max_participants}")
         net = next((n for n in nets if n.local_communication_id == want
-                    and args.scene in (None, n.scene_id)), None)
+                    and scene_matches(args, n.scene_id)), None)
         if net is not None:
             break
     if net is None:
@@ -201,7 +207,7 @@ async def find_ip(args):
         n = _Advertised(info)
         print(f"[cx] saw comm_id=0x{n.local_communication_id:016x} scene={n.scene_id} "
               f"{n.num_participants}/{n.max_participants}")
-        if n.local_communication_id == want and args.scene in (None, n.scene_id):
+        if n.local_communication_id == want and scene_matches(args, n.scene_id):
             net = n
             break
     if net is None:
@@ -356,6 +362,7 @@ async def main_async(args):
               "confirm_status_answered": set(),
               "confirm_queue": None,
               "confirm_steps_seen": set(), "confirm_last_step": None,
+              "confirm_seen_at": None, "ladder_refreshed": None,
               "ladder_finished": False, "trades": 0, "first_pk8": None,
               "block_out": 0, "block_acked": None}
 
@@ -427,7 +434,8 @@ async def main_async(args):
                 st["our_pk8"] = rounds.current()
             else:
                 st["our_pk8"] = queued_offer(rounds.round // 2 + 1 if rounds is not None else n)
-            for key in ("offered_pk8", "confirm_queue", "confirm_last_step"):
+            for key in ("offered_pk8", "confirm_queue", "confirm_last_step", "confirm_seen_at",
+                        "ladder_refreshed"):
                 st[key] = None
             for key in ("pk8_offer_sent", "trade_ready_sent", "ladder_finished",
                         "confirmation_opened", "selection_sent"):
@@ -531,6 +539,8 @@ async def main_async(args):
                 member = swsh_trade.parse_rpc(got["payload"])
                 if member is not None and member["base"] in swsh_trade.RPC_BASES:
                     st["rpc_seen"][(member["envelope"], member["base"])] = got["payload"]
+                    if member["envelope"] == CONFIRMATION_ENVELOPE:
+                        st["confirm_seen_at"] = now
                     # --abort-on-stall: any four-byte body on 40040/20000 is a step (`0x006d6490`
                     # drops other lengths); the console repeats its parked step, so only an unseen
                     # body is movement.
@@ -545,6 +555,11 @@ async def main_async(args):
                         if step is not None and step[0] >= LADDER_FINAL_PHASE:
                             if not st["ladder_finished"]:
                                 st["trades"] += 1
+                                if args.save_offered and st["offered_pk8"] is not None:
+                                    # Written once the trade completes; an offer can still be withdrawn.
+                                    path = pokemon_service.trade_path(args.save_offered, st["trades"])
+                                    write_file(path, st["offered_pk8"])
+                                    print(f"[rx]     saved to {path}")
                                 if rounds is not None:
                                     rounds.done(st["offered_pk8"])
                                 show_done()
@@ -796,6 +811,8 @@ async def main_async(args):
                     st["offered_pk8"] = None
                     st["pk8_offer_sent"] = st["trade_ready_sent"] = False
             offered = swsh_trade.offered_pokemon(got["payload"])
+            if offered is not None:
+                pokemon_service.save_shown("swsh", args.save_shown, offered)
             if offered is not None and st["ladder_finished"]:
                 next_trade()
             if offered is not None and st["offered_pk8"] is None:
@@ -804,10 +821,6 @@ async def main_async(args):
                 print(f"\n[rx]     *** THE CONSOLE OFFERED US A POKEMON *** species "
                       f"{read['species']} {read['nickname']!r} level {read['level']} "
                       f"OT {read['ot_name']!r} ({read['trainer_id']}/{read['secret_id']})")
-                if args.save_offered:
-                    path = pokemon_service.trade_path(args.save_offered, st["trades"] + 1)
-                    write_file(path, offered)
-                    print(f"[rx]     saved to {path}")
                 # One-shot, and it outranks the mirror, which answers the RPC pair the console
                 # repeats.
                 if args.offer_echo:
@@ -1639,6 +1652,17 @@ async def main_async(args):
                                           f"+{args.rpc_pair_advance} *** "
                                           f"{[a.hex() for a in again]}")
                             st["rpc_queue"] = queued + st["rpc_queue"]
+                refresh = ladder_refresh(st, time.monotonic() - t0, args.ladder_refresh)
+                if refresh is not None:
+                    members = [(CONFIRMATION_ENVELOPE, b) for b in swsh_trade.RPC_BASES]
+                    delta = (st["rpc_pair_delta"].get(CONFIRMATION_ENVELOPE, args.rpc_clock_delta)
+                             + refresh)
+                    again = [swsh_trade.answer_rpc(st["rpc_seen"][k], our_constant, delta)
+                             for k in members]
+                    if all(a is not None for a in again):
+                        st["rpc_queue"] = again + st["rpc_queue"]
+                        print(f"[tx]     *** THE LADDER WAITS - THE {CONFIRMATION_ENVELOPE} PAIR "
+                              f"AGAIN AT CLOCK +{delta} ***")
                 pending = st["rpc_queue"][0] if st["rpc_queue"] else None
                 answer = pending if pending is not None else (
                     swsh_trade.answer_rpc(said, our_constant, args.rpc_clock_delta)
@@ -2138,6 +2162,8 @@ async def main_async(args):
 
 
 LADDER_FINAL_PHASE = 4        # `0x010dbf40`: phase 4 -> state 13 -> 14, the teardown, no send
+CONFIRMATION_ENVELOPE = swsh_trade.RPC_ENVELOPE_BASE + swsh_trade.CONFIRMATION_OFFSET
+SYNC_CLOCK_HZ = 60            # the 40040 clock, measured against the capture's timestamps
 
 
 def departure_step(body):
@@ -2156,6 +2182,20 @@ def departure_step(body):
     except ValueError:
         pass
     return None
+
+
+def ladder_refresh(st, now, period):
+    """-> the clock advance for our 40040 pair, re-sent while the ladder waits on the console, or None.
+
+    A trade carrying a legendary sends the console's phase-2 command after a countdown
+    (`0x010daf3c`, docs/swsh_trade.md); an answer whose clock is that old leaves it unsent."""
+    if (not period or st["ladder_finished"] or st["confirm_seen_at"] is None
+            or CONFIRMATION_ENVELOPE not in st["rpc_pair_sent"]):
+        return None
+    if now - max(st["confirm_last_step"] or 0.0, st["ladder_refreshed"] or 0.0) < period:
+        return None
+    st["ladder_refreshed"] = now
+    return round((now - st["confirm_seen_at"]) * SYNC_CLOCK_HZ)
 
 
 def stall_abort(last_step, now, limit, final_phase_seen=False):
@@ -2436,6 +2476,9 @@ def build_parser():
                          "phase out of exactly those bytes (`0x006d6490` stores them, "
                          "`0x006d3260` reads them), and every step this project has sent so far "
                          "echoed the value back unchanged")
+    ap.add_argument("--ladder-refresh", type=float, default=1.0, metavar="SECONDS",
+                    help="while the confirmation ladder waits on the console, send our 40040 pair "
+                         "again every SECONDS with its clock advanced to the present. 0 is off")
     ap.add_argument("--abort-on-stall", type=float, default=0.0, metavar="SECONDS",
                     help="once the confirmation ladder has produced its first step, end the run "
                          "as soon as SECONDS pass with no NEW step body: stop transmitting, drop "
@@ -2625,8 +2668,10 @@ def build_parser():
                     help="six IVs, comma-separated, in PKHeX's HP,ATK,DEF,SPE,SPA,SPD order")
     ap.add_argument("--save-offer", default=None, metavar="FILE",
                     help="write the PK8 we will offer to this file, before the radio is touched")
+    launcher.add_save_shown_argument(ap)
     ap.add_argument("--save-offered", default=None, metavar="FILE",
-                    help="write the PK8 the console offers to this file; trade N > 1 writes FILE-N")
+                    help="write the PK8 the console traded to this file, once the trade completes; "
+                         "trade N > 1 writes FILE-N")
     ap.add_argument("--rpc-clock-delta", type=lambda s: int(s, 0), default=5,
                     help="how far to advance a trade RPC's clock in our answer. 5 is nxldn-lab's "
                          "and is the one number in this path nothing here has measured")

@@ -52,7 +52,8 @@ def test_a_release_github_marks_prerelease_or_draft_is_not_offered():
     ("darwin", "arm64", "pokeldn-macos-arm64.zip"),
     ("win32", "AMD64", "pokeldn-windows-x64.zip"),
     ("linux", "x86_64", "pokeldn-linux-x64.tar.gz"),
-    ("darwin", "x86_64", ""),           # no Intel Mac build: the release page instead
+    ("darwin", "x86_64", "pokeldn-macos-x64.zip"),
+    ("linux", "aarch64", ""),           # no Linux arm64 build: the release page instead
 ])
 def test_the_download_is_this_machines_file_or_the_release_page(system, machine, name):
     found = update.newer(release("v9.0.0"), "0.2.2", update.asset_name(system, machine))
@@ -103,11 +104,16 @@ def packed_app(folder: Path, system: str, version: str) -> Path:
     exe.parent.mkdir(parents=True)
     exe.write_text(f"#!/bin/sh\necho {version}\n")
     exe.chmod(0o755)
-    (root / "VERSION").write_text(version)
+    version_file(root).parent.mkdir(exist_ok=True)
+    version_file(root).write_text(version)
     if system == "darwin":
         (root / "Contents/Frameworks").mkdir()
         (root / "Contents/Frameworks/Current").symlink_to("../MacOS")
     return root
+
+
+def version_file(root: Path) -> Path:
+    return root / ("Contents" if root.suffix == ".app" else "_internal") / "VERSION"
 
 
 def archive(folder: Path, system: str, version: str) -> Path:
@@ -174,7 +180,8 @@ def exited_pid() -> int:
 def test_a_release_replaces_the_installed_app_and_opens_it(files, tmp_path, system):
     release = serve(files, tmp_path, system)
     target = packed_app(tmp_path / "Applications", system, "0.1.0")
-    (target / "stale-from-0.1.0").write_text("")
+    stale = target / ("Contents" if system == "darwin" else "_internal") / "stale-from-0.1.0"
+    stale.write_text("")
     work, outcome, opened = tmp_path / "data/update", tmp_path / "data/update/outcome.json", []
     seen = []
     new = update.prepare(release, lambda done, total: seen.append((done, total)), work=work, system=system)
@@ -182,8 +189,8 @@ def test_a_release_replaces_the_installed_app_and_opens_it(files, tmp_path, syst
 
     assert update.apply(new, target, exited_pid(), "9.0.0", system, outcome, opened.append)
     assert opened == [target]
-    assert (target / "VERSION").read_text() == "9.0.0"
-    assert not (target / "stale-from-0.1.0").exists()
+    assert version_file(target).read_text() == "9.0.0"
+    assert not stale.exists()
     assert os.access(update.executable_in(target, system), os.X_OK) or system == "win32"
     if system == "darwin":
         assert (target / "Contents/Frameworks/Current").is_symlink()
@@ -210,9 +217,36 @@ def test_a_failed_copy_puts_the_old_app_back_and_says_why(files, tmp_path):
     target = packed_app(tmp_path / "Applications", "linux", "0.1.0")
     outcome, opened = tmp_path / "outcome.json", []
     assert not update.apply(new, target, exited_pid(), "9.0.0", "linux", outcome, opened.append)
-    assert opened == [target] and (target / "VERSION").read_text() == "0.1.0"
+    assert opened == [target] and version_file(target).read_text() == "0.1.0"
     assert update.executable_in(target, "linux").is_file()
     assert "could not copy" in json.loads(outcome.read_text())["error"]
+
+
+@pytest.mark.parametrize("system", ["win32", "linux"])
+def test_an_app_left_loose_among_the_users_files_never_replaces_their_folder(tmp_path, system):
+    """pokeldn.exe and _internal dropped straight on a Desktop: the exe's folder is the Desktop."""
+    desktop = tmp_path / "Desktop"
+    exe = update.executable_in(desktop, system)
+    exe.parent.mkdir(parents=True)
+    exe.write_text("0.1.0")
+    (desktop / "_internal").mkdir(exist_ok=True)
+    (desktop / "thesis.docx").write_text("years of work")
+    (desktop / "photos").mkdir()
+    (desktop / "desktop.ini").write_text("")
+    before = sorted(p.relative_to(desktop) for p in desktop.rglob("*"))
+    assert "folder of its own" in update.blocker(desktop, system)
+
+    new = packed_app(tmp_path / "update/new", system, "9.0.0")
+    outcome, opened = tmp_path / "outcome.json", []
+    # What an older app's start_swap hands the new helper, which must refuse it on its own.
+    assert not update.apply(new, desktop, exited_pid(), "9.0.0", system, outcome, opened.append)
+    assert "not pokeldn" in json.loads(outcome.read_text())["error"]
+    assert opened == [desktop]
+    assert sorted(p.relative_to(desktop) for p in desktop.rglob("*")) == before
+    assert (desktop / "thesis.docx").read_text() == "years of work"
+
+    assert "not pokeldn" in update.finish(desktop, outcome, tmp_path / "update")["error"]
+    assert (desktop / "thesis.docx").exists()
 
 
 def test_the_helper_waits_for_the_old_app_to_quit(tmp_path, monkeypatch):
@@ -222,7 +256,7 @@ def test_the_helper_waits_for_the_old_app_to_quit(tmp_path, monkeypatch):
         target = packed_app(tmp_path / "Applications", "linux", "0.1.0")
         new = packed_app(tmp_path / "update/new", "linux", "9.0.0")
         assert not update.apply(new, target, running.pid, "9.0.0", "linux", tmp_path / "o.json", lambda r: None)
-        assert (target / "VERSION").read_text() == "0.1.0"
+        assert version_file(target).read_text() == "0.1.0"
     finally:
         running.kill()
         running.wait()
@@ -243,11 +277,11 @@ def test_a_copy_that_cannot_replace_itself_falls_back_to_the_download(tmp_path):
     assert update.blocker(None)
     assert "Applications" in update.blocker(Path("/private/var/folders/x/AppTranslocation/y/d/pokeldn.app"))
     root = packed_app(tmp_path, "linux", "0.1.0")
-    assert update.blocker(root) == ""
+    assert update.blocker(root, "linux") == ""
     if os.name == "posix" and os.geteuid() != 0:
         tmp_path.chmod(0o555)
         try:
-            assert "cannot write" in update.blocker(root)
+            assert "cannot write" in update.blocker(root, "linux")
         finally:
             tmp_path.chmod(0o755)
 

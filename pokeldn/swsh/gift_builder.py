@@ -18,6 +18,7 @@ TITLE_EGG, TITLE_ITEM, TITLE_GMAX, TITLE_MONEY, TITLE_CLOTHING, TITLE_BP = 1, 3,
 KIND_ITEMS, KIND_BP, KIND_CLOTHING, KIND_MONEY = 2, 3, 4, 5
 CLOTHING_SLOTS = 6       # per player gender; the redemption 0x01015eb0 reads six pairs for each
 NO_CLOTHING = (0, 0xFFFFFFFF)   # an index of -1 is skipped
+FIRST_MARK = 53          # PKHeX RibbonIndex.MarkLunchtime; the marks are a wild roll, not a card's
 
 
 @dataclass(frozen=True)
@@ -144,6 +145,7 @@ def record(state):
             fields["dynamax_level"] = min(max(_int(state, "dynamax_level"), 0), 10)
         if egg:
             fields["egg"] = 1
+        ribbons = ribbon_list(state) if not egg else ()
         if (nature := state.get("nature")) not in (None, ""):
             if not 0 <= int(nature) < len(NATURES):
                 raise ValueError(f"The nature is 0 to {len(NATURES) - 1}.")
@@ -151,7 +153,8 @@ def record(state):
         try:
             raw = wc8.pokemon_card(species, level=level, form=form,
                                    moves=moves, nickname=state.get("nickname") or None,
-                                   ot=None if egg else state.get("ot") or None, card_id=card_id, **fields)
+                                   ot=None if egg else state.get("ot") or None, card_id=card_id,
+                                   ribbons=ribbons, **fields)
         except ValueError as exc:
             raise ValueError(f"Names: {exc}") from None
         if egg or fields.get("gigantamax"):
@@ -183,6 +186,17 @@ def record(state):
             raise ValueError(f"Money is 1 to {MAX_MONEY:,}.")
         return _card(card_id, KIND_MONEY, TITLE_MONEY, struct.pack("<I", amount))
     raise ValueError(f"Unknown gift kind {kind!r}.")
+
+
+def ribbon_list(state):
+    """The card's ribbons as RibbonIndex bytes, each once, in the order picked. Every index below the first mark
+    (PKHeX RibbonIndex.MarkLunchtime, 53) is a ribbon; the card holds RIBBONS_LEN."""
+    ribbons = list(dict.fromkeys(int(r) for r in state.get("ribbons") or ()))
+    if any(not 0 <= r < FIRST_MARK for r in ribbons):
+        raise ValueError(f"A ribbon is 0 to {FIRST_MARK - 1}.")
+    if len(ribbons) > wc8.RIBBONS_LEN:
+        raise ValueError(f"A card carries {wc8.RIBBONS_LEN} ribbons at most.")
+    return tuple(ribbons)
 
 
 def clothing_payload(keys):
@@ -235,6 +249,9 @@ def describe(state, name=lambda kind, n: f"{kind} #{n}"):
                  + (", can Gigantamax" if state.get("gigantamax") else "")]
         if _int(state, "item"):
             lines.append(f"Holding {name('item', state.get('item'))}")
+        if ribbons := [r for r in state.get("ribbons") or () if r is not None]:
+            lines.append("With the " + ", ".join(name("ribbons", r) for r in ribbons)
+                         + (" ribbon" if len(ribbons) == 1 else " ribbons"))
     elif kind == "egg":
         lines = [f"Gives a {name('species', state.get('species'))} egg"]
     elif kind == "items":
