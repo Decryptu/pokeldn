@@ -337,6 +337,7 @@ def build_parser():
                     help="a file to write the console's own offer to, the 348-byte body of its "
                          "80 00 02 00 message, as hex text. What it holds is read by "
                          "pokeldn.sv.pokemon")
+    launcher.add_save_shown_argument(ap)
     ap.add_argument("--send-on-open", action="append", default=[],
                     help="DELAY:PROTO:PORT:HEX[:z][:start|:end], sent that many seconds after the "
                          "console announces its own key 0x80 open on 0x7c port 1. A port-0 "
@@ -1454,6 +1455,8 @@ def main(argv=None):
                                         n = offers_seen.get(src_ip, 0) + 1
                                         offers_seen[src_ip] = n
                                         report_offer(src_ip, st.joiner_offers[n - 1])
+                                        pokemon_service.save_shown("sv", args.save_shown,
+                                                                   st.joiner_offers[n - 1])
                                     if st.trades > trades_done.get(src_ip, 0):
                                         trades_done[src_ip] = st.trades
                                         keep_received(src_ip, (st.joiner_offers or [None])[-1],

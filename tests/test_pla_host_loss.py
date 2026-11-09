@@ -285,7 +285,7 @@ class BrowsesThenTwoTrades(TwoTrades):
 
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
-        self.browsed, self.offers = 0, []
+        self.browsed, self.offers, self.showings = 0, [], []
 
     def _drive(self, now):
         out = []
@@ -296,6 +296,7 @@ class BrowsesThenTwoTrades(TwoTrades):
                 self.offer = pla_pokemon.encrypt(gen8.fresh_identity(pla_pokemon.decrypt(saved),
                                                                      rand=os.urandom))
                 out.append(self._send_box(trade_box.SELECTOR_SHOWING, 0))
+                self.showings.append(self.offer)
                 self.offer = saved
             self.offers.append(self.offer)
         return out + super()._drive(now)
@@ -303,10 +304,16 @@ class BrowsesThenTwoTrades(TwoTrades):
 
 def test_each_trade_writes_the_record_the_console_offered_and_nothing_it_only_showed(
         monkeypatch, capsys, tmp_path):
-    """--offer-out: one file per trade, -2 for the second; a Pokemon the cursor rested on is not kept."""
+    """--offer-out: one file per trade, -2 for the second; a Pokemon the cursor rested on is not kept.
+    --save-shown keeps both, the latest record under each encryption constant."""
     out = tmp_path / "received" / "pla-STAMP.pa8"
+    shown = tmp_path / "shown"
     run = run_host(monkeypatch, capsys, BrowsesThenTwoTrades, lambda c: len(c.trades) == 2,
-                   extra=["--offer-out", str(out)])
+                   extra=["--offer-out", str(out), "--save-shown", str(shown)])
+    # One file per encryption constant: the second trade's offer carries the first's.
+    assert (sorted(p.name for p in shown.iterdir())
+            == sorted({f"pla-{r[:4][::-1].hex()}.pa8" for r in (*run.console.offers, *run.console.showings)}))
+    assert (shown / f"pla-{run.console.offers[1][:4][::-1].hex()}.pa8").read_bytes() == run.console.offers[1]
     assert "showing" in run.log
     assert sorted(p.name for p in out.parent.iterdir()) == ["pla-STAMP-2.pa8", "pla-STAMP.pa8"]
     assert out.read_bytes() == run.console.offers[0]

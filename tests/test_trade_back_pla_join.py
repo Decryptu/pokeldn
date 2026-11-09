@@ -44,10 +44,10 @@ def test_the_second_trade_returns_the_record_the_console_sent_in_the_first():
 
 
 @pytest.mark.parametrize("trade_back", [False, True])
-def test_hold_after_trade_leaves_only_once_the_queue_is_done(monkeypatch, trade_back):
+def test_hold_after_trade_leaves_only_once_the_queue_is_done(monkeypatch, tmp_path, trade_back):
     """bin/pla_join.py's seat loop after one trade with the scripted host, --hold-after-trade 0.2: with
     nothing queued the leave goes within the second; --trade-back still owes the trade back, so the
-    seat stays until --hold ends."""
+    seat stays until --hold ends. --save-shown keeps the console's record as it arrives."""
     import socket
     import time
 
@@ -59,8 +59,8 @@ def test_hold_after_trade_leaves_only_once_the_queue_is_done(monkeypatch, trade_
     exchange = data_exchange.build_record(player_id=bytes.fromhex("504b4c44"), name="POKELDN")
     queued = trade_box.build_our_record(**data_exchange.read_record(exchange))
     args = pla_join.build_parser().parse_args(
-        ["--offer", "unused.pa8", "--hold", "2", "--hold-after-trade", "0.2"]
-        + ["--trade-back"] * trade_back)
+        ["--offer", "unused.pa8", "--hold", "2", "--hold-after-trade", "0.2",
+         "--save-shown", str(tmp_path / "shown")] + ["--trade-back"] * trade_back)
     args.next_offers = []
     s = pla_join.make_session(args, keys, OUR_IP, OUR_MAC, queued, exchange, our_var=0x687E, clock=clock)
     _seat(keys, s)
@@ -72,6 +72,7 @@ def test_hold_after_trade_leaves_only_once_the_queue_is_done(monkeypatch, trade_
     s.receive([_msg(game_channel.build_open(game_channel.HOST_OPEN_PAYLOAD, sequence_id=2), 0x7C, 0)])
     monkeypatch.setattr(ldn, "_done_at", None)
     _console_trade(keys, clock, s, trade_box.REFERENCE_RECORD, {0: 3, 1: 2})
+    assert [p.read_bytes() for p in (tmp_path / "shown").iterdir()] == [trade_box.REFERENCE_RECORD]
     monkeypatch.setattr(pla_join, "make_session", lambda *a, **k: s)
     rows = []
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

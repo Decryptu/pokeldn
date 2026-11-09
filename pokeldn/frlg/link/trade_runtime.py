@@ -83,6 +83,23 @@ def received_paths(mons, output_path, output_format, trades):
     return paths
 
 
+def shown_party(folder):
+    """--save-shown: a callback writing each Pokemon of the console's party, traded or not, as a
+    decrypted 100-byte PK3 named by its PID; the trade menu shows the whole party."""
+    folder = os.path.expanduser(folder)
+
+    def save(party):
+        os.makedirs(folder, exist_ok=True)
+        for i in range(len(party) // monmod.PARTY_MON_SIZE):
+            pokemon = monmod.Mon(party[i * monmod.PARTY_MON_SIZE:(i + 1) * monmod.PARTY_MON_SIZE])
+            if pokemon.is_empty or not pokemon.checksum_ok:
+                continue
+            path = os.path.join(folder, f"frlg-{pokemon.pid:08x}.pk3")
+            pokemon.save_pk3(path)
+            print(f"[pokemon] saved the Pokemon the console showed, {path}", flush=True)
+    return save
+
+
 def save_received_mons(mons, *, output_path, output_size, output_format, trades,
                        log=lambda *parts: None, output=print):
     mons = list(mons)

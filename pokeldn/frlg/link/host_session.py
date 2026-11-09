@@ -62,6 +62,9 @@ class HostSession:
                 union_room_battle=union_room_battle, battle_forfeit=battle_forfeit,
                 battle_move_slot=battle_move_slot, colosseum=colosseum,
                 log=log, partner=partner)
+            if plan is not None and plan.shown_path:
+                from pokeldn.frlg.link.trade_runtime import shown_party
+                self.activity.on_party = shown_party(plan.shown_path)
         else:
             raise ValueError("HostSession needs either a party or an activity engine")
         self.log = log

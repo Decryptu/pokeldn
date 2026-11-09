@@ -314,6 +314,7 @@ def build_parser():
     ap.add_argument("--offer-out", default=None,
                     help="a file to write the host's own offer to, the 348-byte body of its "
                          "80 00 02 00 message, as hex text")
+    launcher.add_save_shown_argument(ap)
     ap.add_argument("--offer-after-open", type=float, default=None,
                     help="seconds after the host's key-0x80 open at which the joiner offers "
                          "first, before the host does; without it the joiner answers the host's "
@@ -741,6 +742,8 @@ def host_argv(args, channel, seconds):
         argv.append("--trade-back")
     if args.offer_out:
         argv += ["--offer-out", args.offer_out]
+    if args.save_shown:
+        argv += ["--save-shown", args.save_shown]
     if args.capture:
         root, ext = os.path.splitext(args.capture)
         argv += ["--capture", f"{root}_host{ext or '.jsonl'}"]
@@ -1477,6 +1480,7 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                             body = stage.host_offers[offers_seen]
                             offers_seen += 1
                             print(f"[sv] {host_ip}: offers {describe_offer(body)}")
+                            pokemon_service.save_shown("sv", args.save_shown, body)
                         if stage.trades > traded:
                             traded = stage.trades
                             if args.offer_out and stage.host_offers:

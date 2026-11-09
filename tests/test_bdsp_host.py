@@ -268,6 +268,7 @@ def test_scripted_trades_are_answered_through_the_save_each_with_the_next_offer(
         theirs = bytes([0x40 + trade]) * 328
         [poke] = say(room.build_trade_poke(theirs), t)
         assert poke == room.build_trade_poke(ours)
+        assert len(saved) == trade - 1      # an offer can still be withdrawn: no file before the trade
         [ok] = say(room.build_fields(room.TRADE_POKE_CHECK_OK, 1), t + 0.5)
         assert ok == room.build_fields(room.TRADE_POKE_CHECK_OK, 1)
         [ready] = say(room.build_trade_ready_ok(room.TRADE_STATE_WAIT, 0), t + 1.5)
@@ -413,7 +414,7 @@ class _Radio:
         for message in (room.build_state(room.STATE_RECRUITMENT_TRADE, 1),
                         room.build_talk_reserve_result(can_talk=0, is_recruitment=1, emoticon_state=4),
                         room.build_trade_traner("POKELDN", 24680, 13579),
-                        room.build_trade_poke(bytes([0x41]) * 328),
+                        room.build_trade_poke(bytes([0xC1]) * 328),   # not hex text (pokemon.entity_bytes)
                         room.build_fields(room.TRADE_POKE_CHECK_OK, 1),
                         room.build_trade_ready_ok(room.TRADE_STATE_WAIT, 0),
                         *(room.build_trade_ready_ok(state, 1) for state in range(1, 7))):
@@ -455,7 +456,11 @@ def test_the_host_closes_its_room_as_a_retail_host_does_soon_after_the_queued_tr
     t0 = time.monotonic()
     assert bdsp_host.main(["--phy", "none", "--keys", str(keys), "--seconds", "8",
                            "--offer", str(offer), "--complete-trade", "--variable-id", hex(HOST_VAR),
-                           "--hold-after-trade", "0.2"]) == 0
+                           "--hold-after-trade", "0.2", "--save-theirs", str(tmp_path / "theirs"),
+                           "--save-shown", str(tmp_path / "shown")]) == 0
     assert sessions[0].closed and radio.departures[0] == RETAIL_HOST_DEPARTURE
+    # --save-shown kept the console's offer as --save-theirs did.
+    shown = list((tmp_path / "shown").iterdir())
+    assert [p.read_bytes() for p in shown] == [(tmp_path / "theirs_1.pb8").read_bytes()], shown
     assert radio.stopped_at - radio.traded_at < 2.0 and radio.stopped_at - t0 < 4.0
     assert "after trade 1; closing the room" in capsys.readouterr().out

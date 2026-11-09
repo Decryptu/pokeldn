@@ -59,6 +59,7 @@ def build_parser():
     ap.add_argument("--offer-out", default=None,
                     help="write the Pokemon the console picks here; trade N > 1 writes FILE-N. "
                          "A preview, the console's cursor on its box, is not written")
+    launcher.add_save_shown_argument(ap)
     launcher.add_ip_host_arguments(ap)
     ap.add_argument("--comm-id", default=None,
                     help="hex; the default is the title's. An emulated Z-A advertises and scans "
@@ -207,6 +208,7 @@ def main(argv=None):
                 s.receive(payload, src_ip)
                 if s.console_offer is not None and s.console_offer is not before:
                     print(f"[za-host] the console offers {describe_offer(s.console_offer)}")
+                    pokemon_service.save_shown("za", args.save_shown, s.console_offer)
                     if state["done_at"] is not None and state["back_at"] is None:
                         state["back_at"] = time.time()
                 if args.offer_out and s.trades > done and s.console_pick is not None:

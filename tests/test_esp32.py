@@ -1339,14 +1339,15 @@ def test_the_lets_go_joiner_trades_its_queue_on_one_seat_on_simulated_boards(tmp
         ["--keys", str(keys_file), "--channel", "6", "--seconds", str(70 * scale), "--grace", "0",
          "--first", "echo", "--lead", "1", "--result-after", "2",
          "--offer", host_offers[0], "--next-offer", host_offers[1],
-         "--received", str(tmp_path / "host_got.pb7"),
+         "--received", str(tmp_path / "host_got.pb7"), "--save-shown", str(tmp_path / "host_shown"),
          "--capture", str(tmp_path / "host.jsonl")])), daemon=True)
     threads["join"] = threading.Thread(target=lambda: result.setdefault("join", lgpe_join.main(
         ["--keys", str(keys_file), "--channels", "6", "--dwell", "0.5", "--connect",
          "--connect-seconds", str(60 * scale), "--hold-after-trade", "1", "--grace", "0", "--facts", str(tmp_path / "facts.json"),
          "--capture", str(tmp_path / "join.jsonl"), "--ack-peer-clock", "--ack-re-announce",
          "--offer", join_offers[0], "--offer", join_offers[1],
-         "--received", str(tmp_path / "join_got.pb7")])), daemon=True)
+         "--received", str(tmp_path / "join_got.pb7"), "--save-shown", str(tmp_path / "join_shown")])),
+        daemon=True)
     wlan.set_factory(factory)
     try:
         threads["host"].start()
@@ -1378,6 +1379,10 @@ def test_the_lets_go_joiner_trades_its_queue_on_one_seat_on_simulated_boards(tmp
     assert got == [25, 95], (got, files)
     got = [species(n) for n in ("host_got.pb7", "host_got-2.pb7") if (tmp_path / n).exists()]
     assert got == [133, 1], (got, files)
+    # --save-shown: every offer as it arrived, each under its encryption constant.
+    shown = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.glob("*_shown/*"))
+    assert shown == ["host_shown/lgpe-33333333.pb7", "host_shown/lgpe-44444444.pb7",
+                     "join_shown/lgpe-11111111.pb7", "join_shown/lgpe-22222222.pb7"], shown
     # The joiner's answers, as the host read them: identity, offer, commits 1 and 2, then trade 2 on
     # kinds 4 and 5. After the last queued trade it sends no kind 6.
     assert sent("host.jsonl") == [(1, 1), (2, 2), (3, 3), (3, 4), (4, 5), (4, 6), (5, 7), (5, 8)], sent("host.jsonl")
@@ -1825,11 +1830,13 @@ def test_sword_host_and_joiner_trade_on_simulated_boards(tmp_path, monkeypatch):
         ["--keys", str(keys_file), "--channel", "6", "--seconds", "120", "--accept-first",
          "--lead", "3",
          "--snapshot", str(tmp_path / "snapshot.bin"), "--received", str(tmp_path / "host.pk8"),
+         "--save-shown", str(tmp_path / "host_shown"),
          "--offer-file", str(tmp_path / "offer0.pk8"), "--offer-file", str(tmp_path / "offer1.pk8")])),
         daemon=True)
     threads["join"] = threading.Thread(target=lambda: result.setdefault("join", swsh_connect.main(
         ["--keys", str(keys_file), "--preset", "trade", "--channels", "6", "--dwell", "0.5",
          "--hold", "90", "--hold-after-trade", "1", "--save-offered", str(tmp_path / "join.pk8"),
+         "--save-shown", str(tmp_path / "join_shown"),
          "--offer-file", str(tmp_path / "offer2.pk8"), "--offer-file", str(tmp_path / "offer3.pk8")])),
         daemon=True)
     wlan.set_factory(factory)
@@ -1848,6 +1855,9 @@ def test_sword_host_and_joiner_trade_on_simulated_boards(tmp_path, monkeypatch):
         return pokemon.read(pokemon.encrypt(gen8.load((tmp_path / name).read_bytes())))["species"]
     assert [species(n) for n in ("join.pk8", "join-2.pk8")] == [94, 95]
     assert [species(n) for n in ("host.pk8", "host-2.pk8")] == [96, 97]
+    # --save-shown: each side keeps every offer it was shown, traded or not.
+    assert sorted(species(p.relative_to(tmp_path)) for p in (tmp_path / "join_shown").iterdir()) == [94, 95]
+    assert sorted(species(p.relative_to(tmp_path)) for p in (tmp_path / "host_shown").iterdir()) == [96, 97]
 
 
 @pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])

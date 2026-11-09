@@ -561,7 +561,7 @@ class TradePartner:
 
     def __init__(self, offer, trainer_name="POKELDN", trainer_id=41234, secret_id=23117,
                  complete=False, approach_delay=0.0, security_repeat=1.0, state=room.STATE_NONE,
-                 recruiting=0, save_theirs=None, record=None, remote=None):
+                 recruiting=0, save_theirs=None, shown=None, record=None, remote=None):
         self.offers = [offer] if isinstance(offer, (bytes, bytearray)) else list(offer)
         # Online (pokeldn.online): the partner's console's 0x13 answers this console's, and our
         # ready-ok, after which the console saves, waits for both consoles' (docs/online.md).
@@ -572,7 +572,8 @@ class TradePartner:
         self.complete = complete
         self.approach_delay, self.security_repeat = approach_delay, security_repeat
         self.state, self.recruiting = state, recruiting
-        self.save_theirs = save_theirs or (lambda n, raw: None)
+        self.save_theirs = save_theirs or (lambda n, raw: None)   # (trade n, record) once n completes
+        self.shown = shown or (lambda raw: None)                  # each record as it arrives
         self.record = record or (lambda **kw: None)
         self.their_state = None
         self.approach_at = None
@@ -627,8 +628,7 @@ class TradePartner:
             if self.arriving:                  # the next round's first Pokemon
                 self.our_security, self.their_security, self.arriving = 0, None, False
             self.their_pokes += 1
-            # A reselection within one trade replaces that trade's file.
-            self.save_theirs(self.trades + 1, body)
+            self.shown(body)
             self.their_poke = body
             self.record(rec="their_poke", t=now, n=self.their_pokes)
             if self.remote is not None:
@@ -652,6 +652,8 @@ class TradePartner:
             if self.their_security >= room.TRADE_STATE_SEND_READYOK and not self.arriving:
                 self.arriving = True
                 self.trades += 1
+                # Written once the trade completes; an offer can still be withdrawn.
+                self.save_theirs(self.trades, self.their_poke)
                 if self.remote is not None:
                     self.remote.done()
                 self.record(rec="trade_complete", t=now, trades=self.trades)

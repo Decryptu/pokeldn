@@ -1152,6 +1152,11 @@ async def main_async(args):
                     st["trades"] += 1
                     st["traded_at"] = now
                     print(f"[cx]   trade {st['trades']} complete - the console saves next, repeater quiet")
+                    if st["their_raw"] is not None:
+                        # Written once the trade completes; an offer can still be withdrawn.
+                        out = pokemon_service.trade_path(args.trade_save_poke, st["trades"])
+                        pathlib.Path(out).write_bytes(st["their_raw"])
+                        print(f"[cx]   saved their Pokemon -> {out}")
                     show_done()
                     record(rec="security_phase_end", t=now)
                     screen.received("bdsp", st["their_raw"])
@@ -1195,16 +1200,12 @@ async def main_async(args):
                       f"{theirs['nickname']!r}, OT {theirs['ot_name']!r}, "
                       f"IVs {theirs['ivs']} ***")
                 record(rec="their_poke", t=now, fields=theirs)
-                # One association carries many trades, each to its own file; a reselection within
-                # one trade replaces that trade's file.
                 if st["arriving"]:                 # the next round's first Pokemon
                     st["our_security_state"], st["their_security_state"] = 0, None
                     st["arriving"] = False
                 st["their_pokes"] += 1
-                out = pokemon_service.trade_path(args.trade_save_poke, st["trades"] + 1)
-                pathlib.Path(out).write_bytes(payload[room.HEADER_SIZE:])
                 st["their_raw"] = payload[room.HEADER_SIZE:]
-                print(f"[cx]   saved their Pokemon -> {out}")
+                pokemon_service.save_shown("bdsp", args.save_shown, st["their_raw"])
                 if not st["our_pokes"]:
                     print("[cx] no --trade-template, so nothing to offer back")
                     return
@@ -1694,9 +1695,10 @@ def build_parser():
                     help="the name in OUR trainer record")
     ap.add_argument("--trade-tid", type=int, default=41234, metavar="N")
     ap.add_argument("--trade-sid", type=int, default=23117, metavar="N")
+    launcher.add_save_shown_argument(ap)
     ap.add_argument("--trade-save-poke", default="received.pb8", metavar="FILE",
-                    help="where to write the Pokemon the console offers; trade N > 1 writes "
-                         "FILE-N")
+                    help="where to write the Pokemon the console traded, once the trade "
+                         "completes; trade N > 1 writes FILE-N")
     ap.add_argument("--join-offset-x", type=float, default=2.0, metavar="U",
                     help="where our character spawns relative to the console's own, on x. The "
                          "default +2.0 is one fixed side, and a player standing against the wall "

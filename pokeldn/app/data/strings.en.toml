@@ -518,6 +518,8 @@
 "catalog.ruby" = "Ruby"
 "catalog.same_as_settings" = "Same as Settings"
 "catalog.sapphire" = "Sapphire"
+"catalog.save_shown" = "Save the Pokemon the console shows"
+"catalog.save_shown_help" = "Save every Pokemon the console shows on the trade screen to the Shown folder next to Received, whether or not the trade goes through: back out to keep it. For a seed or legality check in PKHeX."
 "catalog.scarlet_f11da0" = "Scarlet"
 "catalog.scarlet_violet_504657" = "Scarlet & Violet"
 "catalog.second_move_4ecb66" = "Second move"

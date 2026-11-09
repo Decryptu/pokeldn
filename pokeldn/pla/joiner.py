@@ -87,6 +87,7 @@ class JoinerSession:
         self.shown = False
         self.answered = set()          # the host messages already answered, one answer each
         self.console_records = []      # (selector, counter, record) the host showed or offered
+        self.on_record = None          # called with each of them as it arrives (--save-shown)
         self.received = None           # the record the host offered, the one a trade delivers
         self.phase_index = 0           # the next of PHASES to send
         self.phase_ready_at = None
@@ -386,6 +387,8 @@ class JoinerSession:
             self._arrived()
             self.console_records.append((offered["selector"], offered["counter"],
                                          offered["record"]))
+            if self.on_record is not None:
+                self.on_record(offered["record"])
             if offered["selector"] == trade_box.SELECTOR_OFFERING:
                 self.received = offered["record"]
                 self.host_offered = True

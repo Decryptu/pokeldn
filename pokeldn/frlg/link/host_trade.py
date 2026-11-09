@@ -141,6 +141,7 @@ class HostTradeEngine:
                  union_room_battle=False, battle_forfeit=True, battle_move_slot=0,
                  colosseum=False, card_flag_id=0, log=lambda *a: None, partner=None):
         self.party = list(party)
+        self.on_party = None    # called with the console's 600-byte party once it has all arrived
         # Online (pokeldn.online): the partner's console's blocks answer this console's, pair by
         # pair; its pick is our SET_MONS and START_TRADE waits for both consoles' YES
         # (docs/online.md).
@@ -593,6 +594,8 @@ class HostTradeEngine:
         if expected and expected.startswith("party:"):
             i = int(expected.split(":", 1)[1])
             self.child_party[i * 200:(i + 1) * 200] = data[:200]
+            if i == 2 and self.on_party is not None:
+                self.on_party(bytes(self.child_party))
             # BufferTradeParties gates the next request on IsLinkTaskFinished(), not a standby
             # barrier.
             self._link_waiting_idle = True

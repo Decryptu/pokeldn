@@ -555,6 +555,11 @@ async def main_async(args):
                         if step is not None and step[0] >= LADDER_FINAL_PHASE:
                             if not st["ladder_finished"]:
                                 st["trades"] += 1
+                                if args.save_offered and st["offered_pk8"] is not None:
+                                    # Written once the trade completes; an offer can still be withdrawn.
+                                    path = pokemon_service.trade_path(args.save_offered, st["trades"])
+                                    write_file(path, st["offered_pk8"])
+                                    print(f"[rx]     saved to {path}")
                                 if rounds is not None:
                                     rounds.done(st["offered_pk8"])
                                 show_done()
@@ -806,6 +811,8 @@ async def main_async(args):
                     st["offered_pk8"] = None
                     st["pk8_offer_sent"] = st["trade_ready_sent"] = False
             offered = swsh_trade.offered_pokemon(got["payload"])
+            if offered is not None:
+                pokemon_service.save_shown("swsh", args.save_shown, offered)
             if offered is not None and st["ladder_finished"]:
                 next_trade()
             if offered is not None and st["offered_pk8"] is None:
@@ -814,10 +821,6 @@ async def main_async(args):
                 print(f"\n[rx]     *** THE CONSOLE OFFERED US A POKEMON *** species "
                       f"{read['species']} {read['nickname']!r} level {read['level']} "
                       f"OT {read['ot_name']!r} ({read['trainer_id']}/{read['secret_id']})")
-                if args.save_offered:
-                    path = pokemon_service.trade_path(args.save_offered, st["trades"] + 1)
-                    write_file(path, offered)
-                    print(f"[rx]     saved to {path}")
                 # One-shot, and it outranks the mirror, which answers the RPC pair the console
                 # repeats.
                 if args.offer_echo:
@@ -2665,8 +2668,10 @@ def build_parser():
                     help="six IVs, comma-separated, in PKHeX's HP,ATK,DEF,SPE,SPA,SPD order")
     ap.add_argument("--save-offer", default=None, metavar="FILE",
                     help="write the PK8 we will offer to this file, before the radio is touched")
+    launcher.add_save_shown_argument(ap)
     ap.add_argument("--save-offered", default=None, metavar="FILE",
-                    help="write the PK8 the console offers to this file; trade N > 1 writes FILE-N")
+                    help="write the PK8 the console traded to this file, once the trade completes; "
+                         "trade N > 1 writes FILE-N")
     ap.add_argument("--rpc-clock-delta", type=lambda s: int(s, 0), default=5,
                     help="how far to advance a trade RPC's clock in our answer. 5 is nxldn-lab's "
                          "and is the one number in this path nothing here has measured")

@@ -187,7 +187,9 @@ def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = N
     game = tool.key.split("-")[0]
     tid, sid = settings.ids(game)
     trainer = settings.own(game)
-    tokens = {"{received}": os.path.expanduser(settings.received), "{stamp}": stamp,
+    received = os.path.expanduser(settings.received)
+    tokens = {"{received}": received, "{stamp}": stamp,
+              "{shown}": os.path.join(os.path.dirname(os.path.normpath(received)), "Shown"),
               "{src_var}": f"0x{random.getrandbits(32):08x}",
               "{ot}": settings.name(game), "{tid}": str(tid), "{sid}": str(sid),
               "{language}": str(trainer["language"]), "{gender}": str(trainer["gender"]),

@@ -213,6 +213,7 @@ def build_parser():
                     help="test only, for bin/swsh_connect.py: act as a console host's player: "
                          "after a trade with another --offer-file queued, offer it from the box this "
                          "many seconds after the ladder, without waiting for the joiner's offer")
+    launcher.add_save_shown_argument(ap)
     ap.add_argument("--received", default=None,
                     help="write the joiner's Pokemon here; trade N > 1 writes FILE-N")
     ap.add_argument("--code", default="",
@@ -600,6 +601,8 @@ def main(argv=None):
         def on_record(**row):
             kind = row.pop("rec", None)
             record({"rec": "trade", "kind": kind, **row})
+            if kind == "peer_offer":
+                pokemon_service.save_shown("swsh", args.save_shown, bytes.fromhex(row["pk8"]))
             if kind == "peer_exchange" and args.received:
                 path = pokemon_service.trade_path(args.received, n + trades[st.ip].trades + 1)
                 write_file(path, bytes.fromhex(row['pk8']))

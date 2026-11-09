@@ -109,11 +109,14 @@ class TradeBackSession(joiner.JoinerSession):
 
 def make_session(args, keys, our_ip, our_mac, offer, exchange, **kw):
     kind = TradeBackSession if getattr(args, "trade_back", False) else joiner.JoinerSession
-    return kind(keys, our_ip, our_mac, offer, exchange,
-                player_id=bytes.fromhex(args.join_player_id),
-                drive=args.drive, net_answer=not args.no_net_answer,
-                join_delay=args.join_delay, log=print,
-                next_offers=getattr(args, "next_offers", ()), **kw)
+    session = kind(keys, our_ip, our_mac, offer, exchange,
+                   player_id=bytes.fromhex(args.join_player_id),
+                   drive=args.drive, net_answer=not args.no_net_answer,
+                   join_delay=args.join_delay, log=print,
+                   next_offers=getattr(args, "next_offers", ()), **kw)
+    if getattr(args, "save_shown", None):
+        session.on_record = lambda record: pokemon_service.save_shown("pla", args.save_shown, record)
+    return session
 
 
 async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchange, record):
@@ -183,12 +186,6 @@ async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchang
                 send(session.leave(), note="leave")
                 print("[pla] --hold is over: left the session")
     finally:
-        if args.collect:
-            os.makedirs(args.collect, exist_ok=True)
-            for selector, counter, rec in session.console_records:
-                path = os.path.join(args.collect, f"{rec[:4].hex()}_{selector}.pa8")
-                with open_output(path, "wb") as fh:
-                    fh.write(rec)
         print(f"[pla] seat over: {seen} datagrams in, {authed} authenticated, "
               f"seated={session.seated}, traded={session.traded}")
     return session
@@ -402,8 +399,7 @@ def build_parser():
     trade_back.add_arguments(ap)
     ap.add_argument("--offer-out", default=None,
                     help="write the record the console traded to this file")
-    ap.add_argument("--collect", default=None,
-                    help="write every record the console showed or offered to this directory")
+    launcher.add_save_shown_argument(ap)
     launcher.add_hold_after_trade_argument(ap)
     ap.add_argument("--drive", action="store_true",
                     help="act as the player too: offer once the host shows, confirm once it "
@@ -439,8 +435,8 @@ def host_argv(args, channel, seconds):
         argv += ["--offer-out", args.offer_out]
     if args.hold_after_trade is not None:
         argv += ["--hold-after-trade", str(args.hold_after_trade)]
-    if args.collect:
-        argv += ["--trade-box-collect", args.collect]
+    if args.save_shown:
+        argv += ["--save-shown", args.save_shown]
     if args.capture:
         root, ext = os.path.splitext(args.capture)
         argv += ["--capture", f"{root}_host{ext or '.jsonl'}"]

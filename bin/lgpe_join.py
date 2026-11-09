@@ -283,6 +283,7 @@ def build_parser():
                          "host has not agreed for this long, before any commit; 0 never. It ends "
                          "the wait, not the trade lock a confirmed trade already saved")
     ap.add_argument("--received", help="write the peer's offered PB7 here")
+    launcher.add_save_shown_argument(ap)
     ap.add_argument("--fresh-pid", action="store_true",
                     help="offer every --offer structure under a new PID and encryption constant, "
                          "shiny state kept, so a save that took it before takes it again")

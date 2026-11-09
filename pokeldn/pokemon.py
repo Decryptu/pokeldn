@@ -488,3 +488,21 @@ def save_received(game, path, data):
     if game == "lgpe" and len(data) == 232:
         data += bytes(28)
     write_file(path, data)
+
+
+def save_shown(game, folder, data):
+    """Writes a Pokemon the console showed on its trade screen to `folder`, traded or not, named by its
+    encryption constant (a PK3's PID): a record shown again replaces its file. -> the path, or None."""
+    if not folder or not data:
+        return None
+    from pokeldn.host_support import write_file
+    data = entity_bytes(game, data)
+    if game == "lgpe" and len(data) == 232:
+        data += bytes(28)
+    if len(data) not in RECORD_SIZES[game]:
+        return None
+    path = os.path.join(os.path.expanduser(folder), f"{game}-{data[:4][::-1].hex()}.{EXTENSIONS[game]}")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    write_file(path, data)
+    print(f"[pokemon] saved the Pokemon the console showed, {path}", flush=True)
+    return path

@@ -627,7 +627,7 @@ class GamesView:
             self.flag_list.controls = [t.text(tr('games.could_not_read_the_options_8d9eb8', 'Could not read the options: {value0}', value0=error), 12, t.RED)]
             return
         query = self.search.lower().strip()
-        hidden = {f.key: f for f in self.tool.fields if f.hidden}
+        hidden = {f.option: f for f in self.tool.fields if f.hidden}
         if any(f.kind == "builder" for f in self.tool.fields):   # the Gift card sets these
             owned = gift_builder.owned_flags(self.tool)
             flags = [f for f in flags if f.option not in owned]
@@ -645,8 +645,9 @@ class GamesView:
 
     def flag_row(self, flag) -> ft.Control:
         # A field kept off the Basic tab is set here, on its own value, default included.
-        bound = next((f for f in self.tool.fields if f.hidden and f.key == flag.option), None)
+        bound = next((f for f in self.tool.fields if f.hidden and f.option == flag.option), None)
         value = command.value_of(bound, self.values) if bound else self.extra.get(flag.option)
+        switch = flag.kind == "switch" or (bound is not None and bound.kind == "switch")
 
         def store(v):
             if bound:
@@ -662,7 +663,7 @@ class GamesView:
                 self._fill_flags()
                 self.flag_list.update()
 
-        if flag.kind == "switch":
+        if switch:
             control = t.switch(bool(value), lambda e: store(e.control.value))
         elif flag.kind == "choice":
             control = ft.Container(t.dropdown([(EMPTY, tr("games.default_choice", "default"))] + [(c, translate(c)) for c in flag.choices],
@@ -695,11 +696,11 @@ class GamesView:
                   ft.Container(help_, on_click=toggle, tooltip=tr('games.show_all_2150d8', 'Show all') if len(lines) > 4 else None)]
         # A switch stays at the row's end; a field goes under its description, which beside a 220 px
         # field had a third of a phone's width.
-        if flag.kind != "switch":
+        if not switch:
             column.append(control)
         return ft.Container(ft.Row([
             ft.Column(column, spacing=6, expand=True),
-            *([control] if flag.kind == "switch" else []),
+            *([control] if switch else []),
         ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.START),
             border=ft.Border(top=ft.BorderSide(1, t.DIVIDER)), padding=ft.Padding(0, 12, 0, 12))
 

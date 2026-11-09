@@ -198,7 +198,7 @@ repeated `--offer` per trade, and takes the host role when handed it ([Legends A
 ```
 
 Console: Simona at Jubilife Village, trade, someone nearby, the same eight-digit code, offer a
-Pokémon and confirm. `--offer-out` gets each received record (`-2` and on), `--trade-box-collect DIR`
+Pokémon and confirm. `--offer-out` gets each received record (`-2` and on), `--save-shown DIR`
 every record the console shows; a repeated `--trade-box-record` queues trades. `pokeldn.pla.pokemon`
 builds a record.
 

@@ -59,3 +59,11 @@ def error_text(exc) -> str:
     if inner:
         return "; ".join(error_text(sub) for sub in inner)
     return f"{type(exc).__name__}: {exc}"
+
+
+def add_save_shown_argument(ap, flag="--save-shown"):
+    """A folder for every Pokemon the console shows on the trade screen, traded or not
+    (pokeldn.pokemon.save_shown)."""
+    ap.add_argument(flag, default=None, metavar="FOLDER",
+                    help="write every Pokemon the console shows on the trade screen to this folder, "
+                         "whether or not the trade goes through")

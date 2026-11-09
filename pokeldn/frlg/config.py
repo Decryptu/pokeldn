@@ -151,6 +151,7 @@ class TradePlan:
     link_player_idle_frames: int | None = None
     save_rounds: int | None = None
     trust_pia: bool = False
+    shown_path: str | None = None    # --save-shown: the console's party, traded or not
 
     def __post_init__(self):
         if not 1 <= len(self.party_paths) <= 6:
