@@ -156,13 +156,15 @@ class HostSession:
                 self.console_backlogged = True
                 getattr(self.log, "info", self.log)(
                     f"Console ack is behind by {self.reliable.link.outstanding()} frames; holding "
-                    "new frames and retransmitting the gap until it catches up.")
+                    f"new frames and retransmitting the gap until it catches up "
+                    f"({self.reliable.link.health()}).")
             self.backlog_ticks += 1
             return out
         if self.console_backlogged:
             self.console_backlogged = False
             getattr(self.log, "info", self.log)(
-                f"Console ack caught up after {self.backlog_ticks} held ticks; resuming.")
+                f"Console ack caught up after {self.backlog_ticks} held ticks; resuming "
+                f"({self.reliable.link.health()}).")
             self.backlog_ticks = 0
 
         if (self.close_poll_sent and self.activity.disconnect_requested

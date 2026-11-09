@@ -1,0 +1,67 @@
+menu "pokeldn bridge"
+
+    config BRIDGE_UART_TX_GPIO
+        int "TX: GPIO wired to the radio's D7 (RX)"
+        default 43 if IDF_TARGET_ESP32S3
+        default 11
+        help
+            D6 on the XIAO ESP32S3 (GPIO43) and the XIAO ESP32C5 (GPIO11, UART0 TX).
+
+    config BRIDGE_UART_RX_GPIO
+        int "RX: GPIO wired to the radio's D6 (TX)"
+        default 44 if IDF_TARGET_ESP32S3
+        default 12
+        help
+            D7 on the XIAO ESP32S3 (GPIO44) and the XIAO ESP32C5 (GPIO12, UART0 RX).
+
+    config BRIDGE_LED_GPIO
+        int "Status LED GPIO, -1 for none"
+        range -1 48
+        default 21 if IDF_TARGET_ESP32S3
+        default 27 if IDF_TARGET_ESP32C5
+        default -1
+        help
+            The XIAOs' yellow user LED. A plain LED only: the ESP32-C5-DevKitC-1's GPIO27 is an
+            addressable RGB LED, so set -1 there.
+
+    config BRIDGE_LED_ACTIVE_LOW
+        bool "The LED lights while its GPIO is low"
+        default y
+
+    config BRIDGE_PIXEL_GPIO
+        int "Status pixels' data GPIO (two chained WS2812), -1 for none"
+        range -1 48
+        default 1 if IDF_TARGET_ESP32C5
+        default -1
+        help
+            D0 on the XIAO ESP32C5 (GPIO1), which leaves D4/D5 to an I2C display and D8/D10 with
+            D9/D1 to an SPI one. D2 (GPIO25) stayed low while driven high on a XIAO ESP32C5.
+            The first pixel shows the network, the second the host and the radio.
+
+    config BRIDGE_PIXEL_BRIGHTNESS
+        int "Status pixels' brightness in percent until the page sets one"
+        range 0 100
+        default 30
+
+    config BRIDGE_BATTERY_ADC_GPIO
+        int "Battery voltage ADC GPIO (behind a 1:2 divider), -1 for none"
+        range -1 48
+        default 6 if IDF_TARGET_ESP32C5
+        default -1
+        help
+            The XIAO ESP32C5 reads its battery pads on GPIO6 through two 100k resistors.
+
+    config BRIDGE_BATTERY_EN_GPIO
+        int "GPIO that switches the battery divider on (high), -1 for none"
+        range -1 48
+        default 26 if IDF_TARGET_ESP32C5
+        default -1
+
+    config BRIDGE_BUTTON_GPIO
+        int "BOOT button GPIO (held 5 s forgets the network), -1 for none"
+        range -1 48
+        default 0 if IDF_TARGET_ESP32S3
+        default 28 if IDF_TARGET_ESP32C5
+        default -1
+
+endmenu

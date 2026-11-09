@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>pokeldn bridge</title>
+<style>
+:root {
+  --bg: #0d0f14; --bg2: #141821; --card: #181d28; --card2: #1f2533; --line: #2a3142;
+  --text: #e8ecf4; --muted: #8b95a8; --accent: #fd474d; --accent2: #ff7a59;
+  --ok: #3ddc97; --warn: #ffc857; --info: #3fa9f5; --bad: #ff5d6c;
+  --radius: 16px; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg: #f4f6fa; --bg2: #e9edf4; --card: #ffffff; --card2: #f3f5f9; --line: #dde2ec;
+          --text: #161a22; --muted: #5f6b80; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+body { min-height: 100vh; background:
+  radial-gradient(900px 400px at 85% -10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%),
+  radial-gradient(700px 360px at -10% 10%, color-mix(in srgb, var(--info) 12%, transparent), transparent 70%),
+  var(--bg); }
+main { max-width: 1080px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+.logo { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: 0 6px 24px -8px var(--accent); }
+.logo svg { width: 24px; height: 24px; }
+h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
+.sub { color: var(--muted); font-size: 13px; }
+.pill { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px;
+  border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: 13px; font-weight: 600; }
+.pill + .pill { margin-left: 0; }
+[hidden] { display: none !important; }
+.cell { width: 24px; height: 13px; color: var(--muted); }
+.cell.charging #batFill { animation: pulse 1.6s infinite; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+.dot.ok { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 22%, transparent); }
+.dot.warn { background: var(--warn); animation: pulse 1s infinite; }
+.dot.info { background: var(--info); animation: pulse 1.6s infinite; }
+.dot.bad { background: var(--bad); }
+@keyframes pulse { 50% { opacity: .35; } }
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(12, 1fr); }
+.card { grid-column: span 4; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px 18px; min-width: 0; }
+.wide { grid-column: span 8; } .full { grid-column: 1 / -1; } .half { grid-column: span 6; }
+@media (max-width: 860px) { .card, .wide, .half { grid-column: 1 / -1; } }
+.card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+.big { font-size: 22px; font-weight: 700; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin-top: 10px; font-size: 14px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.hero { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, var(--card)), var(--card) 60%); }
+.code { display: flex; align-items: center; gap: 10px; background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 12px; font: 13px var(--mono); margin-top: 10px; }
+.code span { flex: 1; overflow-x: auto; white-space: nowrap; }
+button, .btn { font: inherit; font-weight: 600; border: 1px solid var(--line); background: var(--card2); color: var(--text);
+  padding: 9px 14px; border-radius: 10px; cursor: pointer; transition: transform .08s, background .15s; }
+button:hover { background: var(--line); } button:active { transform: scale(.97); }
+button.primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; color: #fff; }
+button.ghost { background: transparent; } button.danger { color: var(--bad); }
+button:disabled { opacity: .5; cursor: default; }
+button.small { padding: 5px 10px; font-size: 13px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.check { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.check input { width: auto; margin: 0; }
+input[type=range] { padding: 0; border: 0; box-shadow: none; background: none; accent-color: var(--accent); }
+input { font: inherit; width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--bg2); color: var(--text); outline: none; }
+input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
+.nets { display: grid; gap: 6px; max-height: 280px; overflow-y: auto; margin-top: 10px; }
+.net { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--bg2);
+  border: 1px solid transparent; cursor: pointer; text-align: left; width: 100%; font-weight: 500; }
+.net:hover, .net.sel { border-color: var(--accent); background: var(--bg2); }
+.net .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bars { display: inline-flex; gap: 2px; align-items: flex-end; height: 14px; }
+.bars i { width: 4px; background: var(--line); border-radius: 1px; }
+.bars i.on { background: var(--ok); }
+.muted { color: var(--muted); }
+.tag { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: var(--card2);
+  color: var(--muted); border: 1px solid var(--line); white-space: nowrap; }
+.tag.five { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+canvas { width: 100%; height: 120px; display: block; margin-top: 8px; }
+.legend { display: flex; gap: 16px; font-size: 13px; color: var(--muted); }
+.legend b { color: var(--text); font-variant-numeric: tabular-nums; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.log { font: 12px/1.6 var(--mono); background: var(--bg2); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.banner { display: none; padding: 14px 16px; border-radius: var(--radius); margin-bottom: 14px; border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--info) 14%, var(--card)); }
+.banner.show { display: block; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; transition: .25s;
+  background: var(--card2); border: 1px solid var(--line); padding: 10px 16px; border-radius: 12px; pointer-events: none;
+  box-shadow: 0 10px 30px -10px #000; max-width: calc(100% - 32px); }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+a { color: var(--accent2); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round">
+      <path d="M5 12a7 7 0 0 1 14 0"/><path d="M8.5 12a3.5 3.5 0 0 1 7 0"/><circle cx="12" cy="15" r="1.6" fill="#fff"/></svg></div>
+    <div><h1>pokeldn bridge</h1><div class="sub" id="version">Radio link over the network</div></div>
+    <div class="pill" id="batPill" hidden><svg class="cell" viewBox="0 0 26 14"><rect x=".75" y=".75" width="21.5" height="12.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <rect x="23" y="4.5" width="2.25" height="5" rx="1" fill="currentColor"/><rect id="batFill" x="3" y="3" width="0" height="8" rx="1"/></svg><span id="batText"></span></div>
+    <div class="pill"><span class="dot" id="dot"></span><span id="state">Loading…</span></div>
+  </header>
+
+  <div class="banner" id="banner"></div>
+
+  <section class="grid">
+    <div class="card wide hero">
+      <h2>Connect pokeldn</h2>
+      <div class="big" id="endpoint">—</div>
+      <div class="code"><span id="env">POKELDN_RADIO=esp32:socket://…</span>
+        <button class="small" id="copy">Copy</button></div>
+      <p class="muted" style="margin:10px 0 0;font-size:13px">Set this on the machine that runs pokeldn. One host at a time: a new connection replaces the old one.</p>
+    </div>
+    <div class="card">
+      <h2>Host</h2>
+      <div class="big" id="host">Waiting</div>
+      <dl class="kv"><dt>Connected for</dt><dd id="hostSince">—</dd><dt>Sessions</dt><dd id="sessions">0</dd><dt>Last drop</dt><dd id="lastDrop">—</dd></dl>
+    </div>
+
+    <div class="card">
+      <h2>Wi-Fi</h2>
+      <div class="big" id="ssid">—</div>
+      <dl class="kv"><dt>Address</dt><dd id="ip">—</dd><dt>Signal</dt><dd id="rssi">—</dd><dt>Band</dt><dd id="band">—</dd><dt>Setup network</dt><dd id="ap">—</dd></dl>
+    </div>
+    <div class="card">
+      <h2>Radio board</h2>
+      <div class="big" id="radioState">Silent</div>
+      <dl class="kv"><dt>Firmware</dt><dd id="radioInfo">—</dd><dt>Frames</dt><dd id="frames">0</dd><dt>Line errors</dt><dd id="errors">0</dd></dl>
+    </div>
+    <div class="card">
+      <h2>Bridge</h2>
+      <div class="big" id="uptime">—</div>
+      <dl class="kv"><dt>Free memory</dt><dd id="heap">—</dd><dt>Line</dt><dd id="line">—</dd><dt>Unheard bytes</dt><dd id="unheard">0</dd><dt class="batRow" hidden>Battery</dt><dd class="batRow" id="battery" hidden>—</dd></dl>
+    </div>
+
+    <div class="card full">
+      <h2>Throughput</h2>
+      <div class="legend"><span><i class="sw" style="background:var(--accent)"></i>Radio → host <b id="rateRx">0 B/s</b></span>
+        <span><i class="sw" style="background:var(--info)"></i>Host → radio <b id="rateTx">0 B/s</b></span>
+        <span>Total <b id="total">0 B</b></span></div>
+      <canvas id="chart"></canvas>
+    </div>
+
+    <div class="card half" id="setupCard">
+      <h2>Network setup</h2>
+      <div class="row"><button id="scan">Scan for networks</button><span class="muted" id="scanNote"></span></div>
+      <div class="nets" id="nets"></div>
+      <form id="wifiForm" autocomplete="off">
+        <label for="ssidIn">Network name</label><input id="ssidIn" maxlength="32" required>
+        <label for="passIn">Password</label>
+        <div class="row" style="flex-wrap:nowrap"><input id="passIn" type="password" maxlength="64">
+          <button type="button" class="ghost small" id="show">Show</button></div>
+        <div class="row" style="margin-top:14px"><button class="primary" type="submit">Join network</button>
+          <button type="button" class="ghost danger" id="forget">Forget network</button></div>
+      </form>
+      <div id="bandRow" hidden style="margin-top:14px">
+        <label class="check"><input id="force5g" type="checkbox"> Force 5 GHz</label>
+        <p class="muted" style="margin:4px 0 0;font-size:13px">Join only the 5 GHz band of the network, leaving 2.4 GHz to the radio and the console. The bridge restarts to apply it.</p></div>
+    </div>
+    <div class="card half">
+      <h2>Radio log</h2>
+      <div class="log" id="log"><span class="muted">LOG lines from the radio appear here.</span></div>
+      <h2 style="margin-top:18px">Settings</h2>
+      <label for="portIn">TCP port for pokeldn</label>
+      <div class="row" style="flex-wrap:nowrap"><input id="portIn" type="number" min="1" max="65535">
+        <button id="savePort">Save</button></div>
+      <div id="pixelRow" hidden style="margin-top:14px">
+        <label for="pixelIn">Status pixels <span class="muted" id="pixelVal"></span></label>
+        <div class="row" style="flex-wrap:nowrap"><input id="pixelIn" type="range" min="0" max="100" step="5">
+          <button class="ghost" id="identify">Identify</button></div></div>
+      <div class="row" style="margin-top:14px"><button class="ghost" id="restart">Restart bridge</button></div>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+const $ = id => document.getElementById(id);
+const fmtBytes = b => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(2) + ' MB';
+const fmtRate = b => fmtBytes(Math.round(b)) + '/s';
+const fmtTime = s => { if (s < 60) return s + ' s'; const m = Math.floor(s / 60);
+  if (m < 60) return m + ' min ' + (s % 60) + ' s'; const h = Math.floor(m / 60);
+  return h < 24 ? h + ' h ' + (m % 60) + ' min' : Math.floor(h / 24) + ' d ' + (h % 24) + ' h'; };
+const bars = rssi => { const n = rssi >= -55 ? 4 : rssi >= -65 ? 3 : rssi >= -75 ? 2 : rssi ? 1 : 0;
+  return '<span class="bars">' + [6, 9, 12, 14].map((h, i) => `<i style="height:${h}px" class="${i < n ? 'on' : ''}"></i>`).join('') + '</span>'; };
+const band = channel => channel > 14 ? '5 GHz' : '2.4 GHz';
+const esc = s => s.replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+function toast(text) { const t = $('toast'); t.textContent = text; t.classList.add('show');
+  clearTimeout(t.timer); t.timer = setTimeout(() => t.classList.remove('show'), 2600); }
+async function post(path, data) {
+  const r = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: new URLSearchParams(data)});
+  if (!r.ok) throw new Error(await r.text());
+}
+
+const history = {rx: Array(60).fill(0), tx: Array(60).fill(0)};
+let last = null, joining = null, portSet = false, endpointText = '', bandBusy = false, pixelSet = false;
+const pixelLabel = () => { const v = +$('pixelIn').value; $('pixelVal').textContent = v ? v + ' %' : 'off'; };
+
+function draw() {
+  const c = $('chart'), dpr = devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+  c.width = w * dpr; c.height = h * dpr;
+  const g = c.getContext('2d'); g.scale(dpr, dpr);
+  const css = getComputedStyle(document.documentElement);
+  const max = Math.max(1024, ...history.rx, ...history.tx) * 1.15;
+  g.strokeStyle = css.getPropertyValue('--line'); g.lineWidth = 1;
+  for (let i = 1; i < 4; i++) { g.beginPath(); g.moveTo(0, h * i / 4); g.lineTo(w, h * i / 4); g.stroke(); }
+  for (const [key, color] of [['tx', '--info'], ['rx', '--accent']]) {
+    const data = history[key], step = w / (data.length - 1), col = css.getPropertyValue(color).trim();
+    g.beginPath();
+    data.forEach((v, i) => { const x = i * step, y = h - v / max * h; i ? g.lineTo(x, y) : g.moveTo(x, y); });
+    g.strokeStyle = col; g.lineWidth = 2; g.lineJoin = 'round'; g.stroke();
+    g.lineTo(w, h); g.lineTo(0, h); g.closePath();
+    const fill = g.createLinearGradient(0, 0, 0, h); fill.addColorStop(0, col + '55'); fill.addColorStop(1, col + '00');
+    g.fillStyle = fill; g.fill();
+  }
+}
+
+function render(s, dt) {
+  const states = {online: ['Online', 'ok'], connecting: ['Joining Wi-Fi', 'warn'], setup: ['Setup mode', 'info'], starting: ['Starting', 'warn']};
+  const [label, cls] = states[s.net.state] || ['Unknown', 'bad'];
+  $('state').textContent = label; $('dot').className = 'dot ' + cls;
+  $('version').textContent = 'Firmware ' + s.version + ' · ' + s.target.toUpperCase().replace('ESP32', 'ESP32-');
+  const address = s.net.ip || (s.net.ap ? '192.168.4.1' : '');
+  const text = address ? `${address}:${s.port}` : 'Not on a network yet';
+  if (text !== endpointText) { endpointText = text; $('endpoint').textContent = text;
+    $('env').textContent = 'POKELDN_RADIO=esp32:socket://' + (address || '…') + ':' + s.port; }
+
+  $('host').textContent = s.host.connected ? s.host.ip : 'Waiting';
+  $('hostSince').textContent = s.host.connected ? fmtTime(s.host.since) : '—';
+  $('sessions').textContent = s.host.sessions;
+  const drop = s.host.last_drop, drops = {send_timeout: 'Send timed out', send_error: 'Send failed', closed: 'Host closed',
+    keepalive: 'Host stopped answering', reset: 'Connection reset', replaced: 'Newer host'};
+  $('lastDrop').textContent = drop.ago < 0 ? '—' : (drops[drop.reason] || drop.reason) + (drop.errno ? ' (errno ' + drop.errno + ')' : '') + ', ' + fmtTime(drop.ago) + ' ago';
+  $('lastDrop').title = Object.entries(s.host.drops).map(([k, v]) => k + ': ' + v).join(', ');
+
+  $('ssid').textContent = s.net.ssid || 'Not configured';
+  $('ip').textContent = s.net.ip || '—';
+  $('rssi').innerHTML = s.net.rssi ? bars(s.net.rssi) + ' ' + s.net.rssi + ' dBm' : '—';
+  $('band').textContent = s.net.channel ? band(s.net.channel) + ' · channel ' + s.net.channel : '—';
+  $('ap').textContent = s.net.ap ? s.net.ap_ssid : 'Off';
+
+  const r = s.radio;
+  $('radioState').textContent = r.quiet < 0 ? 'Silent' : r.quiet < 3 ? 'Talking' : 'Heard ' + fmtTime(r.quiet) + ' ago';
+  $('radioInfo').textContent = r.info ? (r.info.match(/version=(\S+)/) || [, r.info])[1] + (/link=uart/.test(r.info) ? ' · UART' : '') : 'Not seen yet';
+  $('radioInfo').title = r.info;
+  $('frames').textContent = r.frames.toLocaleString();
+  $('errors').textContent = r.errors; $('errors').style.color = r.errors ? 'var(--bad)' : '';
+  $('uptime').textContent = 'Up ' + fmtTime(s.uptime);
+  $('heap').textContent = fmtBytes(s.heap) + ' (low ' + fmtBytes(s.heap_min) + ')';
+  $('line').textContent = (s.baud / 1000).toFixed(1) + ' kbaud';
+  $('unheard').textContent = fmtBytes(r.unheard);
+  if (!portSet) { $('portIn').value = s.port; portSet = true; }
+  $('bandRow').hidden = !s.net.can_5g;
+  if (!bandBusy) $('force5g').checked = s.net.force_5g;
+  $('pixelRow').hidden = !s.pixels.present;
+  const b = s.battery;
+  $('batPill').hidden = !b.present;
+  document.querySelectorAll('.batRow').forEach(e => { e.hidden = !b.present; });
+  if (b.present) {
+    const color = b.charging ? 'var(--info)' : b.percent < 15 ? 'var(--bad)' : b.percent < 35 ? 'var(--warn)' : 'var(--ok)';
+    $('batFill').setAttribute('width', (18 * b.percent / 100).toFixed(1)); $('batFill').style.fill = color;
+    $('batPill').querySelector('.cell').classList.toggle('charging', b.charging);
+    $('batText').textContent = b.percent + ' %' + (b.charging ? ' ⚡' : '');
+    $('batPill').title = (b.mv / 1000).toFixed(2) + ' V' + (b.charging ? ', charging' : '');
+    $('battery').textContent = b.percent + ' % · ' + (b.mv / 1000).toFixed(2) + ' V' + (b.charging ? ' · charging' : '');
+  }
+  if (!pixelSet) { $('pixelIn').value = s.pixels.brightness; pixelLabel(); pixelSet = true; }
+
+  if (r.log.length) $('log').innerHTML = r.log.map(esc).join('\n');
+
+  if (last && dt > 0) {
+    const rx = Math.max(0, r.bytes - last.radio.bytes) / dt, tx = Math.max(0, r.host_bytes - last.radio.host_bytes) / dt;
+    history.rx.push(rx); history.rx.shift(); history.tx.push(tx); history.tx.shift();
+    $('rateRx').textContent = fmtRate(rx); $('rateTx').textContent = fmtRate(tx);
+  }
+  $('total').textContent = fmtBytes(r.bytes + r.host_bytes);
+  draw();
+
+  const banner = $('banner');
+  if (joining && s.net.state === 'online' && s.net.ssid === joining) {
+    banner.innerHTML = `<b>Joined ${esc(joining)}.</b> The bridge is now at <a href="http://${s.net.ip}/">http://${s.net.ip}</a>. ` +
+      'Join that network with this device and open the address; the setup network closes in a minute.';
+    banner.classList.add('show');
+  } else if (joining) {
+    banner.innerHTML = `Joining <b>${esc(joining)}</b>… This page updates when it is done. If it fails, the setup network opens again within 20 s.`;
+    banner.classList.add('show');
+  } else if (s.net.state === 'setup') {
+    banner.innerHTML = s.net.ssid ? `<b>Cannot reach ${esc(s.net.ssid)}.</b> Still retrying; choose another network below if it moved.`
+      : '<b>Welcome!</b> Pick your Wi-Fi network below so the bridge can join it.';
+    banner.classList.add('show');
+    $('setupCard').style.order = -1;
+  } else { banner.classList.remove('show'); $('setupCard').style.order = ''; }
+}
+
+let lastAt = 0;
+async function poll() {
+  try {
+    const r = await fetch('/api/status', {cache: 'no-store'});
+    const s = await r.json(), now = performance.now();
+    render(s, lastAt ? (now - lastAt) / 1000 : 0);
+    last = s; lastAt = now;
+  } catch (e) {
+    $('state').textContent = joining ? 'Switching networks…' : 'Bridge unreachable'; $('dot').className = 'dot bad';
+  }
+  setTimeout(poll, 1000);
+}
+
+$('scan').onclick = async () => {
+  const b = $('scan'); b.disabled = true; $('scanNote').textContent = 'Scanning…';
+  try {
+    const nets = await (await fetch('/api/scan', {cache: 'no-store'})).json();
+    $('nets').innerHTML = nets.length ? nets.map(n => `<button type="button" class="net" data-ssid="${esc(n.ssid)}">${bars(n.rssi)}
+      <span class="name">${esc(n.ssid)}</span><span class="tag${n.channel > 14 ? ' five' : ''}">${band(n.channel)}</span>
+      <span class="muted">${n.secure ? '🔒' : 'open'}</span></button>`).join('')
+      : '<span class="muted">No networks found.</span>';
+    $('scanNote').textContent = nets.length + ' found';
+  } catch (e) { $('scanNote').textContent = 'Scan failed, try again'; }
+  b.disabled = false;
+};
+$('nets').onclick = e => {
+  const n = e.target.closest('.net'); if (!n) return;
+  document.querySelectorAll('.net').forEach(x => x.classList.toggle('sel', x === n));
+  $('ssidIn').value = n.dataset.ssid; $('passIn').focus();
+};
+$('show').onclick = () => { const p = $('passIn'); p.type = p.type === 'password' ? 'text' : 'password';
+  $('show').textContent = p.type === 'password' ? 'Show' : 'Hide'; };
+$('wifiForm').onsubmit = async e => {
+  e.preventDefault();
+  const ssid = $('ssidIn').value.trim(), password = $('passIn').value;
+  try { await post('/api/wifi', {ssid, password}); joining = ssid; toast('Joining ' + ssid + '…'); }
+  catch (err) { toast(err.message || 'Could not save'); }
+};
+$('forget').onclick = async () => {
+  if (!confirm('Forget the stored network? The bridge opens its setup network.')) return;
+  try { await post('/api/wifi', {ssid: '', password: ''}); joining = null; toast('Network forgotten'); }
+  catch (err) { toast(err.message); }
+};
+$('savePort').onclick = async () => {
+  try { await post('/api/port', {port: $('portIn').value}); toast('Saved. Restart the bridge to use it.'); }
+  catch (err) { toast(err.message); }
+};
+$('force5g').onchange = async e => {
+  const on = e.target.checked;
+  if (!confirm((on ? 'Join only 5 GHz' : 'Let the bridge pick the band') + '? It restarts, and a connected host loses the radio for a few seconds.')) {
+    e.target.checked = !on; return; }
+  bandBusy = true;
+  try { await post('/api/band', {force5g: on ? '1' : '0'}); toast('Restarting…'); }
+  catch (err) { e.target.checked = !on; toast(err.message); }
+  setTimeout(() => { bandBusy = false; }, 15000);
+};
+$('pixelIn').oninput = pixelLabel;
+$('pixelIn').onchange = async () => {
+  try { await post('/api/pixels', {brightness: $('pixelIn').value}); } catch (err) { toast(err.message); }
+};
+$('identify').onclick = async () => {
+  try { await post('/api/identify', {}); toast('Blinking for 5 s'); } catch (err) { toast(err.message); }
+};
+$('restart').onclick = async () => {
+  if (!confirm('Restart the bridge? A connected host loses the radio for a few seconds.')) return;
+  try { await post('/api/restart', {}); toast('Restarting…'); } catch (err) { toast(err.message); }
+};
+$('copy').onclick = async () => {
+  const text = $('env').textContent;
+  try { await navigator.clipboard.writeText(text); toast('Copied'); }
+  catch (e) { const r = document.createRange(); r.selectNodeContents($('env'));
+    getSelection().removeAllRanges(); getSelection().addRange(r); toast('Selected, copy it now'); }
+};
+addEventListener('resize', draw);
+poll();
+</script>
+</body>
+</html>

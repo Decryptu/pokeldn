@@ -724,6 +724,8 @@ static void send_info(void)
     char text[128];
 #if POKELDN_BLE
 #define LINK_WORD " link=ble"   /* gui/board.py Identity.ble: the Board page names the Bluetooth build */
+#elif POKELDN_UART
+#define LINK_WORD " link=uart"   /* the S3's UART build, reached through a network bridge */
 #else
 #define LINK_WORD ""
 #endif

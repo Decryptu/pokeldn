@@ -79,6 +79,18 @@ def command(*argv: str, bluetooth: bool = False) -> list[str]:
     return [sys.executable, "-u", os.path.join(ROOT, "pokeldn", "app", "entry.py"), *argv]
 
 
+def _run_log(label: str):
+    """With POKELDN_RUN_LOG set to a folder, a run's whole output, unredacted and line-buffered, for reading
+    along from outside the app (docs/docker.md); the app itself keeps none."""
+    folder = os.environ.get("POKELDN_RUN_LOG")
+    if not folder:
+        return None
+    os.makedirs(folder, exist_ok=True)
+    name = "".join(c if c.isalnum() else "-" for c in label).strip("-").lower() or "run"
+    return open(os.path.join(folder, f"{time.strftime('%Y%m%d-%H%M%S')}-{name}.log"), "w",
+                encoding="utf-8", buffering=1)
+
+
 class Process:
     """A child of the app. With `popups` (pokeldn.app.popups.Manager), the child's `[popup]` lines open pop-ups
     under `label`, never reaching `on_line`, and their answers go back on its stdin (pokeldn.popup)."""
@@ -96,6 +108,9 @@ class Process:
                                      creationflags=flags)
         self.started = time.monotonic()
         self.popups = popups.program(label, self.send) if popups is not None else None
+        self.record = _run_log(label)
+        if self.record is not None:
+            self.record.write(f"{0:9.3f} [app] argv {' '.join(argv)}\n")
         threading.Thread(target=self._pump, daemon=True).start()
 
     @property
@@ -114,7 +129,11 @@ class Process:
 
     def _pump(self) -> None:
         for line in self.proc.stdout:
+            if self.record is not None:
+                self.record.write(f"{time.monotonic() - self.started:9.3f} {line}")
             self._take(line.rstrip("\n"))
+        if self.record is not None:
+            self.record.close()
         self.proc.stdout.close()
         with self.stdin_lock:
             if not self.proc.stdin.closed:

@@ -1,0 +1,19 @@
+# pokeldn in the browser, with the radio behind the network bridge. Copy .env.example to .env first.
+# docs/docker.md.
+services:
+  pokeldn:
+    build: .
+    image: pokeldn-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8550}:8550"
+    environment:
+      # Empty without BRIDGE_HOST: the app then lists USB boards only.
+      POKELDN_BRIDGE: "${BRIDGE_HOST:+${BRIDGE_HOST}:${BRIDGE_PORT:-47811}}"
+      TZ: "${TZ:-Europe/Berlin}"
+      # A folder in the container, e.g. /data/logs: every run's output also goes to a file there.
+      POKELDN_RUN_LOG: "${RUN_LOG:-}"
+    volumes:
+      - ./docker-data:/data
+      # prod.keys goes in this folder; Settings finds it at its default ~/.switch/prod.keys.
+      - "${KEYS_DIR:-./keys}:/data/home/.switch:ro"

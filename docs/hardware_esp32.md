@@ -561,6 +561,125 @@ leaves 488 KB of it.
 On macOS, bleak aborts (SIGABRT) in a process whose responsible app has no Bluetooth grant; a script
 started with `open -n -a Terminal FILE.command` runs under Terminal's.
 
+### The UART build
+
+A build with `POKELDN_UART=1` (`esp32s3` target only) takes the host link on UART0 at the XIAO
+ESP32S3's D6 (TX, GPIO43) and D7 (RX, GPIO44) instead of USB Serial/JTAG, for a second board that
+carries the stream to the network. USB then only powers and flashes the board, and the USB watch is
+left out. The line starts at 921600 baud: the host sends no BAUD over a `socket://` port, so the
+bridge must use the same rate. HELLO text ends in `link=uart`.
+
+    POKELDN_UART=1 idf.py -B ../../scratchpad/esp/build-uart \
+        -D SDKCONFIG=../../scratchpad/esp/build-uart/sdkconfig set-target esp32s3 build
+
+Wire the radio's D6 to the bridge's RX, its D7 to the bridge's TX, and GND to GND. The S3's ROM
+prints its boot banner on GPIO43 at 115200 baud; the host discards it as it does a classic board's.
+Untested on retail hardware.
+
+### The network bridge
+
+`firmware/bridge/` is a second board, a XIAO ESP32C5 or a XIAO ESP32S3, that joins the home Wi-Fi and
+carries the UART build's stream to TCP port 47811, so pokeldn runs on another machine (a server, a
+VM) with `POKELDN_RADIO=esp32:socket://ADDRESS:47811`. Bytes pass unchanged at 921600 baud, so
+framing, CRC and CREDIT stay between the radio and the host. One host at a time: a new connection
+replaces the old one, and TCP keepalive drops a host gone for 11 s. Both boards take power from their
+own USB port.
+
+| bridge | TX, to the radio's D7 | RX, from the radio's D6 | LED | BOOT |
+|---|---|---|---|---|
+| XIAO ESP32C5 | D6, GPIO11 (UART0 TX) | D7, GPIO12 (UART0 RX) | GPIO27, lit low | GPIO28 |
+| XIAO ESP32S3 | D6, GPIO43 | D7, GPIO44 | GPIO21, lit low | GPIO0 |
+
+GND goes to GND; both XIAOs need their external antenna. `idf.py menuconfig`, "pokeldn bridge", sets
+other pins and a plain LED; on the ESP32-C5-DevKitC-1, whose GPIO27 is an addressable RGB LED, set
+the LED to -1. The C5 also joins a 5 GHz
+network (band mode auto), which leaves 2.4 GHz to the radio and the console; the page shows the band.
+
+    cd firmware/bridge
+    idf.py -B ../../scratchpad/esp/build-bridge-esp32c5 \
+        -D SDKCONFIG=../../scratchpad/esp/build-bridge-esp32c5/sdkconfig set-target esp32c5 build
+    idf.py -B ../../scratchpad/esp/build-bridge-esp32c5 -p <port> flash
+
+With no network stored, or none joined within 20 s, the bridge opens the setup access point
+`POKELDN-BRIDGE-XXXX` (WPA2 password `pokeldn-bridge`) beside the station's retries. A captive DNS
+answers every name with 192.168.4.1, so a phone that joins it opens the setup page. After the
+station joins, the access point stays a minute so the page can show the new address; the station
+takes the hostname `pokeldn-bridge`. Holding BOOT 5 s forgets the network.
+
+The page on port 80 shows the network, the host, the radio's INFO text and LOG lines (read from the
+stream as it passes), the line's counters and a live throughput chart, and sets the network and the
+TCP port. Its JSON API: `GET /api/status`, `GET /api/scan`, `POST /api/wifi` (`ssid`, `password`;
+an empty `ssid` forgets), `POST /api/port` (after a restart), `POST /api/restart`, and the band and
+status pixel settings below. The status counts
+why each host went (`host.drops`: `send_timeout`, `send_error`, `closed`, `keepalive`, `reset`,
+`replaced`) and names the last one (`host.last_drop`), so a run that ended needs no serial console. A
+send to the host waits up to 3 s before the bridge gives the host up: 500 ms dropped a FireRed trade
+while the bridge shared 2.4 GHz channel 11 with the console. An ESP32-C5 bridge on a 5 GHz network
+leaves that channel to the radio.
+
+A C5 picks either band of a network that has both, anew at each start. On 2.4 GHz channel 11 the same
+FireRed trade measured 563 holds and an ack round trip up to 304 ms, against one hold and 36 ms on
+5 GHz. **Force 5 GHz** on the page (`POST /api/band`, `force5g` 1 or 0; the bridge restarts) holds
+the station to 5 GHz; `/api/status` reports `net.can_5g` and `net.force_5g`, and the switch shows
+only on a chip with 5 GHz. While the setup access point is open, on 2.4 GHz channel 1, the force is
+lifted, so a bridge whose network has no 5 GHz band stays reachable. Neither the page
+nor the TCP port asks for a password: keep the bridge on a trusted network. The bridge's own logs go
+to its USB Serial/JTAG console.
+
+| LED | state |
+|---|---|
+| slow blink | setup access point open |
+| fast blink | joining the network |
+| a blip every 2 s | online, no host |
+| on, flickering with traffic | a host is connected |
+
+Two chained WS2812 status pixels are optional: data on D0 (GPIO1) of the C5, best through a 330 ohm
+resistor, power from the battery's plus (BAT+) and GND. 5V carries nothing on the battery, and 3V3 is
+under a WS2812B's 3.5 V; at 5 V the 3.3 V data sits under its 0.7 VDD high threshold. D0 leaves D4/D5
+(GPIO23/24) free for an I2C display and D8/D10 with D9/D1 for an SPI one; D3 (GPIO7) is a strapping
+pin. D2 (GPIO25) read low while driven high on a XIAO ESP32C5 with nothing wired to it, so it carries
+no pixels. A line the firmware logs 5 s after start names the pin, the last frame and the battery. Menuconfig's
+"Status pixels' data GPIO" moves them (-1 on the S3 by default). RMT sends the frames, so the stream
+never waits on them. The page's **Status pixels** slider sets the brightness (`POST /api/pixels`,
+`brightness` 0..100 percent, stored, 0 turns them off), and **Identify** (`POST /api/identify`) blinks
+both for 5 s even when they are off; `/api/status` reports `pixels.present` and `pixels.brightness`.
+
+| first pixel: network | state |
+|---|---|
+| green | online on 5 GHz |
+| yellow | online on 2.4 GHz, sharing the air with the radio and the console |
+| either, breathing | the battery charging, until full |
+| either, a short gap every 2 s | signal below -75 dBm |
+| white, pulsing | joining the network |
+| blue, blinking | setup access point open |
+| dim white | starting |
+
+| second pixel: link | state |
+|---|---|
+| off | no host |
+| dim cyan, flickering with traffic | a host is connected |
+| purple | a host is connected, but the radio has been silent 10 s |
+| yellow, red | over 4 KB, over 16 KB of the radio's stream waiting in the UART ring: Wi-Fi falls behind |
+| orange, blinking 3 s | a host dropped on a failed send (`send_timeout`, `send_error`) |
+| red, blinking 3 s | a host dropped on keepalive or a reset |
+| a red blip | a line error |
+
+Past the first second, both pixels fill red while BOOT is held, until the network is forgotten at
+5 s. They light white before a restart and alternate magenta and white for Identify.
+
+A LiPo on the XIAO ESP32C5's battery pads is read once a second: GPIO26 high switches on the board's
+1:2 divider (two 100k resistors, 21 uA), and GPIO6 reads it through the calibrated ADC. Menuconfig's
+battery GPIOs move them (-1 on the S3). A resting cell's voltage maps to its charge, from 3.3 V (0 %)
+to 4.2 V (100 %); Wi-Fi's load reads a little low, charging a little high. The charger (SGM40567)
+reports nothing to a pin, so **charging** is the voltage's trend: 15 mV up over a minute sets it, 15 mV
+down clears it. Below 2.5 V the bridge reports no battery. `/api/status` has `battery.present`,
+`battery.mv`, `battery.percent` and `battery.charging`; the page shows the charge in the header and
+the Bridge card.
+
+A short BOOT press, under a second, and each start show the charge on both pixels for 3 s: red
+through yellow at half to green at full, pulsing while charging. Under 15 % on the battery, the
+network pixel blips red every 4 s, and under 5 % it blinks red each second.
+
 ### The USB host link
 
 The S3, C3 and C6 use the same COBS, CRC and CREDIT protocol over USB Serial/JTAG with 16 KB rings.

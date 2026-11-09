@@ -47,6 +47,7 @@ and LGPE, and C++ with Pia statically linked in PLA, SV and PLZA.
 | [Simulated Mystery Gifts](gift_simulated.md) | Official gift Pokemon traded by the host to titles with no local Mystery Gift. |
 | [Command-line usage](usage.md) | Source setup and commands for each game. |
 | [Desktop app](gui.md) | Setup, Bank, controller, builds; Android and iOS. |
+| [Docker web app](docker.md) | The app in a browser, served by Docker, with the radio behind the network bridge. |
 | [Code organization](architecture.md) | Shared modules, Pokémon preparation and verification. |
 | [Hardware and setup](hardware.md) | The ESP32 radio, Switch keys, and legacy Linux Wi-Fi cards. |
 | [Code signing policy](code_signing.md) | What the Windows release signs, the team roles, and the privacy policy. |
