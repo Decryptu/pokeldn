@@ -1,4 +1,4 @@
-# pokeldn 0.62.0
+# pokeldn 0.62.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
