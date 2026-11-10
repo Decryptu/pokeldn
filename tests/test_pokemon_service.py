@@ -416,6 +416,15 @@ def test_variants_and_the_sv_tera_type_land_in_the_record(service):
         service.make("sv", 869, TRAINER, options={"sweet": 7})
 
 
+@pytest.mark.parametrize("game, species", [("lgpe", 19), ("frlg", 19), ("swsh", 819), ("bdsp", 399), ("sv", 921), ("za", 25)])
+def test_effort_left_unchosen_is_zero_and_legal(service, game, species):
+    """A player who never touched AVs or EVs gets none, past Let's Go's floor for levels gained, never 200 AVs."""
+    built = service.make(game, species, TRAINER, level=10)
+    assert built["legal"] and max(service.import_file(game, built["file"])["battle"]["effort"]) < 10
+    typed = service.make(game, species, TRAINER, level=10, options={"effort": {"hp": 7}})
+    assert typed["legal"] and service.import_file(game, typed["file"])["battle"]["effort"][0] == 7
+
+
 @pytest.mark.parametrize("game, species, evs", [
     ("swsh", 869, (0, 0, 6, 0, 252, 252)),     # Alcremie: SpD 121, SpA 110, Def 75; record order HP Atk Def Spe SpA SpD
     ("swsh", 448, (0, 252, 0, 6, 252, 0)),     # Lucario: SpA 115, Atk 110, Spe 90

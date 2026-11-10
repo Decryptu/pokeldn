@@ -785,9 +785,15 @@ static partial class Program
 
         LegalityAnalysis Refresh(PKM pk, Wish? wish = null)
         {
+            // AVs at the legal floor for the levels gained, never PKHeX's suggested 200s; a record's higher AVs stay.
             if (pk is PB7 pb7)
             {
-                AwakeningUtil.SetSuggestedAwakenedValues(pb7, pb7);
+                Span<byte> kept = stackalloc byte[6], floor = stackalloc byte[6];
+                pb7.AwakeningGetVisual(kept);
+                AwakeningUtil.SetExpectedMinimumAVs(pb7, floor);
+                for (var i = 0; i < 6; i++)
+                    kept[i] = Math.Max(kept[i], floor[i]);
+                pb7.AwakeningSetVisual(kept);
                 wish?.ApplyEffort(pk);
                 ResetSizes(pb7);
             }

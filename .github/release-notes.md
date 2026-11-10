@@ -1,16 +1,13 @@
-# pokeldn 0.62.1
+# pokeldn 0.62.2
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- A ROM transfer over FireRed/LeafGreen Mystery Gift now works on English, French, German, Italian
-  and Spanish FireRed and LeafGreen, not only English FireRed. Emerald swap 1.2.0 needs this version
-  to stream into those games.
-- Fixed two ROM transfer faults that could leave blocks wrong: a block of zeros over a block of 0xFF
-  was taken as already written, and a copy that ran from one block into the next could read the
-  block just rewritten. A transfer that hit either stopped at its final check with nothing booted.
+- A Let's Go Pikachu or Eevee Pokemon built in the app no longer gets 200 AVs in every stat when Max
+  AVs is not chosen. It now carries only the AVs the player sets, or the small number the game needs
+  for the levels it gained since it was met. A Let's Go Mystery Gift or imported file keeps its own AVs.
 
 The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 
