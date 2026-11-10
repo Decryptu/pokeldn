@@ -269,6 +269,31 @@ loaded copy and replaces Emerald's. `--save-restore-emerald` reads `gSaveCounter
 game to find FireRed's slot: an Emerald copy can hold the chip's highest counter
 (`asm/save-restore.s`, `sav.sectors_to_write`).
 
+### Returning to FireRed
+
+A relaunch of the application reloads FireRed from RomFS, but the save file may still hold Emerald's
+sectors. FireRed then prints "The save file is corrupted." / "The previous save file will be loaded."
+and takes the other slot when it is whole; when neither slot is whole it offers NEW GAME only, and
+no Mystery Gift session can reach the console.
+
+If the console is still running Emerald, `tools/rse/emerald_save_restore.py` runs a save restore from
+Emerald's Mystery Gift. It builds `asm/save-restore.s` with a FinishSave stub: `swi 0x4C` commits the
+whole 128 KiB flash image to `save:/`, and the stub returns 0 instead of `SAVE_STATUS_OK`, so the
+Mystery Gift menu ends on a failure and the running game does not save over the restored image. The
+payload reads Emerald's `gSaveCounter` (0x03006320 in the BPRE and BPRF builds), and the host
+advertises as Emerald. Measured on the emulated French FireRed: a VBlank hook wrote sector 30 with
+`0x5A` through `swi 0x48`, then called `swi 0x4C`; the save file changed and sector 30 read `0x5A`,
+while the same write without `0x4C` stayed in the in-memory flash image. On the retail English
+FireRed Lite running the Emerald BPRE build, the Emerald build's Mystery Gift -> Wonder Cards ->
+Friend screen went black: the console associated with the host's Wi-Fi but never sent its LinkPlayer
+block, so the retail FinishSave path is unverified.
+
+The console is now back on FireRed with a fresh save. The old save is
+`scratchpad/lite/lite_backup.sav` (GURVAN, TID 57189, SID 58811, 156h30m). Once Mystery Gift is
+unlocked on FireRed, the ordinary restore writes, loads and saves it:
+
+    bin/frlg_mg_host.py --save-restore scratchpad/lite/lite_backup.sav --live ...
+
 ### The ROM image
 
 The ROM copy carries the application's three librfu patches ([The breakpoint
@@ -443,6 +468,9 @@ Under unicorn, `RtcGetRawInfo` from the built ROM returned the expected date at 
 
 - A retail console has run only the build before [The FireRed copy](#the-firered-copy). On it FireRed's
   copy does not survive an Emerald save.
+- The retail Emerald build's Mystery Gift -> Wonder Cards -> Friend screen goes black before the
+  LinkPlayer block ([Returning to FireRed](#returning-to-firered)); the FinishSave restore has not
+  run on retail.
 - The live blocks of the error path. After a link error 2816 blocks into an emulated stream, A on
   the error screen gave a black screen: the way back to the title runs from overwritten blocks, so a
   cut stream restarts from a relaunch.
