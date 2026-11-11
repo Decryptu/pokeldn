@@ -1,13 +1,14 @@
-# pokeldn 0.62.2
+# pokeldn 0.63.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- A Let's Go Pikachu or Eevee Pokemon built in the app no longer gets 200 AVs in every stat when Max
-  AVs is not chosen. It now carries only the AVs the player sets, or the small number the game needs
-  for the levels it gained since it was met. A Let's Go Mystery Gift or imported file keeps its own AVs.
+- On Windows, no grey console window flashes when pokeldn starts. Runs start a second file,
+  `pokeldn-run.exe`, kept beside `pokeldn.exe`; their logs and the Stop button work as before.
+- Settings has a search field: type a word to show only the settings that mention it, the advanced
+  settings included.
 
 The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 

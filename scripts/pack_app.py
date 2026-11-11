@@ -118,6 +118,30 @@ def clear_cfg(exe: Path) -> None:
     exe.write_bytes(data)
 
 
+# The GUI exe has no console, so Windows opens none at launch; runs start the console copy with
+# CREATE_NO_WINDOW and keep their pipes (pokeldn/app/runner.py, docs/gui.md, Build a desktop app).
+RUN_EXE = "pokeldn-run.exe"
+
+
+def split_windows_console(folder: Path) -> None:
+    """Copies the console-subsystem pokeldn.exe to pokeldn-run.exe, then marks pokeldn.exe GUI-subsystem."""
+    exe = folder / "pokeldn.exe"
+    shutil.copy2(exe, folder / RUN_EXE)
+    set_subsystem(exe, 2)
+
+
+def set_subsystem(exe: Path, subsystem: int) -> None:
+    """IMAGE_SUBSYSTEM_WINDOWS_GUI is 2, WINDOWS_CUI 3; the CheckSum is recomputed as in clear_cfg."""
+    data = bytearray(exe.read_bytes())
+    pe = int.from_bytes(data[0x3C:0x40], "little")
+    assert data[pe:pe + 4] == b"PE\0\0", exe
+    field = pe + 24 + 68
+    data[field:field + 2] = subsystem.to_bytes(2, "little")
+    checksum = pe + 24 + 64
+    data[checksum:checksum + 4] = pe_checksum(data, checksum).to_bytes(4, "little")
+    exe.write_bytes(data)
+
+
 def pe_checksum(data: bytes, field: int) -> int:
     """The PE optional header CheckSum (imagehlp CheckSumMappedFile), skipping its own four bytes."""
     padded = bytes(data[:field]) + b"\0\0\0\0" + bytes(data[field + 4:]) + b"\0" * (len(data) % 2)
@@ -234,6 +258,7 @@ def main() -> int:
             subprocess.run(["codesign", "--force", "--sign", "-", str(expected)], check=True)
         if result == 0 and sys.platform == "win32":
             clear_cfg(expected / "pokeldn.exe")
+            split_windows_console(expected)
         if result == 0 and sys.platform.startswith("linux"):
             (ROOT / "dist" / f"{APP_ID}.desktop").unlink(missing_ok=True)
         return result

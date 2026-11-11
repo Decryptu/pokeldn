@@ -11,6 +11,12 @@ from pathlib import Path
 DROP = b"package:flet_drop"
 
 
+def pe_subsystem(exe: Path) -> int:
+    data = exe.read_bytes()
+    pe = int.from_bytes(data[0x3C:0x40], "little")
+    return int.from_bytes(data[pe + 24 + 68:pe + 24 + 70], "little")
+
+
 def check() -> None:
     from pokeldn import __version__
     from pokeldn import gifts, pokemon
@@ -21,6 +27,8 @@ def check() -> None:
     from serial.tools import list_ports
 
     assert getattr(sys, "frozen", False)
+    if sys.platform == "win32":
+        assert runner.command("--run", "x")[0] == runner.WINDOWS_RUN
     root = Path(sys._MEIPASS)
     assert Path(pokemon.HERE) == root / "services/pkhex"
     assert (root / "gui/firmware/pokeldn-radio.bin").is_file()
@@ -124,7 +132,14 @@ if __name__ == "__main__":
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from pokeldn import __version__
 
-        result = subprocess.run([sys.argv[1], "--run", str(Path(__file__).resolve())],
+        executable = sys.argv[1]
+        if sys.platform == "win32":
+            # pokeldn.exe opens no console; its runs go through the console copy (scripts/pack_app.py).
+            folder = Path(executable).resolve().parent
+            assert pe_subsystem(folder / "pokeldn.exe") == 2, "pokeldn.exe must be GUI-subsystem"
+            assert pe_subsystem(folder / "pokeldn-run.exe") == 3, "pokeldn-run.exe must be console-subsystem"
+            executable = str(folder / "pokeldn-run.exe")
+        result = subprocess.run([executable, "--run", str(Path(__file__).resolve())],
                                 capture_output=True, text=True, encoding="utf-8", timeout=180)
         assert result.returncode == 0, (hex(result.returncode & 0xFFFFFFFF), result.stdout, result.stderr)
         assert "seven Pokemon formats verified" in result.stdout, (result.stdout, result.stderr)

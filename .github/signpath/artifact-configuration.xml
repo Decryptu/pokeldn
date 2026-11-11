@@ -6,6 +6,9 @@
     <pe-file path="pokeldn.exe">
       <authenticode-sign/>
     </pe-file>
+    <pe-file path="pokeldn-run.exe">
+      <authenticode-sign/>
+    </pe-file>
     <pe-file path="_internal/services/pkhex/dist/pokeldn-pkhex.exe">
       <authenticode-sign/>
     </pe-file>

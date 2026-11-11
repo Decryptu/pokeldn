@@ -2105,3 +2105,36 @@ def test_the_line_after_an_install_ends_when_the_board_answers(monkeypatch, curr
                                          current=current)
     view.render()
     assert view.progress_text.value == shown and not view.confirming
+
+
+def test_settings_search_finds_a_hidden_advanced_card_under_its_section(tmp_path, monkeypatch):
+    """Settings search (docs/gui.md): a query shows matching cards, advanced ones included, with their section."""
+    import flet as ft
+    from gui.views.settings import SettingsView
+    from pokeldn.app import settings as settings_module
+
+    monkeypatch.setattr(settings_module, "PATH", tmp_path / "settings.json")
+    monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
+    app = SimpleNamespace(settings=settings_module.Settings(), update=None, update_state="",
+                          update_listeners=[], picker=None, page=None, ui=lambda fn: fn())
+    view = SettingsView(app)
+
+    def texts():
+        found, stack = [], list(view.column.controls)
+        while stack:
+            control = stack.pop(0)
+            if isinstance(control, ft.Text) and control.value:
+                found.append(control.value)
+            stack += [c for c in (getattr(control, "controls", None) or [getattr(control, "content", None)])
+                      if isinstance(c, ft.Control)]
+        return found
+
+    assert "Transmit power" not in texts()
+    for query, present, absent in (("TRANSMIT", ["Advanced settings", "Transmit power"], ["Switch keys", "Your setup", "Bug reports"]),
+                                   ("prod.keys", ["Switch keys", "Your setup"], ["Storage", "Transmit power"]),
+                                   ("zzzz", ["No setting matches."], ["Switch keys"])):
+        view._search(SimpleNamespace(control=SimpleNamespace(value=query)))
+        shown = texts()
+        assert all(p in shown for p in present) and not any(a in shown for a in absent), (query, shown)
+    view._search(SimpleNamespace(control=SimpleNamespace(value="")))
+    assert "Switch keys" in texts() and "Transmit power" not in texts()

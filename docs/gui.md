@@ -607,6 +607,12 @@ board dropped, the join failed, no console) starts again after 15 s with the que
 not traded, up to three times in a row; a run that completes a trade resets the count. Do not retry
 cancels the wait; Start or picking another tool does too.
 
+## Settings search
+
+The field at the top of Settings shows only the cards whose title or description holds the typed
+text, ignoring case, each under its section heading. A search also covers the advanced settings while
+they are hidden. A game tool's All options tab has its own search over its options.
+
 ## Keyboard shortcuts
 
 Cmd on macOS, Ctrl elsewhere:
@@ -783,6 +789,9 @@ Packaging traps:
   ([unicorn#2281](https://github.com/unicorn-engine/unicorn/issues/2281)); the packer clears
   `GUARD_CF` in `pokeldn.exe` (`0xC160` to `0x8160`). Never enable `faulthandler` in the frozen
   check.
+- On Windows `pokeldn.exe` is GUI-subsystem (subsystem 2) and opens no console window.
+  `pokeldn-run.exe` beside it is the same file with subsystem 3: every run, flash and helper starts it
+  with pipes and `CREATE_NO_WINDOW`, so its log reaches the app and a closed stdin stops it.
 
 ### The app icon
 

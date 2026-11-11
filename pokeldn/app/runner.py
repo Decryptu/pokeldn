@@ -71,10 +71,17 @@ def execute(argv: list[str]) -> None:
 BLUETOOTH_HELPER = os.path.join(os.path.dirname(os.path.dirname(sys.executable)), "Helpers", "pokeldn-bluetooth")
 
 
+# Windows: pokeldn.exe is GUI-subsystem; children run its console-subsystem copy, which keeps their
+# pipes, under CREATE_NO_WINDOW (scripts/pack_app.py, docs/gui.md, Build a desktop app).
+WINDOWS_RUN = os.path.join(os.path.dirname(sys.executable), "pokeldn-run.exe")
+
+
 def command(*argv: str, bluetooth: bool = False) -> list[str]:
     if getattr(sys, "frozen", False):
         if bluetooth and sys.platform == "darwin" and os.path.isfile(BLUETOOTH_HELPER):
             return [BLUETOOTH_HELPER, *argv]
+        if sys.platform == "win32" and os.path.isfile(WINDOWS_RUN):
+            return [WINDOWS_RUN, *argv]
         return [sys.executable, *argv]
     return [sys.executable, "-u", os.path.join(ROOT, "pokeldn", "app", "entry.py"), *argv]
 

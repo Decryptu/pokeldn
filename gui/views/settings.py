@@ -67,6 +67,11 @@ class SettingsView:
         app.update_listeners.append(self._update_shown)
         self._update_text()
         self.show_advanced = False
+        self.query = ""
+        self.search_field = t.field(hint=tr('settings.search_the_settings', 'Search the settings'),
+                                    prefix_icon=ft.Container(t.pixel_icon("search", color=t.FAINT),
+                                                             width=40, alignment=ft.Alignment.CENTER),
+                                    on_change=self._search)
         # The game a trainer per game edits; a restart must not look like the trainer was forgotten.
         self.trainer_game = app.settings.last_edited(dict(TRAINER_GAMES)) or "firered"
         self.column = ft.Column(spacing=t.GAP)
@@ -100,48 +105,53 @@ class SettingsView:
 
         trainer = self._trainer()
 
+        def entry(title, body=None, description="", trailing=None):
+            # The search reads a card's title and description (docs/gui.md, Settings search).
+            return f"{title} {description}", t.card(title, body, description, trailing=trailing)
+
         def switch(name, label, help_):
-            return t.card(label, None, help_,
-                          trailing=t.switch(getattr(s, name), lambda e: self.save(name, e.control.value)))
+            return entry(label, None, help_,
+                         trailing=t.switch(getattr(s, name), lambda e: self.save(name, e.control.value)))
 
         def link(label, url):
             return t.link_button(label, lambda e: self.app.page.run_task(self.app.open_url, url))
 
         def section(label):
-            return ft.Container(t.text(label, 12, t.MUTED, weight=ft.FontWeight.W_600),
-                                padding=ft.Padding(4, 8, 0, 0))
+            return None, ft.Container(t.text(label, 12, t.MUTED, weight=ft.FontWeight.W_600),
+                                      padding=ft.Padding(4, 8, 0, 0))
 
         advanced = [
-            t.card(tr('settings.serial_speed_1ed128', 'Serial speed'), speed, tr('settings.how_fast_the_computer_talks_to_the_board_keep_the_defau_4942ca', 'How fast the computer talks to the board. Keep the default unless a guide says otherwise.')),
-            t.card(tr('settings.transmit_power', 'Transmit power'), power, tr('settings.transmit_power_help', "The board's radio strength. Automatic uses 8.5 dBm on an ESP32-C3, since small C3 boards (Super Mini, 0.42-inch screen) only reach the console at that power, and full power on other boards, dropping to 8.5 dBm when a join fails.")),
+            entry(tr('settings.serial_speed_1ed128', 'Serial speed'), speed, tr('settings.how_fast_the_computer_talks_to_the_board_keep_the_defau_4942ca', 'How fast the computer talks to the board. Keep the default unless a guide says otherwise.')),
+            entry(tr('settings.transmit_power', 'Transmit power'), power, tr('settings.transmit_power_help', "The board's radio strength. Automatic uses 8.5 dBm on an ESP32-C3, since small C3 boards (Super Mini, 0.42-inch screen) only reach the console at that power, and full power on other boards, dropping to 8.5 dBm when a join fails.")),
             switch("board_trace", tr('settings.record_the_board_s_serial_traffic_e599a1', "Record the board's serial traffic"),
                    tr('settings.adds_the_board_s_counters_and_every_serial_message_to_t_615de0', "Adds the board's counters and every serial message to the session record. Only for radio problems someone asked you to report.")),
-            t.card(tr('settings.home_tracker_2e98ab', 'HOME tracker'), t.dropdown([("empty", tr('settings.leave_it_empty_default_3eca45', 'Leave it empty (default)')), ("made", tr('settings.make_one_495c86', 'Make one'))],
+            entry(tr('settings.home_tracker_2e98ab', 'HOME tracker'), t.dropdown([("empty", tr('settings.leave_it_empty_default_3eca45', 'Leave it empty (default)')), ("made", tr('settings.make_one_495c86', 'Make one'))],
                                               s.home_tracker, on_select=lambda e: self._home_tracker(e.control.value)),
                    tr('settings.what_the_bank_the_pokemon_builder_and_mystery_gift_simu_2ba22b', 'What the bank, the Pokemon builder and Mystery Gift - Simulated put in the HOME tracker of a Pokemon moved to another game or received from a Mystery Gift. PKHeX flags an empty one; HOME refuses a made one.')),
-            t.card(tr('settings.allow_illegal', 'Allow non-legal Pokemon'), None,
+            entry(tr('settings.allow_illegal', 'Allow non-legal Pokemon'), None,
                    tr('settings.allow_illegal_detail', "Build, import, keep and trade Pokemon PKHeX finds illegal: any level, moves, ability, ball or shininess. When no legal Pokemon has what you asked for, the builder makes it anyway and marks it Not legal. A broken Pokemon can crash the other game when it is drawn, so back your save up. The GTS still takes legal Pokemon only."),
                    trailing=t.switch(s.allow_illegal, lambda e: self._allow_illegal(e.control.value))),
-            t.card(tr('settings.bank_illegal', 'Import non-legal Pokemon into the bank'), None,
+            entry(tr('settings.bank_illegal', 'Import non-legal Pokemon into the bank'), None,
                    tr('settings.bank_illegal_detail', "Keep a Pokemon PKHeX finds illegal when you import a file or a save into your bank, marked Not legal. Moving it to a game or trading it still needs Allow non-legal Pokemon. The GTS takes legal Pokemon only."),
                    trailing=t.switch(s.bank_illegal, lambda e: self._bank_illegal(e.control.value))),
-            t.card(tr('settings.pokemon_sprites_bba928', 'Pokemon sprites'), ft.Row([t.button(tr('settings.clear_the_cache_883bc1', 'Clear the cache'), self._clear_sprites, "refresh",
+            entry(tr('settings.pokemon_sprites_bba928', 'Pokemon sprites'), ft.Row([t.button(tr('settings.clear_the_cache_883bc1', 'Clear the cache'), self._clear_sprites, "refresh",
                                                         filled=False), self.sprite_state], spacing=10),
                    tr('settings.pixel_art_sprites_come_from_pokeapi_and_are_kept_on_thi_a49320', 'Pixel-art sprites come from PokeAPI and are kept on this computer after the first download. The app works without them.'),
                    trailing=t.switch(s.sprites, lambda e: self.save("sprites", e.control.value))),
         ]
-        self.column.controls = [
-            ft.Container(ft.Row([t.pixel_icon("gear", size=24, color=t.RED),
-                                 t.text(tr('settings.settings_74a883', 'Settings'), 22, weight=ft.FontWeight.W_600)], spacing=10),
-                         padding=ft.Padding(4, 12, 0, 0)),
+        self.title = ft.Container(ft.Row([t.pixel_icon("gear", size=24, color=t.RED),
+                                          t.text(tr('settings.settings_74a883', 'Settings'), 22, weight=ft.FontWeight.W_600)],
+                                         spacing=10),
+                                  padding=ft.Padding(4, 12, 0, 0))
+        self.main = [
             section(tr('settings.your_setup_d0e2ca', 'Your setup')),
-            t.card(tr('settings.app_language_b8352b', 'App language'), t.dropdown(
+            entry(tr('settings.app_language_b8352b', 'App language'), t.dropdown(
                 [("", tr('settings.english_ba118b', 'English')), *((p.id, p.name) for p in plugins.discover() if p.locale and not p.error)],
                 s.app_language, on_select=lambda e: self._language(e.control.value)),
                 tr('settings.community_language_packs_restart_pokeldn_to_apply_this__f11c09', 'Community language packs. Restart pokeldn to apply this choice.')),
-            t.card(tr('settings.switch_keys_f1b42d', 'Switch keys'), ft.Column([keys.control, self.keys_state], spacing=8),
+            entry(tr('settings.switch_keys_f1b42d', 'Switch keys'), ft.Column([keys.control, self.keys_state], spacing=8),
                    tr('settings.prod_keys_dumped_from_your_own_console_needed_to_talk_t_26673c', 'prod.keys dumped from your own console. Needed to talk to the games; it never leaves this computer.')),
-            t.card(tr('settings.your_trainer_d70afb', 'Your trainer'), trainer,
+            entry(tr('settings.your_trainer_d70afb', 'Your trainer'), trainer,
                    tr('settings.your_trainer_detail', 'The original trainer of every Pokemon the app builds for you. Put your own name, gender and IDs to make them yours, so a traded Pokemon keeps its friendship: FireRed and LeafGreen show a five-digit ID, the Switch games a six-digit one. The IDs were drawn at random on first launch; Find mine takes the ones of the last game you traded with. Play several games with different saves? Give each game its own trainer; a game you leave unchanged keeps the shared one.')),
             switch("retry_trades", tr('settings.retry_trades', 'Retry failed trades'),
                    tr('settings.retry_trades_detail', 'When a trade run fails because the console never joined, the board dropped or the join failed, start it again after 15 seconds with the Pokemon not yet traded, up to 3 times in a row.')),
@@ -149,19 +159,19 @@ class SettingsView:
                    tr('settings.larger_text_detail', 'Makes the text across the app larger. Restart pokeldn to apply it.')),
             switch("board_screen", tr('settings.board_screen', "Show the board's screen"),
                    tr('settings.board_screen_detail', "Draws what the board's pixel screen shows at the top of the Session panel: the link's traffic, each trade's Pokemon, the Mystery Gift card and a raid's lobby. No screen needs to be plugged into the board.")),
-            t.card(tr('settings.received_pokemon_1d657d', 'Received Pokemon'), ft.Row([ft.Container(received.control, expand=True),
+            entry(tr('settings.received_pokemon_1d657d', 'Received Pokemon'), ft.Row([ft.Container(received.control, expand=True),
                                                t.icon_button("external-link",
                                                              lambda e: open_folder(os.path.expanduser(s.received)),
                                                              tr('settings.open_it_acfe1b', 'Open it'))]),
                    tr('settings.where_the_pokemon_a_console_sends_you_are_saved_29cb57', 'Where the Pokemon a console sends you are saved.')),
             section(tr('settings.storage_a69c4d', 'Storage')),
-            t.card(tr('settings.local_files_3eb956', 'Local files'), ft.Column([
+            entry(tr('settings.local_files_3eb956', 'Local files'), ft.Column([
                 self.storage_state,
                 ft.Row([self.clear_button], spacing=10),
                 self.storage_result,
             ], spacing=8),
                    tr('settings.free_space_used_by_session_records_logs_temporary_offer_f7ffba', 'Free space used by session records, logs, temporary offers and unused built Pokemon. Your received Pokemon, selected offers, keys, firmware and settings are kept.')),
-            t.card(tr('settings.backup', 'Backup and restore'), ft.Column([
+            entry(tr('settings.backup', 'Backup and restore'), ft.Column([
                 ft.Row([t.button(tr('settings.backup_make', 'Back up...'), self._backup, "download", filled=False,
                                  disabled=self.backup_work),
                         t.button(tr('settings.backup_restore', 'Restore...'), self._pick_restore, "upload", filled=False,
@@ -170,22 +180,53 @@ class SettingsView:
             ], spacing=8),
                    tr('settings.backup_detail', 'One file with your settings, the bank, received and built Pokemon, saves, GTS listings and macros. Your console keys and plugins are never in it.')),
             section(tr('settings.bug_reports_aa0e58', 'Bug reports')),
-            t.card(tr('settings.record_every_session_f5f9d8', 'Record every session'), ft.Row([t.button(tr('settings.open_the_records_6fade1', 'Open the records'), lambda e: open_folder(
+            entry(tr('settings.record_every_session_f5f9d8', 'Record every session'), ft.Row([t.button(tr('settings.open_the_records_6fade1', 'Open the records'), lambda e: open_folder(
                 str(SESSION / "captures")), "folder", filled=False)]),
                    tr('settings.keeps_a_small_record_of_each_session_when_something_fai_b8e93e', 'Keeps a small record of each session. When something fails, attach the latest file to your report.'),
                    trailing=t.switch(s.capture, lambda e: self.save("capture", e.control.value))),
             switch("private_logs", tr('settings.private_logs', 'Hide personal details in logs'),
                    tr('settings.private_logs_detail', 'Masks trainer names, nicknames, trainer IDs, the device half of MAC addresses and your user folder in the logs shown here, so you can share them or record your screen. Turn it off only if a developer asks for the full log.')),
-            ft.Row([t.link_button(tr('settings.hide_advanced_settings_82557c', 'Hide advanced settings') if self.show_advanced else tr('settings.show_advanced_settings_c0d5bf', 'Show advanced settings'),
-                                  self._toggle_advanced)]),
-            *(advanced if self.show_advanced else []),
-            t.card(tr('settings.updates_22e2ba', 'Updates'), ft.Row([t.button(tr('settings.check_now_2937cf', 'Check now'), self._check_update, "refresh", filled=False),
+        ]
+        self.toggle = ft.Row([t.link_button(tr('settings.hide_advanced_settings_82557c', 'Hide advanced settings') if self.show_advanced else tr('settings.show_advanced_settings_c0d5bf', 'Show advanced settings'),
+                                            self._toggle_advanced)])
+        self.advanced = [section(tr('settings.advanced_section', 'Advanced settings')), *advanced]
+        self.tail = [
+            section(tr('settings.app_section', 'The app')),
+            entry(tr('settings.updates_22e2ba', 'Updates'), ft.Row([t.button(tr('settings.check_now_2937cf', 'Check now'), self._check_update, "refresh", filled=False),
                                       self.update_state], spacing=10),
                    tr('settings.asks_github_for_a_newer_pokeldn_when_the_app_starts_and_b07880', "Asks GitHub for a newer pokeldn when the app starts, and each installed plugin's own address for a newer version of it. Nothing about you or your games is sent."),
                    trailing=t.switch(s.check_updates, lambda e: self.save("check_updates", e.control.value))),
-            t.card(tr('settings.about_pokeldn_7bfa4b', 'About pokeldn {value0}', value0=__version__), ft.Row([link(label, url) for label, url in LINKS], spacing=4),
+            entry(tr('settings.about_pokeldn_7bfa4b', 'About pokeldn {value0}', value0=__version__), ft.Row([link(label, url) for label, url in LINKS], spacing=4),
                    tr('settings.pokeldn_is_agplv3_pokemon_are_checked_with_pkhex_core_g_689838', 'pokeldn is AGPLv3. Pokemon are checked with PKHeX.Core (GPLv3).')),
         ]
+        self._fill()
+
+    def _search(self, e) -> None:
+        self.query = e.control.value
+        self._fill()
+        self.column.update()
+
+    def _fill(self) -> None:
+        """A query shows every card whose title or description holds it, advanced ones included, under its section."""
+        query = self.query.lower().strip()
+        if not query:
+            # Section headings of the advanced cards and the app's cards show only in search results.
+            shown = [c for _, c in self.main] + [self.toggle] + \
+                [c for text, c in (self.advanced if self.show_advanced else []) + self.tail if text is not None]
+        else:
+            shown, heading = [], None
+            for text, control in self.main + self.advanced + self.tail:
+                if text is None:
+                    heading = control
+                elif query in text.lower():
+                    if heading is not None:
+                        shown.append(heading)
+                        heading = None
+                    shown.append(control)
+            if not shown:
+                shown = [t.text(tr('settings.no_setting_matches', 'No setting matches.'), 12, t.MUTED)]
+        self.column.controls = [self.title, self.search_field, *shown]
+
 
     def _trainer(self) -> ft.Control:
         """Name, gender, language and IDs, shared by every game or, with a trainer per game, the chosen game's."""

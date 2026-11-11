@@ -141,7 +141,7 @@ def executable_in(root: Path, system: str = sys.platform) -> Path:
 
 
 # What a packed app holds at its top level; anything else there means the folder is not ours alone.
-APP_ENTRIES = {"darwin": {"Contents", ".DS_Store"}, "win32": {"pokeldn.exe", "_internal"},
+APP_ENTRIES = {"darwin": {"Contents", ".DS_Store"}, "win32": {"pokeldn.exe", "pokeldn-run.exe", "_internal"},
                "linux": {"pokeldn", "_internal"}}
 
 
