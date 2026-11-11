@@ -138,7 +138,8 @@ trade page says what a trade rewrites. FireRed/LeafGreen set 70 on every receive
 | Dynamax level | Sword/Shield, except Zacian, Zamazenta and Eternatus |
 | Tera Type | Scarlet/Violet, a species whose Tera Type changes (`TeraTypeUtil.CanChangeTeraType`); the 18 types and Stellar |
 
-Max IVs sets all six to 31, Max friendship 255. Max EVs fills each stat to its cap; under a total of
+A Max pill on the IVs, EVs and Friendship label lines fills that group in place: IVs all six to 31,
+friendship 255. EVs fill each stat to its cap; under a total of
 510 the species' two highest base stats get 252 and the third the remaining 6.
 
 ### Choosing the encounter

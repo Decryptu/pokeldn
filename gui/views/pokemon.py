@@ -87,7 +87,7 @@ class PokemonPicker:
                     self.clear_button,
                     *([t.text(tr('pokemon.or_drop_either_here_a8b5ba', 'or drop either here'), 12, t.FAINT)] if drop.AVAILABLE else [])],
                    spacing=10, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-        ], spacing=10), border_radius=12)
+        ], spacing=10), border_radius=12, clip_behavior=ft.ClipBehavior.NONE)
         self.control = drop.target(self.body, self._dropped, glow=glow or self.body)
         self._show_result()
         threading.Thread(target=self._load_species, daemon=True).start()
@@ -683,6 +683,7 @@ class OfferOptions:
         self.loaded_for = None
         self.total = None    # the game's cap on all six effort values together, once the options are read
         self.found = None    # what the options were last drawn from
+        self.fields: dict[str, dict[str, ft.TextField]] = {}   # the number fields Max fills, by group then stat
         self.body = ft.Column([], spacing=10, visible=False)
         self.chevron = t.pixel_icon("chevron-right", color=t.FAINT)
         self.label = t.text("", 12, t.MUTED)
@@ -755,6 +756,7 @@ class OfferOptions:
         threading.Thread(target=work, daemon=True).start()
 
     def _form(self, found: dict) -> list[ft.Control]:
+        self.fields = {}
         # A choice the new species cannot have is dropped rather than sent.
         for key, names in (("ability", found["abilities"]), ("ball", found["balls"]), ("held_item", found["held"])):
             if self.chosen.get(key) is not None and all(n["id"] != self.chosen[key] for n in names):
@@ -781,7 +783,8 @@ class OfferOptions:
         if found["gendered"]:
             first.append(t.labeled_control(tr('pokemon.gender_a04630', 'Gender'), self._gender(), expand=True))
         second = [t.labeled_control(tr('pokemon.ball_ae5859', 'Ball'), self._choice("ball", found["balls"]), expand=True),
-                  t.labeled_control(tr('pokemon.friendship_0_255_30186d', 'Friendship (0-255)'), self._number("friendship", 255), width=130)]
+                  t.labeled_control(tr('pokemon.friendship', 'Friendship'), self._number("friendship", 255, hint="0-255"),
+                                    trailing=self._max_pill("friendship"), expand=True)]
         if found.get("tera"):
             second.append(t.labeled_control(tr('pokemon.tera_type', 'Tera Type'), self._choice(
                 "tera", found["tera"], any_label=tr('pokemon.tera_own', 'Its own')), expand=True))
@@ -802,19 +805,15 @@ class OfferOptions:
         effort = found["effort"]
         self.total = effort.get("total")
         limit = f"0-{effort['max']}" + (tr('pokemon.in_all_09ffde', ', {value0} in all', value0=effort['total']) if effort.get("total") else "")
-        quick = [t.secondary_button(tr('pokemon.max_ivs', 'Max IVs'), lambda e: self._max("ivs")),
-                 t.secondary_button(tr('pokemon.max_effort', 'Max {value0}', value0=EFFORT[effort["kind"]]),
-                                    lambda e: self._max("effort"),
-                                    tooltip=tr('pokemon.max_evs_tip', '252 in the two highest base stats, the rest in the third')
-                                    if effort.get("total") else None),
-                 t.secondary_button(tr('pokemon.max_friendship', 'Max friendship'), lambda e: self._max("friendship"))]
+        effort_tip = tr('pokemon.max_evs_tip', '252 in the two highest base stats, the rest in the third') \
+            if effort.get("total") else ""
         return [
-            ft.Row(quick, spacing=8, wrap=True, run_spacing=8),
             self._encounter(encounters),
             t.field_grid(first + second, 150),
             self._moves(found["move_names"]),
+            ft.Container(height=2),
             self._stats("ivs", tr('pokemon.ivs_39e3d6', 'IVs'), 31, "0-31"),
-            self._stats("effort", EFFORT[effort["kind"]], effort["max"], limit, effort.get("total")),
+            self._stats("effort", EFFORT[effort["kind"]], effort["max"], limit, effort.get("total"), effort_tip),
             ft.Row([t.text(tr('pokemon.empty_means_random_the_build_is_checked_by_pkhex_s_lega_14cf61', "Empty means random. The build is checked by PKHeX's legality analysis."), 12, t.FAINT,
                            expand=True),
                     t.link_button(tr('pokemon.clear_83b12c', 'Clear'), self._clear)]),
@@ -878,9 +877,18 @@ class OfferOptions:
                 values[keys[at]] = give = min(effort["max"], left)
                 left -= give
             self.chosen["effort"] = {k: v for k, v in values.items() if v}
-        self.body.controls = self._form(found)
+        # Filled in place: rebuilding the form under the pointer dropped the next tap.
+        for group_name, boxes in self.fields.items():
+            chosen = self.chosen.get(group_name)
+            for stat, box in boxes.items():
+                value = chosen.get(stat, "") if isinstance(chosen, dict) else ("" if chosen is None else chosen)
+                box.value = str(value)
+                t.mark_invalid(box, False)
         self._label()
         self.control.update()
+
+    def _max_pill(self, group: str, tip: str = "") -> ft.Control:
+        return t.pill_button(tr('pokemon.max_pill', 'Max'), lambda e: self._max(group), tip)
 
     def _gender(self) -> ft.Control:
         def picked(value):
@@ -927,7 +935,7 @@ class OfferOptions:
         return ft.Column([t.text(tr('pokemon.moves_empty_means_the_encounter_s_own_c7b0d3', "Moves (empty means the encounter's own)"), 12, t.MUTED),
                           ft.Row(boxes[:2], spacing=6), ft.Row(boxes[2:], spacing=6)], spacing=4)
 
-    def _number(self, key: str, top: int) -> ft.TextField:
+    def _number(self, key: str, top: int, hint: str = "-") -> ft.TextField:
         def changed(e):
             raw = e.control.value.strip()
             if raw.isdigit() and int(raw) <= top:
@@ -938,14 +946,18 @@ class OfferOptions:
             self._label()
             self.control.update()
         current = self.chosen.get(key)
-        return t.field(value="" if current is None else str(current), hint="-", mono=True, digits=True,
-                       limit=len(str(top)), on_change=changed)
+        box = t.field(value="" if current is None else str(current), hint=hint, mono=True, digits=True,
+                      limit=len(str(top)), on_change=changed)
+        self.fields[key] = {key: box}
+        return box
 
-    def _stats(self, group: str, title: str, top: int, limit: str, total: int | None = None) -> ft.Control:
+    def _stats(self, group: str, title: str, top: int, limit: str, total: int | None = None,
+               tip: str = "") -> ft.Control:
         values = self.chosen.setdefault(group, {})
         boxes = []
 
         def changed(e, stat):
+            values = self.chosen.setdefault(group, {})    # Max puts a new dict here
             raw = e.control.value.strip()
             if raw.isdigit() and int(raw) <= top:
                 values[stat] = int(raw)
@@ -959,14 +971,21 @@ class OfferOptions:
             self._label()
             self.control.update()
 
+        self.fields[group] = {}
         for stat, name in STATS:
+            # Narrow padding: six boxes share a phone's width and 252 must still fit.
             box = t.field(value=str(values.get(stat, "")), hint="-", mono=True, expand=True,
-                          digits=True, limit=3,
+                          digits=True, limit=3, content_padding=ft.Padding(6, 8, 6, 8),
+                          text_align=ft.TextAlign.CENTER,
                           on_change=lambda e, stat=stat: changed(e, stat))
+            self.fields[group][stat] = box
             boxes.append(t.labeled_control(name, box, expand=True))
         if not values:
             self.chosen.pop(group, None)
-        return ft.Column([t.text(tr('pokemon._e11f55', '{value0} ({value1})', value0=title, value1=limit), 12, t.MUTED), ft.Row(boxes, spacing=6)], spacing=4)
+        head = ft.Row([t.text(tr('pokemon._e11f55', '{value0} ({value1})', value0=title, value1=limit), 12, t.MUTED,
+                              expand=True), self._max_pill(group, tip)],
+                      spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        return ft.Column([head, ft.Row(boxes, spacing=6)], spacing=6)
 
     def _clear(self, e) -> None:
         self.chosen.clear()
@@ -1017,11 +1036,20 @@ def icon_choices(app, dropdown: ft.Dropdown, names: list[dict], ribbon: bool = F
         app.ui(redraw)
     fill()
     chosen = Icon(app, icons.get(str(dropdown.value)), ribbon)
-    dropdown.leading_icon = chosen.control
+    # An empty leading slot still indents the text: the slot is there only for a value with an icon.
+    dropdown.leading_icon = chosen.control if str(dropdown.value) in icons else None
     if len(rows) < len(icons):
         cache = chosen.cache
         cache.prefetch([icons[o.key] for o in dropdown.options if o.key in icons and o.key not in rows], batch)
-    return lambda value: chosen.show(icons.get(str(value)))
+
+    def show(value) -> None:
+        dropdown.leading_icon = chosen.control if str(value) in icons else None
+        chosen.show(icons.get(str(value)), update=False)
+        try:
+            dropdown.update()
+        except RuntimeError:
+            pass
+    return show
 
 
 NAME_LISTS = {"species": "species", "move": "moves", "item": "items", "ball": "balls", "ribbon": "ribbons",

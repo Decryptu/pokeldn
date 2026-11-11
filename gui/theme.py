@@ -420,10 +420,24 @@ def field_line(control: ft.Control, alignment: ft.Alignment = ft.Alignment.CENTE
     return ft.Container(control, height=CONTROL_HEIGHT, alignment=alignment, **kwargs)
 
 
-def labeled_control(label: str, control: ft.Control, **kwargs) -> ft.Column:
-    return ft.Column([ft.Container(text(label, 11, MUTED),
-                                   alignment=ft.Alignment.CENTER_LEFT), control],
+def labeled_control(label: str, control: ft.Control, trailing: ft.Control | None = None, **kwargs) -> ft.Column:
+    """A field under its label; `trailing` (a `pill_button`) sits at the label line's right end."""
+    head: ft.Control = text(label, 11, MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
+    if trailing:
+        head = ft.Row([ft.Container(head, expand=True), trailing], spacing=6,
+                      vertical_alignment=ft.CrossAxisAlignment.CENTER)
+    return ft.Column([ft.Container(head, alignment=ft.Alignment.CENTER_LEFT, height=18), control],
                      spacing=4, tight=True, **kwargs)
+
+
+def pill_button(label: str, on_click=None, tooltip: str = "") -> ft.Control:
+    """A small capsule on a label line, beside the fields it fills (More options' Max)."""
+    return ft.TextButton(label, on_click=on_click, tooltip=tooltip or None, height=20,
+                         style=ft.ButtonStyle(color=BLUE, bgcolor=ft.Colors.with_opacity(0.12, BLUE),
+                                              overlay_color=ft.Colors.with_opacity(0.12, BLUE),
+                                              padding=ft.Padding(7, 0, 7, 0), shape=ft.StadiumBorder(),
+                                              visual_density=ft.VisualDensity.COMPACT,
+                                              text_style=ft.TextStyle(size=scaled(11), weight=ft.FontWeight.W_600)))
 
 
 class _Button(ft.Button):
