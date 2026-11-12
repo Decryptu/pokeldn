@@ -1,14 +1,13 @@
-# pokeldn 0.63.1
+# pokeldn 0.64.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The Pokemon builder's More options is easier to read: a small Max button sits on the IVs, EVs and
-  Friendship lines, beside the boxes it fills.
-- Fixed menus with no icon (Ball, Held item) leaving an empty gap before their text, the
-  "or drop either here" hint cut off at the card's corner, and EV values cut off on a phone.
+- A built Pokemon can wear ribbons: Ribbons, under the built Pokemon, lists the ones PKHeX accepts
+  for it (Paldea Champion on Scarlet and Violet, Galar Champion on Sword and Shield, the Hoenn contest
+  ranks on FireRed and LeafGreen), each with its icon. Tap one to put it on or take it off.
 
 The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 
