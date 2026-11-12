@@ -12,7 +12,7 @@ from pokeldn.app.settings import GEN3
 from pokeldn.lgpe.session import CODE_PICKER, code_picks
 from gui import drop, theme as t
 from gui.views.sprites import EDGE, MINI, SIZE as SPRITE_SIZE, Icon, Sprite
-from gui.views.widgets import PixelActivity
+from gui.views.widgets import PixelActivity, reloading
 from gui.localization import SERVICE, error_message, summary_text, translate
 from pokeldn.app.i18n import t as tr
 
@@ -681,6 +681,7 @@ class RibbonPanel:
         self.open = False
         self.loaded_for = None
         self.token = 0
+        self.busy = False   # a tap waits for the last one's record
         self.chevron = t.pixel_icon("chevron-right", color=t.FAINT)
         self.label = t.text("", 12, t.MUTED)
         self.body = ft.Row([], spacing=6, run_spacing=6, wrap=True, visible=False)
@@ -712,7 +713,7 @@ class RibbonPanel:
         self.loaded_for = path
         self.token += 1
         token = self.token
-        self.body.controls = [PixelActivity(tr('pokemon.reading_ribbons', 'Reading ribbons'))]
+        self.body.controls = reloading(self.body.controls, PixelActivity(tr('pokemon.reading_ribbons', 'Reading ribbons')))
         game, app = self.picker.game, self.picker.app
 
         def work():
@@ -753,9 +754,10 @@ class RibbonPanel:
 
     def _flip(self, ribbon: dict) -> None:
         value = 0 if ribbon["value"] else (ribbon["legal"] or ribbon["top"])
+        if self.busy:
+            return
+        self.busy = True
         picker, path = self.picker, self.picker.value.get("file")
-        self.body.controls = [PixelActivity(tr('pokemon.reading_ribbons', 'Reading ribbons'))]
-        self.control.update()
 
         def work():
             try:
@@ -769,7 +771,7 @@ class RibbonPanel:
             except Exception as exc:
                 message = error_message(exc)
                 done = lambda: self._show([], message)   # noqa: E731
-            picker.app.ui(lambda: (done(), picker.control.update()))
+            picker.app.ui(lambda: (setattr(self, "busy", False), done(), picker.control.update()))
         threading.Thread(target=work, daemon=True).start()
 
 
@@ -835,8 +837,8 @@ class OfferOptions:
         if self.loaded_for == target:
             return
         self.loaded_for = target
-        self.body.controls = [ft.Row([PixelActivity(tr('pokemon.loading_options_86dc28', 'Loading options')),
-                                      t.text(tr('pokemon.reading_what_this_species_can_have_bdcc50', 'Reading what this species can have...'), 12, t.MUTED)], spacing=8)]
+        self.body.controls = reloading(self.body.controls, ft.Row([PixelActivity(tr('pokemon.loading_options_86dc28', 'Loading options')),
+                                      t.text(tr('pokemon.reading_what_this_species_can_have_bdcc50', 'Reading what this species can have...'), 12, t.MUTED)], spacing=8))
         app = self.picker.app
 
         def work():

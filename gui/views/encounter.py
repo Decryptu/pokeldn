@@ -10,7 +10,7 @@ from gui import theme as t
 from gui.localization import SERVICE, error_message
 from gui.views.pokemon import STATS, NamePicker, pokemon_header
 from gui.views.sprites import Sprite
-from gui.views.widgets import PixelActivity
+from gui.views.widgets import PixelActivity, reloading
 from pokeldn.app.i18n import t as tr
 from pokeldn.sv import wild
 
@@ -185,9 +185,9 @@ class EncounterPicker:
             self._draw_places()
             self.places.update()
             return
-        self.places.controls = [ft.Row([PixelActivity(tr('encounter.checking_0dfe1d', 'Checking')),
+        self.places.controls = reloading(self.places.controls, ft.Row([PixelActivity(tr('encounter.checking_0dfe1d', 'Checking')),
                                         t.text(tr('encounter.pkhex_is_checking_where_this_pokemon_is_legal_5a24ff', 'PKHeX is checking where this Pokemon is legal...'),
-                                               12, t.MUTED)], spacing=8)]
+                                               12, t.MUTED)], spacing=8))
         self.places.update()
         spawn = self.spawn()
 

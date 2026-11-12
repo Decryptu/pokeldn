@@ -1,13 +1,12 @@
-# pokeldn 0.64.0
+# pokeldn 0.64.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- A built Pokemon can wear ribbons: Ribbons, under the built Pokemon, lists the ones PKHeX accepts
-  for it (Paldea Champion on Scarlet and Violet, Galar Champion on Sword and Shield, the Hoenn contest
-  ranks on FireRed and LeafGreen), each with its icon. Tap one to put it on or take it off.
+- Fixed the Ribbons list flashing when a ribbon is tapped, and More options and the encounter places
+  list going blank while they reload.
 
 The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 

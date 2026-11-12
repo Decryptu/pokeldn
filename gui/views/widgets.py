@@ -14,6 +14,18 @@ from gui import drop, theme as t
 from pokeldn.app.i18n import t as tr
 
 
+WAITING = "waiting"   # the data of a placeholder reloading() put in place
+
+
+def reloading(shown: list, placeholder: ft.Control) -> list:
+    """What a list shows while its content reloads: what it already shows, so a filled view never blinks to a
+    placeholder and back; the placeholder only while nothing has loaded yet."""
+    if shown and getattr(shown[0], "data", None) != WAITING:
+        return shown
+    placeholder.data = WAITING
+    return [placeholder]
+
+
 class PixelActivity(ft.Container):
     def __init__(self, label: str = tr('widgets.loading_dc3808', 'Loading')):
         positions = [(6, 0), (12, 0), (12, 6), (12, 12), (6, 12), (0, 12), (0, 6), (0, 0)]
