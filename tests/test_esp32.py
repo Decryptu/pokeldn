@@ -1384,8 +1384,11 @@ def test_the_lets_go_joiner_trades_its_queue_on_one_seat_on_simulated_boards(tmp
     assert shown == ["host_shown/lgpe-33333333.pb7", "host_shown/lgpe-44444444.pb7",
                      "join_shown/lgpe-11111111.pb7", "join_shown/lgpe-22222222.pb7"], shown
     # The joiner's answers, as the host read them: identity, offer, commits 1 and 2, then trade 2 on
-    # kinds 4 and 5. After the last queued trade it sends no kind 6.
-    assert sent("host.jsonl") == [(1, 1), (2, 2), (3, 3), (3, 4), (4, 5), (4, 6), (5, 7), (5, 8)], sent("host.jsonl")
+    # kinds 4 and 5, then the kind 6 a console sends after every trade, which the host counts.
+    assert sent("host.jsonl") == [(1, 1), (2, 2), (3, 3), (3, 4), (4, 5), (4, 6), (5, 7), (5, 8),
+                                  (6, 9)], sent("host.jsonl")
+    last = pb7.parse_message((tmp_path / "host.jsonl.payload9.bin").read_bytes())["body"]
+    assert int.from_bytes(pb7.decrypt(last)[8:10], "little") == 95, "not the record just received"
     assert sent("join.jsonl")[-1] == (6, 9), sent("join.jsonl")
 
 

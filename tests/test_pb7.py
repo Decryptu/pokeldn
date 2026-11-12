@@ -272,7 +272,8 @@ def test_the_joiner_answers_a_console_hosts_trades_in_turn_from_its_queue(tmp_pa
     assert console(5, 17, one) == [(5, 17, one)]
     assert not (tmp_path / "got-2.pb7").exists()
     assert console(5, 18, two) == [(5, 18, two)]
-    assert console(6, 19, box(25, 19)) == []
+    # After the last queued trade: its first slot, the record just received, which the host counts.
+    assert console(6, 19, box(25, 19)) == [(6, 19, box(132, 16))]
     assert console(6, 20, box(95, 20)) == [] and console(7, 21, one) == []
 
     def species(name):

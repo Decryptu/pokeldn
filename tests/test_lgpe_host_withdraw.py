@@ -3,10 +3,12 @@ record code under unicorn: reader 0x11ba20, status 0x3488b0, host authority 0x11
 Answering a withdrawal with the vote agreed locked a retail save's trading for 30 minutes."""
 import os
 import struct
+from pathlib import Path
 
 import pytest
 
-from test_lgpe_host_commit import JOINER, ONES, stage, words  # noqa: F401  (the fixture)
+from test_lgpe_host_commit import JOINER, ONES, commit, stage, words  # noqa: F401  (the fixture)
+from pokeldn.lgpe import pb7
 
 IMAGE = "scratchpad/lgpe/main.bin"      # Let's Go Pikachu 1.0.2
 needs_image = pytest.mark.skipif(not os.path.exists(IMAGE), reason="needs the Let's Go main")
@@ -29,6 +31,40 @@ def withdraw(stage):
     stage["run"](0.37)
     stage["console_publishes"](3, record(2, 2, 3, 1))
     stage["run"](3.0)
+
+
+def second_trade(stage, tmp_path):
+    """The session's first trade completed and the second opened: its offered clone is 6, step 14."""
+    s = stage["s"]
+    nxt = tmp_path / "next.bin"
+    nxt.write_bytes(Path(s.args.offer).read_bytes())
+    s.args.next_offer = [str(nxt)]
+    s.args.received = s.received = str(tmp_path / "got.pb7")
+    commit(stage)
+    stage["run"](27.1)
+    stage["console_says"](pb7.RESULT_MESSAGE, nxt.read_bytes(), step=13)
+    stage["console_says"](4, nxt.read_bytes(), step=14)
+    assert s.round == 1
+
+
+def vote_and_withdraw(stage, cid, step):
+    for rec, after in [(record(1, 1, 1, 0, step), 0.07), (record(0, 1, 1, 1, step), 0.37),
+                       (record(1, 2, 2, 1, step), 0.37), (record(2, 2, 3, 1, step), 3.0)]:
+        stage["console_publishes"](cid, rec, step=step)
+        stage["run"](after)
+
+
+@pytest.mark.parametrize("agree, last", [
+    (False, [1, 0, 0, 3, 0, 0, 14, 2]),          # held at 1 under the console's counter
+    (True, [2, 0, 0, 0, 0, 0, 14, 2]),           # --agree-withdrawn-vote: driven on to A 2
+])
+def test_the_second_trade_answers_a_withdrawal_as_the_first(stage, tmp_path, agree, last):
+    """Round 2's offered clone 6 takes the same answer as round 1's clone 3, with or without
+    --agree-withdrawn-vote."""
+    stage["s"].args.agree_withdrawn_vote = agree
+    second_trade(stage, tmp_path)
+    vote_and_withdraw(stage, 6, 14)
+    assert stage["published"](6, ctype=4)[-1] == last
 
 
 def test_a_withdrawn_vote_keeps_the_agreed_word_and_takes_the_counter(stage):

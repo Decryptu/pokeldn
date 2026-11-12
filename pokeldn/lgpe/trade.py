@@ -118,8 +118,12 @@ def answer_console(args, state, msg, send, tag="[lg]"):
     elif kind == pb7.RESULT_MESSAGE + 2 * r and _note_result(tag, state):
         queue = getattr(args, "offers", None) or [args.offer]
         if r + 1 >= len(queue):
-            print(f"{tag} game: trade {r + 1} was the last queued; a further trade is not answered")
             state["queue_done"] = True
+            # A station's kind 4 is its first slot, the record just received; the host counts on it.
+            if state.get("peer_offer"):
+                step = _send_step(state, send, kind, state["peer_offer"])
+                print(f"{tag} game: trade {r + 1} was the last queued; sent the received record "
+                      f"as the first slot, step {step}; a further trade is not answered")
             return
         from pokeldn.pokemon import trade_path
         state["round"] = r + 1

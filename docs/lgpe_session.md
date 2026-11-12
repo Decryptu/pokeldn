@@ -346,7 +346,7 @@ clones are 2 + 3r and 3 + 3r, its commit clone 4 + 3r.
 | launcher | chained trades |
 |---|---|
 | `bin/lgpe_host.py --next-offer` | answers each later trade's selections with the next record |
-| `bin/lgpe_join.py --offer ...` | answers the console host's kind 4 with the next record; after the last it answers nothing |
+| `bin/lgpe_join.py --offer ...` | answers the console host's kind 4 with the next record; after the last it sends the record just received as its first slot, which the host counts, and answers no further trade |
 | `bin/lgpe_host.py --lead` | plays a console host's part for `bin/lgpe_join.py`; `tests/test_esp32.py` |
 
 Both launchers write the received record when the 2 is exchanged; a withdrawn offer writes nothing.

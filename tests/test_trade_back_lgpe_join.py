@@ -55,7 +55,7 @@ def test_the_second_trade_offers_the_console_s_first_record_back(tmp_path):
     assert console(4, 6, box(25, 6)) == [(4, 6, theirs)]
     assert console(5, 7, one) == [(5, 7, one)]
     assert console(5, 8, two) == [(5, 8, two)]
-    assert console(6, 9, box(1, 9)) == []
+    assert console(6, 9, box(1, 9)) == [(6, 9, box(25, 6))]
 
 
 
