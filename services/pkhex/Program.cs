@@ -76,6 +76,7 @@ static partial class Program
                     "paste" => Paste(game, request),
                     "check" => Check(game, Convert.FromBase64String((string)request["data"]!), request),
                     "owner" => Owner(game, Convert.FromBase64String((string)request["data"]!)),
+                    "ribbons" => RibbonList(game, Convert.FromBase64String((string)request["data"]!)),
                     "gift" => Gift(Convert.FromBase64String((string)request["data"]!)),
                     "events" => Events(),
                     "event" => Event(game, request),
@@ -977,6 +978,92 @@ static partial class Program
                          : "is shiny for you: its encounter fixes its PID";
         }
 
+        // The ribbons a built Pokemon can wear (docs/gui.md, Ribbons). Marks are a wild encounter's roll and stay out.
+        // A PK3 lists the Gen 4 memory counts, which no Gen 3 game writes.
+        static IEnumerable<RibbonInfo> Ribbons(PKM pk) => RibbonInfo.GetRibbonInfo(pk).Where(r => !r.Name.StartsWith("RibbonMark")
+            && !(pk is G3PKM && r.Name.StartsWith("RibbonCountMemory")));
+
+        // A count ribbon's top: Gen 3 contest ranks Normal to Master, the Gen 4 memory ribbons' counts.
+        static int RibbonTop(RibbonInfo r) => r.Type == RibbonValueType.Boolean ? 1
+            : r.Name.StartsWith("RibbonCountG3") ? 4 : r.Name == "RibbonCountMemoryContest" ? 40 : 8;
+
+        static int GetRibbon(PKM pk, RibbonInfo r) => ReflectUtil.GetValue(pk, r.Name) switch
+        {
+            bool b => b ? 1 : 0,
+            byte v => v,
+            var other => Convert.ToInt32(other),
+        };
+
+        static void SetRibbon(PKM pk, RibbonInfo r, int value) =>
+            ReflectUtil.SetValue(pk, r.Name, r.Type == RibbonValueType.Boolean ? value != 0 : (object)(byte)value);
+
+        // PokeAPI's file for a ribbon at `value`: its generation-iii folder for a FireRed record, generation-ix otherwise.
+        static (string Set, string Icon) RibbonIcon(PKM pk, RibbonInfo r, string english, int value)
+        {
+            string[] ranks = ["", "-super", "-hyper", "-master"];
+            if (pk is G3PKM)
+                return ("generation-iii", r.Name switch
+                {
+                    _ when r.Name.StartsWith("RibbonCountG3") => $"{IconName(english)}-ribbon{ranks[Math.Clamp(value, 1, 4) - 1]}-hoenn",
+                    "RibbonChampionG3" => "champion-ribbon",
+                    "RibbonChampionBattle" => "marine-ribbon",
+                    "RibbonChampionRegional" => "land-ribbon",
+                    "RibbonChampionNational" => "sky-ribbon",
+                    _ => IconName(english + " Ribbon"),
+                });
+            return ("generation-ix", r.Name switch
+            {
+                "RibbonChampionG3" => "champion-ribbon",
+                "RibbonChampionG6Hoenn" => "hoenn-champion-ribbon",
+                "RibbonCountMemoryContest" => value >= 40 ? "contest-memory-ribbon-gold" : "contest-memory-ribbon",
+                "RibbonCountMemoryBattle" => value >= 8 ? "battle-memory-ribbon-gold" : "battle-memory-ribbon",
+                _ => IconName(english + " Ribbon"),
+            });
+        }
+
+        // Each ribbon the record can carry, with the highest count PKHeX accepts added on its own (0: none) and whether
+        // taking a worn one off keeps it legal. Under Allow non-legal every ribbon is listed.
+        JsonObject RibbonList(Game game, byte[] data)
+        {
+            var pk = Parse(game, data);
+            var english = GameInfo.GetStrings("en");
+            var accepted = Accepted(pk, new LegalityAnalysis(pk));
+            bool Legal(RibbonInfo r, int value)
+            {
+                var copy = pk.Clone();
+                SetRibbon(copy, r, value);
+                copy.RefreshChecksum();
+                return Accepted(copy, new LegalityAnalysis(copy));
+            }
+            var list = new JsonArray();
+            foreach (var r in Ribbons(pk))
+            {
+                if (!strings.Ribbons.GetNameSafe(r.Name, out var name) || !english.Ribbons.GetNameSafe(r.Name, out var englishName))
+                    continue;
+                var have = GetRibbon(pk, r);
+                var top = RibbonTop(r);
+                var legal = 0;
+                if (accepted)
+                    for (var v = top; v > have; v--)
+                        if (Legal(r, v))
+                        {
+                            legal = v;
+                            break;
+                        }
+                if (have == 0 && legal == 0 && !allowIllegal)
+                    continue;
+                var (set, icon) = RibbonIcon(pk, r, englishName, Math.Max(Math.Max(have, legal), 1));
+                list.Add(new JsonObject
+                {
+                    ["id"] = r.Name, ["name"] = name, ["icon"] = icon, ["icon_set"] = set,
+                    ["value"] = have, ["top"] = top, ["legal"] = Math.Max(legal, have),
+                    // A ribbon the encounter itself gives (an event's Classic) stays on.
+                    ["fixed"] = have > 0 && accepted && !Legal(r, 0),
+                });
+            }
+            return new JsonObject { ["ribbons"] = list };
+        }
+
         JsonObject Check(Game game, byte[] data, JsonObject request)
         {
             var pk = Parse(game, data);
@@ -1011,6 +1098,14 @@ static partial class Program
                             Permit(pk);
                             break;
                         case "held_item": pk.HeldItem = (int)value!; break;
+                        case "ribbons":
+                            foreach (var (ribbon, count) in value!.AsObject())
+                            {
+                                var info = Ribbons(pk).FirstOrDefault(r => r.Name == ribbon)
+                                           ?? throw new ArgumentException($"This Pokemon has no ribbon {ribbon}.");
+                                SetRibbon(pk, info, Math.Clamp((int)count!, 0, RibbonTop(info)));
+                            }
+                            break;
                         // A file someone else made, as the player's own catch: their name, IDs and gender as original trainer.
                         case "trainer":
                             note = Retrain(pk, value!.AsObject());

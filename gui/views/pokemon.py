@@ -61,6 +61,7 @@ class PokemonPicker:
         self.variants = ft.Row(spacing=10, visible=False)    # the form and, for Alcremie, the sweet
         self.variants_token = 0
         self.result = ft.Container()
+        self.ribbons = RibbonPanel(self)
         # A file someone else made carries their trainer; this switch makes the player its original trainer.
         self.retrain = t.switch(bool(self.value.get("retrain")), self._retrain)
         self.retrain_row = ft.Row([self.retrain, t.text(tr('pokemon.use_my_trainer', 'Make me its original trainer'), 13, t.SOFT)],
@@ -79,6 +80,7 @@ class PokemonPicker:
             ft.Row([self.nickname, self.build_button], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             self.options.control,
             self.result,
+            self.ribbons.control,
             self.retrain_row,
             ft.Row([t.secondary_button(tr('pokemon.or_use_a_pokemon_file_26272a', 'Or use a Pokemon file'), self._use_file, "file"),
                     t.secondary_button(tr('pokemon.import_paste_1632a4', 'Import paste'), self._paste, "bulletlist"),
@@ -453,6 +455,7 @@ class PokemonPicker:
         self.clear_button.visible = bool(self.value.get("species") or self.value.get("file"))
         self.export_button.visible = bool(self.value.get("file"))
         self.duplicate_button.visible = bool(self.on_duplicate and self.value.get("species"))
+        self.ribbons.refresh()
         if not self.value.get("file"):
             self.result.content = None
             return
@@ -667,6 +670,107 @@ def encounter_label(found: dict, versions: bool) -> str:
     if not found["shiny"]:
         parts.append(tr('pokemon.encounter_never_shiny', 'never shiny'))
     return " · ".join(p for p in parts if p)
+
+
+class RibbonPanel:
+    """The ribbons a built Pokemon can wear, folded under its result: PKHeX's legal ones, every one under Allow
+    non-legal (docs/gui.md, Ribbons). A tap puts one on or takes it off and keeps the changed record as a new file."""
+
+    def __init__(self, picker: 'PokemonPicker'):
+        self.picker = picker
+        self.open = False
+        self.loaded_for = None
+        self.token = 0
+        self.chevron = t.pixel_icon("chevron-right", color=t.FAINT)
+        self.label = t.text("", 12, t.MUTED)
+        self.body = ft.Row([], spacing=6, run_spacing=6, wrap=True, visible=False)
+        header = ft.Container(ft.Row([self.chevron, t.text(tr('pokemon.ribbons', 'Ribbons'), 13, t.TEXT,
+                                                           weight=ft.FontWeight.W_600), self.label], spacing=8),
+                              padding=ft.Padding(2, 4, 2, 4), border_radius=8, on_click=self._toggle)
+        self.control = ft.Column([header, self.body], spacing=8, visible=False)
+
+    def refresh(self) -> None:
+        """Follows the picker's record: hidden with none, reloaded when the file changed."""
+        path = self.picker.value.get("file")
+        self.control.visible = bool(path)
+        if path != self.loaded_for:
+            self.loaded_for = None
+            self.label.value = ""
+            if self.open and path:
+                self._load()
+
+    def _toggle(self, e) -> None:
+        self.open = not self.open
+        self.chevron.src = f"icons/chevron-{'down' if self.open else 'right'}.svg"
+        self.body.visible = self.open
+        if self.open and self.loaded_for != self.picker.value.get("file"):
+            self._load()
+        self.control.update()
+
+    def _load(self) -> None:
+        path = self.picker.value.get("file")
+        self.loaded_for = path
+        self.token += 1
+        token = self.token
+        self.body.controls = [PixelActivity(tr('pokemon.reading_ribbons', 'Reading ribbons'))]
+        game, app = self.picker.game, self.picker.app
+
+        def work():
+            try:
+                found, error = SERVICE.ribbons(game, path), ""
+            except Exception as exc:
+                found, error = [], error_message(exc)
+            app.ui(lambda: token == self.token and self._show(found, error))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show(self, ribbons: list[dict], error: str) -> None:
+        worn = sum(1 for r in ribbons if r["value"])
+        self.label.value = tr('pokemon.ribbons_worn', '{value0} worn', value0=worn) if worn else ""
+        if error:
+            self.body.controls = [t.text(error, 12, t.RED, selectable=True)]
+        elif not ribbons:
+            self.body.controls = [t.text(tr('pokemon.no_legal_ribbons', 'PKHeX allows no ribbon on this Pokemon.'),
+                                         12, t.MUTED)]
+        else:
+            self.body.controls = [self._chip(r) for r in ribbons]
+        try:
+            self.control.update()
+        except RuntimeError:    # the picker left the page
+            pass
+
+    def _chip(self, ribbon: dict) -> ft.Control:
+        on = ribbon["value"] > 0
+        illegal = not on and not ribbon["legal"]
+        tip = ribbon["name"] + ("" if not ribbon["fixed"] else " · " + tr('pokemon.ribbon_fixed', 'its encounter gives it'))
+        return ft.Container(ft.Row([
+            Icon(self.picker.app, ribbon["icon"], ribbon["icon_set"], size=20).control,
+            t.text(ribbon["name"], 12, t.TEXT if on else (t.RED if illegal else t.SOFT), weight=ft.FontWeight.W_500),
+        ], spacing=6, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=ft.Padding(6, 3, 10, 3), border_radius=999, tooltip=tip,
+            bgcolor=ft.Colors.with_opacity(0.18, t.BLUE) if on else ft.Colors.with_opacity(0.06, "#FFFFFF"),
+            border=ft.Border.all(1, t.BLUE if on else ft.Colors.TRANSPARENT),
+            on_click=None if ribbon["fixed"] else lambda e: self._flip(ribbon))
+
+    def _flip(self, ribbon: dict) -> None:
+        value = 0 if ribbon["value"] else (ribbon["legal"] or ribbon["top"])
+        picker, path = self.picker, self.picker.value.get("file")
+        self.body.controls = [PixelActivity(tr('pokemon.reading_ribbons', 'Reading ribbons'))]
+        self.control.update()
+
+        def work():
+            try:
+                info = SERVICE.check(picker.game, path, {"ribbons": {ribbon["id"]: value}})
+                if not info["legal"] and not SERVICE.allow_illegal:
+                    raise builder.BuilderError(info.get("problems") or info["report"])
+                picker.value.update(file=SERVICE.keep(picker.game, info), summary=builder.summary(info),
+                                    legal=info["legal"], report="" if info["legal"] else info["report"])
+                picker.on_change(dict(picker.value))
+                done = picker._show_result
+            except Exception as exc:
+                message = error_message(exc)
+                done = lambda: self._show([], message)   # noqa: E731
+            picker.app.ui(lambda: (done(), picker.control.update()))
+        threading.Thread(target=work, daemon=True).start()
 
 
 class OfferOptions:

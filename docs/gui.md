@@ -471,12 +471,28 @@ Settings, Pokemon sprites disables downloads and clears the cache. A missing ima
 placeholder; a missing shiny falls back to normal.
 
 Item, ball and ribbon pickers show icons from the same repository (`sprites/items/`,
-`sprites/ribbons/generation-viii/`), cached in `sprites/items/` and `sprites/ribbons/`. The helper names
+`sprites/ribbons/generation-ix/`, which holds every Gen 8 file under the same name, and
+`sprites/ribbons/generation-iii/` for a FireRed or LeafGreen record), cached in `sprites/items/`,
+`sprites/ribbons/` and `sprites/ribbons-g3/`. PokeAPI has no mark icons. The helper names
 each file from the English name (`IconName`: "Poké Ball" `poke-ball`; a Gen 3 item by its later name; Legends
 Arceus's own balls `la`-prefixed). Every row shows its icon once cached; a list opened with icons
 missing has them downloaded one at a time in list order, 0.05 s apart, on one thread per cache
 (`SpriteCache.prefetch`), and redraws after every 24. A network failure ends the run; the next list
 resumes. A name PokeAPI lacks (TMs, most Legends Z-A items) shows none.
+
+## Ribbons
+
+Ribbons, folded under a built or loaded Pokemon, lists what the helper's `ribbons` command returns:
+each ribbon of the record's format (`RibbonInfo.GetRibbonInfo`) that PKHeX's legality analysis accepts
+when added alone to the record as it stands, at the highest count it accepts. A Gen 3 contest ribbon is
+a count, Normal (1) to Master (4). A worn ribbon the encounter gives (an event's Classic) cannot be taken
+off. Marks are a wild encounter's roll and are left out, as are the Gen 4 memory counts on a PK3, which
+no Gen 3 game writes. Under Allow non-legal Pokemon every ribbon is listed, the illegal ones in red.
+
+A tap sends `check` with `ribbons` `{property: count}` and keeps the result as a new file; a result PKHeX
+refuses is dropped unless Allow non-legal Pokemon is on. The list depends on the record: a level 100
+Scarlet Pikachu built with defaults lists Best Friends, Effort, Master Rank and Paldea Champion; a
+Legends Z-A build lists none. Building again starts from no ribbons.
 
 ## Raid events
 

@@ -393,4 +393,7 @@ CACHE = SpriteCache()
 # CACHE's folder, so its clear() removes them too.
 ICON_BASE = os.environ.get("POKELDN_ICON_BASE", "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites")
 ITEMS = SpriteCache(DATA / "sprites" / "items", f"{ICON_BASE}/items", key=ICON_KEY)
-RIBBONS = SpriteCache(DATA / "sprites" / "ribbons", f"{ICON_BASE}/ribbons/generation-viii", key=ICON_KEY)
+# Generation IX holds every Gen 8 file under the same name and adds Paldea's; generation III draws a PK3's ribbons.
+RIBBONS = SpriteCache(DATA / "sprites" / "ribbons", f"{ICON_BASE}/ribbons/generation-ix", key=ICON_KEY)
+RIBBONS_G3 = SpriteCache(DATA / "sprites" / "ribbons-g3", f"{ICON_BASE}/ribbons/generation-iii", key=ICON_KEY)
+RIBBON_SETS = {"generation-ix": RIBBONS, "generation-iii": RIBBONS_G3}

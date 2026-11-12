@@ -4,7 +4,7 @@ import flet as ft
 
 from gui import theme as t
 from gui.views.widgets import PixelActivity
-from pokeldn.app.sprites import CACHE, ITEMS, RIBBONS, pixels
+from pokeldn.app.sprites import CACHE, ITEMS, RIBBON_SETS, RIBBONS, pixels
 from pokeldn.app.sprite_forms import sprite_key
 from pokeldn.app.i18n import t as tr
 
@@ -112,9 +112,11 @@ class Icon:
     """An item, ball or ribbon icon by the helper's "icon" name, cropped to its visible pixels and scaled
     to fill `size`; an empty slot while it loads, offline or when PokeAPI has none."""
 
-    def __init__(self, app, name: str | None, ribbon: bool = False, size: int = 24, fetch: bool = True):
-        """`fetch` False shows only a cached image: a list's rows, which the cache's prefetch fills in."""
-        self.app, self.size, self.cache = app, size, RIBBONS if ribbon else ITEMS
+    def __init__(self, app, name: str | None, ribbon: bool | str = False, size: int = 24, fetch: bool = True):
+        """`fetch` False shows only a cached image: a list's rows, which the cache's prefetch fills in. `ribbon` names
+        the helper's "icon_set", or True for generation IX."""
+        self.app, self.size = app, size
+        self.cache = RIBBON_SETS.get(ribbon, RIBBONS) if ribbon else ITEMS
         self.token = 0
         self.control = ft.Container(width=size, height=size, alignment=ft.Alignment.CENTER)
         self.show(name, update=False, fetch=fetch)

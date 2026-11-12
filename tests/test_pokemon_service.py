@@ -1103,3 +1103,20 @@ def test_an_emulated_guests_catch_of_a_hosted_boss_keeps_the_roll_and_passes_pkh
     assert (got["ot_name"], got["trainer_id"], got["secret_id"]) == ("Guest", 1234, 5678)
     checked = service.check_bytes("swsh", caught)
     assert checked["legal"] and checked["shiny"] == (pid_high is not None)
+
+
+@pytest.mark.parametrize("game", FORMATS)
+def test_every_listed_ribbon_stays_legal_through_the_launcher_and_an_unlisted_one_is_refused(service, game):
+    built = service.make(game, 25, TRAINER, level=100)
+    listed = service.ribbons(game, built["file"])
+    assert all(not r["id"].startswith("RibbonMark") and r["legal"] for r in listed)
+    for ribbon in listed:
+        worn = service.check(game, built["file"], {"ribbons": {ribbon["id"]: ribbon["legal"]}})
+        assert worn["legal"], (ribbon["id"], worn["report"])
+        offer = pokemon.prepare_file(game, service.keep(game, worn))
+        again = {r["id"]: r["value"] for r in service.ribbons(game, offer)}
+        assert again[ribbon["id"]] == ribbon["legal"]
+    # A wild Pikachu never carries an event's Classic ribbon, so the list leaves it out and PKHeX refuses it.
+    if game not in ("frlg", "lgpe"):
+        assert "RibbonClassic" not in {r["id"] for r in listed}
+        assert not service.check(game, built["file"], {"ribbons": {"RibbonClassic": 1}})["legal"]

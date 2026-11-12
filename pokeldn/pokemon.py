@@ -236,6 +236,13 @@ class Service:
         return self._ask({"cmd": "check", "game": game, "data": base64.b64encode(data).decode(),
                           "fresh": fresh, "fields": fields or {}})
 
+    def ribbons(self, game: str, path: str) -> list[dict]:
+        """The ribbons the Pokemon at `path` can wear: id, name, icon and icon_set (PokeAPI), value (worn now), top,
+        legal (the highest count PKHeX accepts) and fixed (its encounter gives it). Changed with check's ribbons field,
+        {id: count}."""
+        data = entity_bytes(game, Path(path).expanduser().read_bytes())
+        return self._ask({"cmd": "ribbons", "game": game, "data": base64.b64encode(data).decode()})["ribbons"]
+
     def check(self, game: str, path: str, fields=None) -> dict:
         return self.check_bytes(game, Path(path).expanduser().read_bytes(), fields=fields)
 
