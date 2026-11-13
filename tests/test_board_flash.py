@@ -218,6 +218,78 @@ def test_a_board_the_controller_firmware_put_in_the_loader_is_flashed_without_a_
     assert afters == ["watchdog-reset", "hard-reset"]
 
 
+# esptool's ESPLoader.run_stub on a classic ESP32 (CP210x, ESP32-D0WDQ6 revision v0.0, MAC
+# 00:00:00:00:00:00) whose ROM answers every command but whose stub never sends OHAI.
+STUB_SILENT = ("Failed to start stub flasher. There was no response.\n"
+               "For troubleshooting steps visit: https://docs.espressif.com/projects/esptool/en/latest/"
+               "troubleshooting.html")
+
+
+def test_a_board_whose_stub_never_starts_is_written_through_its_rom_loader(flasher, monkeypatch):
+    """The stub left running in RAM ends that connection: a fresh one writes with the ROM loader at the
+    baud rate it already answered at."""
+    flasher.chip = Chip("ESP32")
+    calls = []
+
+    def write(args, esp):
+        calls.append(args)
+        if "--no-stub" not in args:
+            raise esptool.FatalError(STUB_SILENT)
+        flasher.writes.append((esp.CHIP_NAME, Path(args[-1]).read_bytes()))
+
+    monkeypatch.setattr(esptool, "main", write)
+    board.flash("COM3")
+    assert flasher.connections == ["COM3", "COM3"]
+    assert flasher.writes == [("ESP32", flasher.images["ESP32"].read_bytes())]
+    assert "--no-stub" in calls[-1] and "--baud" not in calls[-1]
+    assert calls[-1][calls[-1].index("--after") + 1] == "hard-reset"
+
+
+def test_a_dropped_rom_write_is_tried_again_on_a_fresh_connection(flasher, monkeypatch):
+    """The same board drops about half of its ROM writes within the first few kB; the next one finishes."""
+    flasher.chip = Chip("ESP32")
+    rom = []
+
+    def write(args, esp):
+        if "--no-stub" not in args:
+            raise esptool.FatalError(STUB_SILENT)
+        rom.append(args)
+        if len(rom) < board.ROM_ATTEMPTS:
+            raise esptool.FatalError("No more data to read from the serial port.")
+        flasher.writes.append((esp.CHIP_NAME, Path(args[-1]).read_bytes()))
+
+    monkeypatch.setattr(esptool, "main", write)
+    board.flash("COM3")
+    assert len(flasher.connections) == 1 + board.ROM_ATTEMPTS
+    assert len(flasher.writes) == 1
+
+
+def test_a_board_whose_rom_write_never_finishes_reports_the_last_error(flasher, monkeypatch):
+    flasher.chip = Chip("ESP32")
+
+    def write(args, esp):
+        raise esptool.FatalError("No more data to read" if "--no-stub" in args else STUB_SILENT)
+
+    monkeypatch.setattr(esptool, "main", write)
+    with pytest.raises(esptool.FatalError, match="No more data to read"):
+        board.flash("COM3")
+    assert len(flasher.connections) == 1 + board.ROM_ATTEMPTS and not flasher.writes
+
+
+def test_a_failed_write_after_the_stub_started_is_not_retried(flasher, monkeypatch):
+    flasher.chip = Chip("ESP32")
+    calls = []
+
+    def write(args, esp):
+        calls.append(args)
+        raise esptool.FatalError("Serial data stream stopped: Possible serial noise or corruption.")
+
+    monkeypatch.setattr(esptool, "main", write)
+    with pytest.raises(esptool.FatalError, match="Serial data stream stopped"):
+        board.flash("COM3")
+    assert len(calls) == 1 and flasher.connections == ["COM3"]
+
+
 def _app_image(path, project: bytes, version: bytes):
     """A merged image's app descriptor, laid out as ESP-IDF's esp_app_desc_t: magic, secure version,
     two reserved words, version[32], project_name[32], at 0x10020."""
