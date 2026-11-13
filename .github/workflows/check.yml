@@ -14,9 +14,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # No macOS: hosted macOS runners went unassigned for weeks; the suite runs on a Mac before every push.
-        os: [ubuntu-24.04, windows-latest]
+        os: [ubuntu-24.04, macos-26, windows-latest]
     runs-on: ${{ matrix.os }}
+    # Hosted macOS runners often go unassigned; the suite runs on a Mac before every push, so macOS never fails Check.
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
