@@ -600,6 +600,14 @@ known, a CP210x board on Linux or Android gets the reset that writes DTR and RTS
 CDC `SET_CONTROL_LINE_STATE` instead.
 [Desktop builds](gui.md) covers packaging all four images.
 
+### A board whose stub flasher never starts
+
+Some classic ESP32 boards answer the ROM loader but never start esptool's stub (`Failed to start stub
+flasher`); one such board read eFuse block 0 as zeros (`MAC: 00:00:00:00:00:00`, revision v0.0). Its
+ROM also drops the baud change to 460800 and stops some writes partway. On that error `gui.board.flash`
+reconnects and writes with `--no-stub` at the connect baud, up to `ROM_ATTEMPTS` (4) connections:
+about 80 s for a 777 KB image. Any other failure ends the install.
+
 ### Bluetooth
 
 A build with `POKELDN_BLE=1` also carries the host link over Bluetooth LE, for the iOS app, which

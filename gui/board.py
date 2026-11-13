@@ -374,6 +374,8 @@ def download_firmware(say=print, folder: str = os.path.dirname(FIRMWARE)) -> str
 
 
 LOADER_SETTLE = 8.0   # seconds; see _connect
+STUB_FAILED = "Failed to start stub flasher"   # esptool ESPLoader.run_stub
+ROM_ATTEMPTS = 4
 
 
 def _native(port: str) -> bool:
@@ -436,8 +438,31 @@ def flash(port: str, firmware: str = "", kind: str = "radio", from_loader: bool 
         # The pad owns the USB port once it runs: a reset over USB from the ROM loader it was put
         # in by `pad.py --download` leaves the chip in the loader; the watchdog boots the image.
         after = "watchdog-reset" if (kind == "pad" or from_loader) and chip.CHIP_NAME == "ESP32-S3" else "hard-reset"
-        esptool.main(["--baud", "460800", "--after", after, "write-flash",
-                      "0x0", os.path.abspath(path)], esp=chip)
+        name = chip.CHIP_NAME
+        try:
+            esptool.main(["--baud", "460800", "--after", after, "write-flash",
+                          "0x0", os.path.abspath(path)], esp=chip)
+            return
+        except esptool.FatalError as error:
+            if not str(error).startswith(STUB_FAILED):
+                raise
+    # A board whose stub never starts: a fresh connection writes through the ROM loader at the
+    # connect baud; the ROM drops the switch to 460800 and some writes on a fresh connection.
+    # docs/hardware_esp32.md, A board whose stub flasher never starts.
+    print("[app] The board's flasher stub did not start; writing through its ROM loader instead "
+          "(slower).", flush=True)
+    for attempt in range(1, ROM_ATTEMPTS + 1):
+        with esptool.detect_chip(port) as chip:
+            if chip.CHIP_NAME != name:
+                raise esptool.FatalError(tr('board.merged_firmware_does_not_match_941ee6', 'Merged firmware does not match {value0}: {value1}', value0=chip.CHIP_NAME, value1=path))
+            try:
+                esptool.main(["--no-stub", "--after", after, "write-flash",
+                              "0x0", os.path.abspath(path)], esp=chip)
+                return
+            except esptool.FatalError as error:
+                if attempt == ROM_ATTEMPTS:
+                    raise
+                print(f"[app] The write stopped ({str(error).splitlines()[0]}); trying again.", flush=True)
 
 
 def main() -> int:
