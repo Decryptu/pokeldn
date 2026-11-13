@@ -69,6 +69,7 @@
 "bank.dex_no_shiny" = "No shiny yet"
 "bank.done_selecting" = "Done"
 "bank.drop_a_file_here" = " Drop a Pokemon file, a game save or a PKSM bank here to import what it holds."
+"bank.duplicate" = "Duplicate"
 "bank.edit_44b87f" = "Edit {value0}"
 "bank.edit_464c4f" = "Edit"
 "bank.evs" = "EVs"

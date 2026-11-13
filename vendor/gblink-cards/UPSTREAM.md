@@ -9,7 +9,8 @@ The ARM sources of the GB-Link Team's custom Wonder Cards for the Switch's FireR
 - Project: <https://github.com/GB-Link/GB-Link-Switch-LDN>, directory `cards/`, itself from
   gblink-wondercards (`tools/native-cards`)
 - Upstream revision: `c1a3a97f3ab5c60e87307089d6b7db10e3fd5993`
-- Reviewed through: `c972db408cf549a00c481f647cf4688c4593206a`, nothing taken. `0a252ba51` lets the
+- Reviewed through: `445135084e7e8ca5c7b479948d285f7f0918b608`, nothing taken; the commits after `c972db408` touch the bridge firmware,
+  the ESP adapter and the web client, never `cards/`. `0a252ba51` lets the
   Nature Mint reorder the secure data through `GetSubstruct`: the vendored card, which keeps the
   order, finds every nature for 150 random and 150 shiny personalities on English FireRed
   (`tests/test_team_cards.py` runs all 25). `walls.s`, `savebackup.s`, `saverestore.s`, `verify.s` and

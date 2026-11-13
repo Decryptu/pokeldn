@@ -232,6 +232,18 @@ def edit(entry: Entry, fields: dict) -> Entry:
     return _entry(path)
 
 
+def duplicate(entry: Entry) -> Entry:
+    """A second copy of the record beside the first, with its own id and HOME tracker; the bytes are the same."""
+    source = Path(entry.path)
+    meta = _read_meta(source)
+    stem = f"{source.stem.split('-')[0]}-{time.strftime('%Y%m%d-%H%M%S')}-{random.getrandbits(32):08x}"
+    path = source.with_name(stem + source.suffix)
+    path.write_bytes(source.read_bytes())
+    _write_meta(path, {**meta, "tracker": str(random.randrange(1, 1 << 63)), "created": time.time(),
+                       "duplicate_of": entry.id})
+    return _entry(path)
+
+
 def remove(entry_id: str, folder=None) -> None:
     folder = Path(folder or BANK)
     for path in folder.iterdir() if folder.is_dir() else ():

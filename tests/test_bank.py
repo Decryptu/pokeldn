@@ -425,3 +425,13 @@ def test_an_older_record_the_offers_game_lacks_is_refused_with_why(service, vaul
     path.write_bytes(bytes.fromhex(FIXTURE["pk4"]))
     with pytest.raises(pokemon.BuilderError, match="Bidoof is not in that game"):
         service.import_file("swsh", str(path), receiver=OWNER)
+
+
+def test_a_duplicate_outlives_its_original_and_a_completed_trade_takes_one(tmp_path):
+    (tmp_path / "Mew-1-a.pk8").write_bytes(b"record")
+    (tmp_path / "Mew-1-a.json").write_text('{"species_id": 151, "summary": "Mew", "tracker": "5", "created": 1}')
+    original = bank.find("Mew-1-a", folder=tmp_path)
+    copy = bank.duplicate(original)
+    assert copy.id != original.id and copy.tracker != original.tracker and bank.data(copy) == b"record"
+    bank.TradeSession([{"bank": original.id}], folder=tmp_path).advance(1)
+    assert [e.id for e in bank.entries(tmp_path)] == [copy.id]

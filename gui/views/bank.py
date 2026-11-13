@@ -636,6 +636,7 @@ class BankView:
             controls.append(t.section(tr('bank.battle_set', 'Battle set'), self._battle(battle)))
         controls.append(ft.Row([
             *([] if queued else [t.secondary_button(tr('bank.edit_464c4f', 'Edit'), lambda e: self._edit(entry), "edit")]),
+            t.secondary_button(tr('bank.duplicate', 'Duplicate'), lambda e: self._duplicate(entry), "copy"),
             t.secondary_button(tr('bank.export_366489', 'Export'), lambda e: self.app.page.run_task(self._export, entry), "upload"),
             t.secondary_button(tr('bank.remove_c3812f', 'Remove'), lambda e: self._remove(entry), "trash"),
         ], spacing=8, wrap=True))
@@ -764,6 +765,15 @@ class BankView:
             self._say(tr('bank.exported_to_58eb1e', 'Exported to {value0}', value0=path), t.MUTED)
         except OSError as error:
             self._say(str(error), t.RED)
+
+    def _duplicate(self, entry: bank.Entry) -> None:
+        try:
+            copy = bank.duplicate(entry)
+        except OSError as error:
+            self._say(str(error), t.RED)
+            return
+        self.refresh()
+        self.select(copy.id)
 
     def _remove(self, entry: bank.Entry) -> None:
         def done(e):

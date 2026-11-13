@@ -25,7 +25,7 @@ MIN_IOS = '15.0'
 # has no iOS build and examples/android/src/python/fastapi stands in for it.
 PACKAGES = ('trio==0.35.0', 'attrs==26.1.0', 'outcome==1.3.0.post0', 'sortedcontainers==2.4.0',
             'sniffio==1.3.1', 'idna==3.20', 'pyserial==3.5', 'websockets==17.4', 'certifi==2026.10.23',
-            'flet==1.0.5', 'flet-web==1.0.5', 'repath==0.9.0', 'six==1.17.0', 'oauthlib==4.0.0',
+            'flet==1.1.2', 'flet-web==1.1.2', 'repath==0.9.0', 'six==1.17.0', 'oauthlib==4.0.0',
             'httpx==0.28.1', 'httpcore==1.0.9', 'anyio==4.15.1', 'typing_extensions==4.16.0',
             'starlette==1.7.0', 'uvicorn==0.54.0', 'h11==0.16.0', 'click==8.5.0', 'packaging==25.0')
 NATIVE = ('pycryptodome==3.24.1', 'zstandard==0.25.0')

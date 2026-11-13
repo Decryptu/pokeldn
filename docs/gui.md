@@ -299,6 +299,9 @@ folder, Take out of trades or Remove. With several picked, the side pane lists h
 queues those for a chosen trade tool up to its free slots (a queue holds six), in the box's order. A sprite's crop is kept with its SHA-256 in the sprite cache's
 `index.json`, so a box opens without decoding a PNG it has shown before.
 
+Duplicate in a Pokemon's pane banks a second copy of the same record, with its own id and HOME
+tracker (`bank.duplicate`); a trade or a removal takes one copy and leaves the other.
+
 A Pokemon's pane shows its battle set from the helper's `check` (`battle`): IVs, effort and stats in
 Showdown's order, and its Showdown set in English for Copy as a Showdown set. The effort column is
 Let's Go's AVs (`IAwakened`), Legends Arceus's GVs as the game shows them (stored value plus
