@@ -374,8 +374,8 @@ def download_firmware(say=print, folder: str = os.path.dirname(FIRMWARE)) -> str
 
 
 LOADER_SETTLE = 8.0   # seconds; see _connect
-STUB_FAILED = "Failed to start stub flasher"   # esptool's ESPLoader.run_stub, either failure
-ROM_ATTEMPTS = 4   # see flash: writes through the ROM loader once the stub would not start
+STUB_FAILED = "Failed to start stub flasher"   # esptool ESPLoader.run_stub
+ROM_ATTEMPTS = 4
 
 
 def _native(port: str) -> bool:
@@ -446,10 +446,9 @@ def flash(port: str, firmware: str = "", kind: str = "radio", from_loader: bool 
         except esptool.FatalError as error:
             if not str(error).startswith(STUB_FAILED):
                 raise
-    # Some classic ESP32 boards (blank eFuses: MAC 00:00:00:00:00:00, revision v0.0) answer the ROM
-    # loader but never start esptool's stub, and also drop the ROM's baud change. The stub left in RAM
-    # ends that connection, so a fresh one writes through the ROM at the baud it connected at. Such a
-    # board drops about half of these writes within the first few kB; the next connection finishes.
+    # A board whose stub never starts: a fresh connection writes through the ROM loader at the
+    # connect baud; the ROM drops the switch to 460800 and some writes on a fresh connection.
+    # docs/hardware_esp32.md, A board whose stub flasher never starts.
     print("[app] The board's flasher stub did not start; writing through its ROM loader instead "
           "(slower).", flush=True)
     for attempt in range(1, ROM_ATTEMPTS + 1):
