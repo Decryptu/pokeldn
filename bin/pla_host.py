@@ -150,6 +150,7 @@ def build_parser():
     online.add_arguments(ap)
     receiver_gift.add_arguments(ap, "--trade-box-record")
     trade_back.add_arguments(ap)
+    trade_back.add_same_back_argument(ap)
     launcher.add_radio_arguments(ap)
     ap.add_argument("--channel", type=int, default=None)
     ap.add_argument("--app-version", type=int, default=0,
@@ -276,6 +277,7 @@ def build_parser():
 def main():
     ap = build_parser()
     args = ap.parse_args()
+    trade_back.check_same_back(ap, args, "--trade-back", "--online", "--for-receiver")
     trade_back.check(ap, args, "--trade-box-record", "--online", "--for-receiver")
     offer_check = {}            # a gift made for the receiving player takes it too (pokeldn.receiver_gift)
     if args.trade_box_record:
@@ -387,17 +389,19 @@ def main():
     # A gift made for the receiving player stands in for an online partner, one per console
     # (pokeldn.receiver_gift).
     receiving = None
-    if partner is None and args.trade_box and box_files[0]:
+    if partner is None and args.trade_box and box_files[0] and not args.send_same_back:
         receiving = receiver_gift.setup("pla", args, [state["record"] for state in box_states],
                                         lambda raw: box_offer(pla_pokemon.encrypt(pla_pokemon.load(raw))),
                                         **offer_check)
-    helped = partner is not None or receiving is not None or args.trade_back
+    helped = partner is not None or receiving is not None or args.trade_back or args.send_same_back
 
     def online_box(ip):
         """The console's trade box with the online partner, or with a gift made for its own save."""
         if ip not in online_boxes:
             helper = partner
-            if args.trade_back:
+            if args.send_same_back:
+                helper = trade_back.SameBack()
+            elif args.trade_back:
                 helper = trade_back.TradeBack("pla", [state["record"] for state in box_states])
             elif receiving is not None:
                 helper = receiver_gift.ReceiverGift("pla", *receiving,
@@ -407,7 +411,9 @@ def main():
         return online_boxes[ip]
     if partner is not None and args.trade_box_record:
         print("[pla] --online offers the partner's Pokemon; --trade-box-record is ignored")
-    if args.trade_box and partner is None:
+    if args.trade_box and args.send_same_back:
+        print("[pla] each trade offers the console's own Pokemon back (--send-same-back)")
+    elif args.trade_box and partner is None:
         for n, state in enumerate(box_states, start=1):
             print(f"[pla] trade {n} offers {pla_pokemon.describe(pla_pokemon.decrypt(state['record']))}")
         screen.offer("pla", box_states[0]["record"])

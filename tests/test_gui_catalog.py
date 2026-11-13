@@ -306,8 +306,8 @@ def test_the_other_switch_games_simulate_their_mystery_gifts_through_their_trade
     assert (field.key, field.events, field.required, field.queue) == (offer, True, True, 6)
     assert (receiver.key, receiver.kind, receiver.default) == ("--for-receiver", "switch", True)
     # Trade back would return the console's own Pokemon in place of the next gift (pokeldn.trade_back).
-    assert [f.key for f in gift.fields[2:]] == [f.key for f in host.fields
-                                                if f.kind != "pokemon" and f.key != "--trade-back"]
+    assert [f.key for f in gift.fields[2:]] == [f.key for f in host.fields if f.kind != "pokemon"
+                                                and f.key not in ("--trade-back", "--send-same-back")]
     args = build(gift, {offer: {"file": "/tmp/gift.bin", "event": "9028-808-0"}}, {}, Settings(), stamp="fixed")
     assert args.count(offer) == 1 and args[args.index(offer) + 1] == "/tmp/gift.bin"
     # The host makes a card that names its receiver again for the console's save (pokeldn.receiver_gift).
@@ -344,3 +344,23 @@ def test_every_tool_is_reached_by_its_buttons(game):
                             shown = activity.pick(chosen, axis, option)
                             chosen.update(shown.variant)
                 assert shown is tool, (tool.key, shown.key)
+
+
+def test_legends_arceus_host_has_a_switch_to_send_the_same_pokemon_back():
+    """Send the same one back is a switch on the Legends Arceus host: the console's own offer comes back in
+    that trade, so the Pokemon to offer is hidden and left out, and Send it back, which offers ours, turns
+    it off."""
+    from pokeldn.app.command import applies
+    host = next(t for g in GAMES for t in g.tools if t.key == "pla-host")
+    same = next(f for f in host.fields if f.key == "--send-same-back")
+    offer = next(f for f in host.fields if f.kind == "pokemon")
+    assert same.kind == "switch" and not same.hidden
+    on = {"--send-same-back": True, offer.key: {"file": "offer.bin"}}
+    args = build(host, on, {}, Settings(), stamp="fixed")
+    parser_of(host.script).parse_args(args)
+    assert "--send-same-back" in args and "--trade-box-record" not in args
+    assert not applies(offer, host, on)
+    assert not applies(same, host, {**on, "--trade-back": True})
+    assert "--send-same-back" not in build(host, {offer.key: {"file": "offer.bin"}}, {}, Settings(), stamp="f")
+    online = next((t for g in GAMES for t in g.tools if t.key == "pla-online"), None)
+    assert online is None or "--send-same-back" not in [f.key for f in online.fields]

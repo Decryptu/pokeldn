@@ -154,3 +154,70 @@ class TradeBack:
 
     def close(self, reason="closed"):
         pass
+
+
+def add_same_back_argument(ap):
+    ap.add_argument("--send-same-back", action="store_true",
+                    help="offer the console its own Pokemon back in the same trade, so one that evolves "
+                         "by trade evolves on the console in one trade, with no Pokemon of ours to "
+                         "offer (docs/architecture.md, Trade back)")
+
+
+def check_same_back(ap, args, *flags):
+    """--send-same-back decides every offer itself: with a flag that decides them some other way it is a
+    usage error."""
+    if not getattr(args, "send_same_back", False):
+        return
+    for flag in flags:
+        if getattr(args, flag.lstrip("-").replace("-", "_"), None):
+            ap.error(f"--send-same-back cannot be combined with {flag}")
+
+
+class SameBack:
+    """The stand-in partner for --send-same-back: the record it puts up is the console's own offer, byte for
+    byte, so the console takes back the Pokemon it sent in the same trade. A withdrawn offer and a finished
+    trade leave nothing up until the console offers again."""
+
+    state = "paired"
+    paired = True
+    validate = None
+
+    def __init__(self, log=print):
+        self.log = log
+        self.lock = threading.Lock()
+        self.up = Offer()
+        log("[same-back] each trade offers the console's own Pokemon back")
+
+    def theirs(self):
+        with self.lock:
+            return self.up
+
+    def offer(self, body):
+        with self.lock:
+            self.up = Offer()
+            self.up.offer = bytes(body)
+
+    def withdraw(self):
+        with self.lock:
+            self.up = Offer()
+
+    def accept(self):
+        pass
+
+    def unaccept(self):
+        pass
+
+    def share(self, key, data):
+        pass
+
+    def refuse(self, reason):
+        self.log(f"[same-back] refused: {reason}")
+
+    def tick(self):
+        pass
+
+    def done(self):
+        self.withdraw()
+
+    def close(self, reason="closed"):
+        pass

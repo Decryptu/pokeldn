@@ -230,6 +230,20 @@ offered Onix, then took the Kubfu back for the Onix in trade 2 and left on B.
 `--trade-back` refuses `--online`, the gift made for the receiving player, and the raid, lair and
 Union Circle modes. Mystery Gift - Simulated never offers it.
 
+#### Send the same one back
+
+`bin/pla_host.py --send-same-back` (the app's Send the same one back switch on the Legends Arceus host)
+evolves a Pokemon in one trade: `pokeldn.trade_back.SameBack` stands in for the partner, and the record
+it puts up is the console's own offer, byte for byte. `OnlineBox.tick` answers the console's offer with
+it, a withdrawn offer takes it down, and a finished trade leaves nothing up until the console offers
+again. No Pokemon of ours is offered, so the app hides the Pokemon to offer while the switch is on;
+Send it back, which offers ours, hides the switch. It refuses `--trade-back`, `--online` and
+`--for-receiver`, and Mystery Gift - Simulated never offers it.
+
+A retail Legends Arceus offered its Kadabra (level 19) to `bin/pla_host.py --send-same-back` on a
+classic ESP32, was offered the same Kadabra back, confirmed, and the trade completed through phases 3,
+6, 11 and 14: the Kadabra came home and evolved into Alakazam, with no error on the console.
+
 ### Pokemon the console shows
 
 `--save-shown FOLDER`, on every trade host and joiner (the app's Save the Pokemon the console shows

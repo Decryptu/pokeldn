@@ -5,7 +5,7 @@ import pytest
 from test_host_end_to_end import ImpairedRadio, ScriptedFireRedChild, _mon
 from pokeldn.frlg.link import trade
 from pokeldn.frlg.link.host_session import HostSession
-from pokeldn.trade_back import Rounds, TradeBack
+from pokeldn.trade_back import Rounds, SameBack, TradeBack, check_same_back
 
 
 @pytest.mark.parametrize("count", [1, 6])
@@ -163,6 +163,58 @@ def test_an_arceus_box_returns_the_console_record():
         assert mirrors == [b"\x05\x01"]
         box.done()
     assert got == [ours, theirs]
+
+
+def _arceus_trade(box, record, counter=1):
+    """One Legends Arceus trade on `box`: the console offers `record` and confirms -> what we offered,
+    what we mirrored."""
+    from pokeldn.pla import trade_box
+    answers = box.on_box({"selector": trade_box.SELECTOR_OFFERING, "counter": counter, "record": record})
+    offers, mirrors = box.tick()
+    mirrors += box.on_selector(trade_box.SELECTOR_CONFIRMING, bytes([5, counter]))
+    return [r for _, _, r in answers + offers], mirrors
+
+
+def test_an_arceus_box_sends_the_same_pokemon_back_in_the_same_trade():
+    """A Kadabra offered comes straight back in that trade, so it evolves on the console; no queued
+    offer and no second trade."""
+    from pokeldn.pla import trade_box
+    kadabra, graveler = bytes([0xA1]) * 376, bytes([0xB2]) * 376
+    box = trade_box.OnlineBox(SameBack(log=lambda *a: None))
+    for mon in (kadabra, graveler):
+        offered, mirrors = _arceus_trade(box, mon)
+        assert offered == [mon]
+        assert mirrors == [b"\x05\x01"]
+        box.done()
+
+
+def test_an_arceus_box_sends_back_the_offer_the_console_settled_on():
+    from pokeldn.pla import trade_box
+    machop, kadabra = bytes([0xC3]) * 376, bytes([0xA1]) * 376
+    box = trade_box.OnlineBox(SameBack(log=lambda *a: None))
+    box.on_box({"selector": trade_box.SELECTOR_OFFERING, "counter": 1, "record": machop})
+    box.tick()
+    box.on_selector(trade_box.SELECTOR_OFFER_MADE, b"\x06\x01")       # the player takes it back
+    assert box.on_box({"selector": trade_box.SELECTOR_SHOWING, "counter": 1, "record": kadabra}) == []
+    assert box.tick() == ([], [])
+    offered, mirrors = _arceus_trade(box, kadabra, counter=2)
+    assert offered == [kadabra] and mirrors == [b"\x05\x02"]
+
+
+def test_send_same_back_needs_no_offer_and_refuses_what_decides_the_offer_otherwise():
+    import importlib.util
+    from pathlib import Path
+    path = Path(__file__).resolve().parent.parent / "bin" / "pla_host.py"
+    spec = importlib.util.spec_from_file_location("pla_host_same_back", path)
+    host = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(host)
+    ap = host.build_parser()
+    args = ap.parse_args(["--send-same-back"])
+    check_same_back(ap, args, "--trade-back", "--online", "--for-receiver")
+    for flag in (["--trade-back"], ["--for-receiver"], ["--online"]):
+        args = ap.parse_args(["--send-same-back", *flag])
+        with pytest.raises(SystemExit):
+            check_same_back(ap, args, "--trade-back", "--online", "--for-receiver")
 
 
 def test_a_brilliant_diamond_room_returns_the_console_record():

@@ -194,6 +194,8 @@ FOR_RECEIVER = Field("--for-receiver", tr('catalog.made_for_the_receiving_player
                      help=tr('catalog.a_gift_that_gave_its_receiver_s_own_trainer_is_made_aga_3ec345', "A gift that gave its receiver's own trainer is made again during the trade for the console's save, read from the Pokemon the console offers or from its session data. Off, or when neither names the save, it goes with your trainer from Settings."))
 TRADE_BACK = Field("--trade-back", tr('catalog.send_it_back_f9966f', 'Send it back'), "switch",
                    help=tr('catalog.for_a_pokemon_that_evolves_by_trade_after_each_trade_tra_6895dc', "For a Pokemon that evolves by trade: after each trade, trade again and get back the Pokemon the console just sent, so it evolves there. Offer the first trade's Pokemon back in return. Needs a Pokemon to offer."))
+SEND_SAME_BACK = Field("--send-same-back", tr('catalog.send_same_back', 'Send the same one back'), "switch", unless="--trade-back",
+                       help=tr('catalog.send_same_back_help', "For a Pokemon that evolves by trade, in one trade: offer it on the console and the same Pokemon comes straight back, so it evolves there. Needs no Pokemon of yours to offer."))
 SAVE_SHOWN = Field("--save-shown", tr('catalog.save_shown', 'Save the Pokemon the console shows'), "switch",
                    template="{shown}", hidden=True,
                    help=tr('catalog.save_shown_help', "Save every Pokemon the console shows on the trade screen to the Shown folder next to Received, whether or not the trade goes through: back out to keep it. For a seed or legality check in PKHeX."))
@@ -251,7 +253,7 @@ def without(fixed: tuple[str, ...], flag: str) -> tuple[str, ...]:
 def online(host: Tool, steps: tuple[str, ...], code: Field) -> Tool:
     """The host tool trading a partner far away instead of a built offer (docs/online.md). `code`
     is the room both players enter, the console's own link code where the game has one."""
-    kept = tuple(f for f in host.fields if f.kind != "pokemon" and f not in (FRESH_PID, TRADE_BACK)
+    kept = tuple(f for f in host.fields if f.kind != "pokemon" and f not in (FRESH_PID, TRADE_BACK, SEND_SAME_BACK)
                  and f.flag not in ("--seconds", code.flag))
     return Tool(host.key.replace("-host", "-online"), tr('catalog.trade_online_857839', 'Trade (Online)'), host.script,
                 tr('catalog.trade_with_a_player_far_away_each_of_you_hosts_your_own_a2baeb', 'Trade with a player far away: each of you hosts your own console, and the two trade through the internet.'),
@@ -593,9 +595,9 @@ PLA = Game("pla", tr('catalog.legends_arceus_260415', 'Legends Arceus'), tr('cat
          tr('catalog.host_a_trade_under_a_link_code_the_console_joins_bf0e81', 'Host a trade under a link code; the console joins.'),
          (tr('catalog.start_the_host_first_40ac31', 'Start the host first.'), *PLA_STEPS, tr('catalog.offer_a_pokemon_and_confirm_ae970b', 'Offer a Pokemon and confirm.'),
           tr('catalog.leave_the_host_running_until_the_trade_ends_an_interrup_adc091', 'Leave the host running until the trade ends: an interrupted trade locks trading for a while.')),
-         (queued("--trade-box-record"),
+         (replace(queued("--trade-box-record"), unless="--send-same-back"),
           Field("--code", tr('catalog.link_code_0b8f86', 'Link code'), "code", default="00000000", help=CODE_HELP),
-          FRESH_PID, TRADE_BACK, SAVE_SHOWN,
+          FRESH_PID, TRADE_BACK, SEND_SAME_BACK, SAVE_SHOWN,
           host_seconds("900")),
          fixed=("--channel", "6", "--session-update", "--sustain", "--clock", "--data-exchange",
                 "--game-channel", "--trade-box", "--player-name", "{ot}", "--gender", "{gender}",
@@ -790,11 +792,11 @@ def simulated_gift(game: Game, host: Tool, steps: tuple[str, ...]) -> Tool:
     event table, in place of built ones and made for the receiving player where each card names them
     (docs/gift_simulated.md)."""
     def gift(f: Field) -> tuple[Field, ...]:
-        if f is TRADE_BACK:
+        if f is TRADE_BACK or f is SEND_SAME_BACK:
             return ()
         if f.kind != "pokemon":
             return f,
-        return (replace(f, identity="#Mystery Gift Pokemon" if not f.flag else f.identity, label=tr('catalog.mystery_gift_pokemon_e3340b', 'Mystery Gift Pokemon'), required=True, events=True, random=False, queue=QUEUE,
+        return (replace(f, unless="", identity="#Mystery Gift Pokemon" if not f.flag else f.identity, label=tr('catalog.mystery_gift_pokemon_e3340b', 'Mystery Gift Pokemon'), required=True, events=True, random=False, queue=QUEUE,
                         help=tr('catalog.every_pokemon_gift_gave_from_pkhex_s_event_database_add_cbef41', "Every Pokemon gift {value0} gave, from PKHeX's event database. Add up to {value1}; one session trades them in order, each as a fresh legal copy.", value0=game.name, value1=QUEUE)),
                 FOR_RECEIVER)
     return Tool(host.key.replace("-host", "-gift-host"), tr('catalog.mystery_gift_simulated_d9d548', 'Mystery Gift - Simulated'), host.script,
