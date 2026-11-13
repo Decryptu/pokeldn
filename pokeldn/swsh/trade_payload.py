@@ -13,7 +13,8 @@ PAYLOAD_LENGTH = 3456
 FRAGMENT_COUNT = 3
 
 PARTY_OFFSET = 0
-PARTY_COUNT_OFFSET = PARTY_OFFSET + pokemon.PARTY_BLOCK          # 0x810
+PARTY_COUNT_OFFSET = PARTY_OFFSET + pokemon.PARTY_BLOCK          # 0x810, u8 [0x00785134]
+PARTY_SLOT_OFFSET = PARTY_COUNT_OFFSET + 1                       # 0x811, u8 party slot index; 0x812 u16 zero
 MY_STATUS_OFFSET = PARTY_COUNT_OFFSET + 4                        # 0x814
 MY_STATUS_LENGTH = 272
 TRAINER_CARD_OFFSET = MY_STATUS_OFFSET + MY_STATUS_LENGTH        # 0x924
@@ -89,7 +90,8 @@ def read(payload):
     year, month, day = struct.unpack_from("<HBB", card, TRAINER_CARD_STARTED)
     return {
         "party": pokemon.party(payload[PARTY_OFFSET:PARTY_OFFSET + pokemon.PARTY_BLOCK]),
-        "party_count": struct.unpack_from("<I", payload, PARTY_COUNT_OFFSET)[0],
+        "party_count": payload[PARTY_COUNT_OFFSET],
+        "party_slot": payload[PARTY_SLOT_OFFSET],
         "trainer_name": _text(status, MY_STATUS_NAME),
         "trainer_id": struct.unpack_from("<H", status, MY_STATUS_TID)[0],
         "secret_id": struct.unpack_from("<H", status, MY_STATUS_SID)[0],

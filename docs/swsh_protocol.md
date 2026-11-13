@@ -182,12 +182,22 @@ the third is zlib (Pia flag 0x10): 1404 + 1404 + 157 raw, the last inflating to 
 `lincoln-lm/swsh-lan-client`):
 
     0x000  six PK8 records, party form, 0x158 each          -> 0x810
-    0x810  u32   party count
+    0x810  u8    party count
+    0x811  u8    a party slot index
+    0x812  u16   zero
     0x814  MyStatus, 272 bytes      TID/SID at 0xA0, trainer name at 0xB0
     0x924  TrainerCard, 456 bytes   trainer name at 0x00, save start date at 0x170
     0xAEC  the player profile, 266 bytes                     -> 0xBF6
     0xBF6  392 bytes, the Battle Stadium block; zero for Link Trade
     0xD7E  2 bytes of padding                                -> 0xD80 = 3456
+
+The writer `0x00784f90` stores the party object's bytes `+0x88` (the count) and `+0x89` at 0x810
+and 0x811 one byte at a time, then zeroes 0x812 as a u16 [`0x00785130`]. The reader `0x007856b8`
+loads both bytes back into `+0x88` and `+0x89`, replaces the count with the number of slots it read
+when the two differ, and never reads 0x812. `+0x89` holds a slot index: adding a member sets it to the
+first slot that passes `0x77d610` with mode 2 [`0x00784188`], and a slot swap carries it along
+[`0x00784580`]. What mode 2 tests is unresolved. Retail Sword sent `06 02 00 00` with six Pokemon
+and `05 02 00 00` with five.
 
 MyStatus and TrainerCard are PKHeX save blocks (`Saves/Substructures/Gen8/SWSH/`). The builder is
 `0x0110c180`, the receiver `0x0110cff0`. Link Trade (`0x010967f0`) and password matching

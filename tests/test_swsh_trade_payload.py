@@ -29,7 +29,7 @@ def a_payload(count=2, tid=56909, sid=48474, name="Player", started=(2019, 11, 1
         raw = pokemon.encrypt(bytes(plain))
         out[slot * gen8.SIZE_PARTY:(slot + 1) * gen8.SIZE_PARTY] = raw
 
-    struct.pack_into("<I", out, trade_payload.PARTY_COUNT_OFFSET, count)
+    out[trade_payload.PARTY_COUNT_OFFSET:trade_payload.PARTY_COUNT_OFFSET + 4] = bytes((count, 2, 0, 0))
 
     ms = trade_payload.MY_STATUS_OFFSET
     struct.pack_into("<H", out, ms + trade_payload.MY_STATUS_TID, tid)
@@ -87,7 +87,7 @@ def test_an_uncompressed_third_fragment_still_reassembles():
 
 def test_the_trainer_blocks_and_the_party_name_one_trainer():
     fields = trade_payload.read(a_payload(count=3))
-    assert fields["party_count"] == 3
+    assert (fields["party_count"], fields["party_slot"]) == (3, 2)      # a retail Sword sent 06 02 00 00
     assert [p is not None for p in fields["party"]] == [True, True, True, False, False, False]
     assert fields["trainer_name"] == fields["card_name"] == "Player"
     assert (fields["trainer_id"], fields["secret_id"]) == (56909, 48474)
