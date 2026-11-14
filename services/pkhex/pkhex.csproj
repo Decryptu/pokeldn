@@ -5,6 +5,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- iOS compiles this ahead of time (examples/ios/build.py): no reflection-built JSON. -->
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
     <AssemblyName>pokeldn-pkhex</AssemblyName>
     <InvariantGlobalization>true</InvariantGlobalization>
     <SelfContained>true</SelfContained>

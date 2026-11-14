@@ -54,7 +54,7 @@ static class RaidScan
     // first, and later searches of the same context, leave them out.
     static readonly Dictionary<string, Context> Tables = [];
 
-    static long[] Longs(JsonNode? node) => node?.Deserialize<long[]>() ?? [];
+    static long[] Longs(JsonNode? node) => node?.AsArray().Select(n => n!.GetValue<long>()).ToArray() ?? [];
 
     static Context Load(JsonObject request)
     {
@@ -112,7 +112,7 @@ static class RaidScan
         c.Filters = Longs(request["filters"]);
         c.IvRanges = Longs(request["ivs"]);
         c.Want = Longs(request["want"]);
-        c.Amounts = request["amounts"]?.Deserialize<long[][]>() ?? [];
+        c.Amounts = request["amounts"]?.AsArray().Select(Longs).ToArray() ?? [];
         c.Tail = 1;
         for (var w = 1; w < c.Amounts.Length; w++)
             c.Tail *= c.Amounts[w].Length;

@@ -110,7 +110,7 @@ static partial class Program
             var list = new JsonArray();
             for (ushort s = 1; s <= game.Table.MaxSpeciesID; s++)
                 if (FirstForm(game, s) is not null)
-                    list.Add(new JsonObject { ["id"] = s, ["name"] = strings.specieslist[s] });
+                    list.Add((JsonNode?)new JsonObject { ["id"] = s, ["name"] = strings.specieslist[s] });
             return new JsonObject { ["species"] = list };
         }
 
@@ -191,7 +191,7 @@ static partial class Program
             {
                 var species = new JsonArray();
                 for (ushort id = 1; id <= 386; id++)
-                    species.Add(new JsonObject { ["id"] = SpeciesConverter.GetInternal3(id), ["name"] = strings.specieslist[id] });
+                    species.Add((JsonNode?)new JsonObject { ["id"] = SpeciesConverter.GetInternal3(id), ["name"] = strings.specieslist[id] });
                 return new JsonObject { ["names"] = species };
             }
             var blank = game.Blank();
@@ -213,7 +213,7 @@ static partial class Program
                 var entry = new JsonObject { ["id"] = id, ["name"] = name };
                 if (!string.IsNullOrEmpty(icon))
                     entry["icon"] = icon;
-                names.Add(entry);
+                names.Add((JsonNode?)entry);
             }
             switch (list)
             {
@@ -312,7 +312,7 @@ static partial class Program
                 ? Encounters(blank, trainer, ReadOnlyMemory<ushort>.Empty, versions, IsAlpha).Count > 0 : null;
             var balls = new JsonArray();
             foreach (var ball in permitted.Order())
-                balls.Add(new JsonObject { ["id"] = (int)ball, ["name"] = strings.balllist[(int)ball],
+                balls.Add((JsonNode?)new JsonObject { ["id"] = (int)ball, ["name"] = strings.balllist[(int)ball],
                                            ["icon"] = BallIcon((int)ball) });
             // An ability is listed when a legal Pokemon of the species can carry it (Let's Go has no hidden ability to give).
             var abilities = new JsonArray();
@@ -330,11 +330,11 @@ static partial class Program
                     {
                         continue;
                     }
-                    abilities.Add(new JsonObject { ["id"] = id, ["name"] = strings.abilitylist[id] });
+                    abilities.Add((JsonNode?)new JsonObject { ["id"] = id, ["name"] = strings.abilitylist[id] });
                 }
             var natures = new JsonArray();
             for (var n = 0; n < 25; n++)
-                natures.Add(new JsonObject { ["id"] = n, ["name"] = strings.natures[n] });
+                natures.Add((JsonNode?)new JsonObject { ["id"] = n, ["name"] = strings.natures[n] });
             var effort = game.Blank() switch
             {
                 IAwakened => new JsonObject { ["kind"] = "avs", ["max"] = AwakeningUtil.AwakeningMax },
@@ -345,13 +345,13 @@ static partial class Program
             var formNames = FormConverter.GetFormList(species, strings.types, strings.forms, game.Context);
             for (byte f = 0; f < game.Table[species].FormCount; f++)
                 if (game.Table.IsPresentInGame(species, f))
-                    forms.Add(new JsonObject { ["id"] = f, ["name"] = f < formNames.Length && formNames[f].Length > 0 ? formNames[f] : $"Form {f}" });
+                    forms.Add((JsonNode?)new JsonObject { ["id"] = f, ["name"] = f < formNames.Length && formNames[f].Length > 0 ? formNames[f] : $"Form {f}" });
             var teras = new JsonArray();
             if (blank is ITeraType && TeraTypeUtil.CanChangeTeraType(species))
             {
                 for (var y = 0; y <= TeraTypeUtil.MaxType; y++)
-                    teras.Add(new JsonObject { ["id"] = y, ["name"] = strings.types[y] });
-                teras.Add(new JsonObject { ["id"] = TeraTypeUtil.Stellar, ["name"] = strings.types[TeraTypeUtil.StellarTypeDisplayStringIndex] });
+                    teras.Add((JsonNode?)new JsonObject { ["id"] = y, ["name"] = strings.types[y] });
+                teras.Add((JsonNode?)new JsonObject { ["id"] = TeraTypeUtil.Stellar, ["name"] = strings.types[TeraTypeUtil.StellarTypeDisplayStringIndex] });
             }
             return new JsonObject
             {
@@ -429,7 +429,7 @@ static partial class Program
             foreach (var key in order)
             {
                 var (encounter, low, high, shiny) = groups[key];
-                list.Add(new JsonObject
+                list.Add((JsonNode?)new JsonObject
                 {
                     ["key"] = key,
                     ["kind"] = encounter is IPogoSlot go ? $"GO Encounter ({go.Type})" : encounter.LongName,
@@ -1053,7 +1053,7 @@ static partial class Program
                 if (have == 0 && legal == 0 && !allowIllegal)
                     continue;
                 var (set, icon) = RibbonIcon(pk, r, englishName, Math.Max(Math.Max(have, legal), 1));
-                list.Add(new JsonObject
+                list.Add((JsonNode?)new JsonObject
                 {
                     ["id"] = r.Name, ["name"] = name, ["icon"] = icon, ["icon_set"] = set,
                     ["value"] = have, ["top"] = top, ["legal"] = Math.Max(legal, have),
@@ -1223,7 +1223,7 @@ static partial class Program
             {
                 reply["save"] = $"PKSM bank, {bank.Boxes} boxes";
                 foreach (var (box, slot, pk) in bank.Pokemon)
-                    found.Add(Imported(request, pk, $"Box {box + 1}, slot {slot + 1}"));
+                    found.Add((JsonNode?)Imported(request, pk, $"Box {box + 1}, slot {slot + 1}"));
             }
             else if (SaveUtil.TryGetSaveFile(data, out var sav, name))
             {
@@ -1238,7 +1238,7 @@ static partial class Program
                 if (sav.HasParty)
                     for (var slot = 0; slot < sav.PartyCount; slot++)
                         if (sav.GetPartySlotAtIndex(slot) is { Species: not 0 } pk)
-                            found.Add(Imported(request, pk, $"Party, slot {slot + 1}"));
+                            found.Add((JsonNode?)Imported(request, pk, $"Party, slot {slot + 1}"));
                 if (sav.HasBox)
                     for (var box = 0; box < sav.BoxCount; box++)
                     {
@@ -1246,11 +1246,11 @@ static partial class Program
                             ? n : $"Box {box + 1}";
                         for (var slot = 0; slot < sav.BoxSlotCount; slot++)
                             if (sav.GetBoxSlotAtIndex(box, slot) is { Species: not 0 } pk)
-                                found.Add(Imported(request, pk, $"{title}, slot {slot + 1}"));
+                                found.Add((JsonNode?)Imported(request, pk, $"{title}, slot {slot + 1}"));
                     }
             }
             else if (FileUtil.TryGetPKM(data, out var pk, Path.GetExtension(name)))
-                found.Add(Imported(request, pk, ""));
+                found.Add((JsonNode?)Imported(request, pk, ""));
             else
                 throw new InvalidDataException("PKHeX reads neither a Pokemon nor a game save in this file.");
             return reply;
@@ -1293,7 +1293,7 @@ static partial class Program
             if (source.HeldItem != 0)
             {
                 var items = strings.GetItemStrings(source.Context, source.Version);
-                notes.Add($"Left its {(source.HeldItem < items.Length ? items[source.HeldItem] : $"item {source.HeldItem}")} behind");
+                notes.Add((JsonNode?)$"Left its {(source.HeldItem < items.Length ? items[source.HeldItem] : $"item {source.HeldItem}")} behind");
                 source.HeldItem = 0;
             }
             var hidden = source.Format switch { 3 => hiddenMoves, 4 => hiddenMoves4, _ => [] };
@@ -1301,7 +1301,7 @@ static partial class Program
             {
                 source.SetMoves(source.Moves.Where(m => m != 0 && !hidden.Contains(m)).ToArray());
                 source.FixMoves();
-                notes.Add($"Forgot {string.Join(", ", forgotten.Select(m => strings.movelist[m]))}");
+                notes.Add((JsonNode?)$"Forgot {string.Join(", ", forgotten.Select(m => strings.movelist[m]))}");
             }
             source.RefreshChecksum();
             // HOME's games replace moves a game lacks; a move its own game never allowed is no such move.
@@ -1335,7 +1335,7 @@ static partial class Program
                     continue;
                 }
                 if (!pk.Moves.SequenceEqual(source.Moves))
-                    notes.Add("New moves for its new game");
+                    notes.Add((JsonNode?)"New moves for its new game");
                 return (key, pk, la, notes);
             }
             // A game HOME cannot reach or without the species says least; PKHeX's own reason says most.
@@ -1432,7 +1432,7 @@ static partial class Program
                 var errors = new JsonArray();
                 var notes = new JsonArray();
                 foreach (var invalid in set.InvalidLines)
-                    errors.Add(invalid.Humanize(errorText));
+                    errors.Add((JsonNode?)invalid.Humanize(errorText));
                 var species = set.Species;
                 var name = species < strings.specieslist.Length ? strings.specieslist[species] : "";
                 // A team export opens with a "=== [gen9] Team ===" line, read as a set with nothing in it.
@@ -1440,18 +1440,18 @@ static partial class Program
                     continue;
                 if (species == 0)
                 {
-                    errors.Add("The first line names no Pokemon.");
-                    sets.Add(new JsonObject { ["errors"] = errors });
+                    errors.Add((JsonNode?)"The first line names no Pokemon.");
+                    sets.Add((JsonNode?)new JsonObject { ["errors"] = errors });
                     continue;
                 }
                 // A set that names no form takes the game's own: "Zorua" in Legends Arceus is the Hisuian one.
                 var form = set.Form == 0 && set.FormName.Length == 0 ? FirstForm(game, species) ?? 0 : set.Form;
                 if (!game.Table.IsPresentInGame(species, form))
                 {
-                    errors.Add(FirstForm(game, species) is not null
+                    errors.Add((JsonNode?)(FirstForm(game, species) is not null
                         ? $"{name} has no {set.FormName} form in this game."
-                        : $"{name} is not in this game.");
-                    sets.Add(new JsonObject { ["species"] = name, ["errors"] = errors });
+                        : $"{name} is not in this game."));
+                    sets.Add((JsonNode?)new JsonObject { ["species"] = name, ["errors"] = errors });
                     continue;
                 }
                 var detail = game.Table.GetFormEntry(species, form);
@@ -1463,9 +1463,9 @@ static partial class Program
                 if (set.Ability >= 0)
                 {
                     if (game.Context == EntityContext.Gen9a)
-                        notes.Add("Legends Z-A has no abilities; the ability was left out.");
+                        notes.Add((JsonNode?)"Legends Z-A has no abilities; the ability was left out.");
                     else if (Enumerable.Range(0, detail.AbilityCount).All(i => detail.GetAbilityAtIndex(i) != set.Ability))
-                        errors.Add($"{name} cannot have {strings.abilitylist[set.Ability]}.");
+                        errors.Add((JsonNode?)$"{name} cannot have {strings.abilitylist[set.Ability]}.");
                     else
                         options["ability"] = set.Ability;
                 }
@@ -1474,7 +1474,7 @@ static partial class Program
                 if (set.HeldItem != 0)
                 {
                     if (!ItemRestrictions.IsHeldItemAllowed(set.HeldItem, game.Context))
-                        errors.Add($"{strings.GetItemStrings(game.Context, game.Versions[0])[set.HeldItem]} cannot be held in this game.");
+                        errors.Add((JsonNode?)$"{strings.GetItemStrings(game.Context, game.Versions[0])[set.HeldItem]} cannot be held in this game.");
                     else
                         options["held_item"] = set.HeldItem;
                 }
@@ -1485,11 +1485,11 @@ static partial class Program
                     if (move == 0)
                         continue;
                     if (move > blank.MaxMoveID || MoveInfo.IsDummiedMove(dummied, move))
-                        errors.Add($"{strings.movelist[move]} is not in this game.");
+                        errors.Add((JsonNode?)$"{strings.movelist[move]} is not in this game.");
                     else
                     {
-                        moves.Add(move);
-                        moveNames.Add(strings.movelist[move]);
+                        moves.Add((JsonNode?)move);
+                        moveNames.Add((JsonNode?)strings.movelist[move]);
                     }
                 }
                 if (moves.Count > 0)
@@ -1502,9 +1502,9 @@ static partial class Program
                 if (set.EVs.Any(v => v != 0))
                 {
                     if (blank is IAwakened or IGanbaru)
-                        notes.Add("This game has no EVs; the EVs were left out.");
+                        notes.Add((JsonNode?)"This game has no EVs; the EVs were left out.");
                     else if (set.EVs.Sum() > EffortValues.Max510)
-                        errors.Add($"EVs add up to {set.EVs.Sum()}; at most {EffortValues.Max510}.");
+                        errors.Add((JsonNode?)$"EVs add up to {set.EVs.Sum()}; at most {EffortValues.Max510}.");
                     else
                         options["effort"] = new JsonObject(stats.Select((s, i) => KeyValuePair.Create(s, (JsonNode?)Math.Min(set.EVs[i], EffortValues.Max252))));
                 }
@@ -1513,14 +1513,14 @@ static partial class Program
                     if (blank is ITeraType && TeraTypeUtil.CanChangeTeraType(species))
                         options["tera"] = (int)set.TeraType;
                     else
-                        notes.Add("The Tera Type is not set; the Pokemon keeps its own.");
+                        notes.Add((JsonNode?)"The Tera Type is not set; the Pokemon keeps its own.");
                 }
                 if (set.CanGigantamax)
                 {
                     if (blank is IGigantamax && Gigantamax.CanToggle(species, form))
                         options["gigantamax"] = true;
                     else
-                        notes.Add("This Pokemon cannot Gigantamax in this game.");
+                        notes.Add((JsonNode?)"This Pokemon cannot Gigantamax in this game.");
                 }
                 // Showdown leaves out a Dynamax level of 10, its default.
                 if (set.DynamaxLevel != 10)
@@ -1528,15 +1528,15 @@ static partial class Program
                     if (blank is IDynamaxLevel)
                         options["dynamax_level"] = (int)set.DynamaxLevel;
                     else
-                        notes.Add("The Dynamax level is not set.");
+                        notes.Add((JsonNode?)"The Dynamax level is not set.");
                 }
                 if (set.HiddenPowerType >= 0 && blank.Format < 8)
-                    notes.Add("Hidden Power follows the IVs; its type is not set.");
+                    notes.Add((JsonNode?)"Hidden Power follows the IVs; its type is not set.");
                 // Showdown leaves out a friendship of 255, its default; a set asks for one only by naming it, so an
                 // event Pokemon whose friendship is fixed still builds from a set that does not.
                 if (block.Any(line => Names(line, BattleTemplateToken.Friendship)))
                     options["friendship"] = set.Friendship;
-                sets.Add(new JsonObject
+                sets.Add((JsonNode?)new JsonObject
                 {
                     ["species"] = name,
                     ["species_id"] = species,
@@ -1570,7 +1570,7 @@ static partial class Program
         {
             var list = new JsonArray();
             foreach (var e in Gen3Events())
-                list.Add(new JsonObject
+                list.Add((JsonNode?)new JsonObject
                 {
                     ["name"] = EventName(e), ["species"] = e.Species, ["level"] = e.Level,
                     ["language"] = e.Language, ["trainer_id"] = e.TID16,
@@ -1672,7 +1672,7 @@ static partial class Program
                 var moves = new JsonArray();
                 foreach (var move in pk.Moves)
                     if (move != 0)
-                        moves.Add(strings.movelist[move]);
+                        moves.Add((JsonNode?)strings.movelist[move]);
                 var date = GiftDate(gift);
                 list.Add((date, new JsonObject
                 {
@@ -2076,7 +2076,7 @@ static partial class Program
             var sav = LoadSave(request);
             var party = new JsonArray();
             foreach (var pk in sav.PartyData)
-                party.Add(Describe(game, pk, new LegalityAnalysis(pk)));
+                party.Add((JsonNode?)Describe(game, pk, new LegalityAnalysis(pk)));
             var boxes = new JsonArray();
             for (var b = 0; b < sav.BoxCount; b++)
             {
@@ -2084,11 +2084,11 @@ static partial class Program
                 var slots = sav.GetBoxData(b);
                 for (var i = 0; i < slots.Length; i++)
                     if (slots[i].Species != 0)
-                        mons.Add(new JsonObject { ["slot"] = i, ["species_id"] = slots[i].Species,
+                        mons.Add((JsonNode?)new JsonObject { ["slot"] = i, ["species_id"] = slots[i].Species,
                                                   ["species"] = strings.specieslist[slots[i].Species],
                                                   ["level"] = slots[i].CurrentLevel, ["shiny"] = slots[i].IsShiny,
                                                   ["egg"] = slots[i].IsEgg, ["nickname"] = slots[i].Nickname });
-                boxes.Add(new JsonObject { ["name"] = sav.GetBoxName(b), ["mons"] = mons });
+                boxes.Add((JsonNode?)new JsonObject { ["name"] = sav.GetBoxName(b), ["mons"] = mons });
             }
             return new JsonObject
             {
@@ -2108,7 +2108,7 @@ static partial class Program
             var sav = LoadSave(request);
             var mons = new JsonArray();
             foreach (var pk in sav.GetBoxData((int)request["box"]!))
-                mons.Add(pk.Species == 0 ? null : Describe(game, pk, new LegalityAnalysis(pk)));
+                mons.Add((JsonNode?)(pk.Species == 0 ? null : Describe(game, pk, new LegalityAnalysis(pk))));
             return new JsonObject { ["mons"] = mons };
         }
 
@@ -2167,7 +2167,7 @@ static partial class Program
             var moves = new JsonArray();
             foreach (var move in pk.Moves)
                 if (move != 0)
-                    moves.Add(strings.movelist[move]);
+                    moves.Add((JsonNode?)strings.movelist[move]);
             var result = new JsonObject
             {
                 ["data"] = Convert.ToBase64String(game.Write(pk)),

@@ -41,12 +41,12 @@ static class Wild
         {
             var list = new JsonArray();
             foreach (var (s, f, lo, hi) in slots.OrderBy(x => x))
-                list.Add(new JsonArray(s, f, lo, hi));
-            areas.Add(new JsonObject { ["location"] = location, ["name"] = LocationName(strings, location), ["slots"] = list });
+                list.Add((JsonNode?)new JsonArray(s, f, lo, hi));
+            areas.Add((JsonNode?)new JsonObject { ["location"] = location, ["name"] = LocationName(strings, location), ["slots"] = list });
         }
         var types = new JsonArray();
         for (var t = 0; t < TeraTypes; t++)
-            types.Add(strings.types[t]);
+            types.Add((JsonNode?)strings.types[t]);
         return new JsonObject { ["areas"] = areas, ["types"] = types };
     }
 
@@ -70,16 +70,16 @@ static class Wild
         var formNames = FormConverter.GetFormList(species, strings.types, strings.forms, EntityContext.Gen9);
         for (byte f = 0; f < table[species].FormCount; f++)
             if (table.IsPresentInGame(species, f))
-                forms.Add(new JsonObject { ["id"] = f, ["name"] = f < formNames.Length && formNames[f].Length > 0 ? formNames[f] : $"Form {f}" });
+                forms.Add((JsonNode?)new JsonObject { ["id"] = f, ["name"] = f < formNames.Length && formNames[f].Length > 0 ? formNames[f] : $"Form {f}" });
         var abilities = new JsonArray();
         for (var slot = 0; slot < 3; slot++)
-            abilities.Add(new JsonObject { ["slot"] = slot, ["name"] = strings.abilitylist[info.GetAbilityAtIndex(slot)] });
+            abilities.Add((JsonNode?)new JsonObject { ["slot"] = slot, ["name"] = strings.abilitylist[info.GetAbilityAtIndex(slot)] });
         var natures = new JsonArray();
         for (var n = 0; n < 25; n++)
-            natures.Add(new JsonObject { ["id"] = n, ["name"] = strings.natures[n] });
+            natures.Add((JsonNode?)new JsonObject { ["id"] = n, ["name"] = strings.natures[n] });
         var marks = new JsonArray();
         foreach (var m in Marks)
-            marks.Add(new JsonObject { ["id"] = m, ["name"] = strings.Ribbons.GetNameSafe($"Ribbon{(RibbonIndex)m}", out var name) ? name : ((RibbonIndex)m).ToString() });
+            marks.Add((JsonNode?)new JsonObject { ["id"] = m, ["name"] = strings.Ribbons.GetNameSafe($"Ribbon{(RibbonIndex)m}", out var name) ? name : ((RibbonIndex)m).ToString() });
         return new JsonObject
         {
             ["forms"] = forms,
@@ -123,15 +123,15 @@ static class Wild
                     first ??= la;
                     if (!la.Valid)
                         continue;
-                    teras.Add(t);
+                    teras.Add((JsonNode?)t);
                     first = null;
                     break;
                 }
                 if (first is not null && t == tera)
                     foreach (var line in plain(first).Split('\n', StringSplitOptions.RemoveEmptyEntries))
-                        problems.Add(line);
+                        problems.Add((JsonNode?)line);
             }
-            locations.Add(new JsonObject
+            locations.Add((JsonNode?)new JsonObject
             {
                 ["location"] = area.Key, ["name"] = LocationName(strings, area.Key), ["teras"] = teras, ["problems"] = problems,
             });
