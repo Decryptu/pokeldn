@@ -118,16 +118,10 @@ def clear_cfg(exe: Path) -> None:
     exe.write_bytes(data)
 
 
-# The GUI exe has no console, so Windows opens none at launch; runs start the console copy with
-# CREATE_NO_WINDOW and keep their pipes (pokeldn/app/runner.py, docs/gui.md, Build a desktop app).
-RUN_EXE = "pokeldn-run.exe"
-
-
-def split_windows_console(folder: Path) -> None:
-    """Copies the console-subsystem pokeldn.exe to pokeldn-run.exe, then marks pokeldn.exe GUI-subsystem."""
-    exe = folder / "pokeldn.exe"
-    shutil.copy2(exe, folder / RUN_EXE)
-    set_subsystem(exe, 2)
+def mark_windowed(folder: Path) -> None:
+    """Marks the console-bootloader pokeldn.exe GUI-subsystem: Windows opens no console for the app, nor for
+    its runs, which start pokeldn.exe itself with pipes (pokeldn/app/runner.py, docs/gui.md, Build a desktop app)."""
+    set_subsystem(folder / "pokeldn.exe", 2)
 
 
 def set_subsystem(exe: Path, subsystem: int) -> None:
@@ -208,6 +202,7 @@ def main() -> int:
         if sys.platform in ("darwin", "win32"):
             args += ["--icon", str(icon)]
         scripts = sorted(p.stem for p in (stage / "bin").glob("*.py"))
+        # The console bootloader, marked GUI-subsystem after the build (mark_windowed), not --windowed's.
         console = ["--console", "--hide-console=hide-early"] if sys.platform == "win32" else []
         # A single file unpacks all of itself at every launch and every run (docs/gui.md). Flet's own
         # --onedir refuses macOS; this later PyInstaller flag wins over the --onefile Flet passes.
@@ -258,7 +253,7 @@ def main() -> int:
             subprocess.run(["codesign", "--force", "--sign", "-", str(expected)], check=True)
         if result == 0 and sys.platform == "win32":
             clear_cfg(expected / "pokeldn.exe")
-            split_windows_console(expected)
+            mark_windowed(expected)
         if result == 0 and sys.platform.startswith("linux"):
             (ROOT / "dist" / f"{APP_ID}.desktop").unlink(missing_ok=True)
         return result

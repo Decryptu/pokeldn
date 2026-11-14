@@ -828,9 +828,11 @@ Packaging traps:
   ([unicorn#2281](https://github.com/unicorn-engine/unicorn/issues/2281)); the packer clears
   `GUARD_CF` in `pokeldn.exe` (`0xC160` to `0x8160`). Never enable `faulthandler` in the frozen
   check.
-- On Windows `pokeldn.exe` is GUI-subsystem (subsystem 2) and opens no console window.
-  `pokeldn-run.exe` beside it is the same file with subsystem 3: every run, flash and helper starts it
-  with pipes and `CREATE_NO_WINDOW`, so its log reaches the app and a closed stdin stops it.
+- On Windows `pokeldn.exe` is GUI-subsystem (subsystem 2) and opens no console window. Every run,
+  flash and helper starts `pokeldn.exe` itself with pipes, so its log reaches the app and a closed
+  stdin stops it. A console program started from either opens a window of its own unless it gets
+  `CREATE_NO_WINDOW`: pass `**NO_WINDOW` (`pokeldn/windowless.py`); `tests/test_windowless.py` checks
+  every launch in `bin/`, `pokeldn/` and `gui/`.
 
 ### The app icon
 

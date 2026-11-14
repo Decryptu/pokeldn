@@ -26,6 +26,7 @@ from pokeldn.frlg.gift.mystery_gift import (
 from pokeldn.frlg.rom import builds
 from pokeldn.frlg.rom.buffer_payloads import PAYLOADS, THUMB_CODE
 from pokeldn.frlg.save import sav
+from pokeldn.windowless import NO_WINDOW
 
 C = save_transfer.C
 BLOCK = 0x1000
@@ -251,8 +252,7 @@ class _Child:
         with open(os.path.join(self.folder, "errors"), "wb") as errors:
             self.proc = subprocess.Popen(
                 runner.command("--module", "pokeldn.frlg.gift.rom_transfer", self.folder), env=env,
-                stdin=subprocess.DEVNULL, stdout=errors, stderr=errors,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                stdin=subprocess.DEVNULL, stdout=errors, stderr=errors, **NO_WINDOW)
         return self
 
     def done(self):

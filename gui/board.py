@@ -11,6 +11,7 @@ import serial
 from serial.tools import list_ports
 
 from pokeldn.app.paths import ROOT
+from pokeldn.windowless import NO_WINDOW
 from pokeldn.ldn import esp32
 from pokeldn.app.i18n import t as tr
 
@@ -222,8 +223,7 @@ def bridges_without_driver(run=subprocess.run) -> list[str]:
     """Windows: the known bridges plugged in with no working driver, so with no COM port."""
     try:
         out = run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PROBLEM_DEVICES],
-                  capture_output=True, text=True, timeout=20,
-                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+                  capture_output=True, text=True, timeout=20, **NO_WINDOW).stdout
     except (OSError, subprocess.SubprocessError):
         return []
     found = []
@@ -267,8 +267,7 @@ def controllers(platform: str = "", run=subprocess.run,
             ids = usb_ids()
             out = "\n".join(ids) if ids is not None else run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
                        'Get-CimInstance Win32_PnPEntity -Filter "PNPDeviceID LIKE \'USB%\'" | ForEach-Object { $_.PNPDeviceID }'],
-                      capture_output=True, text=True, timeout=20,
-                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+                      capture_output=True, text=True, timeout=20, **NO_WINDOW).stdout
             return sum(1 for line in (out or "").splitlines()
                        if (m := USB_ID.search(line)) and "&MI_" not in line.upper()
                        and (int(m[1], 16), int(m[2], 16)) == PAD_USB)

@@ -14,6 +14,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from pokeldn.app.paths import POKEMON, ROOT, SESSION
+from pokeldn.windowless import NO_WINDOW
 
 HERE = os.path.join(ROOT, "services", "pkhex")
 EXE = "pokeldn-pkhex.exe" if sys.platform == "win32" else "pokeldn-pkhex"
@@ -111,12 +112,11 @@ class Service:
             for attempt in range(2):
                 if self.proc is None or self.proc.poll() is not None:
                     self._close()
-                    flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
                     command = _command()
                     self.proc = (_Library(command[0]) if _library(command) else
                                  subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                                   stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
-                                                  creationflags=flags))
+                                                  **NO_WINDOW))
                 line = self._exchange(request)
                 if not line:
                     raise BuilderError("The Pokemon builder stopped.")

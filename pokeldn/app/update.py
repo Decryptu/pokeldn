@@ -141,6 +141,7 @@ def executable_in(root: Path, system: str = sys.platform) -> Path:
 
 
 # What a packed app holds at its top level; anything else there means the folder is not ours alone.
+# pokeldn-run.exe: the console copy apps up to 0.65 ship; a folder holding it is still ours to replace.
 APP_ENTRIES = {"darwin": {"Contents", ".DS_Store"}, "win32": {"pokeldn.exe", "pokeldn-run.exe", "_internal"},
                "linux": {"pokeldn", "_internal"}}
 

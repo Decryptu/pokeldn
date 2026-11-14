@@ -11,6 +11,7 @@ import tempfile
 from dataclasses import dataclass
 
 from pokeldn.frlg.rom import buffer_script
+from pokeldn.windowless import NO_WINDOW
 
 AS = "arm-none-eabi-as"
 OBJCOPY = "arm-none-eabi-objcopy"
@@ -98,13 +99,13 @@ def assemble(source):
         src, obj, binary = (pathlib.Path(tmp) / name for name in ("a.s", "a.o", "a.bin"))
         src.write_text(source if source.endswith("\n") else source + "\n")
         result = subprocess.run([tools[0], *AS_FLAGS, "-o", str(obj), str(src)],
-                                capture_output=True, text=True)
+                                capture_output=True, text=True, **NO_WINDOW)
         if result.returncode:
             for line in result.stderr.splitlines():
                 if match := re.search(r"a\.s:(\d+): Error: (.*)", line):
                     raise CodeError(f"Line {match[1]}: {match[2]}", int(match[1]))
             raise CodeError(result.stderr.strip() or "The assembler failed.")
-        subprocess.run([tools[1], "-O", "binary", str(obj), str(binary)], check=True)
+        subprocess.run([tools[1], "-O", "binary", str(obj), str(binary)], check=True, **NO_WINDOW)
         return binary.read_bytes()
 
 

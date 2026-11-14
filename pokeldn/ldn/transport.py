@@ -15,6 +15,7 @@ import traceback
 from pathlib import Path
 
 from pokeldn.ldn import radios, userspace_ip
+from pokeldn.windowless import NO_WINDOW
 
 ETH_P_IP = 0x0800
 PROTO_UDP = 17
@@ -49,7 +50,7 @@ AIR_MONITOR_VIF = "ldnair"      # owned by the operator; never touched here
 
 
 def _run(cmd):
-    subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **NO_WINDOW)
 
 
 def _iw_del(iface):
@@ -1037,7 +1038,7 @@ class HostTransport:
         mac_s = ":".join(f"{b:02x}" for b in mac)
         cmd = ["ip", "neigh", "replace", ip, "lladdr", mac_s, "dev", self.iface, "nud", "permanent"]
         try:
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2, **NO_WINDOW)
             self.log(f"[host] pinned ARP {ip} -> {mac_s} on {self.iface} (permanent); no neighbour probing for the console")
         except Exception as e:                            # pragma: no cover
             self.log(f"[host] could not pin ARP for {ip}: {e}")

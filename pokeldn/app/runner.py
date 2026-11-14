@@ -8,6 +8,7 @@ import time
 from typing import Callable
 
 from pokeldn.app.paths import ROOT
+from pokeldn.windowless import NO_WINDOW
 
 # Session and flash runs are child processes of the app itself (`--run` / `--module`), which
 # also works inside a packaged app where no separate python executable exists.
@@ -71,17 +72,12 @@ def execute(argv: list[str]) -> None:
 BLUETOOTH_HELPER = os.path.join(os.path.dirname(os.path.dirname(sys.executable)), "Helpers", "pokeldn-bluetooth")
 
 
-# Windows: pokeldn.exe is GUI-subsystem; children run its console-subsystem copy, which keeps their
-# pipes, under CREATE_NO_WINDOW (scripts/pack_app.py, docs/gui.md, Build a desktop app).
-WINDOWS_RUN = os.path.join(os.path.dirname(sys.executable), "pokeldn-run.exe")
-
-
 def command(*argv: str, bluetooth: bool = False) -> list[str]:
     if getattr(sys, "frozen", False):
         if bluetooth and sys.platform == "darwin" and os.path.isfile(BLUETOOTH_HELPER):
             return [BLUETOOTH_HELPER, *argv]
-        if sys.platform == "win32" and os.path.isfile(WINDOWS_RUN):
-            return [WINDOWS_RUN, *argv]
+        # Windows: pokeldn.exe itself, GUI-subsystem, so no console; its pipes carry the log and Stop
+        # (scripts/pack_app.py, docs/gui.md, Build a desktop app).
         return [sys.executable, *argv]
     return [sys.executable, "-u", os.path.join(ROOT, "pokeldn", "app", "entry.py"), *argv]
 
@@ -96,11 +92,9 @@ class Process:
         self.stdin_lock = threading.Lock()
         if popups is not None:
             env = dict(env, POKELDN_POPUPS="1")
-        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         self.proc = subprocess.Popen(command(*argv, bluetooth=bluetooth), cwd=cwd, env=env, stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                     encoding="utf-8", errors="replace", bufsize=1,
-                                     creationflags=flags)
+                                     encoding="utf-8", errors="replace", bufsize=1, **NO_WINDOW)
         self.started = time.monotonic()
         self.popups = popups.program(label, self.send) if popups is not None else None
         threading.Thread(target=self._pump, daemon=True).start()
