@@ -218,6 +218,7 @@ class PokemonPicker:
                 self._message(error_message(error), t.RED)
             else:
                 self.species.options = [ft.DropdownOption(key=str(s["id"]), text=s["name"]) for s in species]
+                t.fit_search(self.species)
                 self.species.value = str(self.value["species"]) if self.value.get("species") else None
                 self.species.hint_text = tr('pokemon.search_a_species_1ea995', 'Search a species')
                 self.species.disabled = self.build_button.disabled = False
@@ -1205,6 +1206,7 @@ class NamePicker:
                 if self.optional:
                     options.insert(0, ft.DropdownOption(key=EMPTY, text=tr('pokemon.not_set_4895f7', 'Not set')))
                 self.dropdown.options = options
+                t.fit_search(self.dropdown)
                 self.dropdown.value = str(self.value) if self.value else (EMPTY if self.optional else None)
                 self.picked = icon_choices(self.app, self.dropdown, names, ribbon=self.kind == "ribbons")
                 self.dropdown.hint_text = self.hint or tr('pokemon.search_49c266', 'Search')

@@ -143,6 +143,7 @@ class GtsView:
             self.canonical_species = canonical
             self.picker.options = [ft.DropdownOption(key=ANY, text=tr('gts.any_pokemon_b21058', 'Any Pokemon'))] + [
                 ft.DropdownOption(key=k, text=v) for k, v in self.species]
+            t.fit_search(self.picker)
             if self.visible:
                 self.picker.update()
         self.app.ui(done)

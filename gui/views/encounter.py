@@ -142,6 +142,7 @@ class EncounterPicker:
             found = {slot.species for area in self.table.areas for slot in area.slots}
             names = [n for n in names if n["id"] in found]
         self.species.options = [ft.DropdownOption(key=str(n["id"]), text=n["name"]) for n in names]
+        t.fit_search(self.species)
         chosen = str(self.value.get("species") or "")
         self.species.value = chosen if any(o.key == chosen for o in self.species.options) else None
 

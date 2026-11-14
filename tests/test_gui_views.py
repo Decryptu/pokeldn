@@ -1967,7 +1967,11 @@ def test_docs_search_finds_a_section_under_its_heading():
 
 @pytest.mark.parametrize("typed, picked", [("dunsparce ", ["206"]), ("zzz", []), ("", [])])
 def test_enter_on_typed_species_text_picks_the_option_it_names_or_nothing(typed, picked):
-    assert not t.dropdown([("25", "Pikachu")], None, editable=True).editable     # a short list opens on a click
+    short = t.dropdown([("25", "Pikachu")], None, editable=True)
+    assert not short.editable     # a short list opens on a click
+    short.options = [ft.DropdownOption(key=str(n)) for n in range(t.SEARCH_FROM)]
+    t.fit_search(short)           # the GTS picker starts with Any Pokemon alone, then gets every species
+    assert short.editable and short.enable_filter
     seen = []
     species = [("25", "Pikachu"), ("206", "Dunsparce")] + [(str(n), f"Mon{n}") for n in range(t.SEARCH_FROM)]
     box = t.dropdown(species, None, on_select=lambda e: seen.append(e.control.value), enable_filter=True, editable=True)

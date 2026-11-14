@@ -406,8 +406,6 @@ def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, 
     # menu_height fixes the menu's height: a short list fills it with blank rows. No options yet means filled later.
     if options and len(options) * MENU_ROW < kwargs.get("menu_height", 0):
         del kwargs["menu_height"]
-    if options and len(options) < SEARCH_FROM:
-        kwargs["editable"] = kwargs["enable_filter"] = False
     if on_select and kwargs.get("editable"):
         chosen = on_select
 
@@ -420,7 +418,7 @@ def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, 
                     return
                 e.control.update()
             chosen(e)
-    return ft.Dropdown(value=value, options=[ft.DropdownOption(key=k, text=t) for k, t in options],
+    box = ft.Dropdown(value=value, options=[ft.DropdownOption(key=k, text=t) for k, t in options],
                        on_select=on_select, dense=True, filled=True, bgcolor=FIELD, border=_border(),
                        text_size=13, text_style=ft.TextStyle(font_family_fallback=FALLBACK_FONTS),
                        expand=True, height=CONTROL_HEIGHT, content_padding=CONTROL_PADDING,
@@ -428,6 +426,14 @@ def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, 
                        selected_trailing_icon=pixel_icon("chevron-up", color=BLUE),
                        menu_style=ft.MenuStyle(bgcolor=PANEL, shape=ft.RoundedRectangleBorder(radius=10)),
                        **kwargs)
+    if options and kwargs.get("editable"):
+        fit_search(box)
+    return box
+
+
+def fit_search(box: ft.Dropdown, searchable: bool = True) -> None:
+    """Call after setting a searchable box's options: a short list becomes a menu a click opens."""
+    box.editable = box.enable_filter = searchable and len(box.options) >= SEARCH_FROM
 
 
 def field_line(control: ft.Control, alignment: ft.Alignment = ft.Alignment.CENTER, **kwargs) -> ft.Container:

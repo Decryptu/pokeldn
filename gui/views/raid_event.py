@@ -142,6 +142,7 @@ class RaidEventPicker:
         key = self.view.values.get(self.field.key) or ""
         known = {e.key for e in events}
         self.dropdown.options = options
+        t.fit_search(self.dropdown)
         # No event leaves the field empty under its hint, so a search is typed straight in.
         self.dropdown.value = key if key in known else None
         self.dropdown.hint_text = NO_EVENT
