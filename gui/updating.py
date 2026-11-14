@@ -57,7 +57,7 @@ def run(new: Path, target: Path, pid: int, version: str) -> int:
             ready.touch()
 
         drop.use_client()
-        ft.run(main, assets_dir=os.path.join(ROOT, "gui", "assets"), view=ft.AppView.FLET_APP_HIDDEN)
+        ft.run(t.shown_on_failure(main), assets_dir=os.path.join(ROOT, "gui", "assets"), view=ft.AppView.FLET_APP_HIDDEN)
     except Exception:   # no window: the swap goes on without one
         pass
     closed.set()

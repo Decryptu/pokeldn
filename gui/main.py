@@ -567,7 +567,7 @@ def run() -> None:
         ft.run(main, assets_dir=assets, view=ft.AppView.WEB_BROWSER, no_cdn=True,
                port=int(os.environ["POKELDN_GUI_WEB"]))
     else:
-        ft.run(main, assets_dir=assets, view=ft.AppView.FLET_APP_HIDDEN)
+        ft.run(t.shown_on_failure(main), assets_dir=assets, view=ft.AppView.FLET_APP_HIDDEN)
 
 
 if __name__ == "__main__":

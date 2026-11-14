@@ -657,22 +657,30 @@ def image_src(data: bytes) -> bytes | str:
     return data
 
 
-async def center_window(page: ft.Page) -> None:
-    """Centre a desktop window; a window closed before the call answers raises "Session closed" in Flet's
-    completion callback, a traceback with nothing to act on (seen on Linux when the window failed to draw)."""
-    try:
-        await page.window.center()
-    except RuntimeError as error:
-        if "Session closed" not in str(error):
-            raise
-
 async def show_window(page: ft.Page) -> None:
-    """Show a window started hidden (gui/main.py: AppView.FLET_APP_HIDDEN) once, already sized, drawn and
-    centred: a window shown first and then resized and centred step by step flashes on screen."""
+    """Centre and show a window started hidden (AppView.FLET_APP_HIDDEN): shown first, it flashes while it is
+    resized and moved. A window closed before the call answers raises "Session closed", nothing to act on."""
     try:
         await page.window.center()
-        page.window.visible = True
-        page.update()
     except RuntimeError as error:
         if "Session closed" not in str(error):
             raise
+    finally:
+        page.window.visible = True
+        try:
+            page.update()
+        except RuntimeError:
+            pass
+
+
+def shown_on_failure(start):
+    """A hidden window whose start raises would stay invisible with the process running: show it with Flet's
+    error before re-raising (theme.show_window shows it on success)."""
+    def wrapped(page: ft.Page) -> None:
+        try:
+            start(page)
+        except Exception:
+            page.window.visible = True
+            page.update()
+            raise
+    return wrapped

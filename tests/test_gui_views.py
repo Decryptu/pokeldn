@@ -2138,3 +2138,32 @@ def test_settings_search_finds_a_hidden_advanced_card_under_its_section(tmp_path
         assert all(p in shown for p in present) and not any(a in shown for a in absent), (query, shown)
     view._search(SimpleNamespace(control=SimpleNamespace(value="")))
     assert "Switch keys" in texts() and "Transmit power" not in texts()
+
+
+# A window started hidden (gui/main.py, AppView.FLET_APP_HIDDEN) must end up visible on every path.
+class _HiddenWindow:
+    def __init__(self, center_error=None):
+        self.visible, self.center_error = False, center_error
+
+    async def center(self):
+        if self.center_error:
+            raise self.center_error
+
+
+@pytest.mark.parametrize("error", [None, RuntimeError("Session closed")])
+def test_a_hidden_window_is_shown_after_centring(error):
+    import asyncio
+    page = SimpleNamespace(window=_HiddenWindow(error), update=lambda: None)
+    asyncio.run(t.show_window(page))
+    assert page.window.visible
+
+
+def test_a_hidden_window_whose_start_fails_is_shown():
+    page = SimpleNamespace(window=_HiddenWindow(), update=lambda: None)
+
+    def start(_page):
+        raise ValueError("broken view")
+
+    with pytest.raises(ValueError):
+        t.shown_on_failure(start)(page)
+    assert page.window.visible
