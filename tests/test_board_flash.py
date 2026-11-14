@@ -195,17 +195,17 @@ def test_a_controller_board_is_found_on_usb_where_it_has_no_serial_port(tmp_path
     windows = "USB\\VID_0F0D&PID_0092\\5&1A2B&0&3\r\nUSB\\VID_05E3&PID_0092\\6&1\r\nUSB\\ROOT_HUB30\\4&2\r\n"
     assert board.controllers("win32", run(windows), usb_ids=lambda: None) == 1
     assert board.controllers("win32", run(""), usb_ids=lambda: windows.split()) == 1
+    for name, ids in (("1-1", ("0f0d", "0092")), ("1-2", ("05e3", "0092")), ("usb1", ("1d6b", "0002"))):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "idVendor").write_text(ids[0] + "\n")
+        (tmp_path / name / "idProduct").write_text(ids[1] + "\n")
+    assert board.controllers("linux", sysfs=str(tmp_path)) == 1
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="cfgmgr32 is Windows's")
 def test_windows_lists_present_usb_devices_without_a_process():
     ids = board.present_usb_ids()
     assert ids is not None and all(i.upper().startswith("USB\\") for i in ids)
-    for name, ids in (("1-1", ("0f0d", "0092")), ("1-2", ("05e3", "0092")), ("usb1", ("1d6b", "0002"))):
-        (tmp_path / name).mkdir()
-        (tmp_path / name / "idVendor").write_text(ids[0] + "\n")
-        (tmp_path / name / "idProduct").write_text(ids[1] + "\n")
-    assert board.controllers("linux", sysfs=str(tmp_path)) == 1
 
 
 def test_a_board_the_controller_firmware_put_in_the_loader_is_flashed_without_a_reset(flasher, monkeypatch):
