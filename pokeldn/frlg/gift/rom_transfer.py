@@ -251,8 +251,7 @@ class _Child:
         with open(os.path.join(self.folder, "errors"), "wb") as errors:
             self.proc = subprocess.Popen(
                 runner.command("--module", "pokeldn.frlg.gift.rom_transfer", self.folder), env=env,
-                stdin=subprocess.DEVNULL, stdout=errors, stderr=errors,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                stdin=subprocess.DEVNULL, stdout=errors, stderr=errors, **NO_WINDOW)
         return self
 
     def done(self):

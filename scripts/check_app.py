@@ -28,7 +28,7 @@ def check() -> None:
 
     assert getattr(sys, "frozen", False)
     if sys.platform == "win32":
-        assert runner.command("--run", "x")[0] == runner.WINDOWS_RUN
+        assert runner.command("--run", "x")[0] == sys.executable
     root = Path(sys._MEIPASS)
     assert Path(pokemon.HERE) == root / "services/pkhex"
     assert (root / "gui/firmware/pokeldn-radio.bin").is_file()
@@ -134,11 +134,11 @@ if __name__ == "__main__":
 
         executable = sys.argv[1]
         if sys.platform == "win32":
-            # pokeldn.exe opens no console; its runs go through the console copy (scripts/pack_app.py).
+            # pokeldn.exe opens no console, and its runs are pokeldn.exe itself (scripts/pack_app.py): the
+            # run below proves the GUI-subsystem exe keeps the pipes a run's log and Stop need.
             folder = Path(executable).resolve().parent
             assert pe_subsystem(folder / "pokeldn.exe") == 2, "pokeldn.exe must be GUI-subsystem"
-            assert pe_subsystem(folder / "pokeldn-run.exe") == 3, "pokeldn-run.exe must be console-subsystem"
-            executable = str(folder / "pokeldn-run.exe")
+            assert not (folder / "pokeldn-run.exe").exists(), "runs start pokeldn.exe itself"
         result = subprocess.run([executable, "--run", str(Path(__file__).resolve())],
                                 capture_output=True, text=True, encoding="utf-8", timeout=180)
         assert result.returncode == 0, (hex(result.returncode & 0xFFFFFFFF), result.stdout, result.stderr)

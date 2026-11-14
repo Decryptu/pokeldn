@@ -12,6 +12,7 @@ import flet as ft
 
 from gui import drop, theme as t
 from pokeldn.app.i18n import t as tr
+from pokeldn.windowless import NO_WINDOW
 
 
 WAITING = "waiting"   # the data of a placeholder reloading() put in place
@@ -366,7 +367,7 @@ def open_folder(path: str) -> None:
     if sys.platform == "win32":
         os.startfile(path)
     else:
-        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", path])
+        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", path], **NO_WINDOW)
 
 
 class DigitCode:
