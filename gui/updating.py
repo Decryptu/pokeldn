@@ -52,12 +52,12 @@ def run(new: Path, target: Path, pid: int, version: str) -> int:
                 ft.Column([t.text(tr('updating.updating_pokeldn_to_79e623', 'Updating pokeldn to {value0}', value0=version), 15, weight=ft.FontWeight.W_600),
                            t.text(tr('updating.pokeldn_opens_again_in_a_moment_b63bb9', 'pokeldn opens again in a moment.'), 12, t.MUTED)], spacing=4, tight=True),
             ], spacing=18, vertical_alignment=ft.CrossAxisAlignment.CENTER, expand=True))
-            page.run_task(t.center_window, page)
+            page.run_task(t.show_window, page)
             shown.append(page)
             ready.touch()
 
         drop.use_client()
-        ft.run(main, assets_dir=os.path.join(ROOT, "gui", "assets"))
+        ft.run(t.shown_on_failure(main), assets_dir=os.path.join(ROOT, "gui", "assets"), view=ft.AppView.FLET_APP_HIDDEN)
     except Exception:   # no window: the swap goes on without one
         pass
     closed.set()

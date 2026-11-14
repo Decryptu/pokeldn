@@ -100,7 +100,7 @@ by [MercuryEnigma](https://github.com/MercuryEnigma), itself a fork of
 
 Contributors to this repository (GitHub does not list contributors on a fork):
 
-- [Gr3nSkyDragon](https://github.com/Gr3nSkyDragon): ESP32-S3 firmware
+- [Gr3nSkyDragon](https://github.com/Gr3nSkyDragon): ESP32-S3 firmware, a desktop window that opens already sized and centred
 - [ismailhasannnnnn](https://github.com/ismailhasannnnnn): Scarlet/Violet Tera Raid hosting and joining,
   reverse engineering and reconstruction of the RaidPoint structure, including reward encoding and
   raid bootstrap compression, and hosted raid reward templates, with mint, battle item, berry and
