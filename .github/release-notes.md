@@ -1,12 +1,11 @@
-# pokeldn 0.65.5
+# pokeldn 0.65.6
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- On Windows the app is one program, `pokeldn.exe`, which also runs each trade; the separate `pokeldn-run.exe` is gone.
-- The desktop app draws with Skia again, as 0.62 did, which is faster on weak graphics cards.
+- Each tool has a Start over button beside its docs button: it forgets that tool's saved choices, such as a custom Mystery Gift, and keeps your files, bank and settings.
 
 The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 
