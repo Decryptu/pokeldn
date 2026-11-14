@@ -216,6 +216,11 @@ With no port, the Board page reads `/sys/bus/usb/devices` and names a bridge wit
 
 ## Local storage
 
+Each tool remembers its form, gift and offers in `settings.json` (`tool_values`). The circular-arrow
+button in the toolbar above every tool, beside the docs button, forgets that one tool's choices after a
+confirmation; files, the bank and the settings stay.
+
+
 Settings, Storage shows reclaimable space; Clear local files removes it in the background after a
 confirmation, and holds off sessions and flashes meanwhile. Save anything needed for a bug report
 first.

@@ -133,7 +133,9 @@ class GamesView:
         center = ft.Stack([
             t.fade(self.body, 48),
             ft.Container(t.notch(self.tabs,
-                                 t.icon_button("book-open", self._open_doc, tr('games.read_the_docs_for_this_game_ca6165', 'Read the docs for this game'))),
+                                 ft.Row([t.icon_button("refresh", self._start_over, tr('games.start_over_tooltip', 'Start over: forget what this tool remembers')),
+                                         t.icon_button("book-open", self._open_doc, tr('games.read_the_docs_for_this_game_ca6165', 'Read the docs for this game'))],
+                                        spacing=0, tight=True)),
                          top=0, left=0, right=0),
         ], expand=True, size_change_interval=50, on_size_change=self._fit)
         self.panes = t.Panes(
@@ -433,6 +435,26 @@ class GamesView:
         if self.body.padding.left != side:
             self.body.padding = ft.Padding(side, 62, side, 24)
             t.update_own(self.body)
+
+    def _start_over(self, e) -> None:
+        """Asks, then forgets this tool's saved choices: its form, gift and offer come back as on a first launch."""
+        tool = self.tool
+
+        def done(e):
+            self.app.page.pop_dialog()
+            self.app.settings.tool_values.pop(tool.key, None)
+            if self.tool is tool:
+                self.tab, self.search = "basic", ""
+                self.select(self.game, tool)
+            self.app.settings.save()
+            self.session.refresh()
+
+        self.app.page.show_dialog(t.dialog(
+            title=t.text(tr('games.start_over_title', 'Start over?'), 18),
+            content=t.text(tr('games.start_over_body', 'Everything you set in {value0} goes back to how it was the first time. '
+                              'Files you saved, your bank and your settings stay.', value0=f"{self.game.name}, {tool.name}"), 13, t.SOFT, width=360),
+            actions=[t.button(tr('games.cancel_19766e', 'Cancel'), lambda e: self.app.page.pop_dialog(), filled=False),
+                     t.button(tr('games.start_over_button', 'Start over'), done)]))
 
     def _open_doc(self, e) -> None:
         self.app.navigate("docs", doc=self.tool.doc or self.game.doc or "plugins.md")
