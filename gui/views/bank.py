@@ -1,6 +1,7 @@
 """The bank: every Pokemon a trade brought in, and the way to trade one into another game
 [pokeldn.app.bank, docs/gui.md, The bank]."""
 from pokeldn.app.i18n import t as tr
+import dataclasses
 import os
 import shutil
 import threading
@@ -816,7 +817,7 @@ class BankView:
                 self.working = False
                 self._say("", t.MUTED)
                 self.refresh()
-                ImportDialog(self.app, done, failed).show()
+                ImportDialog(self.app, done, failed, self.refresh).show()
             self.app.ui(finish)
         threading.Thread(target=work, daemon=True).start()
 
@@ -832,10 +833,11 @@ class ImportDialog:
     """One row per Pokemon found, grouped by file: its sprite, where it was, and whether it was banked."""
 
     STATES = {"banked": (tr('bank.banked_c89116', 'Banked'), "check", t.GREEN), "already": (tr('bank.already_in_the_bank_0dd815', 'Already in the bank'), "copy", t.MUTED),
+              "gone": (tr('bank.imported_before', 'Imported before'), "repeat", t.MUTED),
               "refused": (tr('bank.not_imported_a37f7e', 'Not imported'), "warning-diamond", t.AMBER)}
 
-    def __init__(self, app, done: list[bank.Imported], failed: list[str]):
-        self.app = app
+    def __init__(self, app, done: list[bank.Imported], failed: list[str], banked=None):
+        self.app, self.banked = app, banked or (lambda: None)
         counts = {state: sum(r.count(state) for r in done) for state in self.STATES}
         summary = [t.chip(tr('bank._54ef3b', '{value0} {value1}', value0=counts[s], value1=label.lower()), icon, color)
                    for s, (label, icon, color) in self.STATES.items() if counts[s] and s != "banked"]
@@ -863,14 +865,16 @@ class ImportDialog:
                               max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
                        t.text(result.save.replace(", ", " · "), 12, t.FAINT)],
                       spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
-        rows = [self._pokemon(p) for p in result.pokemon] or [
+        rows = [self._pokemon(p, result.path) for p in result.pokemon] or [
             ft.Container(t.text(tr('bank.no_pokemon_in_this_file_bf95cd', 'No Pokemon in this file.'), 12, t.MUTED), padding=12)]
         return ft.Column([head, ft.Container(ft.Column(rows, spacing=2), bgcolor=t.CARD, border_radius=14,
                                              padding=ft.Padding(6, 6, 12, 6))], spacing=8, tight=True,
                          horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
 
-    def _pokemon(self, found: bank.ImportedPokemon) -> ft.Control:
+    def _pokemon(self, found: bank.ImportedPokemon, path: str = "") -> ft.Control:
         label, icon, color = self.STATES[found.state]
+        if found.state == "gone":
+            found = dataclasses.replace(found, detail=tr('bank.imported_before_detail', 'Traded or removed since'))
         about = [t.text(translate(found.species) or tr('bank.unknown_pokemon_40e13e', 'Unknown Pokemon'), 13, t.TEXT if found.state != "refused" else t.SOFT,
                         weight=ft.FontWeight.W_600)]
         if found.where:
@@ -882,12 +886,36 @@ class ImportDialog:
         status = [ft.Container(game_icon(found.game, 18), tooltip=tr('bank.kept_as_a_pokemon_8c187f', 'Kept as a {value0} Pokemon', value0=NAMES[found.game]))
                   ] if found.game and found.state != "refused" else []
         status.append(t.chip(label, icon, color))
-        return ft.Container(ft.Row([
+        if found.state == "gone" and path and found.key:
+            status.append(t.secondary_button(tr('bank.import_again', 'Import again'),
+                                             lambda e: self._again(row, found, path), "repeat"))
+        row = ft.Container(ft.Row([
             ft.Container(Sprite(self.app, found.species_id, found.shiny, size=MINI).control,
                          opacity=0.45 if found.state == "refused" else 1),
             ft.Column(about, spacing=1, expand=True, tight=True),
             ft.Row(status, spacing=6, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
         ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER), padding=ft.Padding(0, 4, 0, 4))
+        return row
+
+    def _again(self, row: ft.Container, found: bank.ImportedPokemon, path: str) -> None:
+        """Banks one record the ledger keeps out, off the page's thread; only its row is redrawn."""
+        row.disabled = True
+        t.update_own(row)
+        trainers = {key: self.app.settings.trainer(key) for key in NAMES}
+
+        def work():
+            try:
+                back = bank.import_again(path, found.key, trainers)
+            except (OSError, pokemon.BuilderError) as error:
+                back = dataclasses.replace(found, state="refused", detail=str(error).splitlines()[0])
+
+            def finish():
+                fresh = self._pokemon(back or dataclasses.replace(found, state="refused", detail=""), path)
+                row.content, row.disabled = fresh.content, False
+                row.update()
+                self.banked()
+            self.app.ui(finish)
+        threading.Thread(target=work, daemon=True).start()
 
     @staticmethod
     def _unreadable(line: str) -> ft.Control:

@@ -376,7 +376,9 @@ version above 3 is refused. Box names live in PKSM's `.json` beside the bank and
 
 Illegal records, bad checksums, other games' eggs and unreachable species are refused.
 `Bank/.imported` keeps the SHA-256 of each imported record, so re-importing a save brings only
-changed records.
+changed records. A record imported before and no longer in the bank, traded or removed, shows as
+"Imported before" with an Import again button, which takes its line out of the file and banks it.
+The Remove button takes the removed record's line out at once; a completed trade keeps it.
 
 ### Unresolved
 

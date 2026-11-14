@@ -1,4 +1,5 @@
 import os
+import dataclasses
 import sys
 from types import SimpleNamespace
 
@@ -2222,3 +2223,24 @@ def test_an_own_update_sends_the_controls_properties_and_leaves_deeper_changes_f
     assert sent == [[["padding", ft.Padding(9, 1, 9, 1)]]]
     assert not view.controls[0].is_isolated()
     assert patch(root) == [["value", "b"]]
+
+
+def test_import_again_banks_a_record_imported_before_and_redraws_its_row_alone(monkeypatch, tmp_path):
+    from gui.views import bank as view
+    from pokeldn.app import bank
+    monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
+    monkeypatch.setattr(view.threading, "Thread", lambda target, daemon: SimpleNamespace(start=target))
+    gone = bank.ImportedPokemon("", "Mew", 151, False, "gone", "sv", "", "8BFD")
+    calls, refreshed = [], []
+    monkeypatch.setattr(bank, "import_again", lambda path, key, trainers: calls.append((path, key)) or
+                        dataclasses.replace(gone, state="banked"))
+    app = SimpleNamespace(ui=lambda fn: fn(), settings=SimpleNamespace(trainer=lambda key: {}, sprites=False), page=None,
+                          sprites=None)
+    dialog = view.ImportDialog(app, [bank.Imported("mew.pk9", "", [gone], str(tmp_path / "mew.pk9"))], [],
+                               lambda: refreshed.append(1))
+    texts = lambda c: [getattr(x, "value", None) or getattr(x, "content", None) for x in walk(c)]
+    again = next(x for x in walk(dialog.dialog) if getattr(x, "content", None) == "Import again")
+    assert "Imported before" in texts(dialog.dialog)
+    again.on_click(None)
+    assert calls == [(str(tmp_path / "mew.pk9"), "8BFD")] and refreshed == [1]
+    assert "Banked" in texts(dialog.dialog) and "Import again" not in texts(dialog.dialog)

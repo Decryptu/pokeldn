@@ -159,9 +159,11 @@ class ImportedPokemon:
     species: str
     species_id: int
     shiny: bool
-    state: str            # "banked", "already" (imported before, or its exact record is banked) or "refused"
+    state: str            # "banked", "already" (its exact record is banked), "gone" (imported before, since
+                          # traded or removed: import_again brings it back) or "refused"
     game: str             # the bank game it is kept in; "" when refused
     detail: str           # what HOME's way in took off ("Left its Oran Berry behind"), or why it was refused
+    key: str = ""         # its services/pkhex Import key
 
 
 @dataclass
@@ -169,6 +171,7 @@ class Imported:
     name: str             # the file's name
     save: str             # "Black 2, ROSA" for a game save, "" for a Pokemon file
     pokemon: list[ImportedPokemon]
+    path: str = ""        # the file read, for import_again
 
     def count(self, state: str) -> int:
         return sum(p.state == state for p in self.pokemon)
@@ -189,27 +192,51 @@ def import_file(path: str, trainers: dict[str, dict], folder=None) -> Imported:
         seen = set(ledger.read_text(encoding="utf-8").split())
     except OSError:
         seen = set()
-    result, banked = Imported(source.name, reply.get("save", ""), []), _banked(folder)
+    result, banked = Imported(source.name, reply.get("save", ""), [], str(source)), _banked(folder)
+    held = None
     for record in reply["pokemon"]:
         if "refusal" in record:
             state, detail = "refused", record["refusal"].splitlines()[0]
         else:
-            key = record["key"]
+            key, content = record["key"], base64.b64decode(record["data"])
             entry = None if key in seen else _keep(
-                record["game"], base64.b64decode(record["data"]), record, folder, str(source), banked,
+                record["game"], content, record, folder, str(source), banked,
                 imported={"file": source.name, "where": record["where"], "from": record["source"],
                           "notes": record["notes"], "key": key})
             warning = HOME_TRACKER_WARNINGS.get(record["home_tracker"])
-            state, detail = ("already", "") if entry is None else (
-                "banked", " · ".join([*record["notes"], *([warning] if warning else [])]))
+            if entry is None and key in seen and held is None:
+                held = _held(folder)
+            gone = entry is None and key in seen and not held & {key.upper(), _digest(content).upper(),
+                                                                  (source.name, record["where"])}
+            state, detail = ("gone" if gone else "already", "") if entry is None else ("banked", " · ".join([*record["notes"], *([warning] if warning else [])]))
             if key not in seen:
                 seen.add(key)
                 folder.mkdir(parents=True, exist_ok=True)
                 with ledger.open("a", encoding="utf-8") as out:
                     out.write(key + "\n")
         result.pokemon.append(ImportedPokemon(record["where"], record["species"], int(record["species_id"]),
-                                              bool(record["shiny"]), state, record.get("game", ""), detail))
+                                              bool(record["shiny"]), state, record.get("game", ""), detail,
+                                              record.get("key", "")))
     return result
+
+
+def _held(folder: Path) -> set:
+    """What marks a banked record as one imported: its Import key, its digest, and its file and slot for
+    records banked before the key was kept."""
+    held = set()
+    for meta in (_read_meta(p) for p in folder.glob("*.json")):
+        imported = meta.get("imported") if isinstance(meta.get("imported"), dict) else {}
+        held |= {str(k).upper() for k in (imported.get("key"), meta.get("sha256")) if k}
+        if imported.get("file"):
+            held.add((imported["file"], imported.get("where", "")))
+    return held
+
+
+def import_again(path: str, key: str, trainers: dict[str, dict], folder=None) -> ImportedPokemon | None:
+    """Bank again the record `key` of `path` that the ledger keeps out, after a trade or a removal."""
+    folder = Path(folder or BANK)
+    _drop_keys(folder, {key.upper()})
+    return next((p for p in import_file(path, trainers, folder).pokemon if p.key == key), None)
 
 
 def edit(entry: Entry, fields: dict) -> Entry:
@@ -257,7 +284,11 @@ def remove(entry_id: str, folder=None, *, forget: bool = True) -> None:
 def _forget(folder: Path, entry_id: str) -> None:
     meta = next((_read_meta(p) for p in folder.glob(f"{entry_id}.*") if FILES.search(p.name)), {})
     # Older records kept no ledger key; the bank digest is the key when HOME's way in changed nothing.
-    keys = {str(k).upper() for k in ((meta.get("imported") or {}).get("key") if isinstance(meta.get("imported"), dict) else None, meta.get("sha256")) if k}
+    imported = meta.get("imported") if isinstance(meta.get("imported"), dict) else {}
+    _drop_keys(folder, {str(k).upper() for k in (imported.get("key"), meta.get("sha256")) if k})
+
+
+def _drop_keys(folder: Path, keys: set[str]) -> None:
     ledger = folder / LEDGER
     try:
         lines = ledger.read_text(encoding="utf-8").split()

@@ -187,10 +187,13 @@ def test_a_save_is_imported_slot_by_slot_once_even_after_a_trade_takes_one_out(s
     assert patrat["ot"] == "ROSA" and int(patrat["tracker"]) != 0
     bank.remove(kept["Party, slot 1"].id, forget=False)       # as a completed trade takes it out
     again = bank.import_file(str(save), TRAINERS)
-    assert [p.state for p in again.pokemon] == ["already", "already", "refused"]
+    assert [p.state for p in again.pokemon] == ["gone", "already", "refused"]
     assert len(bank.entries()) == 1 and save.read_bytes() == before
+    back = bank.import_again(str(save), again.pokemon[0].key, TRAINERS)
+    assert (back.where, back.state) == ("Party, slot 1", "banked") and len(bank.entries()) == 2
+    bank.remove(back and next(e for e in bank.entries() if imported_from(e) == "Party, slot 1").id, forget=False)
     bank.remove(kept["Box 1, slot 3"].id)       # the player's Remove: the file imports again
-    assert [p.state for p in bank.import_file(str(save), TRAINERS).pokemon] == ["already", "banked", "refused"]
+    assert [p.state for p in bank.import_file(str(save), TRAINERS).pokemon] == ["gone", "banked", "refused"]
 
 
 def test_the_empty_setting_accepts_what_a_tracker_would_make_legal(service, vault):
@@ -320,7 +323,7 @@ def test_an_external_frontend_imports_converts_and_completes_without_the_gui(ser
     for count in (2, 1, 3):
         session.advance(count)          # duplicates, older messages and generated extra trades
     assert session.completed == 3
-    assert bank.import_file(str(source), TRAINERS, folder=folder).count("already") == 1
+    assert bank.import_file(str(source), TRAINERS, folder=folder).count("gone") == 1
     assert source.read_bytes() == original and Path(offer["file"]).is_file()
 
 
