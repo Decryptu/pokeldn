@@ -227,7 +227,7 @@ def main(page: ft.Page) -> None:
         compact_start(app)
         return
     if not page.web:
-        page.run_task(t.center_window, page)
+        page.run_task(t.show_window, page)
     outcome = update.finish(update.install_root())
     settings_notice(app)
     if not keys_found(app.settings.keys):
@@ -567,7 +567,7 @@ def run() -> None:
         ft.run(main, assets_dir=assets, view=ft.AppView.WEB_BROWSER, no_cdn=True,
                port=int(os.environ["POKELDN_GUI_WEB"]))
     else:
-        ft.run(main, assets_dir=assets)
+        ft.run(main, assets_dir=assets, view=ft.AppView.FLET_APP_HIDDEN)
 
 
 if __name__ == "__main__":

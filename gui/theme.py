@@ -665,3 +665,14 @@ async def center_window(page: ft.Page) -> None:
     except RuntimeError as error:
         if "Session closed" not in str(error):
             raise
+
+async def show_window(page: ft.Page) -> None:
+    """Show a window started hidden (gui/main.py: AppView.FLET_APP_HIDDEN) once, already sized, drawn and
+    centred: a window shown first and then resized and centred step by step flashes on screen."""
+    try:
+        await page.window.center()
+        page.window.visible = True
+        page.update()
+    except RuntimeError as error:
+        if "Session closed" not in str(error):
+            raise
