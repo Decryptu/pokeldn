@@ -1,14 +1,13 @@
-# pokeldn 0.65.1
+# pokeldn 0.65.2
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Bank: Duplicate makes a second copy of the selected Pokemon.
-- Updated libraries: flet 1.1.2, bleak 3.1.0.
-- New Mystery Gifts (Legends Z-A's Spewpa patterns, Shiny Xerneas and the Poke Ball Vivillon) arrive
-  with the next PKHeX.Core release; 26.10.18 is still the newest.
+- The desktop window opens already sized and centred, with no flash while it moves into place.
+- Installing firmware on a board whose flasher stub never starts goes through the board's ROM loader
+  instead.
 
 The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 
