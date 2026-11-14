@@ -135,7 +135,7 @@ class PokemonPicker:
             controls.append(t.labeled_control(tr('pokemon.form_2e0e96', 'Form'), t.dropdown(
                 [(ANY, tr('pokemon.form_any', 'Any'))] + [(str(f["id"]), f["name"]) for f in forms],
                 str(chosen["form"]) if chosen.get("form") is not None else ANY,
-                on_select=self._form, enable_filter=len(forms) > 8, editable=len(forms) > 8, menu_height=320),
+                on_select=self._form, enable_filter=True, editable=True, menu_height=320),
                 expand=True))
         if found and found.get("sweets"):
             controls.append(t.labeled_control(tr('pokemon.sweet', 'Sweet'), t.dropdown(
@@ -960,10 +960,8 @@ class OfferOptions:
         versions = len({n["version"] for n in encounters}) > 1
         options = [(ANY, tr('pokemon.encounter_any', 'Any legal encounter'))] + [
             (n["key"], encounter_label(n, versions)) for n in encounters]
-        # A typeable box opens only from its arrow; a short list is a plain menu that opens on a click.
-        search = len(options) > 12
-        box = t.dropdown(options, self.chosen.get("encounter") or ANY, on_select=picked, enable_filter=search,
-                         editable=search, menu_height=320)
+        box = t.dropdown(options, self.chosen.get("encounter") or ANY, on_select=picked, enable_filter=True,
+                         editable=True, menu_height=320)
         box.expand = True
         return t.labeled_control(tr('pokemon.encounter_count', 'Encounter ({value0} listed)', value0=len(encounters)),
                                  ft.Row([box]))

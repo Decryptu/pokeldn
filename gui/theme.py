@@ -109,6 +109,7 @@ def panel(content: ft.Control, width: float | None = None, expand=None, padding=
 
 TRACK = ft.Colors.with_opacity(0.35, "#000000")   # behind a group of tabs, on any surface
 MENU_ROW = 48   # at least one dropdown row, padding shared
+SEARCH_FROM = 13   # a typeable box opens only from its arrow; a shorter list is a menu a click opens
 TOOLBAR_ITEM = 32   # the icon buttons are this size
 TOOLBAR_INSET = 4
 
@@ -392,6 +393,8 @@ def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, 
     # menu_height fixes the menu's height: a short list fills it with blank rows. No options yet means filled later.
     if options and len(options) * MENU_ROW < kwargs.get("menu_height", 0):
         del kwargs["menu_height"]
+    if options and len(options) < SEARCH_FROM:
+        kwargs["editable"] = kwargs["enable_filter"] = False
     if on_select and kwargs.get("editable"):
         chosen = on_select
 
