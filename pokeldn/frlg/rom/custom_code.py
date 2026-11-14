@@ -11,6 +11,7 @@ import tempfile
 from dataclasses import dataclass
 
 from pokeldn.frlg.rom import buffer_script
+from pokeldn.windowless import NO_WINDOW
 
 AS = "arm-none-eabi-as"
 OBJCOPY = "arm-none-eabi-objcopy"

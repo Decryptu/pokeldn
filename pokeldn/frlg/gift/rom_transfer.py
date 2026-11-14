@@ -26,6 +26,7 @@ from pokeldn.frlg.gift.mystery_gift import (
 from pokeldn.frlg.rom import builds
 from pokeldn.frlg.rom.buffer_payloads import PAYLOADS, THUMB_CODE
 from pokeldn.frlg.save import sav
+from pokeldn.windowless import NO_WINDOW
 
 C = save_transfer.C
 BLOCK = 0x1000

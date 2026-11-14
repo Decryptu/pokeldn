@@ -11,6 +11,7 @@ import serial
 from serial.tools import list_ports
 
 from pokeldn.app.paths import ROOT
+from pokeldn.windowless import NO_WINDOW
 from pokeldn.ldn import esp32
 from pokeldn.app.i18n import t as tr
 

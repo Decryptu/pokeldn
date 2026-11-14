@@ -92,7 +92,6 @@ class Process:
         self.stdin_lock = threading.Lock()
         if popups is not None:
             env = dict(env, POKELDN_POPUPS="1")
-        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         self.proc = subprocess.Popen(command(*argv, bluetooth=bluetooth), cwd=cwd, env=env, stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                      encoding="utf-8", errors="replace", bufsize=1, **NO_WINDOW)

@@ -14,6 +14,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from pokeldn.app.paths import POKEMON, ROOT, SESSION
+from pokeldn.windowless import NO_WINDOW
 
 HERE = os.path.join(ROOT, "services", "pkhex")
 EXE = "pokeldn-pkhex.exe" if sys.platform == "win32" else "pokeldn-pkhex"

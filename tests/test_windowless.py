@@ -61,3 +61,10 @@ def test_the_check_sees_an_injected_launcher_and_a_bare_one():
                      "    subprocess.run(['iw', 'dev'])\n")
     found = [call for call in launches(tree) if not hidden(call) and not elsewhere(call)]
     assert [call.lineno for call in found] == [3, 4]
+    
+def test_every_file_that_passes_no_window_imports_it():
+    missing = [path.relative_to(ROOT).as_posix()
+               for folder in SHIPPED for path in sorted((ROOT / folder).rglob("*.py"))
+               if "**NO_WINDOW" in (text := path.read_text(encoding="utf-8"))
+               and "from pokeldn.windowless import NO_WINDOW" not in text]
+    assert not missing, "import NO_WINDOW from pokeldn.windowless: " + ", ".join(missing)
