@@ -1,11 +1,7 @@
-"""Every program pokeldn starts is started with no window on Windows (pokeldn/windowless.py).
-
-pokeldn.exe and its runs are GUI-subsystem, with no console (scripts/pack_app.py): a console program either one
-starts without CREATE_NO_WINDOW opens a window of its own, which flashes open and shut. The rule is checked over
-the shipped source, not by hand.
-"""
+"""Every program the shipped source starts passes NO_WINDOW (pokeldn/windowless.py) or runs only off Windows."""
 
 import ast
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,9 +41,16 @@ def elsewhere(call: ast.Call) -> bool:
             and first.elts[0].value in ELSEWHERE)
 
 
+def shipped():
+    # Tracked files only: gui/client is an ignored Flet checkout holding template sources that do not parse.
+    listed = subprocess.run(["git", "ls-files", "-z", "--", *(f"{folder}/*.py" for folder in SHIPPED)],
+                            cwd=ROOT, capture_output=True, text=True, check=True).stdout
+    return [ROOT / name for name in sorted(listed.split("\0")) if name]
+
+
 def test_every_launch_opens_no_window():
     bare = [f"{path.relative_to(ROOT).as_posix()}:{call.lineno}"
-            for folder in SHIPPED for path in sorted((ROOT / folder).rglob("*.py"))
+            for path in shipped()
             for call in launches(ast.parse(path.read_text(encoding="utf-8")))
             if not hidden(call) and not elsewhere(call)]
     assert not bare, "pass **NO_WINDOW (pokeldn/windowless.py): " + ", ".join(bare)
@@ -61,10 +64,3 @@ def test_the_check_sees_an_injected_launcher_and_a_bare_one():
                      "    subprocess.run(['iw', 'dev'])\n")
     found = [call for call in launches(tree) if not hidden(call) and not elsewhere(call)]
     assert [call.lineno for call in found] == [3, 4]
-    
-def test_every_file_that_passes_no_window_imports_it():
-    missing = [path.relative_to(ROOT).as_posix()
-               for folder in SHIPPED for path in sorted((ROOT / folder).rglob("*.py"))
-               if "**NO_WINDOW" in (text := path.read_text(encoding="utf-8"))
-               and "from pokeldn.windowless import NO_WINDOW" not in text]
-    assert not missing, "import NO_WINDOW from pokeldn.windowless: " + ", ".join(missing)

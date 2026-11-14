@@ -830,9 +830,9 @@ Packaging traps:
   check.
 - On Windows `pokeldn.exe` is GUI-subsystem (subsystem 2) and opens no console window. Every run,
   flash and helper starts `pokeldn.exe` itself with pipes, so its log reaches the app and a closed
-  stdin stops it. Neither has a console, so every program pokeldn starts passes `NO_WINDOW`
-  (`pokeldn/windowless.py`, held by `tests/test_windowless.py`): a console program would open a
-  window of its own.
+  stdin stops it. A console program started from either opens a window of its own unless it gets
+  `CREATE_NO_WINDOW`: pass `**NO_WINDOW` (`pokeldn/windowless.py`); `tests/test_windowless.py` checks
+  every launch in `bin/`, `pokeldn/` and `gui/`.
 
 ### The app icon
 

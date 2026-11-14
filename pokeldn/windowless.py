@@ -1,8 +1,7 @@
-"""Starts other programs with no window on Windows (tests/test_windowless.py holds every launch to it).
+"""Keyword arguments that start a program with no console window on Windows.
 
-pokeldn.exe is GUI-subsystem, and so are its runs, which start pokeldn.exe itself (scripts/pack_app.py,
-pokeldn/app/runner.py): neither has a console. A console program either one starts without
-CREATE_NO_WINDOW opens a console window of its own, which flashes open and shut.
+pokeldn.exe and its runs are GUI-subsystem with no console (scripts/pack_app.py), so a console program
+they start without CREATE_NO_WINDOW opens a window of its own. tests/test_windowless.py holds every launch to it.
 """
 
 import subprocess
