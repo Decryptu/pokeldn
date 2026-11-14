@@ -468,3 +468,6 @@ def page_key(e) -> None:
         DigitCode.focused.key(e.key)
     elif KEY_TARGET[0] is not None:
         KEY_TARGET[0].key(e)
+    else:
+        # Every key press reaches here, typing included; Flet's automatic update would diff the whole page.
+        ft.context.disable_auto_update()

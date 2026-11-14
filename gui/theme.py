@@ -88,12 +88,17 @@ def backdrop(content: ft.Control) -> ft.Container:
                                                  alignment=ft.Alignment.TOP_LEFT))
 
 
-def glass(content: ft.Control, radius: float = 20, **kwargs) -> ft.Container:
-    """Liquid Glass: the layer of navigation and controls that floats above the content, never the content itself."""
+GLASS_ON_GRID = "#1A1A1D"   # glass over the bare checkerboard: the grid's mean under 68% #1F1F22
+
+
+def glass(content: ft.Control, radius: float = 20, floating: bool = False, **kwargs) -> ft.Container:
+    """Liquid Glass: the layer of navigation and controls above the content. Only a `floating` one, with content
+    scrolling under it, blurs: each backdrop blur reruns on every repaint (docs/gui.md, Performance)."""
     # One colour on all four sides: Flutter leaves the corners of a mixed-colour border square.
     return ft.Container(
-        content, blur=ft.Blur(30, 30), border_radius=radius, clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
-        bgcolor=ft.Colors.with_opacity(0.68, "#1F1F22"),
+        content, blur=ft.Blur(30, 30) if floating else None, border_radius=radius,
+        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        bgcolor=ft.Colors.with_opacity(0.68, "#1F1F22") if floating else GLASS_ON_GRID,
         border=ft.Border.all(1, ft.Colors.with_opacity(0.1, "#FFFFFF")),
         **kwargs)
 
@@ -151,6 +156,7 @@ class Panes:
         return "single"
 
     def _resized(self, e) -> None:
+        ft.context.disable_auto_update()     # it updates what it changes; see fade()
         layout = self._choose(e.width)
         if layout != self.layout:
             self._arrange(layout)
@@ -211,7 +217,7 @@ def readable(column: ft.Control, widest: float) -> ft.ShaderMask:
     faded = mask.on_size_change
 
     def fit(e) -> None:
-        faded(e)
+        faded(e)                             # disables the automatic update
         side = max(4, (e.width - widest) // 2)
         if view.padding.left != side:
             view.padding = ft.Padding(side, 8, side, 24)
@@ -229,7 +235,7 @@ def notch(*controls: ft.Control) -> ft.Row:
             items.append(ft.Container(width=1, height=18, bgcolor=ft.Colors.with_opacity(0.12, "#FFFFFF")))
         items.append(control)
     row = ft.Row(items, spacing=8, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER)
-    return ft.Row([glass(ft.Container(row, padding=TOOLBAR_INSET), radius=TOOLBAR_ITEM / 2 + TOOLBAR_INSET)],
+    return ft.Row([glass(ft.Container(row, padding=TOOLBAR_INSET), radius=TOOLBAR_ITEM / 2 + TOOLBAR_INSET, floating=True)],
                   alignment=ft.MainAxisAlignment.CENTER)
 
 
@@ -296,6 +302,7 @@ class Flow:
                              grid_rows(list(self.items), self.columns, self.spacing, self.stretch_last))
 
     def _resized(self, e) -> None:
+        ft.context.disable_auto_update()     # it updates what it changes; see fade()
         self.width = e.width
         if not self.single and self._fit() != self.columns:
             self._lay()
@@ -617,6 +624,9 @@ def fade(scrollable: ft.ScrollableControl, size: float = 24) -> ft.ShaderMask:
             previous(e)
 
     scrollable.on_scroll = scrolled
+    # Flet samples both every 10 ms; each sample is a message to Python and back.
+    scrollable.scroll_interval = max(scrollable.scroll_interval or 0, 100)
+    mask.size_change_interval = 100
     mask.on_size_change = resized
     paint()
     return mask

@@ -234,8 +234,26 @@ def bridges_without_driver(run=subprocess.run) -> list[str]:
     return found
 
 
+def present_usb_ids() -> list[str] | None:
+    """The device instance ids of the USB devices Windows has present, from cfgmgr32 in this process; None
+    where it cannot be asked. A PowerShell CIM query costs a process and about half a second of CPU."""
+    try:
+        import ctypes
+        cfg = ctypes.WinDLL("cfgmgr32")
+    except (ImportError, OSError, AttributeError):
+        return None
+    flags = 0x1 | 0x100          # CM_GETIDLIST_FILTER_ENUMERATOR | CM_GETIDLIST_FILTER_PRESENT
+    size = ctypes.c_ulong()
+    if cfg.CM_Get_Device_ID_List_SizeW(ctypes.byref(size), "USB", flags) != 0:
+        return None
+    buffer = ctypes.create_unicode_buffer(size.value)
+    if cfg.CM_Get_Device_ID_ListW("USB", buffer, size.value, flags) != 0:
+        return None
+    return [entry for entry in buffer[:size.value].split("\0") if entry]
+
+
 def controllers(platform: str = "", run=subprocess.run,
-                sysfs: str = "/sys/bus/usb/devices") -> int:
+                sysfs: str = "/sys/bus/usb/devices", usb_ids=present_usb_ids) -> int:
     """How many S3 controller boards are on this computer's USB. They have no serial port, so ports()
     never lists them. A retail HORI Pokken controller carries the same ids."""
     platform = platform or sys.platform
@@ -246,7 +264,8 @@ def controllers(platform: str = "", run=subprocess.run,
                        if re.search(rf'"idVendor" = {PAD_USB[0]}\b', block)
                        and re.search(rf'"idProduct" = {PAD_USB[1]}\b', block))
         if platform == "win32":
-            out = run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
+            ids = usb_ids()
+            out = "\n".join(ids) if ids is not None else run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
                        'Get-CimInstance Win32_PnPEntity -Filter "PNPDeviceID LIKE \'USB%\'" | ForEach-Object { $_.PNPDeviceID }'],
                       capture_output=True, text=True, timeout=20,
                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout

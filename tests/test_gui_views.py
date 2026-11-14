@@ -2168,3 +2168,29 @@ def test_a_hidden_window_whose_start_fails_is_shown():
     with pytest.raises(ValueError):
         t.shown_on_failure(start)(page)
     assert page.window.visible
+
+
+def test_typing_in_a_tool_field_saves_and_redraws_once_typing_pauses(monkeypatch):
+    """Each key stores its value at once; the settings file and the session panel follow one pause later, and
+    a pause that lands after another tool is picked only saves."""
+    import time
+    from gui.views import games as games_view
+    monkeypatch.setattr(games_view, "SETTLE_S", 0.05)
+    tool = SimpleNamespace(fields=[])
+    field = SimpleNamespace(key="--nickname", kind="text", events=None)
+    events = []
+    view = SimpleNamespace(tool=tool, values={}, _settling=None, reward_picker=None, raid_partners=None,
+                           session=SimpleNamespace(refresh=lambda: events.append("refresh")),
+                           app=SimpleNamespace(settings=SimpleNamespace(save=lambda: events.append("save")),
+                                               ui=lambda fn: fn()))
+    view.settle = lambda fn, delay=None: GamesView.settle(view, fn, delay or games_view.SETTLE_S)
+    view.set_value = lambda f, v, rebuild=False, typed=False: GamesView.set_value(view, f, v, rebuild, typed)
+    for text in ("S", "SP", "SPA"):
+        view.set_value(field, text, typed=True)
+        assert view.values["--nickname"] == text and events == []
+    time.sleep(0.2)
+    assert events == ["save", "refresh"]
+    view.set_value(field, "SPAR", typed=True)
+    view.tool = SimpleNamespace(fields=[])
+    time.sleep(0.2)
+    assert events == ["save", "refresh", "save"]

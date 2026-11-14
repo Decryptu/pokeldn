@@ -648,6 +648,20 @@ Cmd on macOS, Ctrl elsewhere:
 Settings, Larger text draws every text 15 % larger (`gui/theme.py`, `text_scale`), read at launch.
 The faintest text colour, `#98989D`, keeps 4.8:1 contrast on the lightest surface it sits on.
 
+## Performance
+
+The interface must stay smooth on a computer with a weak GPU or a software renderer, and on a slow CPU.
+
+| cost | rule |
+|---|---|
+| a backdrop blur reruns over its whole area on every repaint, a menu row's hover included | only glass that floats over scrolling content blurs (`t.glass(floating=True)`, the toolbar notch); a panel on the bare checkerboard is the flat `GLASS_ON_GRID`, the blurred grid's mean colour |
+| an event handler that calls no `update()` ends in Flet's automatic update, a diff of the whole page in Python (800 controls on the Games page: 5 to 60 ms on an M4) | a handler that changes nothing, or updates what it changes, calls `ft.context.disable_auto_update()`: the page key handler when no shortcut takes the key, size and scroll handlers, a text field's `on_change` |
+| a tool field's `on_change` fires per key | the value is stored at once; the settings save and the session panel's redraw run 0.25 s after the last key (`GamesView.settle`) |
+| Flet samples scroll and size events every 10 ms, each a message to Python | a faded list samples every 100 ms |
+| the controller-board poll runs every 6 s for the app's lifetime | Windows asks cfgmgr32 in process (`board.present_usb_ids`); the PowerShell CIM query is the fallback |
+
+`tools/gui_patch_profile.py LOG` runs the interface with each patch's time and control count and each event logged.
+
 ## Progress
 
 A run prints `[progress] DONE TOTAL UNIT TITLE` (`pokeldn.progress.show`, API 1.7; `UNIT` is `bytes`

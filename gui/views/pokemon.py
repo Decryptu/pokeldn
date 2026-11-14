@@ -50,7 +50,7 @@ class PokemonPicker:
         self.shiny = t.switch(bool(self.value.get("shiny")), self._shiny)
         self.nickname = t.field(value=self.value.get("nickname", ""), hint=tr('pokemon.nickname_optional_7cbcb9', 'Nickname (optional)'), expand=True,
                                 limit=10 if game in GEN3 else 12,
-                                on_change=lambda e: self._set("nickname", e.control.value))
+                                on_change=lambda e: (ft.context.disable_auto_update(), self._set("nickname", e.control.value)))
         self.build_button = t.button(tr('pokemon.build_bdd254', 'Build'), self._build, disabled=True)
         self.clear_button = t.secondary_button("", self._clear, "close", tooltip=tr('pokemon.clear', 'Clear'))
         self.export_button = t.secondary_button("", self._export, "download", tooltip=tr('pokemon.export', 'Export as a file'))
