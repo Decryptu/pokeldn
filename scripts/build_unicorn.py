@@ -7,6 +7,7 @@ under the file names the installed package loads. docs/gui.md, Build a desktop a
 """
 import argparse
 import importlib.metadata
+import os
 import shutil
 import subprocess
 import sys
@@ -37,8 +38,11 @@ def main() -> int:
             archive.extractall(OUT, filter="data")
     build = source / "build-pokeldn"
     shutil.rmtree(build, ignore_errors=True)
+    env = dict(os.environ)
+    if sys.platform == "win32":   # MSVC C5287: QEMU's m_helper.c ORs masks from two unnamed enums, harmless
+        env["CFLAGS"] = (env.get("CFLAGS", "") + " /wd5287").strip()
     subprocess.run(["cmake", "-S", str(source / "src"), "-B", str(build), "-DCMAKE_BUILD_TYPE=Release",
-                    "-DUNICORN_BUILD_TESTS=off", f"-DUNICORN_ARCH={ARCHS}"], check=True)
+                    "-DUNICORN_BUILD_TESTS=off", f"-DUNICORN_ARCH={ARCHS}"], check=True, env=env)
     subprocess.run(["cmake", "--build", str(build), "--config", "Release", "--parallel"], check=True)
     shutil.rmtree(LIB, ignore_errors=True)
     LIB.mkdir(parents=True)
