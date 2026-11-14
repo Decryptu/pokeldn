@@ -2194,3 +2194,31 @@ def test_typing_in_a_tool_field_saves_and_redraws_once_typing_pauses(monkeypatch
     view.tool = SimpleNamespace(fields=[])
     time.sleep(0.2)
     assert events == ["save", "refresh", "save"]
+
+
+def test_an_own_update_sends_the_controls_properties_and_leaves_deeper_changes_for_the_next_update():
+    """update_own skips the walk under a control's children; what changed there still reaches the client."""
+    import msgpack
+    from flet.controls.base_control import BaseControl
+    from flet.controls.object_patch import ObjectPatch
+    from flet.messaging.protocol import configure_encode_object_for_msgpack
+
+    def pack(value):
+        return msgpack.packb(value, default=configure_encode_object_for_msgpack(BaseControl))
+
+    def patch(control):
+        message = ObjectPatch.from_diff(control, control, control_cls=BaseControl)[0].to_message()
+        pack(message)
+        return [op[2:] for op in message[1:]]
+
+    text = ft.Text("a")
+    view = ft.ListView([ft.Column([text])], padding=ft.Padding(1, 1, 1, 1))
+    root = ft.Column([view])
+    pack(root)
+    text.value, view.padding = "b", ft.Padding(9, 1, 9, 1)
+    sent = []
+    view.update = lambda: sent.append(patch(view))
+    t.update_own(view)
+    assert sent == [[["padding", ft.Padding(9, 1, 9, 1)]]]
+    assert not view.controls[0].is_isolated()
+    assert patch(root) == [["value", "b"]]

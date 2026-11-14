@@ -207,6 +207,7 @@ def main(page: ft.Page) -> None:
         return window
 
     def resized(e) -> None:
+        ft.context.disable_auto_update()     # it updates what it changes (docs/gui.md, Performance)
         t.window_width = e.width
         narrow = bool(e.width) and e.width < t.COMPACT_WIDTH
         if narrow == t.compact:
@@ -221,6 +222,9 @@ def main(page: ft.Page) -> None:
 
     phone = ANDROID or IOS
     page.on_resize = resized
+    # Unhandled, a window focus or theme change ends in an automatic diff of the whole page.
+    page.on_app_lifecycle_state_change = page.on_platform_brightness_change = \
+        lambda e: ft.context.disable_auto_update()
     page.add(shell())
     navigate("games")
     if phone:
@@ -239,7 +243,11 @@ def main(page: ft.Page) -> None:
 
     def updated() -> None:
         render_rail()
-        page.update()
+        for bar in (tabs,) if t.compact else (rail, bottom):
+            try:
+                bar.update()          # the rail alone: a page update diffs every control
+            except RuntimeError:      # not on the page yet
+                pass
     app.update_listeners.append(updated)
     app.plugin_update_listeners.append(updated)
     if getattr(sys, "frozen", False):

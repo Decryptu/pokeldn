@@ -1,3 +1,4 @@
+import functools
 import os
 import shlex
 import threading
@@ -82,6 +83,12 @@ def translated_card(card: dict) -> dict:
             "chips": [(translate(label), value) for label, value in card["chips"]],
             "lines": [[translate(part) for part in line] if isinstance(line, list) else translate(line)
                       for line in card["lines"]]}
+
+
+@functools.lru_cache(maxsize=64)
+def icon_src(path: str):
+    """A plugin game's icon, read once: the list redraws on every tool click and the client decodes each new src."""
+    return t.image_src(Path(path).read_bytes())
 
 
 class GamesView:
@@ -341,7 +348,7 @@ class GamesView:
         for game in self.catalog:
             open_ = game is self.game
             rows.append(ft.Container(ft.Row([
-                ft.Container(ft.Image(src=t.image_src(Path(game.icon).read_bytes()) if game.icon else f"games/{game.key}.png", width=36, height=36,
+                ft.Container(ft.Image(src=icon_src(game.icon) if game.icon else f"games/{game.key}.png", width=36, height=36,
                                       fit=ft.BoxFit.CONTAIN, filter_quality=ft.FilterQuality.NONE,
                                       semantics_label=game.name),
                              width=40, height=36, alignment=ft.Alignment.CENTER),
@@ -425,7 +432,7 @@ class GamesView:
         side = max(0, (e.width - t.READABLE_WIDTH) // 2)
         if self.body.padding.left != side:
             self.body.padding = ft.Padding(side, 62, side, 24)
-            self.body.update()
+            t.update_own(self.body)
 
     def _open_doc(self, e) -> None:
         self.app.navigate("docs", doc=self.tool.doc or self.game.doc or "plugins.md")

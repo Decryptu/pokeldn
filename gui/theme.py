@@ -1,5 +1,6 @@
 from dataclasses import fields
 import base64
+import dataclasses
 import os
 
 import flet as ft
@@ -221,7 +222,7 @@ def readable(column: ft.Control, widest: float) -> ft.ShaderMask:
         side = max(4, (e.width - widest) // 2)
         if view.padding.left != side:
             view.padding = ft.Padding(side, 8, side, 24)
-            view.update()
+            update_own(view)
     mask.on_size_change = fit
     return mask
 
@@ -278,9 +279,14 @@ class Flow:
     """Tiles or fields in rows of as many as the measured width gives each `min_width`; a fixed count
     per row squeezes a dropdown's text or a tile's summary out of a narrow column."""
 
+    measured: dict[float, float] = {}
+
     def __init__(self, controls: list[ft.Control], min_width: float = 160, spacing: float = 10,
                  stretch_last: bool = False):
-        self.min_width, self.spacing, self.width, self.stretch_last = min_width, spacing, 0.0, stretch_last
+        # The last width a Flow of this tile size measured: a new one laid out at 0 re-lays itself, a walk
+        # of its whole subtree, at its first size event.
+        self.min_width, self.spacing, self.stretch_last = min_width, spacing, stretch_last
+        self.width = Flow.measured.get(min_width, 0.0)
         self.box = ft.Column(spacing=spacing, tight=True)
         self.control = ft.Container(self.box, size_change_interval=50, on_size_change=self._resized)
         self.columns = 0
@@ -303,7 +309,7 @@ class Flow:
 
     def _resized(self, e) -> None:
         ft.context.disable_auto_update()     # it updates what it changes; see fade()
-        self.width = e.width
+        self.width = Flow.measured[self.min_width] = e.width
         if not self.single and self._fit() != self.columns:
             self._lay()
             self.control.update()
@@ -586,6 +592,22 @@ def choice_field(options: list[tuple[str, str]], value: str, on_change) -> ft.Co
     return ft.Container(row, height=CONTROL_HEIGHT, bgcolor=FIELD, border_radius=CONTROL_RADIUS, padding=2)
 
 
+def update_own(control: ft.Control) -> None:
+    """Sends control's own properties and its direct children's, without walking deeper: a control's update()
+    diffs its whole subtree, and Flet skips the children of an isolated control (object_patch.py,
+    `_compare_dataclasses`). A deeper change stays pending for the next ordinary update."""
+    children = [value for f in dataclasses.fields(control) if not f.name.startswith("_")
+                for value in (lambda v: v if isinstance(v, list) else [v])(getattr(control, f.name, None))
+                if isinstance(value, ft.BaseControl) and not value.is_isolated()]
+    for child in children:
+        child._isolated = True
+    try:
+        control.update()
+    finally:
+        for child in children:
+            del child._isolated
+
+
 def fade(scrollable: ft.ScrollableControl, size: float = 24) -> ft.ShaderMask:
     """The scrollable, its top and bottom edges fading out over size px while content lies beyond them."""
     edges = {"height": 0.0, "top": False, "bottom": not getattr(scrollable, "auto_scroll", False)}
@@ -609,7 +631,7 @@ def fade(scrollable: ft.ScrollableControl, size: float = 24) -> ft.ShaderMask:
         ft.context.disable_auto_update()
         edges["height"] = e.height
         if paint():
-            mask.update()
+            update_own(mask)
 
     previous = scrollable.on_scroll
 
@@ -619,7 +641,7 @@ def fade(scrollable: ft.ScrollableControl, size: float = 24) -> ft.ShaderMask:
         if (top, bottom) != (edges["top"], edges["bottom"]):
             edges["top"], edges["bottom"] = top, bottom
             if paint():
-                mask.update()
+                update_own(mask)
         if previous:
             previous(e)
 

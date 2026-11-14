@@ -656,6 +656,10 @@ The interface must stay smooth on a computer with a weak GPU or a software rende
 |---|---|
 | a backdrop blur reruns over its whole area on every repaint, a menu row's hover included | only glass that floats over scrolling content blurs (`t.glass(floating=True)`, the toolbar notch); a panel on the bare checkerboard is the flat `GLASS_ON_GRID`, the blurred grid's mean colour |
 | an event handler that calls no `update()` ends in Flet's automatic update, a diff of the whole page in Python (800 controls on the Games page: 5 to 60 ms on an M4) | a handler that changes nothing, or updates what it changes, calls `ft.context.disable_auto_update()`: the page key handler when no shortcut takes the key, size and scroll handlers, a text field's `on_change` |
+| Flet sends window focus and theme changes to Python even with no handler, each ending in a whole-page diff | the page's lifecycle and brightness handlers disable the automatic update; a resize updates only when the layout changes |
+| a control's `update()` diffs its whole subtree, so changing a scroll fade's gradient or a padding walked the whole tool body (8 to 13 ms) | `t.update_own(control)` sends the control's own properties and its children's, 0.3 ms; a deeper change waits for the next ordinary update |
+| a field grid built at width 0 re-lays itself, a walk of its subtree, at its first size event | a `Flow` starts at the width the last grid of its tile size measured |
+| an update or plugin-update check redrew the rail with a page update | it updates the rail alone |
 | a tool field's `on_change` fires per key | the value is stored at once; the settings save and the session panel's redraw run 0.25 s after the last key (`GamesView.settle`) |
 | Flet samples scroll and size events every 10 ms, each a message to Python | a faded list samples every 100 ms |
 | the controller-board poll runs every 6 s for the app's lifetime | Windows asks cfgmgr32 in process (`board.present_usb_ids`); the PowerShell CIM query is the fallback |
