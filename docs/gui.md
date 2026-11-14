@@ -656,6 +656,7 @@ The interface must stay smooth on a computer with a weak GPU or a software rende
 
 | cost | rule |
 |---|---|
+| Flet 1.1's desktop client renders with Impeller, Flutter 3.47's default; on a weak GPU it draws slower than Skia, the renderer of Flet 1.0 | the desktop app sets `FLET_NO_IMPELLER=true` before it starts the client, which then renders with Skia |
 | a backdrop blur reruns over its whole area on every repaint, a menu row's hover included | only glass that floats over scrolling content blurs (`t.glass(floating=True)`, the toolbar notch); a panel on the bare checkerboard is the flat `GLASS_ON_GRID`, the blurred grid's mean colour |
 | an event handler that calls no `update()` ends in Flet's automatic update, a diff of the whole page in Python (800 controls on the Games page: 5 to 60 ms on an M4) | a handler that changes nothing, or updates what it changes, calls `ft.context.disable_auto_update()`: the page key handler when no shortcut takes the key, size and scroll handlers, a text field's `on_change` |
 | Flet sends window focus and theme changes to Python even with no handler, each ending in a whole-page diff | the page's lifecycle and brightness handlers disable the automatic update; a resize updates only when the layout changes |

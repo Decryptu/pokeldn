@@ -575,6 +575,8 @@ def run() -> None:
         ft.run(main, assets_dir=assets, view=ft.AppView.WEB_BROWSER, no_cdn=True,
                port=int(os.environ["POKELDN_GUI_WEB"]))
     else:
+        # Flet 1.1's client renders with Impeller, slower than Skia on weak GPUs (docs/gui.md, Performance)
+        os.environ.setdefault("FLET_NO_IMPELLER", "true")
         ft.run(t.shown_on_failure(main), assets_dir=assets, view=ft.AppView.FLET_APP_HIDDEN)
 
 
