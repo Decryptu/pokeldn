@@ -1,13 +1,11 @@
-# pokeldn 0.65.2
+# pokeldn 0.65.3
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The desktop window opens already sized and centred, with no flash while it moves into place.
-- Installing firmware on a board whose flasher stub never starts goes through the board's ROM loader
-  instead.
+- The iPhone and iPad app's PKHeX library builds every list without code generated at run time.
 
 The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 

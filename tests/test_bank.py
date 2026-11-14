@@ -185,10 +185,12 @@ def test_a_save_is_imported_slot_by_slot_once_even_after_a_trade_takes_one_out(s
     patrat = service.check_bytes(kept["Party, slot 1"].game, bank.data(kept["Party, slot 1"]))
     assert patrat["legal"] and patrat["species_id"] == 504 and patrat["held_item_id"] == 0
     assert patrat["ot"] == "ROSA" and int(patrat["tracker"]) != 0
-    bank.remove(kept["Party, slot 1"].id)       # as a completed trade takes it out
+    bank.remove(kept["Party, slot 1"].id, forget=False)       # as a completed trade takes it out
     again = bank.import_file(str(save), TRAINERS)
     assert [p.state for p in again.pokemon] == ["already", "already", "refused"]
     assert len(bank.entries()) == 1 and save.read_bytes() == before
+    bank.remove(kept["Box 1, slot 3"].id)       # the player's Remove: the file imports again
+    assert [p.state for p in bank.import_file(str(save), TRAINERS).pokemon] == ["already", "banked", "refused"]
 
 
 def test_the_empty_setting_accepts_what_a_tracker_would_make_legal(service, vault):

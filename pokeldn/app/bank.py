@@ -198,7 +198,7 @@ def import_file(path: str, trainers: dict[str, dict], folder=None) -> Imported:
             entry = None if key in seen else _keep(
                 record["game"], base64.b64decode(record["data"]), record, folder, str(source), banked,
                 imported={"file": source.name, "where": record["where"], "from": record["source"],
-                          "notes": record["notes"]})
+                          "notes": record["notes"], "key": key})
             warning = HOME_TRACKER_WARNINGS.get(record["home_tracker"])
             state, detail = ("already", "") if entry is None else (
                 "banked", " · ".join([*record["notes"], *([warning] if warning else [])]))
@@ -244,11 +244,28 @@ def duplicate(entry: Entry) -> Entry:
     return _entry(path)
 
 
-def remove(entry_id: str, folder=None) -> None:
+def remove(entry_id: str, folder=None, *, forget: bool = True) -> None:
+    """`forget` lets the player import the record again; a trade keeps it in the ledger."""
     folder = Path(folder or BANK)
+    if forget:
+        _forget(folder, entry_id)
     for path in folder.iterdir() if folder.is_dir() else ():
         if path.stem == entry_id and (FILES.search(path.name) or path.suffix == ".json"):
             path.unlink(missing_ok=True)
+
+
+def _forget(folder: Path, entry_id: str) -> None:
+    meta = next((_read_meta(p) for p in folder.glob(f"{entry_id}.*") if FILES.search(p.name)), {})
+    # Older records kept no ledger key; the bank digest is the key when HOME's way in changed nothing.
+    keys = {str(k).upper() for k in ((meta.get("imported") or {}).get("key") if isinstance(meta.get("imported"), dict) else None, meta.get("sha256")) if k}
+    ledger = folder / LEDGER
+    try:
+        lines = ledger.read_text(encoding="utf-8").split()
+    except OSError:
+        return
+    kept = [k for k in lines if k.upper() not in keys]
+    if len(kept) != len(lines):
+        ledger.write_text("".join(k + "\n" for k in kept), encoding="utf-8")
 
 
 # The offer queues
@@ -288,7 +305,7 @@ class TradeSession:
         while self._completed < min(count, len(self._ids)):
             entry_id = self._ids[self._completed]
             if entry_id:
-                remove(entry_id, folder=self._folder)
+                remove(entry_id, folder=self._folder, forget=False)
             self._completed += 1
         self._completed = max(self._completed, count)
         return self._completed

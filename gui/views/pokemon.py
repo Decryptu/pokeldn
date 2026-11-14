@@ -960,8 +960,10 @@ class OfferOptions:
         versions = len({n["version"] for n in encounters}) > 1
         options = [(ANY, tr('pokemon.encounter_any', 'Any legal encounter'))] + [
             (n["key"], encounter_label(n, versions)) for n in encounters]
-        box = t.dropdown(options, self.chosen.get("encounter") or ANY, on_select=picked, enable_filter=True,
-                         editable=True, menu_height=320)
+        # A typeable box opens only from its arrow; a short list is a plain menu that opens on a click.
+        search = len(options) > 12
+        box = t.dropdown(options, self.chosen.get("encounter") or ANY, on_select=picked, enable_filter=search,
+                         editable=search, menu_height=320)
         box.expand = True
         return t.labeled_control(tr('pokemon.encounter_count', 'Encounter ({value0} listed)', value0=len(encounters)),
                                  ft.Row([box]))
