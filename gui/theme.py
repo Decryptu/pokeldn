@@ -116,6 +116,7 @@ def panel(content: ft.Control, width: float | None = None, expand=None, padding=
 TRACK = ft.Colors.with_opacity(0.35, "#000000")   # behind a group of tabs, on any surface
 MENU_ROW = 48   # at least one dropdown row, padding shared
 SEARCH_FROM = 13   # a typeable box opens only from its arrow; a shorter list is a menu a click opens
+LAZY_FROM = 100    # a searchable list this long reaches the window on the box's first focus (docs/gui.md, Performance)
 TOOLBAR_ITEM = 32   # the icon buttons are this size
 TOOLBAR_INSET = 4
 
@@ -402,6 +403,14 @@ def text_row(lead: ft.Control | None, body: list[ft.Control], actions: list[ft.C
     return top
 
 
+def _dropdown_padding() -> ft.Padding:
+    # Compact density takes field_density off the menu's field as off a text field; given back here, the
+    # field is CONTROL_HEIGHT tall like the text fields and choice fields beside it.
+    extra = field_density / 2
+    return ft.Padding(CONTROL_PADDING.left, CONTROL_PADDING.top + extra, CONTROL_PADDING.right,
+                      CONTROL_PADDING.bottom + extra)
+
+
 def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, **kwargs) -> ft.Dropdown:
     # menu_height fixes the menu's height: a short list fills it with blank rows. No options yet means filled later.
     if options and len(options) * MENU_ROW < kwargs.get("menu_height", 0):
@@ -418,17 +427,46 @@ def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, 
                     return
                 e.control.update()
             chosen(e)
-    box = ft.Dropdown(value=value, options=[ft.DropdownOption(key=k, text=t) for k, t in options],
+    every = [ft.DropdownOption(key=k, text=t) for k, t in options]
+    lazy = kwargs.get("editable") and len(every) >= LAZY_FROM
+    if lazy:
+        focused = kwargs.pop("on_focus", None)
+
+        def on_focus(e):
+            fill(e.control)
+            if focused:
+                focused(e)
+        kwargs["on_focus"] = on_focus
+    box = ft.Dropdown(value=value, options=[o for o in every if o.key == value][:1] if lazy else every,
                        on_select=on_select, dense=True, filled=True, bgcolor=FIELD, border=_border(),
                        text_size=13, text_style=ft.TextStyle(font_family_fallback=FALLBACK_FONTS),
-                       expand=True, height=CONTROL_HEIGHT, content_padding=CONTROL_PADDING,
+                       expand=True, height=CONTROL_HEIGHT, content_padding=_dropdown_padding(),
                        trailing_icon=pixel_icon("chevron-down", color=MUTED),
                        selected_trailing_icon=pixel_icon("chevron-up", color=BLUE),
                        menu_style=ft.MenuStyle(bgcolor=PANEL, shape=ft.RoundedRectangleBorder(radius=10)),
                        **kwargs)
-    if options and kwargs.get("editable"):
+    if lazy:
+        box.every = every    # all_options reads it before the first focus
+    elif options and kwargs.get("editable"):
         fit_search(box)
     return box
+
+
+def fill(box: ft.Dropdown) -> None:
+    """Gives a lazy dropdown its whole list. Call it soon after the box is shown: a list that arrives on the first
+    focus rebuilds the field and drops what the player types into it."""
+    every = getattr(box, "every", None)
+    if every is not None and box.options is not every:
+        box.options = every
+        try:
+            box.update()
+        except RuntimeError:    # the box left the page
+            pass
+
+
+def all_options(box: ft.Dropdown) -> list[ft.DropdownOption]:
+    """A dropdown's whole list, including a lazy one that has not been focused yet."""
+    return getattr(box, "every", None) or box.options
 
 
 def fit_search(box: ft.Dropdown, searchable: bool = True) -> None:

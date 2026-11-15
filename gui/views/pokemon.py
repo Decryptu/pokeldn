@@ -776,6 +776,9 @@ class RibbonPanel:
         threading.Thread(target=work, daemon=True).start()
 
 
+FETCH_LOCK = threading.Lock()
+
+
 class OfferOptions:
     """Nature, ability, gender, held item, ball, friendship, Alpha, IVs and effort for the built Pokemon, folded under the
     form.
@@ -790,6 +793,7 @@ class OfferOptions:
         self.loaded_for = None
         self.total = None    # the game's cap on all six effort values together, once the options are read
         self.found = None    # what the options were last drawn from
+        self.lazy: list[ft.Dropdown] = []
         self.fields: dict[str, dict[str, ft.TextField]] = {}   # the number fields Max fills, by group then stat
         self.body = ft.Column([], spacing=10, visible=False)
         self.chevron = t.pixel_icon("chevron-right", color=t.FAINT)
@@ -828,6 +832,26 @@ class OfferOptions:
         if self.open:
             self._load()
             self.control.update()
+        elif int(self.picker.value.get("species") or 0):
+            # Read ahead while the panel is shut: the helper's checks take seconds on a slow computer.
+            try:
+                ask = self._ask(int(self.picker.value["species"]), int(self.chosen.get("form") or 0))
+            except AttributeError:    # a picker still being built has no game or trainer yet
+                return
+            threading.Thread(target=lambda: self._fetch(*ask), daemon=True).start()
+
+    def _ask(self, species: int, form: int) -> tuple:
+        return self.picker.game, species, form, self.picker.owner(), VERSIONS.get(self.picker.version, "")
+
+    @staticmethod
+    def _fetch(game: str, species: int, form: int, owner: dict, version: str) -> dict:
+        """What the form is drawn from; the service caches it, and the lock stops a read-ahead and a click asking
+        the helper twice."""
+        with FETCH_LOCK:
+            found = dict(SERVICE.options(game, species, owner, version, form))
+            found["encounters"] = SERVICE.encounters(game, species, owner, version, form)
+            found["move_names"] = SERVICE.names(game, "moves")
+            return found
 
     def _load(self) -> None:
         species = int(self.picker.value.get("species") or 0)
@@ -844,11 +868,7 @@ class OfferOptions:
 
         def work():
             try:
-                version = VERSIONS.get(self.picker.version, "")
-                found = dict(SERVICE.options(self.picker.game, species, self.picker.owner(), version, target[1]))
-                found["encounters"] = SERVICE.encounters(self.picker.game, species, self.picker.owner(), version,
-                                                         target[1])
-                found["move_names"], error = SERVICE.names(self.picker.game, "moves"), ""
+                found, error = self._fetch(*self._ask(species, target[1])), ""
             except Exception as exc:
                 found, error = None, error_message(exc)
 
@@ -859,11 +879,15 @@ class OfferOptions:
                 self.body.controls = [t.text(error, 12, t.RED)] if error else self._form(found)
                 self._label()
                 self.control.update()
+                # The long lists follow one box per patch, after the form is on screen.
+                for box in [c for c in self.lazy if hasattr(c, "every")]:
+                    app.ui(lambda box=box: t.fill(box) if self.loaded_for == target else None)
             app.ui(show)
         threading.Thread(target=work, daemon=True).start()
 
     def _form(self, found: dict) -> list[ft.Control]:
         self.fields = {}
+        self.lazy = []     # the dropdowns show() fills after the form
         # A choice the new species cannot have is dropped rather than sent.
         for key, names in (("ability", found["abilities"]), ("ball", found["balls"]), ("held_item", found["held"])):
             if self.chosen.get(key) is not None and all(n["id"] != self.chosen[key] for n in names):
@@ -873,7 +897,7 @@ class OfferOptions:
         if not found.get("alpha"):     # None: the game has no Alphas; False: the species is never one
             self.chosen.pop("alpha", None)
         for key, offered in (("gigantamax", found.get("gigantamax")), ("dynamax_level", found.get("dynamax")),
-                             ("tera", found.get("tera"))):
+                             ("tera", found.get("tera")), ("size", found.get("size"))):
             if not offered:
                 self.chosen.pop(key, None)
         if self.chosen.get("tera") is not None and all(n["id"] != self.chosen["tera"] for n in found["tera"]):
@@ -900,6 +924,9 @@ class OfferOptions:
         if found.get("dynamax"):
             second.append(t.labeled_control(tr('pokemon.dynamax_level', 'Dynamax level (0-10)'),
                                             self._number("dynamax_level", 10), width=130))
+        if found.get("size"):
+            second.append(t.labeled_control(tr('pokemon.size', 'Size'), self._number("size", 255, hint="0-255"),
+                                            expand=True))
         if found.get("alpha"):
             second.append(t.labeled_control(tr('pokemon.alpha_b1a96d', 'Alpha'), self._yes_no("alpha"), expand=True))
         elif found.get("alpha") is False:
@@ -947,6 +974,7 @@ class OfferOptions:
         dropdown = t.dropdown(options, ANY if current is None else str(current), on_select=selected,
                               enable_filter=search, editable=search, menu_height=320)
         icon = icon_choices(getattr(self.picker, "app", None), dropdown, names)
+        self.lazy.append(dropdown)
         return dropdown
 
     def _encounter(self, encounters: list[dict]) -> ft.Control:
@@ -964,6 +992,7 @@ class OfferOptions:
         box = t.dropdown(options, self.chosen.get("encounter") or ANY, on_select=picked, enable_filter=True,
                          editable=True, menu_height=320)
         box.expand = True
+        self.lazy.append(box)
         return t.labeled_control(tr('pokemon.encounter_count', 'Encounter ({value0} listed)', value0=len(encounters)),
                                  ft.Row([box]))
 
@@ -1039,6 +1068,7 @@ class OfferOptions:
                  for n, m in enumerate(moves)]
         for box in boxes:
             box.expand = True
+        self.lazy += boxes
         return ft.Column([t.text(tr('pokemon.moves_empty_means_the_encounter_s_own_c7b0d3', "Moves (empty means the encounter's own)"), 12, t.MUTED),
                           ft.Row(boxes[:2], spacing=6), ft.Row(boxes[2:], spacing=6)], spacing=4)
 
@@ -1125,7 +1155,7 @@ def icon_choices(app, dropdown: ft.Dropdown, names: list[dict], ribbon: bool = F
     def fill() -> bool:
         """Gives a row its icon once cached; True when any row changed."""
         changed = False
-        for option in dropdown.options:
+        for option in t.all_options(dropdown):
             if option.key in icons and option.key not in rows:
                 icon = Icon(app, icons[option.key], ribbon, fetch=False)
                 if icon.control.content is not None:
@@ -1147,7 +1177,7 @@ def icon_choices(app, dropdown: ft.Dropdown, names: list[dict], ribbon: bool = F
     dropdown.leading_icon = chosen.control if str(dropdown.value) in icons else None
     if len(rows) < len(icons):
         cache = chosen.cache
-        cache.prefetch([icons[o.key] for o in dropdown.options if o.key in icons and o.key not in rows], batch)
+        cache.prefetch([icons[o.key] for o in t.all_options(dropdown) if o.key in icons and o.key not in rows], batch)
 
     def show(value) -> None:
         dropdown.leading_icon = chosen.control if str(value) in icons else None

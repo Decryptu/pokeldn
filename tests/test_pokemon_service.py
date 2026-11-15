@@ -457,6 +457,26 @@ def test_sword_gigantamax_and_dynamax_level_land_in_the_record(service):
     assert built["legal"] and plain[0x16] & 0x10 and plain[0x90] == 10
 
 
+@pytest.mark.parametrize("game, species, offsets", [
+    ("swsh", 25, (0x50,)),             # PK8 HeightScalar [PKHeX PK8]
+    ("bdsp", 25, (0x50,)),             # PB8, the same layout
+    ("sv", 25, (0x48, 0x4A)),          # PK9 HeightScalar and Scale [PKHeX PK9]
+])
+def test_size_lands_in_the_scalar_the_game_shows(service, game, species, offsets):
+    assert service.options(game, species, TRAINER)["size"]
+    built = service.make(game, species, TRAINER, options={"size": 255})
+    plain = (gen9 if game == "sv" else gen8).load(Path(pokemon.prepare_file(game, built["file"])).read_bytes())
+    assert built["legal"] and [plain[o] for o in offsets] == [255] * len(offsets)
+
+
+@pytest.mark.parametrize("game", ["lgpe", "pla", "za"])
+def test_a_chosen_size_stays_legal_where_absolutes_follow_it(service, game):
+    """Let's Go and Legends Arceus store height and weight from the scalars; Z-A ties both to Scale."""
+    assert service.options(game, 25, TRAINER)["size"] and not service.options("frlg", 25, TRAINER)["size"]
+    for size in (0, 255):
+        assert service.make(game, 25, TRAINER, options={"size": size})["legal"]
+
+
 @pytest.mark.parametrize("game, species, handled", [
     ("swsh", 447, 0),      # Riolu, evolved at friendship 160 on level-up
     ("sv", 447, 0),

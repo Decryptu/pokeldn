@@ -201,7 +201,7 @@ class Service:
         """options: form, nature, ability, gender, held_item, ball (ids), friendship (0-255), moves (up to four
         ids), alpha (Legends Arceus and Z-A; true or false), ivs / effort as {hp, atk, def, spa, spd, spe},
         encounter (an encounters() key), sweet (Alcremie, 0-6), gigantamax and dynamax_level (Sword/Shield),
-        tera (Scarlet/Violet, a type id or 99 for Stellar)."""
+        size (0-255, Let's Go onward), tera (Scarlet/Violet, a type id or 99 for Stellar)."""
         reply = self._ask({"cmd": "make", "game": game, "species": species, "level": level, "shiny": shiny,
                            "nickname": nickname, "trainer": trainer, "version": version,
                            "options": options or {}})

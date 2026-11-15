@@ -1981,6 +1981,26 @@ def test_enter_on_typed_species_text_picks_the_option_it_names_or_nothing(typed,
     assert seen == picked
 
 
+def test_a_long_searchable_list_reaches_the_window_after_the_form_and_still_takes_typing():
+    # Four move boxes of 700 rows made More options a 2,700-control patch (docs/gui.md, Performance).
+    moves = [(str(n), f"Move{n}") for n in range(700)]
+    box = t.dropdown(moves, "42", on_select=lambda e: None, enable_filter=True, editable=True)
+    assert [o.key for o in box.options] == ["42"] and len(t.all_options(box)) == 700
+    assert box.editable and box.enable_filter     # searchable before the list arrives
+    box.update = lambda: None
+    t.fill(box)
+    assert len(box.options) == 700
+    seen = []
+    typed = t.dropdown(moves, None, on_select=lambda e: seen.append(e.control.value), enable_filter=True,
+                       editable=True)
+    typed.update = lambda: None
+    typed.on_focus(SimpleNamespace(control=typed))      # the fallback when the box is focused before its fill
+    typed.text = "Move7"
+    typed.on_select(SimpleNamespace(control=typed))
+    assert seen == ["7"]
+    assert len(t.dropdown(moves[:t.LAZY_FROM - 1], None, editable=True).options) == t.LAZY_FROM - 1
+
+
 def _parents(root, target, path=()):
     """Every chain of controls from `root` down to `target`."""
     if root is target:

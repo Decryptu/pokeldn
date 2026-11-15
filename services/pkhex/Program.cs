@@ -299,10 +299,20 @@ static partial class Program
             blank.Form = form;
             var permitted = new HashSet<Ball>();
             Span<Ball> found = stackalloc Ball[BallApplicator.MaxBallSpanAlloc];
+            var slots = new HashSet<int>();
             foreach (var encounter in Encounters(blank, trainer, ReadOnlyMemory<ushort>.Empty, versions))
             {
                 if (encounter is not IEncounterConvertible convertible)
                     continue;
+                slots.UnionWith(encounter.Ability switch
+                {
+                    AbilityPermission.Any12H => [0, 1, 2],
+                    AbilityPermission.Any12 => [0, 1],
+                    AbilityPermission.OnlyFirst => [0],
+                    AbilityPermission.OnlySecond => [1],
+                    AbilityPermission.OnlyHidden => [2],
+                    _ => [],
+                });
                 var pk = convertible.ConvertToPKM(trainer);
                 foreach (var ball in found[..BallApplicator.GetLegalBalls(found, pk, encounter)])
                     permitted.Add(ball);
@@ -315,20 +325,29 @@ static partial class Program
                 balls.Add((JsonNode?)new JsonObject { ["id"] = (int)ball, ["name"] = strings.balllist[(int)ball],
                                            ["icon"] = BallIcon((int)ball) });
             // An ability is listed when a legal Pokemon of the species can carry it (Let's Go has no hidden ability to give).
+            // One build proves the species builds at all (Ursaluna's form 0 has encounters and no legal record); after it,
+            // the other abilities an encounter gives are listed with no build. Legends Arceus encounters claim a hidden
+            // ability the game never gives, so there only the first two are taken; the rest still builds (a Capsule or Patch).
             var abilities = new JsonArray();
+            var given = slots.Where(i => i < detail.AbilityCount && (i < 2 || game.Context is not (EntityContext.Gen8a or EntityContext.Gen7b))).Select(detail.GetAbilityAtIndex).ToHashSet();
+            var proven = false;
             // Legends Z-A has no abilities in battle.
             if (game.Context != EntityContext.Gen9a)
                 foreach (var id in Enumerable.Range(0, detail.AbilityCount).Select(detail.GetAbilityAtIndex).Distinct())
                 {
-                    var probe = request.DeepClone().AsObject();
-                    probe["options"] = new JsonObject { ["ability"] = id, ["form"] = (int)form };
-                    try
+                    if (!proven || !given.Contains(id))
                     {
-                        Make(game, probe);
-                    }
-                    catch (InvalidOperationException)
-                    {
-                        continue;
+                        var probe = request.DeepClone().AsObject();
+                        probe["options"] = new JsonObject { ["ability"] = id, ["form"] = (int)form };
+                        try
+                        {
+                            Make(game, probe);
+                        }
+                        catch (InvalidOperationException)
+                        {
+                            continue;
+                        }
+                        proven = true;
                     }
                     abilities.Add((JsonNode?)new JsonObject { ["id"] = id, ["name"] = strings.abilitylist[id] });
                 }
@@ -362,6 +381,8 @@ static partial class Program
                 // Zacian, Zamazenta and Eternatus never Dynamax [DynamaxLevelExtensions].
                 ["dynamax"] = blank is IDynamaxLevel d && d.CanHaveDynamaxLevel(blank),
                 ["tera"] = teras,
+                // Gen 7b to 9: the size a player sees, read from HeightScalar or, where the format has one, Scale.
+                ["size"] = blank is IScaledSize || blank is IScaledSize3,
                 ["base"] = new JsonArray(detail.HP, detail.ATK, detail.DEF, detail.SPA, detail.SPD, detail.SPE),
                 ["natures"] = natures,
                 ["abilities"] = allowIllegal && game.Context != EntityContext.Gen9a && blank.Format >= 6
@@ -2283,7 +2304,7 @@ static partial class Program
 // The offer options a request asks for; a stat array is HP, Atk, Def, SpA, SpD, Spe and -1 leaves a stat alone.
 record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effort, int? Item, byte? Ball,
             byte? Form, byte? Friendship, ushort[] Moves, bool? Alpha, string? Encounter, byte? Sweet,
-            bool? Gigantamax, byte? DynamaxLevel, byte? Tera)
+            bool? Gigantamax, byte? DynamaxLevel, byte? Tera, byte? Size = null)
 {
     static readonly string[] Stats = ["hp", "atk", "def", "spa", "spd", "spe"];
     static readonly string[] StatNames = ["HP", "Attack", "Defense", "Sp. Atk", "Sp. Def", "Speed"];
@@ -2310,6 +2331,8 @@ record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effor
             throw new ArgumentException("Unknown sweet.");
         if (Number("dynamax_level") is < 0 or > 10)
             throw new ArgumentException("The Dynamax level is 0 to 10.");
+        if (Number("size") is < 0 or > 255)
+            throw new ArgumentException("The size is 0 to 255.");
         if (Number("tera") is { } tera && !TeraTypeUtil.IsOverrideValid((byte)tera))
             throw new ArgumentException("Unknown Tera Type.");
         ushort[] moves = o?["moves"] is JsonArray list
@@ -2321,8 +2344,40 @@ record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effor
             Number("held_item"), Number("ball") is { } b ? checked((byte)b) : null,
             Number("form") is { } f ? checked((byte)f) : null, (byte?)Number("friendship"), moves, (bool?)o?["alpha"],
             (string?)o?["encounter"] is { Length: > 0 } encounter ? encounter : null, (byte?)Number("sweet"),
-            (bool?)o?["gigantamax"], (byte?)Number("dynamax_level"), (byte?)Number("tera"));
+            (bool?)o?["gigantamax"], (byte?)Number("dynamax_level"), (byte?)Number("tera"),
+            (byte?)Number("size"));
     }
+
+    // Scarlet/Violet and Legends Z-A show Scale; earlier formats show HeightScalar. Height follows Scale as HOME
+    // writes it, Z-A's weight too [MiscScaleVerifier]; Let's Go and Legends Arceus keep absolutes [PB7, PA8].
+    static void ApplySize(PKM pk, byte size)
+    {
+        if (pk is IScaledSize3 three)
+            three.Scale = size;
+        if (pk is IScaledSize scaled)
+        {
+            scaled.HeightScalar = size;
+            if (pk is PA9)
+                scaled.WeightScalar = size;
+        }
+        switch (pk)
+        {
+            case PB7 pb7:
+                pb7.ResetCalculatedValues();
+                break;
+            case PA8 pa8:
+                pa8.ResetHeight();
+                pa8.ResetWeight();
+                break;
+        }
+    }
+
+    static byte? SizeOf(PKM pk) => pk switch
+    {
+        PK9 or PA9 => ((IScaledSize3)pk).Scale,
+        IScaledSize s => s.HeightScalar,
+        _ => null,
+    };
 
     public ushort[] Moveset() => [.. Moves, .. new ushort[4 - Moves.Length]];
 
@@ -2381,6 +2436,8 @@ record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effor
             d.DynamaxLevel = dynamax;
         if (Tera is { } tera && pk is ITeraType t)
             TeraTypeUtil.SetTeraType(t, (MoveType)tera);
+        if (Size is { } size)
+            ApplySize(pk, size);
         ApplyEffort(pk);
         // Gen 3 and 4 raise an EV past 100 (the vitamin cap) only in battle, so the record must have gained
         // experience since it was met: at least what PKHeX's EffortExpLegality says those EVs cost, below the next level.
@@ -2488,6 +2545,8 @@ record Wish(Nature? Nature, int? Ability, Gender? Gender, int[] IVs, int[] Effor
             return gmax ? "the Gigantamax factor" : "no Gigantamax factor";
         if (DynamaxLevel is { } dynamax && pk is IDynamaxLevel d && d.DynamaxLevel != dynamax)
             return $"Dynamax level {dynamax}";
+        if (Size is { } size && SizeOf(pk) is { } held && held != size)
+            return $"size {size}";
         if (Tera is { } tera && pk is ITeraType tt && TeraTypeUtil.GetTeraType(tt) != (MoveType)tera)
             return "this Tera Type";
         if (Alpha is { } alpha && pk is IAlphaReadOnly a && a.IsAlpha != alpha)

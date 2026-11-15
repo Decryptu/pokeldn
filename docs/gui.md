@@ -670,6 +670,7 @@ The interface must stay smooth on a computer with a weak GPU or a software rende
 | an update or plugin-update check redrew the rail with a page update | it updates the rail alone |
 | a tool field's `on_change` fires per key | the value is stored at once; the settings save and the session panel's redraw run 0.25 s after the last key (`GamesView.settle`) |
 | Flet samples scroll and size events every 10 ms, each a message to Python | a faded list samples every 100 ms |
+| a Pokemon's More options asks PKHeX for its legal abilities, balls and encounters (0.6 to 0.9 s on an M4 for Scarlet/Violet and Sword/Shield), and drew four move boxes of 700 rows each: 2,700 controls in one patch | picking a species reads them ahead while the panel is shut; a searchable dropdown of 100 rows or more (`t.LAZY_FROM`) is drawn holding its value alone, and `t.fill` sends the whole list one box per patch once the form is on screen. More options adds 145 controls at once. A list that arrives on the box's first focus rebuilds the field and drops the typed keys |
 | the controller-board poll runs every 6 s for the app's lifetime | Windows asks cfgmgr32 in process (`board.present_usb_ids`); the PowerShell CIM query is the fallback |
 
 `tools/gui_patch_profile.py LOG` runs the interface with each patch's time and control count and each event logged.
