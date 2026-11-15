@@ -9,7 +9,7 @@ radio firmware for ESP32, ESP32-S2, ESP32-S3, ESP32-C3 and ESP32-C6. The user su
 1. Settings: choose `prod.keys`.
 2. Board page: select the USB board and install the Wireless firmware. An install selects the
    chip's bundled image; an image from a file is checked against the chip. S3, C3 and C6 connect
-   through native USB Serial/JTAG; S2 chips are refused.
+   through native USB Serial/JTAG, the S2 through native USB CDC.
 3. Choose a game and a tool, prepare a Pokemon or a file, follow the console steps and press Start.
    Received Pokemon go to the Settings folder, opened by the button beside Output.
 
