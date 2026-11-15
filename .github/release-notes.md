@@ -1,11 +1,13 @@
-# pokeldn 0.65.6
+# pokeldn 0.65.7
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Each tool has a Start over button beside its docs button: it forgets that tool's saved choices, such as a custom Mystery Gift, and keeps your files, bank and settings.
+- More options opens much faster, most of all on slower computers: it loads in the background as soon as you pick a species, and long lists fill in after the form appears.
+- The offer options have a Size field in the games that keep one.
+- Dropdowns are now the same height as the text fields beside them.
 
 The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 
