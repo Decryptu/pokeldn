@@ -632,9 +632,14 @@ static partial class Program
                     }
                     return top;
 
-                    JsonObject? Try(int lv)
+                    // The generator rolls shiny now and then: a plain request tries it cleared first, then as rolled.
+                    JsonObject? Try(int lv) => !shiny && built.IsShiny ? TryAs(lv, true) ?? TryAs(lv, false) : TryAs(lv, false);
+
+                    JsonObject? TryAs(int lv, bool plain)
                     {
                         var pk = built.Clone();
+                        if (plain)
+                            pk.SetIsShiny(false);
                         if (lv > pk.CurrentLevel)
                             pk.CurrentLevel = (byte)lv;
                         // A form the player changes (Rotom's appliances) is caught as another.
