@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:    # the release runs it before it publishes
 permissions:
   contents: read
 # A newer push to the same branch supersedes a run still in progress.

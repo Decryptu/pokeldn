@@ -12,6 +12,10 @@ permissions:
   contents: write
 
 jobs:
+  # The suite on all three systems, the app's launch test included; nothing is published if it fails.
+  check:
+    uses: ./.github/workflows/check.yml
+
   firmware:
     runs-on: ubuntu-24.04
     container: espressif/idf:v6.1
@@ -380,7 +384,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: checksums
+    needs: [check, checksums]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7

@@ -1,11 +1,13 @@
-# pokeldn 0.66.1
+# pokeldn 0.66.2
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The GTS, gift lists, event lists, raid partners, the link code picker and the save editor's party no longer flicker when you click a filter or a tile: sprites already on screen stay put.
+- The app starts again: 0.66.1 stopped at launch with "'dict' object has no attribute 'sweep'".
+- The GTS, gift lists, event lists, raid partners, the link code picker and the save editor's party no longer flicker when you click a filter or a tile.
+- A Pokemon built without asking for shiny no longer comes out shiny now and then.
 
 The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 
