@@ -68,7 +68,7 @@ class GiftBuilder:
     def __init__(self, games, field):
         self.games, self.field = games, field
         self.app, self.tool = games.app, games.tool
-        self.sprites = games.sprites
+        self.sprites = games.sprite_pool
         self.game = gift_builder.GAMES[self.tool.key]
         self.module = gift_builder.module(self.game)
         self.value = gift_builder.normalized(self.game, command.value_of(field, games.values))

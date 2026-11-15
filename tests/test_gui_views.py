@@ -450,7 +450,7 @@ def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(
         assert kwargs["allowed_extensions"] == ["pokegift", native]
         return str(path)
 
-    view = SimpleNamespace(tool=tool, values={}, extra={}, sprites=SpritePool(OFFLINE),
+    view = SimpleNamespace(tool=tool, values={}, extra={}, sprite_pool=SpritePool(OFFLINE),
         app=SimpleNamespace(settings=Settings(), picker=SimpleNamespace(save_file=save_file), ui=lambda f: None,
                           page=SimpleNamespace(run_task=lambda *a: None)))
     view.set_value = lambda field, value, rebuild=False: view.values.__setitem__(field.key, value)
@@ -875,7 +875,7 @@ def test_the_boost_settings_leave_with_the_last_unticked_boost(monkeypatch):
     monkeypatch.setattr(pokemon.NamePicker, "_load", lambda self: None)
     tool = next(tool for game in GAMES for tool in game.tools if tool.key == "frlg-gift")
     field = next(field for field in tool.fields if field.kind == "builder")
-    view = SimpleNamespace(tool=tool, values={}, extra={}, sprites=SpritePool(OFFLINE),
+    view = SimpleNamespace(tool=tool, values={}, extra={}, sprite_pool=SpritePool(OFFLINE),
                            app=SimpleNamespace(settings=Settings(), picker=None, ui=lambda f: None))
     view.set_value = lambda field, value, rebuild=False: view.values.__setitem__(field.key, value)
     builder = view_module.GiftBuilder(view, field)
@@ -1070,7 +1070,7 @@ def test_a_pokemon_home_card_is_outlined_in_amber_and_says_why(monkeypatch):
     monkeypatch.setattr(pokemon.NamePicker, "_load", lambda self: None)
     tool = next(tool for game in GAMES for tool in game.tools if tool.key == "swsh-gift")
     field = next(field for field in tool.fields if field.kind == "builder")
-    view = SimpleNamespace(tool=tool, values={}, extra={}, sprites=SpritePool(OFFLINE),
+    view = SimpleNamespace(tool=tool, values={}, extra={}, sprite_pool=SpritePool(OFFLINE),
                            app=SimpleNamespace(settings=Settings(), picker=None, ui=lambda f: None))
     view.set_value = lambda field, value, rebuild=False: view.values.__setitem__(field.key, value)
     builder = view_module.GiftBuilder(view, field)
@@ -1197,7 +1197,7 @@ def test_folding_the_raid_partners_card_keeps_its_choice():
     from pokeldn.app.settings import Settings
     tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
     redrawn = []
-    view = SimpleNamespace(tool=tool, raid_partners_open=True, sprites=SpritePool(OFFLINE), redraw=lambda: redrawn.append(1),
+    view = SimpleNamespace(tool=tool, raid_partners_open=True, sprite_pool=SpritePool(OFFLINE), redraw=lambda: redrawn.append(1),
                            values={"--raid-pokemon": {"file": "/tmp/host.pk9"}, "--raid-seed": "52E6B438",
                                    "--raid-partner": {"progress": "tera", "picks": ["Logan", "Ava"]}})
 
@@ -1223,7 +1223,7 @@ def test_the_raid_partners_card_shows_its_progress_s_pool_and_seats_two_at_most(
 
     def set_value(f, value, rebuild=False):
         values[f.key] = value
-    view = SimpleNamespace(tool=tool, raid_partners_open=True, sprites=SpritePool(OFFLINE), raid_partners_width=0,
+    view = SimpleNamespace(tool=tool, raid_partners_open=True, sprite_pool=SpritePool(OFFLINE), raid_partners_width=0,
                            values=values, set_value=set_value,
                            raid_context=lambda: {"progress": "6star", "content": "standard"},
                            app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
@@ -1258,7 +1258,7 @@ def test_each_console_joining_takes_a_partner_s_slot():
 
     def set_value(f, value, rebuild=False):
         values[f.key] = value
-    view = SimpleNamespace(tool=tool, raid_partners_open=True, sprites=SpritePool(OFFLINE), raid_partners_width=0,
+    view = SimpleNamespace(tool=tool, raid_partners_open=True, sprite_pool=SpritePool(OFFLINE), raid_partners_width=0,
                            values=values, set_value=set_value,
                            raid_context=lambda: {"progress": "6star", "content": "standard"},
                            app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
@@ -1292,7 +1292,7 @@ def test_a_favoured_raid_partner_s_card_shows_a_star_and_why(tmp_path):
     ours.write_bytes(gen9.encrypt(gen9.build(species=184, level=37)))
     for progress, wanted, values in (("6star", raid_partners.RECOMMENDED[80], {}),
                                      ("4star", {}, {"--raid-pokemon": {"file": str(ours)}})):
-        view = SimpleNamespace(tool=tool, raid_partners_open=True, sprites=SpritePool(OFFLINE), raid_partners_width=0,
+        view = SimpleNamespace(tool=tool, raid_partners_open=True, sprite_pool=SpritePool(OFFLINE), raid_partners_width=0,
                                values=values, set_value=None,
                                raid_context=lambda: {"progress": progress, "content": "standard"},
                                app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
@@ -1322,7 +1322,7 @@ def test_a_narrow_window_stands_the_raid_partners_two_to_a_row():
     assert (columns(0), columns(500), columns(380)) == (3, 3, 2)
     tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
     field = next(f for f in tool.fields if f.kind == "raidpartners")
-    view = SimpleNamespace(tool=tool, raid_partners_open=True, sprites=SpritePool(OFFLINE), raid_partners_width=0,
+    view = SimpleNamespace(tool=tool, raid_partners_open=True, sprite_pool=SpritePool(OFFLINE), raid_partners_width=0,
                            values={}, set_value=None,
                            raid_context=lambda: {"progress": "6star", "content": "standard"},
                            app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
@@ -1355,7 +1355,7 @@ def test_the_raid_partners_level_follows_our_pokemon(tmp_path):
     for level in (100, 90):
         records[level] = tmp_path / f"lv{level}.pk9"
         records[level].write_bytes(gen9.encrypt(gen9.build(species=184, level=level)))
-    view = SimpleNamespace(tool=tool, raid_partners_open=True, sprites=SpritePool(OFFLINE), raid_partners_width=0,
+    view = SimpleNamespace(tool=tool, raid_partners_open=True, sprite_pool=SpritePool(OFFLINE), raid_partners_width=0,
                            values={"--raid-pokemon": {"file": str(records[100])}}, set_value=None,
                            raid_context=lambda: {"progress": "6star", "content": "standard"},
                            session=SimpleNamespace(refresh=lambda: None),
@@ -2307,3 +2307,22 @@ def test_a_gts_redraw_keeps_every_sprite_it_already_sent(monkeypatch):
     view.search = "wants"
     view.render()
     assert first > 0 and len(made) == first
+
+
+def test_the_games_page_builds_and_redraws_on_a_real_view(monkeypatch, tmp_path):
+    """A stand-in view hid an attribute clash: GamesView's own `sprites` dict replaced the sprite pool, and
+    every packaged app stopped at launch on "'dict' object has no attribute 'sweep'"."""
+    from pokeldn.app.settings import Settings
+
+    class App(SimpleNamespace):
+        def __getattr__(self, name):
+            value = [] if name.endswith("listeners") else (lambda *a, **k: None)
+            setattr(self, name, value)
+            return value
+
+    from gui.app import BoardStatus
+    status = BoardStatus("missing", "No board", "")
+    view = GamesView(App(settings=Settings(), page=None, process=None, board_busy=False,
+                         board_status=lambda *a, **k: status))
+    view.render_body()
+    view.render_body()

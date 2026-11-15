@@ -95,7 +95,7 @@ class GamesView:
     def __init__(self, app):
         self._settling: threading.Timer | None = None
         self.app = app
-        self.sprites = SpritePool(app)    # the cards' sprites, kept across render_body
+        self.sprite_pool = SpritePool(app)    # the cards' sprites, kept across render_body
         self.catalog = plugins.games()   # the catalog with the enabled plugins' tools
         self.generation = plugins.generation
         self.game: Game = self.catalog[0]
@@ -417,7 +417,7 @@ class GamesView:
 
     def render_body(self) -> None:
         self.raid_partners = self.reward_picker = None
-        self.sprites.sweep()
+        self.sprite_pool.sweep()
         self.show_run_cards(update=False)
         if self.tool.unavailable:
             self.tabs.visible = False

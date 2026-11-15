@@ -121,7 +121,7 @@ class RaidPartnersPicker:
                              width=20, height=20, border_radius=10, bgcolor=t.BLUE,
                              alignment=ft.Alignment.CENTER) if picked else ft.Container()
         title = ft.Row([
-            self.view.sprites.get(('partner', partner.trainer), partner.species, size=MINI),
+            self.view.sprite_pool.get(('partner', partner.trainer), partner.species, size=MINI),
             ft.Column([t.text(translate(partner.trainer), 13, weight=ft.FontWeight.W_600, max_lines=1,
                               overflow=ft.TextOverflow.ELLIPSIS),
                        t.text(translate(partner.name), 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)],

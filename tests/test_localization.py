@@ -295,7 +295,7 @@ def test_fixed_npc_names_translate_in_cards_and_summary_but_selection_keeps_ids(
     picker.app = SimpleNamespace(settings=SimpleNamespace(sprites=False))
     picker.view = SimpleNamespace(tool=SimpleNamespace(fields=[Field("--raid-progress", "Progress", "choice")]),
                                   set_value=lambda *args, **kw: saved.append((args, kw)),
-                                  sprites=SpritePool(picker.app))
+                                  sprite_pool=SpritePool(picker.app))
     card = picker._card(raid_partners.pool(0)[0])
     assert "Patrice" in _texts(card) and "Austin" not in _texts(card)
     assert picker._summary() == "Patrice, one drawn"
