@@ -12,10 +12,13 @@ from pokeldn.ldn import esp32
 
 
 # ESP-IDF image format: one four-byte RAM segment, checksum 0xeb, no SHA digest.
-# Chip IDs and bootloader offsets: esptool's ESP32, ESP32-S3, ESP32-C3 and ESP32-C6 ROM definitions.
+# Chip IDs and bootloader offsets come from esptool's ROM definitions.
 BOOTLOADERS = {
     "ESP32": bytes.fromhex(
         "e9 01 00 20 00000040 ff000000 0000 00 0000 ffff 00000000 00 "
+        "0000fb3f 04000000 01020304 0000000000000000000000 eb"),
+    "ESP32-S2": bytes.fromhex(
+        "e9 01 00 20 00000040 ff000000 0200 00 0000 ffff 00000000 00 "
         "0000fb3f 04000000 01020304 0000000000000000000000 eb"),
     "ESP32-S3": bytes.fromhex(
         "e9 01 00 20 00000040 ff000000 0900 00 0000 ffff 00000000 00 "
@@ -32,6 +35,7 @@ BOOTLOADERS = {
 @pytest.mark.parametrize("protocol,text,release,compatible,ble,kind", [
     (1, b"pokeldn-radio esp32c3 version=1.0.0 idf=v6.1", "1.0.0", True, False, "radio"),
     (1, b"pokeldn-radio esp32 version=0.9.9 idf=v6.1", "0.9.9", True, False, "radio"),
+    (1, b"pokeldn-radio esp32s2 version=1.0.0 idf=v6.1", "1.0.0", True, False, "radio"),
     (1, b"pokeldn-radio esp32s3 idf=v6.1", "", True, False, "radio"),
     (2, b"pokeldn-radio esp32 version=2.0.0 idf=v6.1", "2.0.0", False, False, "radio"),
     # What a XIAO ESP32C6 running the Bluetooth build answered over USB.
@@ -79,13 +83,22 @@ def test_identify_preserves_release_and_protocol_across_serial(monkeypatch, prot
     assert ident.ble is ble
     assert ident.kind == kind
     assert serial.closed
+    if b" esp32s2 " in text:
+        assert ident.chip == "ESP32-S2"
+        # The fake serial device accepts HELLO only, so an unexpected CMD_BAUD fails here.
+        radio = esp32.Radio.open_serial("COM4")
+        try:
+            assert radio.info.target == "esp32s2"
+            assert serial.baudrate == 115200
+        finally:
+            radio.close()
 
 
 class Chip:
     def __init__(self, name):
         self.CHIP_NAME = name
-        self.BOOTLOADER_FLASH_OFFSET = 0x1000 if name == "ESP32" else 0
-        self.IMAGE_CHIP_ID = {"ESP32": 0, "ESP32-S3": 9, "ESP32-C3": 5, "ESP32-C6": 13}.get(name, -1)
+        self.BOOTLOADER_FLASH_OFFSET = 0x1000 if name in ("ESP32", "ESP32-S2") else 0
+        self.IMAGE_CHIP_ID = {"ESP32": 0, "ESP32-S2": 2, "ESP32-S3": 9, "ESP32-C3": 5, "ESP32-C6": 13}.get(name, -1)
         self.closed = False
 
     def __enter__(self):
@@ -100,9 +113,10 @@ def flasher(monkeypatch, tmp_path):
     images = {}
     for name, header in BOOTLOADERS.items():
         path = tmp_path / f"{name}.bin"
-        path.write_bytes((b"\xff" * 0x1000 if name == "ESP32" else b"") + header)
+        path.write_bytes((b"\xff" * 0x1000 if name in ("ESP32", "ESP32-S2") else b"") + header)
         images[name] = path
     monkeypatch.setattr(board, "FIRMWARE", str(images["ESP32"]))
+    monkeypatch.setattr(board, "FIRMWARE_S2", str(images["ESP32-S2"]))
     monkeypatch.setattr(board, "FIRMWARE_S3", str(images["ESP32-S3"]))
     monkeypatch.setattr(board, "FIRMWARE_C3", str(images["ESP32-C3"]))
     monkeypatch.setattr(board, "FIRMWARE_C6", str(images["ESP32-C6"]))
@@ -130,12 +144,27 @@ def test_flash_uses_the_detected_chip_on_one_connection(flasher, name):
     assert flasher.chip.closed
 
 
-@pytest.mark.parametrize("name", ["ESP32-S2", "ESP32-H2"])
-def test_unsupported_chip_is_refused_before_writing(flasher, name):
-    flasher.chip = Chip(name)
+def test_unsupported_chip_is_refused_before_writing(flasher):
+    flasher.chip = Chip("ESP32-H2")
     with pytest.raises(esptool.FatalError, match="not supported"):
         board.flash("COM4")
     assert not flasher.writes and flasher.chip.closed
+
+
+def test_s2_cdc_and_rom_ports_are_native_and_only_rom_uses_no_reset(monkeypatch):
+    ids = [board.S2_CDC_USB, board.S2_ROM_USB, (0x10C4, 0xEA60)]
+    monkeypatch.setattr(board.list_ports, "comports", lambda: [
+        SimpleNamespace(vid=vid, pid=pid, device=f"COM{index}", serial_number="")
+        for index, (vid, pid) in enumerate(ids)
+    ])
+    app, rom, uart = board.ports()
+    assert app.native and not app.s2_rom
+    assert rom.native and rom.s2_rom
+    assert not board.wrong_port(app, "ESP32-S2")
+    assert board.wrong_port(uart, "ESP32-S2")
+    monkeypatch.setattr(esptool, "detect_chip", lambda port, **options: (port, options))
+    assert board._connect(rom.device, "radio") == (rom.device, {"connect_mode": "no-reset"})
+    assert board._connect(app.device, "radio") == (app.device, {})
 
 
 @pytest.mark.parametrize("name,other", [(name, other) for name in BOOTLOADERS

@@ -6,8 +6,8 @@ import java.util.Locale;
 public final class Setup {
     public enum State { NO_DEVICE, UNSUPPORTED_BRIDGE, NEEDS_PERMISSION, PERMISSION_DENIED, CHECKING, HANDSHAKE_FAILED, READY }
 
-    /** Espressif's native USB Serial/JTAG (S3, C3, C6). */
-    public static final int ESPRESSIF_VID = 0x303a, ESPRESSIF_PID = 0x1001;
+    /** Espressif's native USB Serial/JTAG (S3, C3, C6), and the S2 firmware's TinyUSB CDC. */
+    public static final int ESPRESSIF_VID = 0x303a, ESPRESSIF_PID = 0x1001, ESPRESSIF_S2_PID = 0x4001;
     /** Silicon Labs CP210x, the bridge on most classic ESP32 boards (UsbStream drives it). */
     public static final int CP210X_VID = 0x10c4, CP210X_PID = 0xea60;
     /** USB-to-UART chips on classic ESP32 boards: CP210x, CH34x, FTDI; the app drives only the CP210x. */
@@ -16,7 +16,7 @@ public final class Setup {
     public static boolean isCp210x(int vid, int pid) { return vid == CP210X_VID && pid == CP210X_PID; }
 
     public static boolean isBoard(int vid, int pid) {
-        return vid == ESPRESSIF_VID && pid == ESPRESSIF_PID || isCp210x(vid, pid);
+        return vid == ESPRESSIF_VID && (pid == ESPRESSIF_PID || pid == ESPRESSIF_S2_PID) || isCp210x(vid, pid);
     }
 
     public static boolean isBridge(int vid) {

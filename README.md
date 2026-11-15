@@ -131,6 +131,8 @@ Contributors to this repository (GitHub does not list contributors on a fork):
   FireRed/LeafGreen Shiny Mewtwo boost, and the FireRed/LeafGreen RNG in the plugin API
 - [FrozenGEE](https://github.com/FrozenGEE): the ideas behind the LCKFB szpi ESP32-S3 board's screen and
   speaker build, the board's sounds and ball wobble, backup and restore, and the phone layout fixes
+- [cerealcommas](https://github.com/cerealcommas): the ESP32-S2 radio over native USB (the Flipper Zero
+  Wi-Fi Developer Board), and the FireRed/LeafGreen joiner's save handshake through a trade evolution
 
 - [unlimitedcoder2](https://github.com/unlimitedcoder2): [ldnrs](https://github.com/unlimitedcoder2/ldnrs),
   the external Windows USB Wi-Fi daemon supported by the optional radio backend

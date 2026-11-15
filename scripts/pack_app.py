@@ -17,6 +17,7 @@ from pokeldn import __version__
 from gui.flet_client import CLIENT, MARKER, platform_key
 
 FIRMWARE = ROOT / "gui" / "firmware" / "pokeldn-radio.bin"
+FIRMWARE_S2 = ROOT / "gui" / "firmware" / "pokeldn-radio-s2.bin"
 FIRMWARE_S3 = ROOT / "gui" / "firmware" / "pokeldn-radio-s3.bin"
 FIRMWARE_C3 = ROOT / "gui" / "firmware" / "pokeldn-radio-c3.bin"
 FIRMWARE_C6 = ROOT / "gui" / "firmware" / "pokeldn-radio-c6.bin"
@@ -147,11 +148,11 @@ def pe_checksum(data: bytes, field: int) -> int:
 
 def main() -> int:
     argparse.ArgumentParser(description=__doc__).parse_args()
-    firmware = (FIRMWARE, FIRMWARE_S3, FIRMWARE_C3, FIRMWARE_C6, FIRMWARE_PAD, FIRMWARE_PAD_ESP32, FIRMWARE_BLE,
+    firmware = (FIRMWARE, FIRMWARE_S2, FIRMWARE_S3, FIRMWARE_C3, FIRMWARE_C6, FIRMWARE_PAD, FIRMWARE_PAD_ESP32, FIRMWARE_BLE,
                 FIRMWARE_BLE_C6, *FIRMWARE_SCREEN)
     missing = [str(path) for path in firmware if not path.is_file()]
     if missing:
-        raise SystemExit(f"Missing firmware: {', '.join(missing)}. Build all ten images "
+        raise SystemExit(f"Missing firmware: {', '.join(missing)}. Build all eleven images "
                          "as described in docs/gui.md before packing.")
     client = CLIENT / platform_key()
     if not (client / MARKER).is_file():

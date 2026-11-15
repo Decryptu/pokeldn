@@ -21,6 +21,8 @@ jobs:
         include:
           - target: esp32
             file: pokeldn-radio.bin
+          - target: esp32s2
+            file: pokeldn-radio-s2.bin
           - target: esp32s3
             file: pokeldn-radio-s3.bin
           - target: esp32c3
@@ -125,6 +127,10 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: firmware-esp32
+          path: gui/firmware
+      - uses: actions/download-artifact@v8
+        with:
+          name: firmware-esp32s2
           path: gui/firmware
       - uses: actions/download-artifact@v8
         with:

@@ -737,7 +737,7 @@ static void send_info(void)
 #else
 #define LINK_WORD ""
 #endif
-#ifdef POKELDN_DISPLAY_OLED
+#if defined(POKELDN_DISPLAY_OLED) || defined(POKELDN_DISPLAY_NONE)
 #define DISPLAY_WORD ""
 #else
 #define DISPLAY_WORD " display=" POKELDN_DISPLAY_NAME   /* gui/board.py: the image for this board's screen */

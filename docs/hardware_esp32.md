@@ -16,15 +16,16 @@ host, except in the [portable beacon](#portable-beacon). `pokeldn.ldn.esp32_wlan
 | chip | host connection | merged image |
 |---|---|---|
 | classic ESP32 (ESP32-D0WD, WROOM-32E) | UART0 through a USB serial bridge | `pokeldn-radio.bin` |
+| ESP32-S2 (Flipper Zero Wi-Fi Developer Board) | native USB CDC (TinyUSB) | `pokeldn-radio-s2.bin` |
 | ESP32-S3 | native USB Serial/JTAG | `pokeldn-radio-s3.bin` |
 | ESP32-C3 | native USB Serial/JTAG | `pokeldn-radio-c3.bin` |
 | ESP32-C6 | native USB Serial/JTAG | `pokeldn-radio-c6.bin` |
 | classic ESP32, ESP32-C6 | Bluetooth LE (the iOS app), and USB as above | `pokeldn-radio-ble.bin`, `pokeldn-radio-ble-c6.bin` |
 
-All targets use 2.4 GHz; ESP32-S2 is unsupported. An S3, C3 or C6 with separate UART and native USB
+All targets use 2.4 GHz; the S2 is [below](#the-esp32-s2-flipper-zero-wi-fi-developer-board). An S2, S3, C3 or C6 with separate UART and native USB
 sockets must use the native socket (S3 GPIO19/20, C3 GPIO18/19); through the UART socket the firmware
 never answers. When no firmware answers through a USB serial bridge, the desktop app reads the chip
-from the ROM bootloader (esptool `detect_chip`) and names an S3, C3 or C6 as plugged into the wrong
+from the ROM bootloader (esptool `detect_chip`) and names an S2, S3, C3 or C6 as plugged into the wrong
 socket. `303a:1001` is shared by several chips; flashing detects the chip with esptool.
 
 | board | antenna | BOOT | user LED | CPU, task core | idle free heap | BENCH over native USB, macOS |
@@ -404,8 +405,8 @@ block in `select` inside that loop; wait with `trio.lowlevel.wait_readable` unde
 
 ## The board's LED and buttons
 
-The LED is GPIO2 on classic ESP32, GPIO21 inverted on S3, GPIO15 inverted on C6; the C3 firmware
-leaves LED pins alone. BOOT is GPIO0 on classic ESP32 and S3, GPIO9 on C3 and C6; each press sends
+The LED is GPIO2 on classic ESP32, GPIO21 inverted on S3, GPIO15 inverted on C6; the S2 and C3 firmware
+leave LED pins alone. BOOT is GPIO0 on classic ESP32 and S3, GPIO9 on C3 and C6; each press sends
 BUTTON (`0x8E`), flashes the LED and wakes the screen. On the ELEGOO ESP-32 Type-C board (CP2102,
 ESP32-D0WD-V3, unbranded PCB-antenna module) the red LED is the power rail and the blue one GPIO2.
 GPIO2 and GPIO0 are strapping pins; the firmware drives GPIO2 only after boot.
@@ -577,18 +578,18 @@ The firmware version (`firmware/esp32/version.txt`, `major.minor.patch`, shared 
 reported in INFO as `version=...`; an unversioned build shows `version unknown` and works when its
 serial protocol matches. The protocol number is separate and changes only with the wire contract.
 
-ESP-IDF v6.1 (tag `v6.1`, commit `fff9895c82d744c7237be8847347bdd1b07c6643`) builds all four targets.
-Install its tools with `install.sh esp32,esp32s3,esp32c3,esp32c6`, then activate the IDF environment
+ESP-IDF v6.1 (tag `v6.1`, commit `fff9895c82d744c7237be8847347bdd1b07c6643`) builds all five targets.
+Install its tools with `install.sh esp32,esp32s2,esp32s3,esp32c3,esp32c6`, then activate the IDF environment
 (`. scripts/esp_env.sh`).
 
     cd firmware/esp32
-    idf.py set-target esp32   # esp32s3, esp32c3 or esp32c6 for those chips
+    idf.py set-target esp32   # esp32s2, esp32s3, esp32c3 or esp32c6 for those chips
     idf.py build
     idf.py -p <port> flash
 
 Console output is off; on classic ESP32 the firmware assigns UART0's GPIO1 and GPIO3 itself
 (`uart_set_pin`). The desktop app detects the chip with esptool and validates the merged image's
-bootloader at the chip's flash offset (ESP32 `0x1000`, others `0x0`) before writing: esptool 5.4.0's
+bootloader at the chip's flash offset (ESP32 and S2 `0x1000`, others `0x0`) before writing: esptool 5.4.0's
 `write_flash` can skip its chip check when an image starts with padding. Never choose firmware from a
 USB bridge ID.
 esptool picks its reset from the port's USB ids, which esp-pylib 1.1.5 refuses to look up for a URL
@@ -598,7 +599,44 @@ Android app answers the lookup from the board's own USB ids (`pokeldn/app/androi
 known, a CP210x board on Linux or Android gets the reset that writes DTR and RTS together through
 `ioctl` on the port's `fileno()`; the Android port has no file descriptor and sends both lines in one
 CDC `SET_CONTROL_LINE_STATE` instead.
-[Desktop builds](gui.md) covers packaging all four images.
+[Desktop builds](gui.md) covers packaging the firmware images.
+
+### The ESP32-S2 (Flipper Zero Wi-Fi Developer Board)
+
+The S2 has no USB Serial/JTAG: its firmware runs TinyUSB CDC on the USB OTG peripheral
+(`espressif/esp_tinyusb` 2.2.0 and `espressif/tinyusb` 0.21.0~6, pinned in
+`firmware/esp32/main/idf_component.yml`). The running firmware enumerates as `303a:4001`, product
+`pokeldn ESP32-S2`; Blackmagic, the Developer Board's stock firmware, shares `303a:4001`. The ROM
+download mode enumerates as `303a:0002`. The build has no screen (`POKELDN_DISPLAY=NONE`), no
+Bluetooth and no LED; BOOT is GPIO0.
+
+| setting | value | reason |
+|---|---|---|
+| `CONFIG_TINYUSB_MODE_SLAVE` | `y` | Espressif erratum USB-105 on the board's S2 rev 0.0: USB DMA bus arbitration |
+| `CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM` | 10 | internal RAM for the USB task and the wire queue |
+| `CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ` | 240 | |
+
+With DMA off, three idle-radio USB sweeps lost no frame across 3491 commands and 4287 replies, and
+30 s at 10 ms pacing carried 2417 commands and 5000 replies with no drop
+(`tools/ldn/esp32_usb_duplex.py`); at 5 ms pacing the host-side queue filled. Retail FireRed trades,
+a trade evolution included, completed on macOS.
+
+No firmware-driven reset reaches the ROM loader from `303a:4001`. Enter download mode by hand: unplug
+the board from the Flipper, hold BOOT, press and release RESET, release BOOT. The desktop app then
+names the `303a:0002` port an ESP32-S2 in download mode and flashes it with `no-reset`. After the
+write, press RESET with BOOT released.
+
+Back up the stock 4 MB flash in download mode before the first install; the image holds the board's
+settings.
+
+    python -m esptool --chip esp32s2 --port PORT --before no-reset --after no-reset \
+        read-flash 0x0 0x400000 flipper-original.bin
+    python -m esptool --chip esp32s2 --port PORT --before no-reset --after no-reset \
+        write-flash 0x0 flipper-original.bin
+
+The second line restores it. A board with no backup takes Blackmagic back through the
+[Flipper firmware update guide](https://developer.flipper.net/flipperzero/doxygen/dev_board_fw_update.html).
+`tools/ldn/esp32_first_contact.py --port PORT` checks HELLO on the running firmware.
 
 ### A board whose stub flasher never starts
 
@@ -642,7 +680,8 @@ started with `open -n -a Terminal FILE.command` runs under Terminal's.
 
 ### The USB host link
 
-The S3, C3 and C6 use the same COBS, CRC and CREDIT protocol over USB Serial/JTAG with 16 KB rings.
+The S3, C3 and C6 use the same COBS, CRC and CREDIT protocol over USB Serial/JTAG with 16 KB rings;
+the S2 over TinyUSB CDC, writing only what its TX FIFO has room for.
 The writer retries a refused `usb_serial_jtag_write_bytes` every 20 ms and counts a dropped message
 after 500 ms. The receive interrupt drops a 64-byte packet on a full RX ring and counts nothing
 (`usb_serial_jtag.c:144`); CREDIT keeps the ring from filling. UART counters stay zero on this path,
