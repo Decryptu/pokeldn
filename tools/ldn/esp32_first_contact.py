@@ -122,7 +122,7 @@ def main(argv=None) -> int:
     if args.keys:
         import ldn
         keys = ldn.load_keys(os.path.expanduser(args.keys))
-    radio = esp32.Radio.open_serial(port, fast_baud=args.baud or None, log=print)
+    radio = esp32.Radio.open_serial(port, fast_baud=args.baud, log=print)
     try:
         first_contact(radio, [int(c) for c in args.channels.split(",")], args.dwell, keys)
     finally:

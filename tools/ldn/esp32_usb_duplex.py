@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""esp32_usb_duplex.py: measure USB frame loss with the ESP32 radio idle."""
+"""esp32_usb_duplex.py: measure USB frame loss both ways with the ESP32 radio idle.
+docs/hardware_esp32.md, The ESP32-S2."""
 
 import argparse
 from pathlib import Path

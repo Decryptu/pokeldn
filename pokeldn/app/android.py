@@ -135,7 +135,7 @@ class _Port:
         self.device = PORT
         self.vid, self.pid = int(bridge().deviceVendorId()), int(bridge().deviceProductId())
         self.serial_number = self.description = self.product = bridge().deviceName()
-        self.manufacturer = "Espressif" if (self.vid, self.pid) == (0x303A, 0x1001) else "Silicon Labs"
+        self.manufacturer = "Espressif" if self.vid == 0x303A else "Silicon Labs"
         self.hwid, self.location, self.interface = f"USB VID:PID={self.vid:04X}:{self.pid:04X}", "", ""
 
     def __getitem__(self, index):

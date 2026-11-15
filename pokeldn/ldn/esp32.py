@@ -403,7 +403,7 @@ class Radio:
             info = radio._find_rate([baud, fast_baud, run_baud, *RUN_BAUDS, *left_at])
             if log and s.baudrate != baud:
                 log(f"[esp32] the board answered at {s.baudrate} baud")
-            # The S2 native CDC link keeps its USB speed. Leave the OS line coding at 115200.
+            # The S2's TinyUSB CDC has no line rate: its BAUD would be acknowledged and ignored.
             if info.target != "esp32s2" and fast_baud and fast_baud != s.baudrate:
                 radio.request(CMD_BAUD, struct.pack("<I", fast_baud), MSG_RESULT)
                 radio._set_rate(fast_baud)

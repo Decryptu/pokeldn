@@ -17,6 +17,7 @@ public class SetupTest {
 
     @Test public void nativeUsbAndTheCp210xAreBoards() {
         assertTrue(Setup.isBoard(0x303a, 0x1001));
+        assertTrue(Setup.isBoard(0x303a, 0x4001));
         assertTrue(Setup.isBoard(0x10c4, 0xea60));
         assertTrue(Setup.isCp210x(0x10c4, 0xea60));
         assertFalse(Setup.isCp210x(0x303a, 0x1001));

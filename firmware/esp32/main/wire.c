@@ -206,19 +206,22 @@ void wire_set_baud(uint32_t baud)
 }
 
 #if CONFIG_IDF_TARGET_ESP32S2
+/* TinyUSB overwrites unsent bytes while DTR is low, and the host holds DTR low: queue only what
+   fits. Drop after 500 ms without progress, as below. docs/hardware_esp32.md, The USB host link. */
 static void write_usb(const uint8_t *p, size_t n)
 {
     const int64_t started = esp_timer_get_time();
+    int64_t moved = started;
     while (n && tud_ready() && !atomic_load(&s_host_away)) {
-        /* TinyUSB can overwrite pending bytes when DTR is low. The host keeps DTR low,
-           so only enqueue what fits and retain the offset across short writes. */
         const size_t available = tud_cdc_write_available();
         const size_t written = tud_cdc_write(p, n < available ? n : available);
         p += written;
         n -= written;
         tud_cdc_write_flush();
-        if (n && esp_timer_get_time() - started >= 500000) break;
-        if (!written) vTaskDelay(1);
+        const int64_t now = esp_timer_get_time();
+        if (written) moved = now;
+        else if (now - moved > 500000) break;
+        else vTaskDelay(1);
     }
     if (n && !atomic_load(&s_host_away)) atomic_fetch_add(&s_dropped, 1);
     raise_max(&s_write_max_us, esp_timer_get_time() - started);
