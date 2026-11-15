@@ -7,7 +7,7 @@ from pokeldn.app.i18n import t as tr
 import flet as ft
 
 from gui import theme as t
-from gui.views.sprites import MINI, Sprite
+from gui.views.sprites import MINI
 from gui.localization import translate
 from pokeldn.app import command
 from pokeldn.sv import raid_partners
@@ -121,7 +121,7 @@ class RaidPartnersPicker:
                              width=20, height=20, border_radius=10, bgcolor=t.BLUE,
                              alignment=ft.Alignment.CENTER) if picked else ft.Container()
         title = ft.Row([
-            Sprite(self.app, partner.species, size=MINI).control,
+            self.view.sprites.get(('partner', partner.trainer), partner.species, size=MINI),
             ft.Column([t.text(translate(partner.trainer), 13, weight=ft.FontWeight.W_600, max_lines=1,
                               overflow=ft.TextOverflow.ELLIPSIS),
                        t.text(translate(partner.name), 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)],

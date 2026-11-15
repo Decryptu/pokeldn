@@ -108,6 +108,27 @@ class Sprite:
                 pass
 
 
+class SpritePool:
+    """A view's sprites kept from one render to the next. A new ft.Image resends its PNG and the client decodes
+    it again, so a list rebuilt on every click blinks; a kept Sprite sends nothing. sweep() at each render."""
+
+    def __init__(self, app):
+        self.app = app
+        self.kept: dict[tuple, Sprite] = {}
+        self.used: dict[tuple, Sprite] = {}
+
+    def get(self, slot, species: int, shiny: bool = False, size: int = SIZE, form: int = 0) -> ft.Control:
+        key = (slot, species, bool(shiny), size, form)
+        while key in self.used:     # a control has one parent: a repeated slot gets its own sprite
+            key = (*key, 0)
+        sprite = self.kept.pop(key, None) or Sprite(self.app, species, shiny, size=size, form=form)
+        self.used[key] = sprite
+        return sprite.control
+
+    def sweep(self) -> None:
+        self.kept, self.used = self.used, {}
+
+
 class Icon:
     """An item, ball or ribbon icon by the helper's "icon" name, cropped to its visible pixels and scaled
     to fill `size`; an empty slot while it loads, offline or when PokeAPI has none."""

@@ -33,7 +33,7 @@ from gui.views.gifts import GiftBuilder
 from gui.views.board_screen import BoardScreen
 from gui.views.library import LibraryCard
 from gui.views.panels import StatusCards, card_control
-from gui.views.sprites import MINI, Sprite
+from gui.views.sprites import MINI, Sprite, SpritePool
 from gui.views.widgets import CodeBlock, DigitCode, Log, PathField, open_folder
 from gui.localization import SERVICE, summary as pokemon_summary, summary_lines, summary_text, translate
 from pokeldn.app.i18n import help_text, t as tr
@@ -95,6 +95,7 @@ class GamesView:
     def __init__(self, app):
         self._settling: threading.Timer | None = None
         self.app = app
+        self.sprites = SpritePool(app)    # the cards' sprites, kept across render_body
         self.catalog = plugins.games()   # the catalog with the enabled plugins' tools
         self.generation = plugins.generation
         self.game: Game = self.catalog[0]
@@ -416,6 +417,7 @@ class GamesView:
 
     def render_body(self) -> None:
         self.raid_partners = self.reward_picker = None
+        self.sprites.sweep()
         self.show_run_cards(update=False)
         if self.tool.unavailable:
             self.tabs.visible = False

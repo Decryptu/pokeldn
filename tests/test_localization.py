@@ -283,6 +283,7 @@ def test_lair_rentals_and_encounter_tiles_use_translated_names(french_copy, monk
 
 def test_fixed_npc_names_translate_in_cards_and_summary_but_selection_keeps_ids(french_copy):
     from gui.views.raid_partners import RaidPartnersPicker
+    from gui.views.sprites import SpritePool
     from pokeldn.app.catalog import Field
     from pokeldn.sv import raid_partners
     i18n._pack.resources["messages"]["Austin"] = "Patrice"
@@ -293,7 +294,8 @@ def test_fixed_npc_names_translate_in_cards_and_summary_but_selection_keeps_ids(
     picker.field = Field("--raid-partner", "Partners", "raidpartners")
     picker.app = SimpleNamespace(settings=SimpleNamespace(sprites=False))
     picker.view = SimpleNamespace(tool=SimpleNamespace(fields=[Field("--raid-progress", "Progress", "choice")]),
-                                  set_value=lambda *args, **kw: saved.append((args, kw)))
+                                  set_value=lambda *args, **kw: saved.append((args, kw)),
+                                  sprites=SpritePool(picker.app))
     card = picker._card(raid_partners.pool(0)[0])
     assert "Patrice" in _texts(card) and "Austin" not in _texts(card)
     assert picker._summary() == "Patrice, one drawn"

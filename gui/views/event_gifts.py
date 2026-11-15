@@ -10,7 +10,7 @@ from datetime import date
 import flet as ft
 
 from gui import theme as t
-from gui.views.sprites import MINI, Sprite
+from gui.views.sprites import MINI, Sprite, SpritePool
 from gui.views.widgets import PixelActivity
 from gui.localization import SERVICE, error_message, summary_text, translate
 from pokeldn import pokemon as builder
@@ -74,6 +74,7 @@ class EventGiftPicker:
 
     def __init__(self, app, game: str, value: dict | list[dict] | None, on_change, limit: int = 1):
         self.app, self.game, self.on_change = app, game, on_change
+        self.sprites = SpritePool(app)
         self.limit = max(1, int(limit))
         self.values = [dict(v) for v in offers(value)[:self.limit] if v.get("file")]
         self.events: list[dict] | None = None
@@ -116,6 +117,7 @@ class EventGiftPicker:
     def _render(self) -> None:
         if self.events is None:
             return
+        self.sprites.sweep()
         words = self.search.value.casefold().split()
         matches = [e for e in self.events if all(w in haystack(e) for w in words)]
         self.tiles.set([self._tile(e) for e in matches[:self.shown]])
@@ -148,7 +150,7 @@ class EventGiftPicker:
                                      t.text(note, 12, color, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
                                             expand=True)], spacing=6))
         return ft.Container(ft.Row([
-            Sprite(self.app, event["species_id"], shiny, size=MINI, form=event.get("form_id", 0)).control,
+            self.sprites.get(('event', id(event)), event["species_id"], shiny, size=MINI, form=event.get("form_id", 0)),
             ft.Column(lines, spacing=0, expand=True),
         ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             padding=ft.Padding(10, 8, 10, 8), border_radius=10, tooltip=", ".join(event.get("moves", ())) or None,

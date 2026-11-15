@@ -68,6 +68,7 @@ class GiftBuilder:
     def __init__(self, games, field):
         self.games, self.field = games, field
         self.app, self.tool = games.app, games.tool
+        self.sprites = games.sprites
         self.game = gift_builder.GAMES[self.tool.key]
         self.module = gift_builder.module(self.game)
         self.value = gift_builder.normalized(self.game, command.value_of(field, games.values))
@@ -175,7 +176,8 @@ class GiftBuilder:
                                  t.text(translate(warning), 12, t.AMBER, expand=True)], spacing=6))
         return ft.Container(ft.Row([
             t.pixel_icon("checkbox-on" if active else "checkbox", color=t.BLUE if active else t.FAINT),
-            *([Sprite(self.app, species_id, shiny, size=MINI, form=form).control] if species_id else []),
+            *([self.sprites.get(('gift', label), species_id, shiny, size=MINI, form=form)]
+              if species_id else []),
             ft.Column(lines, spacing=1, expand=True),
         ], spacing=10), padding=ft.Padding(10, 8, 10, 8), border_radius=10,
             tooltip=translate(summary), border=ft.Border.all(1, t.AMBER if warning else t.BLUE if active else t.BORDER),

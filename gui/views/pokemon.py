@@ -11,7 +11,7 @@ from pokeldn.app.command import offers
 from pokeldn.app.settings import GEN3
 from pokeldn.lgpe.session import CODE_PICKER, code_picks
 from gui import drop, theme as t
-from gui.views.sprites import EDGE, MINI, SIZE as SPRITE_SIZE, Icon, Sprite
+from gui.views.sprites import EDGE, MINI, SIZE as SPRITE_SIZE, Icon, Sprite, SpritePool
 from gui.views.widgets import PixelActivity, reloading
 from gui.localization import SERVICE, error_message, summary_text, translate
 from pokeldn.app.i18n import t as tr
@@ -1263,16 +1263,17 @@ class LinkCodePicker:
     def __init__(self, app, value: str, on_change):
         self.app, self.on_change = app, on_change
         self.picks = parse_code(value)
+        self.sprites = SpritePool(app)
         self.open: int | None = None
         self.slots = ft.Row(spacing=10)
         self.grid = ft.Column(spacing=6, visible=False, tight=True)
         self.control = ft.Column([self.slots, self.grid], spacing=12, tight=True)
         self._render(update=False)
 
-    def _tile(self, index: int | None, label: str, on_click, selected: bool = False) -> ft.Control:
+    def _tile(self, index: int | None, label: str, on_click, selected: bool = False, slot=None) -> ft.Control:
         # The name stays under the sprite: a sprite never downloaded shows only a placeholder.
         species = CODE_SPECIES[index] if index is not None else 0
-        art = (Sprite(self.app, species, size=MINI).control if index is not None else
+        art = (self.sprites.get(slot, species, size=MINI) if index is not None else
                ft.Container(t.pixel_icon("plus", color=t.FAINT), width=CODE_TILE, height=CODE_TILE,
                             alignment=ft.Alignment.CENTER, border=ft.Border.all(EDGE, t.DIVIDER),
                             border_radius=10))
@@ -1284,14 +1285,15 @@ class LinkCodePicker:
             bgcolor=t.SELECTED if selected else None, on_click=on_click, ink=True)
 
     def _render(self, update: bool = True) -> None:
+        self.sprites.sweep()
         self.slots.controls = [
             self._tile(pick, CODE_NAMES[pick] if pick is not None else tr('pokemon.slot_5f798c', 'Slot {value0}', value0=n + 1),
-                       lambda e, n=n: self._toggle(n), selected=self.open == n)
+                       lambda e, n=n: self._toggle(n), selected=self.open == n, slot=('slot', n))
             for n, pick in enumerate(self.picks)]
         self.grid.visible = self.open is not None
         # Two rows of five, as the console lays its picker out.
         tiles = [] if self.open is None else [
-            self._tile(i, name, lambda e, i=i: self._choose(i), selected=self.picks[self.open] == i)
+            self._tile(i, name, lambda e, i=i: self._choose(i), selected=self.picks[self.open] == i, slot=('pick', i))
             for i, name in enumerate(CODE_NAMES)]
         self.grid.controls = [ft.Row(tiles[r:r + 5], spacing=6) for r in range(0, len(tiles), 5)]
         if update:

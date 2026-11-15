@@ -11,7 +11,7 @@ import flet as ft
 
 from gui import drop, theme as t
 from gui.views.pokemon import PokemonPicker
-from gui.views.sprites import MINI, Sprite
+from gui.views.sprites import MINI, Sprite, SpritePool
 from gui.views.widgets import open_folder
 from gui.localization import SERVICE, date_time
 from pokeldn.app import saves
@@ -229,6 +229,7 @@ class SaveEditor:
         self.panel, self.app, self.entry = panel, panel.app, entry
         self.data = open(entry.path, "rb").read()
         self.info: dict | None = None
+        self.sprites = SpritePool(panel.app)
         self.party: list[dict] = []      # {"keep": n} or {"data": base64}, each with its PKHeX description
         self.trainer: dict = {}
         self.body = ft.Column([t.badge(tr('saves.reading_the_save_with_pkhex_bd9a31', 'Reading the save with PKHeX...'), t.BLUE, "refresh")], spacing=18,
@@ -299,6 +300,7 @@ class SaveEditor:
     # Party
 
     def _party(self) -> ft.Control:
+        self.sprites.sweep()
         rows = [self._party_row(n, slot) for n, slot in enumerate(self.party)]
         adder = ([t.secondary_button(tr('saves.add_a_pokemon_4efc62', 'Add a Pokemon'), self._add, "plus")] if len(self.party) < 6 else [])
         return t.section(tr('saves.party_dfa82f', 'Party'), ft.Column([*rows, *adder], spacing=6),
@@ -317,7 +319,7 @@ class SaveEditor:
             t.icon_button("trash", lambda e: self._remove(n), tr('saves.remove_c3812f', 'Remove'), disabled=last == 0),
         ], spacing=0)
         return ft.Container(ft.Row([
-            Sprite(self.app, int(mon["species_id"]), bool(mon["shiny"]), size=MINI).control,
+            self.sprites.get(n, int(mon["species_id"]), bool(mon["shiny"]), size=MINI),
             ft.Column([ft.Row([t.text(_mon_title(mon), 13, weight=ft.FontWeight.W_600), verdict], spacing=6),
                        t.text(moves or tr('saves.no_moves_6dbf63', 'No moves'), 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)],
                       spacing=1, expand=True),

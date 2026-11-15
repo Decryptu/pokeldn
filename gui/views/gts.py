@@ -9,7 +9,7 @@ import flet as ft
 
 from gui import theme as t
 from gui.views.bank import NAMES, game_icon
-from gui.views.sprites import MINI, SIZE, Sprite
+from gui.views.sprites import MINI, SIZE, SpritePool
 from gui.localization import SERVICE, summary_text, translate
 from pokeldn import __version__, pokemon
 from pokeldn.app import bank
@@ -60,6 +60,7 @@ def _when(seconds: float) -> str:
 class GtsView:
     def __init__(self, app):
         self.app = app
+        self.sprites = SpritePool(app)
         self.visible = False
         self.species: list[tuple[str, str]] = []      # (id, name), every game's
         self.canonical_species: dict[str, str] = {}  # English names for persisted/published Wants
@@ -210,6 +211,7 @@ class GtsView:
     # Drawing
 
     def render(self) -> None:
+        self.sprites.sweep()
         client = self.client
         relays = client.connected()
         listings = self._shown()
@@ -241,11 +243,11 @@ class GtsView:
         if offered:
             tip += "\n" + tr('gts.you_offered_waiting_for_the_lister_5e1b0c', 'You offered; waiting for the lister.')
         return ft.Container(ft.Row([
-            ft.Stack([Sprite(self.app, int(shown.get("species_id") or 0), bool(shown.get("shiny")), size=MINI).control,
+            ft.Stack([self.sprites.get(('tile', listing.key, listing.d), int(shown.get("species_id") or 0), bool(shown.get("shiny")), size=MINI),
                       ft.Container(game_icon(listing.game, 16), right=0, bottom=0),
                       *([ft.Container(sparkles(), left=0, top=0)] if shown.get("shiny") else [])]),
             t.pixel_icon("arrows-horizontal", size=12, color=t.FAINT),
-            ft.Stack([Sprite(self.app, first.species, first.shiny, size=MINI).control,
+            ft.Stack([self.sprites.get(('wants', listing.key, listing.d), first.species, first.shiny, size=MINI),
                       *([ft.Container(sparkles(), left=0, top=0)] if first.shiny else []),
                       *([ft.Container(t.text(f"+{more}", 11, t.SOFT, weight=ft.FontWeight.W_600), right=0, bottom=0)]
                         if more else []),
@@ -264,8 +266,8 @@ class GtsView:
             title += tr('gts.offered_for_a2a379', ' offered for {value0}', value0=translate(gts.parse_listing(state['listing']).pokemon.get('species', '')) if state['listing'] else '')
         active = self.selected == state["id"]
         return ft.Container(ft.Row([
-            ft.Stack([Sprite(self.app, int(state["info"].get("species_id") or 0), bool(state["info"].get("shiny")),
-                             size=MINI).control,
+            ft.Stack([self.sprites.get(('mine', state["id"]), int(state["info"].get("species_id") or 0),
+                                             bool(state["info"].get("shiny")), size=MINI),
                       *([ft.Container(sparkles(), left=0, top=0)] if state["info"].get("shiny") else [])]),
             ft.Column([t.text(title, 12, t.TEXT, weight=ft.FontWeight.W_600, max_lines=1,
                               overflow=ft.TextOverflow.ELLIPSIS),
@@ -304,7 +306,7 @@ class GtsView:
             return t.section(tr('gts.your_pokemon_that_answer_it_2c53fc', 'Your Pokemon that answer it'), self._answers(listing))
         info = state["info"]
         return t.section(tr('gts.your_offer_7b2e41', 'Your offer'), ft.Column([
-            ft.Row([Sprite(self.app, int(info.get("species_id") or 0), bool(info.get("shiny")), size=MINI).control,
+            ft.Row([self.sprites.get('yours', int(info.get("species_id") or 0), bool(info.get("shiny")), size=MINI),
                     ft.Column([t.text(tr('gts.level_dcff87', '{value0} · level {value1}', value0=translate(info.get('species', '')), value1=info.get('level')), 13),
                                t.badge(*STATUS["waiting"])], spacing=4, expand=True)], spacing=10),
             t.text(tr('gts.other_players_can_still_offer_on_it_the_lister_s_app_tr_9c4d2a', "Other players can still offer on it. The lister's app trades the first offer that answers it, the next time it is open; if that is not yours, yours comes back to the bank."), 12, t.FAINT),
@@ -317,7 +319,7 @@ class GtsView:
         if shown.get("held_item"):
             facts.append(tr('gts.holding_b3a475', 'holding {value0}', value0=shown['held_item']))
         return ft.Row([
-            Sprite(self.app, int(shown.get("species_id") or 0), bool(shown.get("shiny")), size=SIZE).control,
+            self.sprites.get('about', int(shown.get("species_id") or 0), bool(shown.get("shiny")), size=SIZE),
             ft.Column([
                 t.text(tr('gts.level_dcff87', '{value0} · level {value1}', value0=shown['species'], value1=shown.get('level')) + (tr('gts.shiny_3e4562', ' · shiny') if shown.get("shiny") else ""),
                        15, weight=ft.FontWeight.W_600),
@@ -329,9 +331,9 @@ class GtsView:
         ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)
 
     def _asked(self, asked) -> ft.Control:
-        return ft.Column([ft.Row([Sprite(self.app, w.species, w.shiny, size=MINI).control,
+        return ft.Column([ft.Row([self.sprites.get(('asked', n), w.species, w.shiny, size=MINI),
                                   t.text(wanted_text(w), 13),
-                                  *([sparkles()] if w.shiny else [])], spacing=10) for w in asked], spacing=6)
+                                  *([sparkles()] if w.shiny else [])], spacing=10) for n, w in enumerate(asked)], spacing=6)
 
     def _answers(self, listing: gts.Listing) -> ft.Control:
         held = [e for e in self._held() if answers(e, listing.wanted)]
@@ -339,7 +341,7 @@ class GtsView:
             return t.text(tr('gts.your_bank_holds_no_legal_that_is_not_queued_for_a_trade_66b4ef', 'Your bank holds no legal {value0} that is not queued for a trade.', value0=wanted_list_text(listing.wanted)),
                           12, t.FAINT)
         return ft.Column([ft.Row([
-            Sprite(self.app, e.species_id, e.shiny, size=MINI).control,
+            self.sprites.get(('answer', e.id), e.species_id, e.shiny, size=MINI),
             ft.Column([t.text(e.summary, 12, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
                        ft.Row([game_icon(e.game, 16), t.text(NAMES[e.game], 11, t.MUTED)], spacing=4)],
                       spacing=2, expand=True),
