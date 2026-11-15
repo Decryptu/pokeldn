@@ -110,10 +110,6 @@ POST_SEAT_REARM_GAP = 90
 # budget; do not re-tune this against a single run.
 JOINER_STREAM_GAP = 0
 
-# The host pauses up to 1.8 s between save barriers; the chain ends on host re-exchange (Phase M),
-# this only releases a vanished host.
-SAVE_CHAIN_TIMEOUT = 600
-
 # Last-resort ribbons fallback. Must exceed the host's 0.3-1.8 s save-write pauses between block
 # pulls, else the cancel-to-leave fires before its mail/ribbons and both sides deadlock.
 BUFFERTRADE_SETTLE = 600
@@ -355,9 +351,6 @@ class TradeEngine:
         self._self_seated = False
         self._post_seat_wait = 0
         self._save_barriers = False  # (c) [trade_scene.c:2566]
-        self._save_settle = 0
-        self._save_started = False
-        self._save_round_wait = 0
         self._cancel_barrier_active = False  # (d)
         self._return_field_barrier_active = False  # (e)
         # After the cancel-exit standby the game returns to the overworld, re-arms held keys, and
@@ -533,8 +526,6 @@ class TradeEngine:
             self.barrier.on_in_slot(host_slot)
         if unwrapped is not None:
             self.barrier.observe_frame(saw_barrier)
-            if self._save_barriers:
-                self._save_settle = 0 if saw_barrier else self._save_settle + 1
 
     def _end_save_chain_on_reexchange(self, completed, reqs):
         # Only a host block (mpId 0) or a REQ ends it; mpId-1 entries reflect our own block.
@@ -807,9 +798,6 @@ class TradeEngine:
 
         # Post-trade save chain [trade_scene.c:2566-2725]; ends when the host re-exchanges.
         self._save_barriers = True
-        self._save_settle = 0
-        self._save_started = False
-        self._save_round_wait = 0
 
         if self.round < self.trades:
             self._arm_next_round()
@@ -866,19 +854,6 @@ class TradeEngine:
             setattr(self, emits_attr, 0)
             setattr(self, regap_attr, 0)
         return [0] * 7
-
-    def _run_save_chain(self):
-        """Save chain [trade_scene.c:2566-2725]: the host's save writes pause it 0.3-1.8 s between
-        rounds, so it ends only on host re-exchange, never on a quiet window. True while it runs."""
-        if not self.barrier.active:
-            if self._save_settle > SAVE_CHAIN_TIMEOUT:
-                self._save_barriers = False
-                self.log(f"save-chain: host vanished for >{SAVE_CHAIN_TIMEOUT}f -> chain done (safety net)")
-                return False
-            # No inter-round pacing: the host is paced by its save writes.
-            self._save_started = True
-            self.barrier.initiate(barriermod.STANDBY)
-        return True
 
     def _advance_timers(self):
         """Ticks every VBlank, from tick() or, when the send window is gated, from
@@ -1005,12 +980,13 @@ class TradeEngine:
         return None
 
     def _tick_save_chain(self):
-        # Barrier (c), save chain.
-        if self._save_barriers:
-            if self._run_save_chain():
-                # want_emit() is None between rounds
-                return self.barrier.want_emit() or [0] * 7
-        return None
+        if not self._save_barriers:
+            return None
+        # FireRed keeps exchanging link frames during a long evolution and save. Only the
+        # host's return to party exchange ends this chain. Transport teardown handles a lost link.
+        if not self.barrier.active:
+            self.barrier.initiate(barriermod.STANDBY)
+        return self.barrier.want_emit() or [0] * 7
 
     def _tick_menu_and_push(self):
         self._advance_timers()

@@ -573,3 +573,28 @@ def test_the_joiner_cancels_with_a_console_leader_whose_player_cancelled():
     child._trade_menu_live = lambda: True
     child._select_offer()
     assert child._pending_push == trade.linkcmd_block(trade.REQUEST_CANCEL)
+
+
+def test_joiner_keeps_save_handshake_active_during_a_long_trade_evolution():
+    child = trade.TradeEngine([_mon(1)], trade_slot=0)
+    child.barrier.local_count = 5
+    child.barrier.max_emits = 3
+    child._commit()
+
+    # The connected console keeps sending frames before it is ready for another standby.
+    frames = rfu.SlotBuilder()
+    standby = rfu.exit_standby_words(5)
+    emitted = 0
+    for tick in range(900):
+        child.feed_in_frame({"positional": [(0, rfu.idle_slot())]})
+        if child.tick() == standby and tick > 600:
+            emitted += 1
+    assert emitted > 0
+
+    child.feed_in_frame({"positional": [(0, frames.build(standby))]})
+    assert child.tick() == rfu.exit_standby_words(6)
+
+    # A genuine party pull ends the chain and gets a block response.
+    child.feed_in_frame({"positional": [(0, frames.build(rfu.send_block_req_words(1)))]})
+    assert not child._save_barriers
+    assert child.tick()[0] == rfu.SEND_BLOCK_INIT

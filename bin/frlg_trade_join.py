@@ -257,11 +257,14 @@ class _LiveJoiner:
 
     def log_leave_progress(self):
         s, engine, lg = self.s, self.engine, self.lg
-        if engine.commits and getattr(engine, "leaving", False) and not engine.cancelled:
+        if engine.commits and (engine._save_barriers or engine.leaving) and not engine.cancelled:
             self.leave_ticks += 1
             if self.leave_ticks % 120 == 0:
+                barrier = engine.barrier
                 lg.info(f"leave state: {self.leave_ticks}f since the trade committed, "
-                        f"menu_live={engine._trade_menu_live()}, "
+                        f"save_chain={engine._save_barriers}, barrier_mode={barrier.mode}, "
+                        f"local_count={barrier.local_count}, host_count={barrier.host_count}, "
+                        f"barrier_rounds={barrier.rounds}, menu_live={engine._trade_menu_live()}, "
                         f"state={engine.state}, selected={engine._selected}, "
                         f"host_party_blocks={engine._host_party_blocks}/3, "
                         f"party_sent={engine._party_sent}, "
