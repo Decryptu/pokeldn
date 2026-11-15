@@ -15,7 +15,10 @@ from pokeldn.windowless import NO_WINDOW
 from pokeldn.ldn import esp32
 from pokeldn.app.i18n import t as tr
 
-# USB-to-serial bridges found on ESP32 boards, by USB vendor and product id.
+# USB serial interfaces found on ESP32 boards, by USB vendor and product ID.
+S2_ROM_USB = (0x303A, 0x0002)
+S2_CDC_USB = (0x303A, 0x4001)
+NATIVE_USB = {(0x303A, 0x1001), S2_ROM_USB, S2_CDC_USB}
 BRIDGES = {
     (0x10C4, 0xEA60): 'Silicon Labs CP210x',
     (0x1A86, 0x7523): 'WCH CH340',
@@ -25,8 +28,9 @@ BRIDGES = {
     (0x0403, 0x6010): 'FTDI FT2232',
     (0x0403, 0x6015): 'FTDI FT231X',
     (0x303A, 0x1001): 'Espressif USB (S3, C3, C6)',
+    S2_ROM_USB: 'Espressif USB download mode (S2)',
+    S2_CDC_USB: 'Espressif USB CDC',
 }
-NATIVE_USB = (0x303A, 0x1001)
 # An S3 running the controller firmware is a HID controller with no serial port (firmware/pad/main/usb_s3.c).
 PAD_USB = (0x0F0D, 0x0092)
 
@@ -40,6 +44,7 @@ DRIVER_STEPS = {   # Windows, docs/gui.md USB drivers
 }
 
 FIRMWARE = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio.bin")   # written by the release build
+FIRMWARE_S2 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-s2.bin")
 FIRMWARE_S3 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-s3.bin")
 FIRMWARE_C3 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-c3.bin")
 FIRMWARE_C6 = os.path.join(ROOT, "gui", "firmware", "pokeldn-radio-c6.bin")
@@ -70,7 +75,7 @@ class Firmware:
 
 
 FIRMWARES = (
-    Firmware("radio", tr('board.wireless_da1d2f', 'Wireless'), tr('board.the_board_is_the_radio_for_trades_mystery_gift_and_ever_9d0251', 'The board is the radio for trades, Mystery Gift and every tool on the Games page.'), "globe", ("ESP32", "ESP32-S3", "ESP32-C3", "ESP32-C6"), tr('board.the_radio_for_trades_a18fb5', 'the radio for trades')),
+    Firmware("radio", tr('board.wireless_da1d2f', 'Wireless'), tr('board.the_board_is_the_radio_for_trades_mystery_gift_and_ever_9d0251', 'The board is the radio for trades, Mystery Gift and every tool on the Games page.'), "globe", ("ESP32", "ESP32-S2", "ESP32-S3", "ESP32-C3", "ESP32-C6"), tr('board.the_radio_for_trades_a18fb5', 'the radio for trades')),
     Firmware("radio_ble", tr('board.bluetooth_wireless', 'Bluetooth wireless'), tr('board.bluetooth_wireless_summary', 'The radio for the iPhone app: the phone reaches the board over Bluetooth, and a computer still reaches it over USB.'), "radio", ("ESP32", "ESP32-C6"), tr('board.the_radio_for_the_iphone_app', 'the radio for the iPhone app')),
     Firmware("radio_e32r40t", tr('board.wireless_e32r40t', 'Wireless, 4-inch screen'), tr('board.wireless_e32r40t_summary', 'The radio for the E32R40T board, its 4-inch screen showing each trade and Mystery Gift.'), "monitor", ("ESP32",), tr('board.the_radio_for_trades_a18fb5', 'the radio for trades')),
     Firmware("radio_szpi", tr('board.wireless_szpi', 'Wireless, 2-inch screen and speaker'), tr('board.wireless_szpi_summary', 'The radio for the LCKFB szpi ESP32-S3 board, its 2-inch screen showing each trade and Mystery Gift, with sounds.'), "monitor", ("ESP32-S3",), tr('board.the_radio_for_trades_a18fb5', 'the radio for trades')),
@@ -78,7 +83,7 @@ FIRMWARES = (
              tr('board.a_controller_for_the_switch_889ffc', 'a controller for the Switch')),
 )
 FIRMWARE_BY_KIND = {f.kind: f for f in FIRMWARES}
-CHIP_NAMES = {"esp32": "ESP32", "esp32s3": "ESP32-S3", "esp32c3": "ESP32-C3", "esp32c6": "ESP32-C6"}
+CHIP_NAMES = {"esp32": "ESP32", "esp32s2": "ESP32-S2", "esp32s3": "ESP32-S3", "esp32c3": "ESP32-C3", "esp32c6": "ESP32-C6"}
 
 
 def image_for(kind: str, chip: str) -> str:
@@ -133,7 +138,7 @@ IMAGE_BYTES = 4 * 1024 * 1024   # a merged image fills at most the 4 MB flash
 
 def bundled_firmware(chip: str) -> str:
     """Select by the chip esptool detected; native USB IDs are shared by S3, C3 and C6."""
-    return {"ESP32": FIRMWARE, "ESP32-S3": FIRMWARE_S3, "ESP32-C3": FIRMWARE_C3, "ESP32-C6": FIRMWARE_C6}[chip]
+    return {"ESP32": FIRMWARE, "ESP32-S2": FIRMWARE_S2, "ESP32-S3": FIRMWARE_S3, "ESP32-C3": FIRMWARE_C3, "ESP32-C6": FIRMWARE_C6}[chip]
 
 
 @dataclass(frozen=True)
@@ -142,11 +147,12 @@ class Port:
     bridge: str
     serial_number: str
     native: bool = False   # the chip's own USB, not a USB-to-serial bridge
+    s2_rom: bool = False
 
 
 def wrong_port(port: Port, chip: str) -> bool:
-    """S3, C3 and C6 firmware talks over native USB only; flashing through a UART bridge still works."""
-    return chip in ("ESP32-S3", "ESP32-C3", "ESP32-C6") and not port.native
+    """S2, S3, C3 and C6 firmware talks over native USB only; flashing through a UART bridge still works."""
+    return chip in ("ESP32-S2", "ESP32-S3", "ESP32-C3", "ESP32-C6") and not port.native
 
 
 @dataclass(frozen=True)
@@ -193,8 +199,9 @@ def ports() -> list[Port]:
         # macOS lists each USB serial device twice; /dev/cu.* is the one to open.
         if info.device.startswith("/dev/tty.") and os.path.exists(info.device.replace("/tty.", "/cu.")):
             continue
-        bridge = BRIDGES.get((info.vid, info.pid), f"USB serial {info.vid:04x}:{info.pid:04x}")
-        found.append(Port(info.device, bridge, info.serial_number or "", (info.vid, info.pid) == NATIVE_USB))
+        ids = (info.vid, info.pid)
+        bridge = BRIDGES.get(ids, f"USB serial {info.vid:04x}:{info.pid:04x}")
+        found.append(Port(info.device, bridge, info.serial_number or "", ids in NATIVE_USB, ids == S2_ROM_USB))
     return sorted(found, key=lambda p: p.device)
 
 
@@ -358,7 +365,7 @@ def download_firmware(say=print, folder: str = os.path.dirname(FIRMWARE)) -> str
     releases = json.loads(_get(RELEASES, 1_000_000))
     if not isinstance(releases, list):
         raise OSError(tr('board.the_firmware_response_holds_no_releases_98ae8a', 'the firmware response holds no releases'))
-    known = [os.path.basename(f) for f in (FIRMWARE, FIRMWARE_S3, FIRMWARE_C3, FIRMWARE_C6, FIRMWARE_PAD,
+    known = [os.path.basename(f) for f in (FIRMWARE, FIRMWARE_S2, FIRMWARE_S3, FIRMWARE_C3, FIRMWARE_C6, FIRMWARE_PAD,
                                            FIRMWARE_PAD_ESP32, *FIRMWARE_BLE.values(),
                                            *FIRMWARE_SCREEN.values())]
     for release in releases:
@@ -406,6 +413,8 @@ def _connect(port: str, kind: str, from_loader: bool = False):
     read and stays locked for the process; the node's times do not say its age, so every such flash waits
     (docs/hardware_pad.md)."""
     import esptool
+    if any(p.device == port and p.s2_rom for p in ports()):
+        return esptool.detect_chip(port, connect_mode="no-reset")
     if (kind == "pad" or from_loader) and _native(port):
         print(f"[app] Waiting {LOADER_SETTLE:.0f} s for the board's port to settle.", flush=True)
         time.sleep(LOADER_SETTLE)
@@ -424,8 +433,8 @@ def flash(port: str, firmware: str = "", kind: str = "radio", from_loader: bool 
     from esptool.bin_image import LoadFirmwareImage
 
     with _connect(port, kind, from_loader) as chip:
-        if chip.CHIP_NAME not in ("ESP32", "ESP32-S3", "ESP32-C3", "ESP32-C6"):
-            raise esptool.FatalError(tr('board.is_not_supported_use_an_esp32_esp32_s3_esp32_c3_or_esp3_9f0b35', '{value0} is not supported. Use an ESP32, ESP32-S3, ESP32-C3 or ESP32-C6.', value0=chip.CHIP_NAME))
+        if chip.CHIP_NAME not in CHIP_NAMES.values():
+            raise esptool.FatalError(tr('board.unsupported_radio_chip', '{value0} is not supported. Supported chips are {value1}.', value0=chip.CHIP_NAME, value1=', '.join(CHIP_NAMES.values())))
         if kind == "pad" and chip.CHIP_NAME not in ("ESP32-S3", "ESP32"):
             raise esptool.FatalError(tr('board.the_controller_firmware_needs_an_esp32_s3_its_usb_acts__5cef45', 'The controller firmware needs an ESP32-S3 (its USB acts as a controller) or a classic ESP32 (Bluetooth Classic); an {value0} can be neither.', value0=chip.CHIP_NAME))
         pad_image = FIRMWARE_PAD if chip.CHIP_NAME == "ESP32-S3" else FIRMWARE_PAD_ESP32
@@ -470,7 +479,8 @@ def flash(port: str, firmware: str = "", kind: str = "radio", from_loader: bool 
     print("[app] The board's flasher stub did not start; writing through its ROM loader instead "
           "(slower).", flush=True)
     for attempt in range(1, ROM_ATTEMPTS + 1):
-        with esptool.detect_chip(port) as chip:
+        connection = _connect(port, kind, from_loader) if name == "ESP32-S2" else esptool.detect_chip(port)
+        with connection as chip:
             if chip.CHIP_NAME != name:
                 raise esptool.FatalError(tr('board.merged_firmware_does_not_match_941ee6', 'Merged firmware does not match {value0}: {value1}', value0=chip.CHIP_NAME, value1=path))
             try:

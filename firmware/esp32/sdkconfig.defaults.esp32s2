@@ -1,0 +1,10 @@
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_TINYUSB_CDC_ENABLED=y
+CONFIG_TINYUSB_DESC_PRODUCT_STRING="pokeldn ESP32-S2"
+# Use the application CDC descriptor, distinct from the ESP32-S2 ROM downloader (303a:0002).
+CONFIG_TINYUSB_DESC_USE_DEFAULT_PID=n
+CONFIG_TINYUSB_DESC_CUSTOM_PID=0x4001
+# Leave RAM for the USB task and the wire queue on the S2's smaller internal heap.
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=10
+# USB-105 affects the Flipper's ESP32-S2 rev 0.0. PIO avoids USB DMA bus arbitration.
+CONFIG_TINYUSB_MODE_SLAVE=y

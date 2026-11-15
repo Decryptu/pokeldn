@@ -403,7 +403,8 @@ class Radio:
             info = radio._find_rate([baud, fast_baud, run_baud, *RUN_BAUDS, *left_at])
             if log and s.baudrate != baud:
                 log(f"[esp32] the board answered at {s.baudrate} baud")
-            if fast_baud and fast_baud != s.baudrate:
+            # The S2 native CDC link keeps its USB speed. Leave the OS line coding at 115200.
+            if info.target != "esp32s2" and fast_baud and fast_baud != s.baudrate:
                 radio.request(CMD_BAUD, struct.pack("<I", fast_baud), MSG_RESULT)
                 radio._set_rate(fast_baud)
                 # A HELLO that reaches the board while it is still switching is lost (one open in four

@@ -4,7 +4,7 @@ title: Desktop builds
 # Desktop builds
 
 The desktop app is the pokeldn interface for macOS, Windows and Linux. A release bundles PKHeX and
-radio firmware for ESP32, ESP32-S3, ESP32-C3 and ESP32-C6; the user supplies `prod.keys`.
+radio firmware for ESP32, ESP32-S2, ESP32-S3, ESP32-C3 and ESP32-C6. The user supplies `prod.keys`.
 
 1. Settings: choose `prod.keys`.
 2. Board page: select the USB board and install the Wireless firmware. An install selects the
@@ -771,7 +771,7 @@ With ESP-IDF v6.1 active, build each image into `gui/firmware`, then pack:
 mkdir -p gui/firmware
 OUT="$PWD/gui/firmware"
 cd firmware/esp32
-for t in esp32:radio esp32s3:radio-s3 esp32c3:radio-c3 esp32c6:radio-c6; do
+for t in esp32:radio esp32s2:radio-s2 esp32s3:radio-s3 esp32c3:radio-c3 esp32c6:radio-c6; do
   chip=${t%%:*}; name=${t#*:}
   idf.py -B build/$chip -D SDKCONFIG="$PWD/build/$chip/sdkconfig" set-target $chip
   idf.py -B build/$chip -D SDKCONFIG="$PWD/build/$chip/sdkconfig" build
@@ -793,9 +793,12 @@ for t in esp32:E32R40T esp32s3:SZPI; do   # the colour screen boards (hardware_e
   idf.py -B build/$name merge-bin -o "$OUT/pokeldn-radio-$name.bin"
 done
 cd ../pad
-idf.py -B build -D SDKCONFIG="$PWD/build/sdkconfig" set-target esp32s3
-idf.py -B build -D SDKCONFIG="$PWD/build/sdkconfig" build
-idf.py -B build merge-bin -o "$OUT/pokeldn-pad-s3.bin"
+for t in esp32:pad esp32s3:pad-s3; do
+  chip=${t%%:*}; name=${t#*:}
+  idf.py -B build/$chip -D SDKCONFIG="$PWD/build/$chip/sdkconfig" set-target $chip
+  idf.py -B build/$chip -D SDKCONFIG="$PWD/build/$chip/sdkconfig" build
+  idf.py -B build/$chip merge-bin -o "$OUT/pokeldn-$name.bin"
+done
 cd ../..
 python scripts/build_client.py
 python scripts/build_unicorn.py   # needs CMake

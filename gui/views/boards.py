@@ -764,7 +764,7 @@ class BoardView:
                 CodeBlock(self.app, tr('boards.sudo_usermod_ag_dialout_user_227ed4', 'sudo usermod -aG dialout $USER')).control,
                 t.text(tr('boards.arch_and_its_derivatives_name_the_group_uucp_instead_of_7a2225', 'Arch and its derivatives name the group uucp instead of dialout.'), 13, t.MUTED)]
         lines += [
-            t.text(tr('boards.use_a_classic_esp32_esp32_d0wd_wroom_32e_or_an_esp32_s3_4aea9d', 'Use a classic ESP32 (ESP32-D0WD, WROOM-32E), or an ESP32-S3, C3 or C6 through its native USB port, the one marked USB. S2 boards are not supported.'), 13, t.MUTED),
+            t.text(tr('boards.desktop_usb_boards', 'Use a classic ESP32 (ESP32-D0WD, WROOM-32E), or connect an ESP32-S2, S3, C3 or C6 through its native USB port. ESP32-S2 support is experimental.'), 13, t.MUTED),
             t.text(tr('boards.an_install_stuck_on_connecting_hold_the_board_s_boot_bu_891091', "An install stuck on Connecting: hold the board's BOOT button until writing starts."), 13,
                    t.MUTED),
             t.text(tr('boards.a_controller_board_is_listed_only_while_it_is_plugged_i_9dd229', 'A controller board is listed only while it is plugged into this computer.'), 13, t.MUTED)]

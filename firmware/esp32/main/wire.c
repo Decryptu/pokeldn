@@ -11,6 +11,12 @@
 #if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
 #define WIRE_USB 1
 #include "driver/usb_serial_jtag.h"
+#elif CONFIG_IDF_TARGET_ESP32S2
+#define WIRE_USB 1
+#include "tinyusb.h"
+#include "tinyusb_default_config.h"
+#include "tinyusb_cdc_acm.h"
+#include "tusb.h"
 #else
 #define WIRE_USB 0
 #include "driver/uart.h"
@@ -199,7 +205,25 @@ void wire_set_baud(uint32_t baud)
     if (xQueueSend(s_out, &m, portMAX_DELAY) != pdTRUE) free(m);
 }
 
-#if WIRE_USB
+#if CONFIG_IDF_TARGET_ESP32S2
+static void write_usb(const uint8_t *p, size_t n)
+{
+    const int64_t started = esp_timer_get_time();
+    while (n && tud_ready() && !atomic_load(&s_host_away)) {
+        /* TinyUSB can overwrite pending bytes when DTR is low. The host keeps DTR low,
+           so only enqueue what fits and retain the offset across short writes. */
+        const size_t available = tud_cdc_write_available();
+        const size_t written = tud_cdc_write(p, n < available ? n : available);
+        p += written;
+        n -= written;
+        tud_cdc_write_flush();
+        if (n && esp_timer_get_time() - started >= 500000) break;
+        if (!written) vTaskDelay(1);
+    }
+    if (n && !atomic_load(&s_host_away)) atomic_fetch_add(&s_dropped, 1);
+    raise_max(&s_write_max_us, esp_timer_get_time() - started);
+}
+#elif WIRE_USB
 /* IDF 6.1 usb_serial_jtag.c queues a whole frame or returns 0 on timeout.
    Drop after 500 ms without progress; a disconnected host must not hold the queue forever.
    docs/hardware_esp32.md, The USB host link. */
@@ -349,7 +373,12 @@ static void deliver(const uint8_t *encoded, size_t used)
    docs/hardware_esp32.md, The serial ceiling. */
 static void reader(void *arg)
 {
-#if WIRE_USB
+#if CONFIG_IDF_TARGET_ESP32S2
+    const tinyusb_config_t usb_config = TINYUSB_DEFAULT_CONFIG();
+    const tinyusb_config_cdcacm_t acm_config = {.cdc_port = TINYUSB_CDC_ACM_0};
+    ESP_ERROR_CHECK(tinyusb_driver_install(&usb_config));
+    ESP_ERROR_CHECK(tinyusb_cdcacm_init(&acm_config));
+#elif WIRE_USB
     usb_serial_jtag_driver_config_t usb_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
     usb_config.rx_buffer_size = 16384;
     usb_config.tx_buffer_size = 16384;
@@ -386,7 +415,10 @@ static void reader(void *arg)
         if (!cable) n = ble_read(chunk, sizeof(chunk), pdMS_TO_TICKS(20)); else
 #endif
         {
-#if WIRE_USB
+#if CONFIG_IDF_TARGET_ESP32S2
+        n = tud_cdc_read(chunk, sizeof(chunk));
+        if (!n) vTaskDelay(1);   /* let the TinyUSB task service its endpoints */
+#elif WIRE_USB
         /* The USB driver returns whatever is buffered as soon as there is any, so one call does both. */
         n = usb_serial_jtag_read_bytes(chunk, sizeof(chunk), pdMS_TO_TICKS(20));
 #else

@@ -218,7 +218,13 @@ class App:
         """Through a USB-to-serial bridge, the ROM bootloader still names the chip: an S3, C3 or C6 there
         is on its UART socket, where the radio firmware never answers."""
         port = next((p for p in board.ports() if p.device == device), None)
-        if port is None or port.native:
+        if port is None:
+            return
+        if port.s2_rom:
+            self.chips[device] = "ESP32-S2"
+            say(f'[app] {device} is an ESP32-S2 in download mode.')
+            return
+        if port.native:
             return
         try:
             self.chips[device] = board.detect_chip(device)

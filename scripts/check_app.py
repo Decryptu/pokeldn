@@ -32,6 +32,7 @@ def check() -> None:
     root = Path(sys._MEIPASS)
     assert Path(pokemon.HERE) == root / "services/pkhex"
     assert (root / "gui/firmware/pokeldn-radio.bin").is_file()
+    assert (root / "gui/firmware/pokeldn-radio-s2.bin").is_file()
     assert (root / "gui/firmware/pokeldn-radio-s3.bin").is_file()
     assert (root / "gui/firmware/pokeldn-radio-c3.bin").is_file()
     assert (root / "gui/firmware/pokeldn-radio-c6.bin").is_file()
