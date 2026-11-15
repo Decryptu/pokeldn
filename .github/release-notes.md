@@ -1,15 +1,14 @@
-# pokeldn 0.65.7
+# pokeldn 0.66.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- More options opens much faster, most of all on slower computers: it loads in the background as soon as you pick a species, and long lists fill in after the form appears.
-- The offer options have a Size field in the games that keep one.
-- Dropdowns are now the same height as the text fields beside them.
+- ESP32-S2 boards work as the radio, such as the Flipper Zero Wi-Fi Developer Board. Plug it in by USB; to install the firmware, hold BOOT, press and release RESET, release BOOT, then choose Install on the Board page. Thanks to cerealcommas.
+- FireRed and LeafGreen: when the program joins a trade and the console's Pokemon evolves, the game no longer stays stuck on the saving screen.
 
-The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
+The radio firmware stays at 1.11.0 and adds an ESP32-S2 image; the controller firmware stays at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
@@ -25,12 +24,12 @@ meant for commercial or promotional use; see the License section of the README.
 | Android, arm64 | `pokeldn-android-arm64.apk` |
 | iPhone and iPad (AltStore, SideStore) | `pokeldn-ios.ipa` |
 
-Each app includes PKHeX.Core and firmware for classic ESP32, ESP32-S3, ESP32-C3 and ESP32-C6. Python, .NET
+Each app includes PKHeX.Core and firmware for classic ESP32, ESP32-S2, ESP32-S3, ESP32-C3 and ESP32-C6. Python, .NET
 and ESP-IDF are bundled or unnecessary for running the app. Supply your own `prod.keys`.
 The separate `pokeldn-radio*.bin` (wireless; `-ble` for Bluetooth wireless) and `pokeldn-pad*.bin` (controller) files are merged
 firmware images for manual flashing at address `0x0`; the app selects the right image for the
 connected chip; `pokeldn-radio-e32r40t.bin` and `pokeldn-radio-szpi.bin` are for those screen boards.
-`SHA256SUMS` covers all sixteen downloads.
+`SHA256SUMS` covers all seventeen downloads.
 
 Code signing policy: free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
 [SignPath Foundation](https://signpath.org); [what is signed, team roles and privacy](https://decryptu.github.io/pokeldn/code_signing.html).
@@ -43,7 +42,7 @@ Code signing policy: free code signing provided by [SignPath.io](https://about.s
      to pokeldn, then confirm with your password. Later launches open normally.
    - Windows: if SmartScreen stops the app, choose More info, then Run anyway.
 2. Choose `prod.keys` when prompted.
-3. Connect one supported board with a USB data cable. S3, C3 and C6 boards use native USB Serial/JTAG.
+3. Connect one supported board with a USB data cable. S3, C3 and C6 boards use native USB Serial/JTAG; S2 boards use native USB.
    On Windows, a classic ESP32 needs its USB chip's driver first (CP210x or CH340); the Board page
    links both, says how to install them and names the one missing.
    A board that ships an external antenna, such as the Seeed Studio XIAO ESP32C3 or XIAO ESP32S3,
@@ -70,7 +69,7 @@ Received Pokemon are saved in `Documents/pokeldn/Received`, with a configurable 
 
 macOS requires macOS 12 or later. Linux requires GTK 3, libsecret and access
 to the serial port; on distributions using the `dialout` group, run `sudo usermod -aG dialout "$USER"`
-and log out and back in. ESP32-S2 is unsupported.
+and log out and back in.
 
 [Setup and protocol documentation](https://decryptu.github.io/pokeldn/) contains the per-game
 requirements. Attach the latest session recording from Settings to an
