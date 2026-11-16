@@ -429,6 +429,30 @@ def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch, form):
     assert (saved[-1]["species"], saved[-1]["shiny"], picker.species.value, picker.shiny.value) == (6, True, "6", True)
 
 
+def test_a_rebuild_keeps_the_ribbons_chosen_on_the_last_build(monkeypatch):
+    """Building again made a fresh record and dropped every ribbon the panel had put on."""
+    made, checked = [], []
+    monkeypatch.setattr(pokemon.SERVICE, "species", lambda game: [{"id": 25, "name": "Pikachu"}])
+    monkeypatch.setattr(pokemon.SERVICE, "make", lambda game, species, owner, level, shiny, nickname, version, options:
+                        made.append(options) or {"file": "built.pk8", "species": "Pikachu", "level": 5, "legal": True, "report": "",
+                                                 "encounter": "", "moves": []})
+    monkeypatch.setattr(pokemon.SERVICE, "check", lambda game, path, fields: checked.append((path, fields)) or
+                        {"data": "", "species": "Pikachu", "level": 5, "legal": True, "report": "", "encounter": "", "moves": []})
+    monkeypatch.setattr(pokemon.SERVICE, "keep", lambda game, reply: "worn.pk8")
+    app = SimpleNamespace(settings=SimpleNamespace(sprites=False), ui=lambda fn: None)   # the loaders' threads draw nothing
+    picker = pokemon.PokemonPicker(app, "swsh", {"species": 25, "options": {"ribbons": {"RibbonEffort": 1}}},
+                                   lambda v: None)
+    picker.control = SimpleNamespace(update=lambda: None)
+    picker._show_result = lambda: None
+    picker.owner = lambda: {}
+    app.ui = lambda fn: fn()
+    monkeypatch.setattr(pokemon.threading, "Thread", lambda target, daemon: SimpleNamespace(start=target))
+    picker._build(None)
+    assert made == [{}], picker.result.content and picker.result.content.value
+    assert checked == [("built.pk8", {"ribbons": {"RibbonEffort": 1}})]
+    assert picker.value.get("file") == "worn.pk8", picker.result.content.value
+
+
 @pytest.mark.parametrize("assembler", [True, False])   # a computer without the Arm toolchain sees the install hint
 @pytest.mark.parametrize("key", ["frlg-gift", "swsh-gift"])
 def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(tmp_path, monkeypatch, key,

@@ -270,9 +270,14 @@ class PokemonPicker:
 
         def work():
             try:
+                options = dict(self.value.get("options") or {})
+                ribbons = options.pop("ribbons", None)    # the panel's picks, put back on every build
                 info = SERVICE.make(self.game, self.value["species"], self.owner(), level, bool(self.value.get("shiny")),
-                                            self.value.get("nickname", ""), VERSIONS.get(self.version, ""),
-                                            self.value.get("options"))
+                                    self.value.get("nickname", ""), VERSIONS.get(self.version, ""), options)
+                if ribbons:
+                    worn = SERVICE.check(self.game, info["file"], {"ribbons": ribbons})
+                    if worn["legal"] or SERVICE.allow_illegal:
+                        info = {**info, **worn, "file": SERVICE.keep(self.game, worn)}
                 self.value.update(file=info["file"], summary=builder.summary(info), legal=info["legal"],
                                   encounter=info.get("canonical", info)["encounter"], moves=info.get("canonical", info)["moves"],
                                   place=info.get("encounter_place", ""), home_tracker=info.get("home_tracker", ""),
@@ -707,22 +712,31 @@ class RibbonPanel:
     def refresh(self) -> None:
         """Follows the picker's record: hidden with none, reloaded when the file changed."""
         path = self.picker.value.get("file")
-        self.control.visible = bool(path)
-        if path != self.loaded_for:
+        self.control.visible = bool(path or self.picker.value.get("species"))
+        if not path:
             self.loaded_for = None
             self.title.value = tr('pokemon.ribbons', 'Ribbons')
-            if self.open and path:
+            self.body.controls = [t.text(tr('pokemon.ribbons_after_build',
+                                            'Build the Pokemon to choose its ribbons; later builds keep them.'), 12, t.MUTED)]
+        elif self.key() != self.loaded_for:
+            self.loaded_for = None
+            self.title.value = tr('pokemon.ribbons', 'Ribbons')
+            if self.open:
                 self._load()
+
+    def key(self) -> tuple:
+        """The record and the Allow non-legal setting the list was read under: the setting widens the list."""
+        return self.picker.value.get("file"), SERVICE.allow_illegal
 
     def show(self, open: bool) -> None:
         """More options opened or closed."""
         self.open = open
-        if open and self.picker.value.get("file") and self.loaded_for != self.picker.value.get("file"):
+        if open and self.picker.value.get("file") and self.loaded_for != self.key():
             self._load()
 
     def _load(self) -> None:
         path = self.picker.value.get("file")
-        self.loaded_for = path
+        self.loaded_for = self.key()
         self.token += 1
         token = self.token
         self.body.controls = reloading(self.body.controls, skeleton_chips(label=tr('pokemon.reading_ribbons', 'Reading ribbons')))
@@ -777,6 +791,13 @@ class RibbonPanel:
                 info = SERVICE.check(picker.game, path, {"ribbons": {ribbon["id"]: value}})
                 if not info["legal"] and not SERVICE.allow_illegal:
                     raise builder.BuilderError(info.get("problems") or info["report"])
+                picks = picker.options.chosen.setdefault("ribbons", {})
+                if ribbon["fixed"] or value == 0:
+                    picks.pop(ribbon["id"], None)
+                else:
+                    picks[ribbon["id"]] = value
+                if value == 0 and not picks:
+                    picker.options.chosen.pop("ribbons", None)
                 picker.value.update(file=SERVICE.keep(picker.game, info), summary=builder.summary(info),
                                     legal=info["legal"], report="" if info["legal"] else info["report"])
                 picker.on_change(dict(picker.value))

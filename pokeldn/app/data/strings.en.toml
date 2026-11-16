@@ -1476,6 +1476,7 @@
 "pokemon.retrain_note" = "With you as its original trainer it {value0}."
 "pokemon.ribbon_fixed" = "its encounter gives it"
 "pokemon.ribbons" = "Ribbons"
+"pokemon.ribbons_after_build" = "Build the Pokemon to choose its ribbons; later builds keep them."
 "pokemon.ribbons_worn" = "{value0} worn"
 "pokemon.search_49c266" = "Search"
 "pokemon.search_a_species_1ea995" = "Search a species"

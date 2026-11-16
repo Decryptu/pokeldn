@@ -498,6 +498,9 @@ when added alone to the record as it stands, at the highest count it accepts. A 
 a count, Normal (1) to Master (4). A worn ribbon the encounter gives (an event's Classic) cannot be taken
 off. Marks are a wild encounter's roll and are left out, as are the Gen 4 memory counts on a PK3, which
 no Gen 3 game writes. Under Allow non-legal Pokemon every ribbon is listed, the illegal ones in red.
+The list is read again when that setting changes. The ribbons put on are kept in the trade's options
+(`ribbons`, `{name: count}`) and put back with the helper's `check` after every later build; a build the
+ribbons make illegal keeps none of them unless the setting is on. Before the first build the section says to build first.
 
 A tap sends `check` with `ribbons` `{property: count}` and keeps the result as a new file; a result PKHeX
 refuses is dropped unless Allow non-legal Pokemon is on. The list depends on the record: a level 100
