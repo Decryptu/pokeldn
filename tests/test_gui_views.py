@@ -112,6 +112,16 @@ def test_a_pasted_team_fills_the_trades_after_its_picker_up_to_the_limit(monkeyp
     assert queue.add_box.disabled
 
 
+def test_a_duplicated_trade_gets_its_own_options(monkeypatch):
+    """A form chosen on the copy left the original's sprite on the same form."""
+    monkeypatch.setattr(pokemon, "PokemonPicker", StubPicker)
+    queue = stub_queue([{"species": 37, "options": {"form": 0}}], 3, lambda v: None)
+    first = queue.slots[0]["picker"]
+    first.on_duplicate(first.value)
+    queue.slots[1]["picker"].value["options"]["form"] = 1
+    assert first.value["options"] == {"form": 0}
+
+
 def test_a_queue_keeps_each_trades_pokemon_in_order_through_add_and_remove(monkeypatch):
     monkeypatch.setattr(pokemon, "PokemonPicker", StubPicker)
     saved = []
@@ -415,7 +425,7 @@ def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch, form):
     asyncio.run(picker._use_file(None))
     assert shown == [(6, True, form)]
     # The form shows beside the species, not among the options folded under it.
-    assert picker.options.chosen["form"] == form and picker.options.label.value == "Random"
+    assert picker.options.chosen["form"] == form and picker.options.label.value == "Default"
     assert (saved[-1]["species"], saved[-1]["shiny"], picker.species.value, picker.shiny.value) == (6, True, "6", True)
 
 

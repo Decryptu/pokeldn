@@ -1,16 +1,12 @@
-# pokeldn 0.66.3
+# pokeldn 0.66.4
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Pages and panels open at once and fill in behind loading placeholders shaped like their content: the Bank, the GTS, More options, ribbons, raid rewards, event gifts and legal places.
-- More options no longer freezes the window for most of a second after picking a species.
-- The Pokemon card is reorganised: the build summary sits in a tinted panel under Build, Ribbons is part of More options, a shiny Pokemon shows the shiny icon, and on a wide window Nickname and Build share Level's row.
-- A dashed box shows where Pokemon files and pastes can be dropped.
-- GTS listings no longer flicker as they arrive and no longer vanish after visiting another page.
-- The GTS stops re-sending expired listings to the relays.
+- A duplicated trade keeps its own form: choosing the Alolan form on a copy no longer turned the original's sprite Alolan too.
+- More options says Default, not Random, for the ball, held item, Gigantamax and Alpha: left empty, they keep the encounter's own value (most often a Poke Ball). Nature, ability, gender and Tera Type are still random.
 
 The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 

@@ -1,3 +1,4 @@
+import copy
 import os
 import re
 import threading
@@ -527,6 +528,7 @@ class OfferQueue:
         self._render()
 
     def _slot(self, entry: dict, at: int | None = None) -> dict:
+        entry = copy.deepcopy(entry)     # a duplicate shared its "options" dict: one form showed on both sprites
         slot = {"value": dict(entry), "title": t.text("", 13, weight=ft.FontWeight.W_600, expand=True)}
         slot["picker"] = PokemonPicker(self.app, self.game, entry, lambda v, s=slot: self._changed(s, v),
                                        version=self.version, on_team=lambda sets, s=slot: self._team(s, sets),
@@ -825,7 +827,7 @@ class OfferOptions:
         # The form and sweet show beside the species.
         count = sum(1 for k, v in self.chosen.items()
                     if k not in ("form", "sweet") and (v if isinstance(v, dict) else v is not None))
-        self.label.value = tr('pokemon.set_f4c8f3', '{value0} set', value0=count) if count else tr('pokemon.random_67bc48', 'Random')
+        self.label.value = tr('pokemon.set_f4c8f3', '{value0} set', value0=count) if count else tr('pokemon.default', 'Default')
 
     def _toggle(self, e) -> None:
         self._show(not self.open)
@@ -944,7 +946,7 @@ class OfferOptions:
             first.append(t.labeled_control(tr('pokemon.ability_9c40ae', 'Ability'), self._choice("ability", found["abilities"]), expand=True))
         if found["gendered"]:
             first.append(t.labeled_control(tr('pokemon.gender_a04630', 'Gender'), self._gender(), expand=True))
-        second = [t.labeled_control(tr('pokemon.ball_ae5859', 'Ball'), self._choice("ball", found["balls"]), expand=True),
+        second = [t.labeled_control(tr('pokemon.ball_ae5859', 'Ball'), self._choice("ball", found["balls"], any_label=tr('pokemon.default', 'Default')), expand=True),
                   t.labeled_control(tr('pokemon.friendship', 'Friendship'), self._number("friendship", 255, hint="0-255"),
                                     trailing=self._max_pill("friendship"), expand=True)]
         if found.get("tera"):
@@ -965,7 +967,7 @@ class OfferOptions:
                 tr('pokemon.never_an_alpha_in_this_game_883ade', 'Never an Alpha in this game'), 12, t.MUTED),
                 ft.Alignment.CENTER_LEFT), expand=True))
         if found["held"]:
-            second.insert(0, t.labeled_control(tr('pokemon.held_item_6af4a4', 'Held item'), self._choice("held_item", found["held"], search=True),
+            second.insert(0, t.labeled_control(tr('pokemon.held_item_6af4a4', 'Held item'), self._choice("held_item", found["held"], search=True, any_label=tr('pokemon.default', 'Default')),
                                                expand=True))
         effort = found["effort"]
         self.total = effort.get("total")
@@ -979,7 +981,7 @@ class OfferOptions:
             ft.Container(height=2),
             self._stats("ivs", tr('pokemon.ivs_39e3d6', 'IVs'), 31, "0-31"),
             self._stats("effort", EFFORT[effort["kind"]], effort["max"], limit, effort.get("total"), effort_tip),
-            ft.Row([t.text(tr('pokemon.empty_means_random_the_build_is_checked_by_pkhex_s_lega_14cf61', "Empty means random. The build is checked by PKHeX's legality analysis."), 12, t.FAINT,
+            ft.Row([t.text(tr('pokemon.empty_keeps_default', "Empty keeps the encounter's own value, rolled at random for nature, ability, gender and Tera Type. The build is checked by PKHeX's legality analysis."), 12, t.FAINT,
                            expand=True),
                     t.link_button(tr('pokemon.clear_83b12c', 'Clear'), self._clear)]),
         ]
@@ -1078,7 +1080,7 @@ class OfferOptions:
             self._label()
             self.label.update()
         current = self.chosen.get(key)
-        return t.choice_field([(ANY, tr('pokemon.random_67bc48', 'Random')), ("yes", tr('pokemon.yes_85a39a', 'Yes')),
+        return t.choice_field([(ANY, tr('pokemon.default', 'Default')), ("yes", tr('pokemon.yes_85a39a', 'Yes')),
                                ("no", tr('pokemon.no_1ea442', 'No'))],
                               ANY if current is None else "yes" if current else "no", picked)
 
