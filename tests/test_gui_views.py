@@ -1453,7 +1453,7 @@ def test_the_raid_card_lists_its_scripted_actions_after_its_rewards(monkeypatch)
     texts = lambda: [c.value for c in raid_controls(picker.preview) if isinstance(c, ft.Text)]
     shown = texts()
     assert shown.index("The raid's own rewards") < shown.index("Scripted actions")
-    assert "Naming the moves..." in shown
+    assert any(isinstance(c, ft.Semantics) and c.label == "Naming the moves" for c in raid_controls(picker.preview))
     target, args = naming.pop()
     target(*args)
     shown = texts()
@@ -1654,7 +1654,8 @@ def test_a_gift_build_finishing_after_navigation_saves_to_its_original_tool(monk
 def test_a_gifts_form_reaches_its_browser_queue_and_session_preview(monkeypatch):
     from gui.views import games, sprites
     asked = []
-    monkeypatch.setattr(sprites.CACHE, "cached", lambda species, shiny=False: asked.append(species))
+    monkeypatch.setattr(sprites.CACHE, "held", lambda species, shiny=False: asked.append(species))
+    monkeypatch.setattr(sprites.CACHE, "on_disk", lambda species, shiny=False: False)
     monkeypatch.setitem(GIFT_EVENTS[0], "species_id", 423)
     monkeypatch.setitem(GIFT_EVENTS[0], "form_id", 1)
     monkeypatch.setitem(GIFT_COPIES["0503-964-0-10"], "species_id", 423)
@@ -2256,6 +2257,9 @@ def test_an_own_update_sends_the_controls_properties_and_leaves_deeper_changes_f
 def test_import_again_banks_a_record_imported_before_and_redraws_its_row_alone(monkeypatch, tmp_path):
     from gui.views import bank as view
     from pokeldn.app import bank
+    from gui.views import sprites as sprite_view
+    from pokeldn.app.sprites import SpriteCache
+    monkeypatch.setattr(sprite_view, "CACHE", SpriteCache(tmp_path / "sprites", online=False))   # not this machine's
     monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
     monkeypatch.setattr(view.threading, "Thread", lambda target, daemon: SimpleNamespace(start=target))
     gone = bank.ImportedPokemon("", "Mew", 151, False, "gone", "sv", "", "8BFD")
@@ -2290,7 +2294,7 @@ def test_a_gts_redraw_keeps_every_sprite_it_already_sent(monkeypatch):
     monkeypatch.setattr(view_gts.bank, "entries", lambda: [])
     listing = SimpleNamespace(key="k", d="d", pokemon={"species": "Pikachu", "species_id": 25, "level": 5},
                               wants=gts.Wants(7, "Squirtle"), also=(), wanted=(gts.Wants(7, "Squirtle"),),
-                              game="frlg", trainer="", expires=0, created=0)
+                              game="frlg", trainer="", expires=0, created=0, event={"id": "e1"})
     client = SimpleNamespace(connected=lambda: 1, loaded=lambda: True, mine=lambda: [], offered=lambda x: None,
                              open_listings=lambda **kw: [listing])
     view = view_gts.GtsView.__new__(view_gts.GtsView)
@@ -2303,10 +2307,13 @@ def test_a_gts_redraw_keeps_every_sprite_it_already_sent(monkeypatch):
     view.grid, view.mine, view.detail = ft.Row(), ft.Column(), ft.Column()
     monkeypatch.setattr(view_gts.GtsView, "client", property(lambda self: client))
     view.render()
-    first = len(made)
+    first, tiles = len(made), list(view.grid.controls)
     view.search = "wants"
     view.render()
     assert first > 0 and len(made) == first
+    # The tiles themselves are kept: a new tile made the window rebuild it and its images, and the relays'
+    # answers redraw the grid several times a second as the page opens, so every tile flickered.
+    assert view.grid.controls == tiles and all(a is b for a, b in zip(view.grid.controls, tiles))
 
 
 def test_the_games_page_builds_and_redraws_on_a_real_view(monkeypatch, tmp_path):
@@ -2326,3 +2333,21 @@ def test_the_games_page_builds_and_redraws_on_a_real_view(monkeypatch, tmp_path)
                          board_status=lambda *a, **k: status))
     view.render_body()
     view.render_body()
+
+
+def test_a_new_species_replaces_the_shown_options_with_their_skeleton(monkeypatch):
+    """Picked while More options showed another species' form, the old form stayed on screen and the new one
+    arrived in one patch: the window froze and no skeleton showed. Another species' form gives way at once."""
+    from gui.views.widgets import WAITING
+
+    monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
+    monkeypatch.setattr(pokemon.threading, "Thread", lambda target, daemon: SimpleNamespace(start=lambda: None))
+    picker = SimpleNamespace(value={"species": 25, "options": {}}, ribbons=SimpleNamespace(show=lambda open: None),
+                             app=OFFLINE)
+    options = OfferOptions(picker)
+    options._show(True)
+    assert options.body.controls[0].data == WAITING
+    options.body.controls = [ft.Text("Pikachu's form")]    # the form drawn for species 25
+    picker.value["species"] = 26
+    options.species_changed()
+    assert options.body.controls[0].data == WAITING

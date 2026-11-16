@@ -441,8 +441,8 @@ def welcome(app: App) -> None:
         if files and files[0].path:
             use(files[0].path)
 
-    def dropped(paths: list[str]) -> None:
-        if path := next((p for p in paths if drop.suffix(p) == "keys"), ""):
+    def dropped(files: list[str]) -> None:
+        if path := next((p for p in files if drop.suffix(p) == "keys"), ""):
             use(path)
 
     def instructions(e):

@@ -61,13 +61,19 @@ def _capital(part: str) -> str:
     return part[:1].upper() + part[1:]
 
 
-def summary_lines(value: str) -> tuple[str, str]:
-    """A summary's species, level, shininess and Alpha, then the rest."""
+def summary_parts(value: str) -> tuple[str, str]:
+    """A summary's species, level, shininess and Alpha, then the rest, untranslated."""
     parts = value.split(" · ")
     head = 2
     while len(parts) > head and parts[head] in ("shiny", "alpha"):
         head += 1
-    return summary_text(" · ".join(parts[:head])), summary_text(" · ".join(parts[head:]))
+    return " · ".join(parts[:head]), " · ".join(parts[head:])
+
+
+def summary_lines(value: str) -> tuple[str, str]:
+    """summary_parts as shown."""
+    head, rest = summary_parts(value)
+    return summary_text(head), summary_text(rest)
 
 
 def summary(info: dict) -> str:

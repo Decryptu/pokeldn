@@ -320,7 +320,8 @@ class Service:
                     events.append(state["event"])
                 if state.get("deletion"):
                     events.append(state["deletion"])
-        return events
+        # A relay refuses an event past its NIP-40 expiration; a traded listing and its answers outlive theirs.
+        return [e for e in events if int(gts.expiration(e) or now + 1) > now]
 
     def _on_relay(self, relay):
         if relay.connected:

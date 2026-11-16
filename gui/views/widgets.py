@@ -9,18 +9,198 @@ from collections import deque
 from typing import Callable
 
 import flet as ft
+import flet.canvas as cv
 
 from gui import drop, theme as t
+from gui.localization import summary_text
 from pokeldn.app.i18n import t as tr
 from pokeldn.windowless import NO_WINDOW
 
 
-WAITING = "waiting"   # the data of a placeholder reloading() put in place
+WAITING = "waiting"   # the data of a placeholder reloading() put in place, or of a notice()
+
+
+def notice(text: str, color: str, **kwargs) -> ft.Control:
+    """A hint or an error standing in for a list's content: reloading() replaces it with its placeholder."""
+    line = t.text(text, 12, color, **kwargs)
+    line.data = WAITING
+    return line
+
+
+LOADING = tr('widgets.loading_dc3808', 'Loading')
+
+
+def _bar(height: float, width: float | None = None, radius: float | None = None) -> ft.Container:
+    return ft.Container(height=height, width=width, bgcolor=t.FIELD,
+                        border_radius=radius if radius is not None else min(height / 2, 8))
+
+
+def _shimmer(content: ft.Control, label: str) -> ft.Control:
+    """Skeleton shapes under one moving highlight, read out as `label`."""
+    # WAITING: reloading() and a stepped drawing take any skeleton for a placeholder, never for content.
+    return ft.Semantics(content=ft.Shimmer(content, base_color=t.FIELD, highlight_color=t.HOVER, period=1400),
+                        label=label, container=True, exclude_semantics=True, data=WAITING)
+
+
+def skeleton(rows: tuple[int, ...] = (3, 3, 3), label: str = LOADING) -> ft.Control:
+    """A form of labelled fields standing in while its choices load: `rows` gives each row's field count."""
+    field = lambda: ft.Column([_bar(10, 64), _bar(t.CONTROL_HEIGHT)], spacing=8, expand=True,  # noqa: E731
+                              horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
+    return _shimmer(ft.Column([ft.Row([field() for _ in range(n)], spacing=10) for n in rows], spacing=14), label)
+
+
+def _chip_row(count: int) -> ft.Control:
+    return ft.Row([_bar(26, 70 + 28 * (n % 3)) for n in range(count)], spacing=6, run_spacing=6, wrap=True)
+
+
+def skeleton_chips(count: int = 8, label: str = LOADING) -> ft.Control:
+    """A row of chips standing in while a set of chips loads."""
+    return _shimmer(_chip_row(count), label)
+
+
+def _list_rows(rows: int, lead: bool) -> ft.Control:
+    def row(n: int) -> ft.Control:
+        lines = ft.Column([_bar(12, 120 + 40 * (n % 3)), _bar(10, 200 + 30 * (n % 2))], spacing=8)
+        return ft.Row([*([_bar(40, 40, 10)] if lead else []), lines], spacing=12)
+    return ft.Column([row(n) for n in range(rows)], spacing=14)
+
+
+def _tiles(count: int, size: float, height: float | None = None) -> ft.Control:
+    return ft.Row([_bar(height or size, size, 12) for _ in range(count)], spacing=8, run_spacing=8, wrap=True)
+
+
+def skeleton_list(rows: int = 3, lead: bool = True, label: str = LOADING) -> ft.Control:
+    """Rows of an optional square and two lines of text, standing in while a list loads."""
+    return _shimmer(_list_rows(rows, lead), label)
+
+
+def skeleton_tiles(count: int = 24, size: float = 56, label: str = LOADING, height: float | None = None) -> ft.Control:
+    """A wrapped grid of tiles, `size` wide and `height` (default `size`) tall, standing in while a grid loads."""
+    return _shimmer(_tiles(count, size, height), label)
+
+
+FRAME = 0.03      # between two steps: the window paints the last patch before the next arrives
+_STEPS: dict[int, object] = {}
+
+
+def draw_in_steps(app, holder, items: list, step: int | None,
+                  filler: Callable[[int], list] | None = None, done: Callable[[], None] | None = None,
+                  first: int | None = None) -> None:
+    """Puts `items` in `holder.controls` `step` at a time, one frame apart: a long list in one patch made the
+    window lay it all out in one frame and freeze (docs/gui.md, Performance). `filler(n)` is the skeleton
+    standing for the n not drawn yet. `first` (default `step`) are set now, for the caller's own update;
+    `step=None` sets every item now and stops a drawing still running. `done` runs after the last step."""
+    token = _STEPS[id(holder)] = object()
+
+    def lay(n: int) -> None:
+        rest = len(items) - n
+        holder.controls = list(items[:n]) + (filler(rest) if rest > 0 and filler else [])
+
+    n = len(items) if step is None else min(len(items), step if first is None else first)
+    lay(n)
+    if n >= len(items):
+        _STEPS.pop(id(holder), None)
+        if done:
+            done()
+        return
+
+    async def run():
+        count = n
+        while count < len(items):
+            await asyncio.sleep(FRAME)
+            if _STEPS.get(id(holder)) is not token:
+                return
+            count += step
+            lay(count)
+            try:
+                # The page diffs from what the window holds; the holder's own update() did not always
+                # (a stepped Bank grid logged IndexErrors in the window and lost its tiles).
+                app.page.update()
+            except RuntimeError:    # the page closed
+                return
+        _STEPS.pop(id(holder), None)
+        if done:
+            done()
+    app.page.run_task(run)
+
+
+def after_frame(app, call: Callable[[], None]) -> None:
+    """Runs `call` on the UI loop a frame from now, from any thread: the patches already sent are painted first."""
+    async def run():
+        await asyncio.sleep(FRAME)
+        try:
+            call()
+        except RuntimeError as error:    # its view left the page
+            if "must be added to the page" not in str(error):
+                raise
+    app.page.run_task(run)
+
+
+def one_per_frame(app, calls: list[Callable[[], None]]) -> None:
+    """Runs each call a frame after the last, so each one's patch is laid out on its own."""
+    async def run():
+        for call in calls:
+            await asyncio.sleep(FRAME)
+            call()
+    if calls:
+        app.page.run_task(run)
+
+
+def shiny_icon(size: int = 12) -> ft.Control:
+    return t.pixel_icon("sparkles", size=size, color=t.AMBER, tooltip=tr('widgets.shiny', 'Shiny'))
+
+
+def summary_line(summary: str, size: float = 13, color: str = t.TEXT, weight=None, gender=None,
+                 **kwargs) -> ft.Control:
+    """pokeldn.pokemon.summary on one line, its shininess as the sparkles icon and its gender as a coloured
+    sign after the species (PKHeX's gender 2 is genderless). `kwargs` go to the line's last text."""
+    parts = summary.split(" · ")
+    at = parts.index("shiny") if "shiny" in parts else -1
+    if at > 0:
+        del parts[at]
+    shown = summary_text(" · ".join(parts)).split(" · ") if summary else [""]
+    spans = [ft.TextSpan(shown[0])]
+    if gender in (0, 1):
+        spans.append(ft.TextSpan(" ♂" if gender == 0 else " ♀", ft.TextStyle(color=t.BLUE if gender == 0 else t.PINK)))
+    if at <= 0:
+        spans += [ft.TextSpan(" · " + part) for part in shown[1:]]
+        return t.text("", size, color, weight, spans=spans, **kwargs)
+    spans += [ft.TextSpan(" · " + part) for part in shown[1:at]]
+    after = " · ".join(shown[at:])
+    return ft.Row([t.text("", size, color, weight, spans=spans), shiny_icon(12 if size < 18 else 18),
+                   *([t.text("· " + after, size, color, weight, **kwargs)] if after else [])],
+                  spacing=4, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                  expand=kwargs.get("expand"))
+
+
+class DropZone(ft.Container):
+    """A dashed box saying what can be dropped. The whole surrounding target still takes the drop; the box only
+    shows players where to aim. Flet borders draw no dashes, so a canvas draws them at the box's size."""
+
+    def __init__(self, text: str, icon: str = "upload"):
+        self.canvas = cv.Canvas(on_resize=self._resize, resize_interval=50,
+                                       left=0, top=0, right=0, bottom=0)
+        label = ft.Row([t.pixel_icon(icon, color=t.FAINT), t.text(text, 12, t.MUTED)], spacing=8, tight=True,
+                       alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        super().__init__(ft.Stack([self.canvas, ft.Container(label, padding=ft.Padding(16, 14, 16, 14),
+                                                             alignment=ft.Alignment.CENTER)]),
+                         bgcolor=ft.Colors.with_opacity(0.03, "#FFFFFF"), border_radius=10)
+
+    def _resize(self, e) -> None:
+        w, h, r, i = e.width, e.height, 10, 0.5
+        P = cv.Path
+        self.canvas.shapes = [P([
+            P.MoveTo(r, i), P.LineTo(w - r, i), P.QuadraticTo(w - i, i, w - i, r),
+            P.LineTo(w - i, h - r), P.QuadraticTo(w - i, h - i, w - r, h - i),
+            P.LineTo(r, h - i), P.QuadraticTo(i, h - i, i, h - r),
+            P.LineTo(i, r), P.QuadraticTo(i, i, r, i)],
+            paint=ft.Paint(color=t.EDGE, stroke_width=1, style=ft.PaintingStyle.STROKE, stroke_dash_pattern=[6, 4]))]
+        self.canvas.update()
 
 
 def reloading(shown: list, placeholder: ft.Control) -> list:
     """What a list shows while its content reloads: what it already shows, so a filled view never blinks to a
-    placeholder and back; the placeholder only while nothing has loaded yet."""
+    placeholder and back; the placeholder while nothing has loaded yet or a notice() stands in for it."""
     if shown and getattr(shown[0], "data", None) != WAITING:
         return shown
     placeholder.data = WAITING

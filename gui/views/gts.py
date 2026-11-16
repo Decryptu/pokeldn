@@ -10,6 +10,7 @@ import flet as ft
 from gui import theme as t
 from gui.views.bank import NAMES, game_icon
 from gui.views.sprites import MINI, SIZE, SpritePool
+from gui.views.widgets import draw_in_steps, shiny_icon, skeleton_tiles
 from gui.localization import SERVICE, summary_text, translate
 from pokeldn import __version__, pokemon
 from pokeldn.app import bank
@@ -49,15 +50,20 @@ def answers(entry: bank.Entry, asked) -> bool:
     return not gts.refusal(asked, entry.species_id, level_of(entry), entry.shiny)
 
 
-def sparkles(size: int = 12) -> ft.Control:
-    return t.pixel_icon("sparkles", size=size, color=t.AMBER, tooltip=tr('gts.shiny_039a0a', 'Shiny'))
 
 
 def _when(seconds: float) -> str:
     return time.strftime(tr('gts.d_b_y_ede2cc', '%d %b %Y'), time.localtime(seconds))
 
 
+TILE_WIDTH, TILE_HEIGHT = 122, 54   # a listing tile: two MINI sprites and the arrow between them
+TILE_STEP = 24                      # listing tiles a frame while the page arrives
+
+
 class GtsView:
+    arriving = False    # set by enter(): the page is new to the window and its grid is drawn in steps
+    entered = False     # enter() ran before
+
     def __init__(self, app):
         self.app = app
         self.sprites = SpritePool(app)
@@ -124,6 +130,11 @@ class GtsView:
         if not self.species:
             threading.Thread(target=self._load_species, daemon=True).start()
         self._browse(update=False)
+        # Its first visit draws the grid in steps. A revisit draws it at once: the page's controls are known to
+        # Flet from that visit, and a grid shortened then grown again in steps reached the window as list
+        # changes it could not apply (IndexError, the grid left empty).
+        self.arriving = not self.entered
+        self.entered = True
         self.render()
 
     def leave(self) -> None:
@@ -215,6 +226,8 @@ class GtsView:
         client = self.client
         relays = client.connected()
         listings = self._shown()
+        shown = {(x.key, x.d) for x in listings}
+        self.tiles = {k: v for k, v in (getattr(self, "tiles", None) or {}).items() if k in shown}
         self.status.value = (tr('gts.of_relays_connected_e3c2ac', '{value0} of {value1} relays connected', value0=relays, value1=len(gts.relay_urls())) if relays
                              else tr('gts.connecting_to_the_relays_ee096f', 'Connecting to the relays...'))
         if listings:
@@ -226,14 +239,35 @@ class GtsView:
                 self.heading.value = tr('gts.no_open_listing_matches_these_filters_4f1c2b', 'No open listing matches these filters.')
         else:
             self.heading.value = tr('gts.reading_the_listings_from_the_relays_49620c', 'Reading the listings from the relays...')
-        self.grid.controls = [self._tile(x) for x in listings]
+        tiles = [self._tile(x) for x in listings]
+        if not tiles and not client.loaded():
+            tiles = [skeleton_tiles(6, TILE_WIDTH, self.heading.value, height=TILE_HEIGHT)]
+        draw_in_steps(self.app, self.grid, tiles, TILE_STEP if self.arriving else None,
+                      filler=lambda rest: [skeleton_tiles(min(rest, TILE_STEP), TILE_WIDTH, height=TILE_HEIGHT)])
+        self.arriving = False
         self.mine.controls = [self._mine_row(s) for s in client.mine()] or [
             t.text(tr('gts.nothing_listed_or_offered_df021f', 'Nothing listed or offered.'), 12, t.FAINT)]
         self.render_detail(listings)
 
     def _tile(self, listing: gts.Listing) -> ft.Control:
+        """The listing's tile, the same control from one render to the next while nothing it shows changed: a new
+        tile made the window rebuild it and its images, and the relays' answers redraw the grid several times a
+        second as a page opens, so every tile flickered."""
         active = self.selected == (listing.key, listing.d)
         offered = self.client.offered(listing) is not None
+        seen = (listing.event.get("id"), active, offered)
+        kept = self.tiles.get((listing.key, listing.d))
+        if kept is not None and kept[0] == seen:
+            # Its sprites stay the pool's for this render, so a later redraw of the tile reuses them too.
+            self.sprites.get(('tile', listing.key, listing.d), int(listing.pokemon.get("species_id") or 0),
+                             bool(listing.pokemon.get("shiny")), size=MINI)
+            self.sprites.get(('wants', listing.key, listing.d), listing.wants.species, listing.wants.shiny, size=MINI)
+            return kept[1]
+        tile = self._draw_tile(listing, active, offered)
+        self.tiles[(listing.key, listing.d)] = (seen, tile)
+        return tile
+
+    def _draw_tile(self, listing: gts.Listing, active: bool, offered: bool) -> ft.Control:
         shown = listing.pokemon
         first, more = listing.wants, len(listing.also)
         name = translate(shown.get('species', ''))
@@ -245,10 +279,10 @@ class GtsView:
         return ft.Container(ft.Row([
             ft.Stack([self.sprites.get(('tile', listing.key, listing.d), int(shown.get("species_id") or 0), bool(shown.get("shiny")), size=MINI),
                       ft.Container(game_icon(listing.game, 16), right=0, bottom=0),
-                      *([ft.Container(sparkles(), left=0, top=0)] if shown.get("shiny") else [])]),
+                      *([ft.Container(shiny_icon(), left=0, top=0)] if shown.get("shiny") else [])]),
             t.pixel_icon("arrows-horizontal", size=12, color=t.FAINT),
             ft.Stack([self.sprites.get(('wants', listing.key, listing.d), first.species, first.shiny, size=MINI),
-                      *([ft.Container(sparkles(), left=0, top=0)] if first.shiny else []),
+                      *([ft.Container(shiny_icon(), left=0, top=0)] if first.shiny else []),
                       *([ft.Container(t.text(f"+{more}", 11, t.SOFT, weight=ft.FontWeight.W_600), right=0, bottom=0)]
                         if more else []),
                       *([ft.Container(t.pixel_icon("clock", size=12, color=t.BLUE), right=0, top=0)] if offered else [])]),
@@ -258,17 +292,29 @@ class GtsView:
             on_click=lambda e, k=(listing.key, listing.d): self._select(k))
 
     def _mine_row(self, state: dict) -> ft.Control:
+        """A row of Yours, kept from one render to the next while it shows the same (see _tile)."""
+        active = self.selected == state["id"]
+        seen = (state["status"], state.get("listing"), active, state["info"].get("species_id"))
+        kept = (getattr(self, "rows", None) or {}).get(state["id"])
+        if kept is not None and kept[0] == seen:
+            self.sprites.get(('mine', state["id"]), int(state["info"].get("species_id") or 0),
+                             bool(state["info"].get("shiny")), size=MINI)
+            return kept[1]
+        row = self._draw_mine_row(state, active)
+        self.rows = {**(getattr(self, "rows", None) or {}), state["id"]: (seen, row)}
+        return row
+
+    def _draw_mine_row(self, state: dict, active: bool) -> ft.Control:
         label, color, icon = STATUS[state["status"]]
         title = translate(state["info"].get("species", ""))
         if state["role"] == "listing":
             title += tr('gts.for_76b8cb', ' for {value0}', value0=wanted_list_text(wanted(state)))
         else:
             title += tr('gts.offered_for_a2a379', ' offered for {value0}', value0=translate(gts.parse_listing(state['listing']).pokemon.get('species', '')) if state['listing'] else '')
-        active = self.selected == state["id"]
         return ft.Container(ft.Row([
             ft.Stack([self.sprites.get(('mine', state["id"]), int(state["info"].get("species_id") or 0),
                                              bool(state["info"].get("shiny")), size=MINI),
-                      *([ft.Container(sparkles(), left=0, top=0)] if state["info"].get("shiny") else [])]),
+                      *([ft.Container(shiny_icon(), left=0, top=0)] if state["info"].get("shiny") else [])]),
             ft.Column([t.text(title, 12, t.TEXT, weight=ft.FontWeight.W_600, max_lines=1,
                               overflow=ft.TextOverflow.ELLIPSIS),
                        t.badge(label, color, icon)], spacing=2, expand=True),
@@ -333,7 +379,7 @@ class GtsView:
     def _asked(self, asked) -> ft.Control:
         return ft.Column([ft.Row([self.sprites.get(('asked', n), w.species, w.shiny, size=MINI),
                                   t.text(wanted_text(w), 13),
-                                  *([sparkles()] if w.shiny else [])], spacing=10) for n, w in enumerate(asked)], spacing=6)
+                                  *([shiny_icon()] if w.shiny else [])], spacing=10) for n, w in enumerate(asked)], spacing=6)
 
     def _answers(self, listing: gts.Listing) -> ft.Control:
         held = [e for e in self._held() if answers(e, listing.wanted)]
@@ -429,7 +475,7 @@ class GtsView:
                             editable=True, menu_height=320)
         for option, entry in zip(choice.options, held):
             if entry.shiny:
-                option.trailing_icon = sparkles()
+                option.trailing_icon = shiny_icon()
         asked: list[tuple[ft.Dropdown, ft.Switch]] = []
         rows = ft.Column(spacing=8, tight=True)
         more = t.link_button(tr('gts.add_another_d41a6c', 'Add another'), lambda e: add())

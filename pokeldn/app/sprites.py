@@ -95,6 +95,15 @@ def _chunks(data: bytes) -> dict[bytes, bytes] | None:
 CHANNELS = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
 
 
+def size(data: bytes) -> tuple[int, int] | None:
+    """(width, height) from a PNG's header, decoding no pixel: pixels() of a list's 200 icons stalled the window
+    800 ms; None for anything but a PNG whose first chunk is its IHDR."""
+    if len(data) < 24 or data[:8] != PNG or data[12:16] != b"IHDR":
+        return None
+    width, height = struct.unpack(">II", data[16:24])
+    return (width, height) if 1 <= width <= MAX_DIMENSION and 1 <= height <= MAX_DIMENSION else None
+
+
 @lru_cache(maxsize=8)
 def pixels(data: bytes) -> tuple[int, int, tuple[tuple[tuple[int, int, int, int], ...], ...]] | None:
     """(width, height, rows of (r, g, b, a)) of a PNG; None for one this does not read (16-bit,
@@ -217,6 +226,19 @@ class SpriteCache:
     def _valid_key(self, species: int | str) -> bool:
         return ((type(species) is int and species > 0 and self.key == POKEMON_KEY) or
                 (isinstance(species, str) and len(species) <= 64 and re.fullmatch(self.key, species) is not None))
+
+    def held(self, species: int | str, shiny: bool = False) -> bytes | None:
+        """The sprite if cached() already read it, touching nothing else: what a UI thread may ask."""
+        return self.memory.get((species, shiny))
+
+    def on_disk(self, species: int | str, shiny: bool = False) -> bool:
+        """Whether cached() may find the sprite: one stat, no read. Offline, a sprite not on disk needs no worker."""
+        return self._valid_key(species) and self._path(species, shiny).exists()
+
+    def warm(self, names) -> None:
+        """Reads each of `names` from disk into memory (cached()); for a worker thread."""
+        for name in names:
+            self.cached(name)
 
     def cached(self, species: int | str, shiny: bool = False) -> bytes | None:
         """The sprite on disk, or None. Never touches the network; a damaged file is removed."""

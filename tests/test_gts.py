@@ -37,6 +37,7 @@ class Relay:
         self.pools: list = []
         self.queue: list = []
         self.drop = lambda event: False      # an event the relay never receives
+        self.refused: list[dict] = []        # expired on arrival: a public relay answers "invalid: event expired"
 
     def _expired(self, event):
         expiry = next((t[1] for t in event["tags"] if t[0] == "expiration"), None)
@@ -46,6 +47,9 @@ class Relay:
         if self.drop(event):
             return
         assert relays.valid(event)
+        if self._expired(event):
+            self.refused.append(event)
+            return
         if event["id"] in self.events:
             return
         if 30000 <= event["kind"] < 40000:
@@ -180,6 +184,11 @@ def test_a_listing_trades_while_each_app_is_closed_in_turn(world):
     (state,) = bob.mine()
     assert (state["status"], state["why"]) == ("traded", "")
     assert _browse(bob, relay) == []          # the listing now says traded
+
+    world["now"][0] += gts.LIFETIME + gts.SKEW + DAY    # both kept until purged, past every event's expiry
+    for name in ("alice", "bob"):
+        world["app"](name)().close()
+    assert relay.refused == []
 
 
 def test_a_listing_takes_any_of_its_wants_and_a_shiny_want_only_a_shiny(world):

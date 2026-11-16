@@ -8,7 +8,7 @@ from pathlib import Path
 
 import flet as ft
 
-from gui.app import keys_found, keys_problem
+from gui.app import keys_problem
 from pokeldn import console_trainer, panel, progress
 from pokeldn.app import bank, command, failure, panels, events_gallery, gift_builder, online, received, runner
 from pokeldn.ldn import LINK_PREFIX
@@ -34,8 +34,8 @@ from gui.views.board_screen import BoardScreen
 from gui.views.library import LibraryCard
 from gui.views.panels import StatusCards, card_control
 from gui.views.sprites import MINI, Sprite, SpritePool
-from gui.views.widgets import CodeBlock, DigitCode, Log, PathField, open_folder
-from gui.localization import SERVICE, summary as pokemon_summary, summary_lines, summary_text, translate
+from gui.views.widgets import CodeBlock, DigitCode, Log, PathField, open_folder, summary_line
+from gui.localization import SERVICE, summary as pokemon_summary, summary_parts, summary_text, translate
 from pokeldn.app.i18n import help_text, t as tr
 
 EMPTY = "-"   # a dropdown option cannot carry an empty key
@@ -760,10 +760,10 @@ class GamesView:
 
 def pokemon_row(app, species: int, shiny: bool, summary: str, tip: str = "", form: int = 0) -> ft.Control:
     """A small sprite, then pokeldn.pokemon.summary on two lines: species, level and shininess, then the rest."""
-    head, rest = summary_lines(summary)
-    lines = [t.text(head, 13, weight=ft.FontWeight.W_600, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)]
+    head, rest = summary_parts(summary)
+    lines = [summary_line(head, 13, weight=ft.FontWeight.W_600, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)]
     if rest:
-        lines.append(t.text(rest, 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS))
+        lines.append(t.text(summary_text(rest), 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS))
     return ft.Container(ft.Row([Sprite(app, species, shiny, size=MINI, form=form).control,
                                 ft.Column(lines, spacing=0, expand=True)],
                                spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),

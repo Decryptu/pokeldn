@@ -492,7 +492,7 @@ resumes. A name PokeAPI lacks (TMs, most Legends Z-A items) shows none.
 
 ## Ribbons
 
-Ribbons, folded under a built or loaded Pokemon, lists what the helper's `ribbons` command returns:
+Ribbons, the last section of a built or loaded Pokemon's More options, lists what the helper's `ribbons` command returns:
 each ribbon of the record's format (`RibbonInfo.GetRibbonInfo`) that PKHeX's legality analysis accepts
 when added alone to the record as it stands, at the highest count it accepts. A Gen 3 contest ribbon is
 a count, Normal (1) to Master (4). A worn ribbon the encounter gives (an event's Classic) cannot be taken
@@ -671,6 +671,7 @@ The interface must stay smooth on a computer with a weak GPU or a software rende
 | a tool field's `on_change` fires per key | the value is stored at once; the settings save and the session panel's redraw run 0.25 s after the last key (`GamesView.settle`) |
 | Flet samples scroll and size events every 10 ms, each a message to Python | a faded list samples every 100 ms |
 | a Pokemon's More options asks PKHeX for its legal abilities, balls and encounters (0.6 to 0.9 s on an M4 for Scarlet/Violet and Sword/Shield), and drew four move boxes of 700 rows each: 2,700 controls in one patch | picking a species reads them ahead while the panel is shut; a searchable dropdown of 100 rows or more (`t.LAZY_FROM`) is drawn holding its value alone, and `t.fill` sends the whole list one box per patch once the form is on screen. More options adds 145 controls at once. A list that arrives on the box's first focus rebuilds the field and drops the typed keys |
+| a long list in one patch (a 122-Pokemon bank: 1,800 controls; the Pokedex grid; the GTS listings; More options with its four 700-row move lists) is laid out by the window in one frame, which freezes it, and a skeleton sent in the same frame never shows | `draw_in_steps` draws the list a slice a frame with `skeleton*` shapes standing for the rest, in the page's own layout; More options replaces its skeleton two parts a frame and fills its long lists one box a frame (`one_per_frame`) |
 | the controller-board poll runs every 6 s for the app's lifetime | Windows asks cfgmgr32 in process (`board.present_usb_ids`); the PowerShell CIM query is the fallback |
 
 `tools/gui_patch_profile.py LOG` runs the interface with each patch's time and control count and each event logged.

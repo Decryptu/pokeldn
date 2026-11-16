@@ -11,7 +11,7 @@ import flet as ft
 
 from gui import theme as t
 from gui.views.sprites import MINI, Sprite, SpritePool
-from gui.views.widgets import PixelActivity
+from gui.views.widgets import PixelActivity, shiny_icon, skeleton_list
 from gui.localization import SERVICE, error_message, summary_text, translate
 from pokeldn import pokemon as builder
 from pokeldn.app.command import offers
@@ -91,9 +91,7 @@ class EventGiftPicker:
                                   spacing=10)
         self.box = ft.Container(self.scroller)
         self.control = ft.Column([self.result, self.status, ft.Row([self.search]), self.count, self.box], spacing=10)
-        self.tiles.set([ft.Row([PixelActivity(tr('event_gifts.reading_the_events_1abdf0', 'Reading the events')),
-                                t.text(tr('event_gifts.reading_pkhex_s_event_database_b686bc', "Reading PKHeX's event database..."), 12, t.MUTED)], spacing=8)],
-                       single=True)
+        self.tiles.set([skeleton_list(4, label=tr('event_gifts.reading_the_events_1abdf0', 'Reading the events'))], single=True)
         self._show_result()
         threading.Thread(target=self._load, daemon=True).start()
 
@@ -138,7 +136,7 @@ class EventGiftPicker:
         head = [t.text(translate(event["title"]), 13, weight=ft.FontWeight.W_600, max_lines=1,
                        overflow=ft.TextOverflow.ELLIPSIS, expand=True)]
         if shiny:
-            head.append(t.pixel_icon("sparkles", size=12, color=t.AMBER, tooltip=tr('event_gifts.shiny_039a0a', 'Shiny')))
+            head.append(shiny_icon())
         if chosen and self.limit > 1:
             head.append(t.text(tr('event_gifts.queued_3dddf6', '{value0} queued', value0=chosen), 11, t.BLUE))
         lines = [ft.Row(head, spacing=6),

@@ -15,7 +15,7 @@ from gui import theme as t
 from gui.views.pokemon import NamePicker
 from gui.views.reward_filter import RewardFilter
 from gui.views.sprites import MINI, SIZE, Sprite
-from gui.views.widgets import Check, PixelActivity
+from gui.views.widgets import Check, PixelActivity, skeleton_chips, skeleton_list
 from gui.localization import SERVICE, error_message, translate
 from pokeldn.sv import raid_encounter, raid_event, raid_search
 from pokeldn.sv.raid_encounter import NATURES as NATURES_EN, TERA_TYPES as TERA_TYPES_EN
@@ -107,8 +107,7 @@ def iv_tile(label: str, iv: int, stat: int, compact: bool) -> ft.Container:
 def reward_chips(names: dict[int, str] | None, rewards) -> ft.Control:
     """The rewards as item chips, one per item with the quantities summed, in the raid's order."""
     if names is None:
-        return ft.Row([PixelActivity(tr('raid_seed.naming_the_rewards_7a4bbf', 'Naming the rewards')), t.text(tr('raid_seed.naming_the_rewards_7ba442', 'Naming the rewards...'), 12, t.MUTED)],
-                      spacing=8)
+        return skeleton_chips(4, label=tr('raid_seed.naming_the_rewards_7a4bbf', 'Naming the rewards'))
     totals: dict[int, int] = {}
     for item, quantity in rewards:
         totals[item] = totals.get(item, 0) + quantity
@@ -134,8 +133,7 @@ def action_label(action, boss: str, moves: dict[int, str]) -> str:
 def action_rows(moves: dict[int, str] | None, boss: str, actions) -> ft.Control:
     """The boss's scripted actions, one row each: what it does, and the HP or time left that brings it."""
     if moves is None and any(a.kind == "move" for a in actions):
-        return ft.Row([PixelActivity(tr('raid_seed.naming_the_moves_37e0da', 'Naming the moves')), t.text(tr('raid_seed.naming_the_moves_8b1cc9', 'Naming the moves...'), 12, t.MUTED)],
-                      spacing=8)
+        return skeleton_list(3, lead=False, label=tr('raid_seed.naming_the_moves_37e0da', 'Naming the moves'))
     if not actions:
         return t.text(tr('raid_seed.no_scripted_actions_c5dd05', 'No scripted actions.'), 12, t.MUTED)
     # Each trigger on a line of its own, so the label wraps before the row overflows a narrow card.

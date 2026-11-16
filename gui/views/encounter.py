@@ -10,7 +10,7 @@ from gui import theme as t
 from gui.localization import SERVICE, error_message
 from gui.views.pokemon import STATS, NamePicker, pokemon_header
 from gui.views.sprites import Sprite
-from gui.views.widgets import PixelActivity, reloading
+from gui.views.widgets import PixelActivity, notice, reloading, skeleton_list
 from pokeldn.app.i18n import t as tr
 from pokeldn.sv import wild
 
@@ -127,7 +127,7 @@ class EncounterPicker:
             self.species.trailing_icon = t.pixel_icon("chevron-down", color=t.MUTED)
             if error:
                 self.species.hint_text = tr('encounter.unavailable_ca1844', 'Unavailable')
-                self.places.controls = [t.text(error, 12, t.RED)]
+                self.places.controls = [notice(error, t.RED)]
                 self.control.update()
                 return
             self.species.disabled = False
@@ -170,7 +170,7 @@ class EncounterPicker:
                     self._load_species()
                     return
                 if error:
-                    self.places.controls = [t.text(error, 12, t.RED)]
+                    self.places.controls = [notice(error, t.RED)]
                 self._fit()
                 self._save()
                 self._check()
@@ -186,9 +186,8 @@ class EncounterPicker:
             self._draw_places()
             self.places.update()
             return
-        self.places.controls = reloading(self.places.controls, ft.Row([PixelActivity(tr('encounter.checking_0dfe1d', 'Checking')),
-                                        t.text(tr('encounter.pkhex_is_checking_where_this_pokemon_is_legal_5a24ff', 'PKHeX is checking where this Pokemon is legal...'),
-                                               12, t.MUTED)], spacing=8))
+        self.places.controls = reloading(self.places.controls,
+                                         skeleton_list(3, label=tr('encounter.checking_0dfe1d', 'Checking')))
         self.places.update()
         spawn = self.spawn()
 
@@ -336,7 +335,7 @@ class EncounterPicker:
 
     def _draw_places(self, error: str = "") -> None:
         if error:
-            self.places.controls = [t.text(error, 12, t.RED)]
+            self.places.controls = [notice(error, t.RED)]
             return
         if not self.value.get("legal") or self.scanned is None:
             self.places.controls = []

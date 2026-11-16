@@ -3,8 +3,8 @@ from concurrent.futures import ThreadPoolExecutor
 import flet as ft
 
 from gui import theme as t
-from gui.views.widgets import PixelActivity
-from pokeldn.app.sprites import CACHE, ITEMS, RIBBON_SETS, RIBBONS, pixels
+from gui.views.widgets import skeleton_tiles
+from pokeldn.app.sprites import CACHE, ITEMS, RIBBON_SETS, RIBBONS, size as png_size
 from pokeldn.app.sprite_forms import sprite_key
 from pokeldn.app.i18n import t as tr
 
@@ -30,7 +30,9 @@ class Sprite:
 
     def show(self, species: int, shiny: bool = False, update: bool = True, form: int = 0,
              sweet: int | None = None) -> None:
-        """Cached sprites appear at once; the rest load on a worker thread, and a stale answer is dropped."""
+        """A sprite already in memory appears at once. Any other is read from disk, or downloaded, on a worker
+        thread behind a skeleton: reading, hashing and checking a PNG on the UI thread, once per tile, stalled the
+        window (docs/gui.md, Performance). A stale answer is dropped."""
         self.token += 1
         token = self.token
         CACHE.online = bool(self.app.settings.sprites)
@@ -38,32 +40,31 @@ class Sprite:
         if not species:
             self._set(self._placeholder(tr('sprites.no_sprite_for_this_form_0f3039', 'No sprite for this form.') if form else ""), update)
             return
-        data = CACHE.cached(species, shiny)
+        data = CACHE.held(species, shiny)
         if data:
             self._set(self._image(data, species, shiny), update)
             return
-        shown = CACHE.cached(species) if shiny else None    # the plain sprite stands in while the shiny loads
-        if shown:
-            self._set(self._image(shown, species, False), update)
-        if CACHE.known_missing(species, shiny) and (not shiny or CACHE.known_missing(species)):
-            if not shown:
-                self._set(self._placeholder(tr('sprites.no_sprite_for_this_species_2c7400', 'No sprite for this species.')), update)
+        if not CACHE.online and not CACHE.on_disk(species, shiny) and not (shiny and CACHE.on_disk(species)):
+            self._set(self._placeholder(self._why()), update)    # nothing to read and nothing to download
             return
-        if not CACHE.online:
-            if not shown:
-                self._set(self._placeholder(self._why()), update)
-            return
-        if not shown:
-            self._set(PixelActivity(tr('sprites.loading_sprite_642b3d', 'Loading sprite')), update)
+        shown = CACHE.held(species) if shiny else None    # the plain sprite stands in while the shiny loads
+        # An empty frame while the disk is read (milliseconds); a skeleton every tile flashed for that long read
+        # as flicker. The skeleton shows only before a download (_load).
+        self._set(self._image(shown, species, False) if shown else None, update)
         WORKERS.submit(self._load, token, species, shiny, bool(shown))
 
     def _load(self, token: int, species: int | str, shiny: bool, shown: bool) -> None:
         if token != self.token:
             return
-        data = CACHE.get(species, shiny)
+        data = CACHE.cached(species, shiny)
+        if data is None and not shown and CACHE.online and not CACHE.known_missing(species, shiny):
+            self.app.ui(lambda: token == self.token and self._set(
+                skeleton_tiles(1, self.size, tr('sprites.loading_sprite_642b3d', 'Loading sprite'))))
+        data = data or CACHE.get(species, shiny)
         plain = not data and shiny and not shown
         if plain:
             data = CACHE.get(species)
+        missing = not data and CACHE.known_missing(species, shiny) and (not shiny or CACHE.known_missing(species))
 
         def done():
             if token != self.token:
@@ -71,7 +72,8 @@ class Sprite:
             if data:
                 self._set(self._image(data, species, shiny and not plain))
             elif not shown:
-                self._set(self._placeholder(self._why()))
+                self._set(self._placeholder(tr('sprites.no_sprite_for_this_species_2c7400', 'No sprite for this species.')
+                                            if missing else self._why()))
         self.app.ui(done)
 
     def _why(self) -> str:
@@ -146,9 +148,9 @@ class Icon:
         self.token += 1
         token = self.token
         self.cache.online = bool(self.app.settings.sprites)
-        data = self.cache.cached(name) if name else None
+        data = self.cache.held(name) if name else None     # memory only: disk is a worker's job (Sprite.show)
         self._set(data, name, update)
-        if data or not fetch or not name or not self.cache.online or self.cache.known_missing(name):
+        if data or not fetch or not name or (not self.cache.online and not self.cache.on_disk(name)):
             return
 
         def load():
@@ -162,7 +164,7 @@ class Icon:
         if data is None:
             self.control.content = None
         else:
-            width, height = (pixels(data) or (self.size, self.size, ()))[:2]
+            width, height = png_size(data) or (self.size, self.size)
             x0, y0, x1, y1 = self.cache.crop(name, False, data) or (0, 0, width, height)
             scale = self.size / max(x1 - x0, y1 - y0)
             self.control.content = ft.Stack([ft.Image(

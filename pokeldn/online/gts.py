@@ -74,6 +74,11 @@ def wants_tag(species: int) -> str:
     return f"{TAG}-wants-{int(species)}"
 
 
+def expiration(event) -> str | None:
+    """An event's NIP-40 expiration tag, or None."""
+    return _tag(event, "expiration")
+
+
 def _tag(event, name):
     return next((t[1] for t in event.get("tags") or [] if len(t) >= 2 and t[0] == name), None)
 

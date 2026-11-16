@@ -14,7 +14,7 @@ from gui import drop, theme as t
 from gui.views.pokemon import NamePicker, pokemon_header
 from gui.views.saves import SavePanel
 from gui.views.sprites import MINI, SIZE, Icon, Sprite
-from gui.views.widgets import PathField, PixelActivity
+from gui.views.widgets import PathField, skeleton
 from gui.localization import SERVICE, error_message, gift_description, translate
 from pokeldn import gifts, pokemon
 from pokeldn.app import command, gift_builder, gift_files, saves
@@ -647,8 +647,7 @@ class GiftBuilder:
         if not species:
             box.content = None
             return
-        box.content = ft.Row([PixelActivity(tr('gifts.loading_forms_e3b50e', 'Loading forms')),
-                              t.text(tr('gifts.reading_what_this_species_can_have_bdcc50', 'Reading what this species can have...'), 12, t.MUTED)], spacing=8)
+        box.content = skeleton((1,), label=tr('gifts.loading_forms_e3b50e', 'Loading forms'))
         try:
             box.update()
         except RuntimeError:

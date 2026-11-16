@@ -8,7 +8,7 @@ import threading
 import flet as ft
 
 from gui import theme as t
-from gui.views.widgets import PixelActivity
+from gui.views.widgets import skeleton_chips
 from gui.localization import SERVICE, error_message
 from pokeldn.sv import raid_search
 from pokeldn.sv.raid import REWARD_ROWS
@@ -42,8 +42,8 @@ class RewardFilter:
             ft.Container(self.summary, expand=True, alignment=ft.Alignment.CENTER_RIGHT),
         ], spacing=8), padding=ft.Padding(0, 6, 0, 0), on_click=self._toggle,
             tooltip=tr('reward_filter.unfold_to_want_rewards_folded_the_search_leaves_them_al_0be515', 'Unfold to want rewards; folded, the search leaves them alone'))
-        self.busy = ft.Row([PixelActivity(tr('reward_filter.listing_the_rewards_3cf5eb', 'Listing the rewards')),
-                            t.text(tr('reward_filter.listing_what_these_raids_give_25e326', 'Listing what these raids give...'), 11, t.MUTED)], spacing=8, visible=False)
+        self.busy = ft.Container(skeleton_chips(6, label=tr('reward_filter.listing_the_rewards_3cf5eb', 'Listing the rewards')),
+                                 visible=False)
         self.list = ft.Column(spacing=8)
         self.add = t.secondary_button(tr('reward_filter.add_reward_974066', 'Add reward'), self._add, "plus")
         self.body = ft.Column([

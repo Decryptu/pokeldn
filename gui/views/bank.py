@@ -11,12 +11,14 @@ import flet as ft
 from gui import drop, theme as t
 from gui.views.games import tool_role
 from gui.views.sprites import MINI, SIZE, Sprite
-from gui.views.widgets import open_folder
-from gui.localization import SERVICE, date_time, summary_lines, summary_text, translate
+from gui.views.widgets import draw_in_steps, open_folder, shiny_icon, skeleton_tiles, summary_line
+from gui.localization import SERVICE, date_time, summary_parts, summary_text, translate
 from pokeldn import pokemon
 from pokeldn.app import bank
 from pokeldn.app.settings import GEN3
 from pokeldn.app.catalog import GAMES
+
+GRID_STEP = 40   # bank tiles a frame while the page arrives
 
 NAMES = {game.key: game.name for game in GAMES}
 ALL = "all"
@@ -63,6 +65,9 @@ class Tile:
 
 
 class BankView:
+    arriving = False    # set by enter(): the page is new to the window and its grid is drawn in steps
+    entered = False     # enter() ran before
+
     def __init__(self, app):
         self.app = app
         self.visible = False
@@ -145,6 +150,11 @@ class BankView:
     def enter(self, **_) -> None:
         self.visible = True
         self.routes.clear()     # the HOME tracker setting may have changed what a move gives
+        # Its first visit draws the grid in steps. A revisit draws it at once: the page's controls are known to
+        # Flet from that visit, and a grid shortened then grown again in steps reached the window as list
+        # changes it could not apply (IndexError, the grid left empty).
+        self.arriving = not self.entered
+        self.entered = True
         self.refresh(update=False)
         if entry := self._entry():
             threading.Thread(target=self._find_routes, args=(entry,), daemon=True).start()
@@ -203,6 +213,7 @@ class BankView:
 
     def _show(self, key: str) -> None:
         self.shown = key
+        self.arriving = key == DEX     # the Pokedex grid is drawn anew each time it opens
         if key == DEX and self.picking:
             self._picking(False)
         self.render_boxes()
@@ -255,6 +266,7 @@ class BankView:
         self.box_tools.visible, self.dex_tools.visible = not dex, dex
         if dex:
             self.render_dex()
+            self.arriving = False
             self.render_actions()
             return
         shown = self._shown()
@@ -264,7 +276,11 @@ class BankView:
                               tr('bank.the_bank_is_empty_every_pokemon_a_trade_brings_in_lands_e05ff4', 'The bank is empty. Every Pokemon a trade brings in lands here, from any game.')
                               + (tr('bank.drop_a_file_here', ' Drop a Pokemon file, a game save or a PKSM bank here to import what it holds.')
                                  if drop.AVAILABLE else ""))
-        self.grid.controls = [self._tile(e, e.id in self.queued) for e in sorted(self.items, key=SORTS[self.sort])]
+        tiles = [self._tile(e, e.id in self.queued) for e in sorted(self.items, key=SORTS[self.sort])]
+        # On arrival a row or two a frame, the rest standing as skeleton cells; after that, at once.
+        draw_in_steps(self.app, self.grid, tiles, GRID_STEP if self.arriving else None,
+                      filler=lambda rest: [skeleton_tiles(1, 56) for _ in range(min(rest, GRID_STEP))])
+        self.arriving = False
         self.render_actions()
 
     # The Pokedex
@@ -275,12 +291,14 @@ class BankView:
             for key in NAMES:
                 names.update({s["id"]: s["name"] for s in SERVICE.species(key)})
         except (OSError, pokemon.BuilderError) as error:
-            self.app.ui(lambda: self._say(str(error), t.RED))
+            message = str(error)    # `error` is unbound once the except block ends, before the UI runs the lambda
+            self.app.ui(lambda: self._say(message, t.RED))
             return
 
         def done():
             self.dex_names = names
             if self.visible:
+                self.arriving = True
                 self.render_boxes()
                 self.render_grid()
                 self.control.update()
@@ -294,16 +312,17 @@ class BankView:
         shiny = {s for s, entries in held.items() if any(e.shiny for e in entries)}
         if not self.dex_names:
             self.heading.value = tr('bank.dex_loading', 'Reading the species of every game...')
-            self.dex.controls = []
+            self.dex.controls = [skeleton_tiles(1, 58, label=self.heading.value) for _ in range(60)]   # the grid's cells
             return
         keep = {"all": lambda s: True, "have": lambda s: s in held, "missing": lambda s: s not in held,
                 "shiny": lambda s: s not in shiny}[self.dex_only]
         self.heading.value = tr('bank.dex_heading', '{held} of {total} species in the bank, {shiny} of them shiny',
                                 held=len(held.keys() & self.dex_names.keys()), total=len(self.dex_names),
                                 shiny=len(shiny & self.dex_names.keys()))
-        self.dex.controls = [self._dex_cell(s, name, held.get(s, []), s in shiny)
-                             for s, name in sorted(self.dex_names.items())
-                             if keep(s) and (not self.query or self.query in name.casefold())]
+        cells = [self._dex_cell(s, name, held.get(s, []), s in shiny) for s, name in sorted(self.dex_names.items())
+                 if keep(s) and (not self.query or self.query in name.casefold())]
+        draw_in_steps(self.app, self.dex, cells, GRID_STEP if self.arriving else None,
+                      filler=lambda rest: [skeleton_tiles(1, 56) for _ in range(min(rest, GRID_STEP))])
 
     def _dex_cell(self, species: int, name: str, entries: list[bank.Entry], shiny: bool) -> ft.Control:
         number = t.text(f"{species:04d}", 10, t.FAINT if entries else t.MUTED)
@@ -315,7 +334,7 @@ class BankView:
         tip = tr('bank.dex_cell_tip', '{name}: {count} in the bank', name=name, count=len(entries))
         return ft.Container(ft.Stack([
             Sprite(self.app, species, shiny, size=MINI).control,
-            ft.Container(t.pixel_icon("sparkles", size=12, color=t.AMBER), right=2, top=2, visible=shiny),
+            ft.Container(shiny_icon(), right=2, top=2, visible=shiny),
             ft.Container(t.text(str(len(entries)), 10, t.SOFT, weight=ft.FontWeight.W_600), right=4, bottom=2,
                          visible=len(entries) > 1),
         ]), padding=4, border_radius=14, tooltip=tip, on_click=lambda e: self._find(name))
@@ -609,10 +628,10 @@ class BankView:
         if entry is None:
             self.detail.controls = [t.text(tr('bank.pick_a_pokemon_to_see_where_it_can_go_3b278b', 'Pick a Pokemon to see where it can go.'), 13, t.MUTED)]
             return
-        head, rest = summary_lines(entry.summary)
+        head, rest = summary_parts(entry.summary)
         about = ft.Column([
-            t.text(head, 15, weight=ft.FontWeight.W_600),
-            t.text(rest, 12, t.MUTED),
+            summary_line(head, 15, weight=ft.FontWeight.W_600),
+            t.text(summary_text(rest), 12, t.MUTED),
             ft.Row([game_icon(entry.game), t.text(tr('bank.in_bb2233', 'In {value0}', value0=NAMES[entry.game]), 12, t.SOFT)], spacing=6),
             t.text(tr('bank.banked_faf7b7', 'Banked {value0}', value0=date_time(entry.created)), 12, t.FAINT),
             t.badge(tr('bank.legal_4787ea', 'Legal'), t.GREEN, "checkbox-on") if entry.legal else

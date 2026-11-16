@@ -7,7 +7,7 @@ import flet as ft
 
 from gui import drop, theme as t
 from gui.views.panels import image
-from gui.views.widgets import open_folder
+from gui.views.widgets import DropZone, open_folder
 from gui.localization import date_time, error_message
 from pokeldn import plugins
 from pokeldn.app import library, panels
@@ -66,9 +66,9 @@ class LibraryCard:
     def refresh(self, update: bool = True) -> None:
         found = library.entries(self.folder, self.sort)
         self.notes = panels.load(self.plugin.id)["notes"]
-        empty = tr('library.empty', 'Nothing here yet. Add a file') + (
-            tr('library.drop_it_here', ' or drop it here.') if drop.AVAILABLE else ".")
-        self.listing.controls = [self._row(e) for e in found] or [t.text(empty, 12, t.FAINT)]
+        empty = (DropZone(tr('library.empty_drop', 'Nothing here yet. Add a file or drop it here.')) if drop.AVAILABLE
+                 else t.text(tr('library.empty_add', 'Nothing here yet. Add a file.'), 12, t.FAINT))
+        self.listing.controls = [self._row(e) for e in found] or [empty]
         if update:
             self.listing.update()
 
