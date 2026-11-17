@@ -416,7 +416,7 @@ def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch, form):
     app = SimpleNamespace(settings=SimpleNamespace(sprites=False), ui=lambda fn: None,
                           picker=SimpleNamespace(pick_files=pick_files))
     saved = []
-    picker = pokemon.PokemonPicker(app, "swsh", {"species": 25}, saved.append)
+    picker = pokemon.PokemonPicker(app, "swsh", {}, saved.append)
     picker.species.options = [object()]
     picker.control = SimpleNamespace(update=lambda: None)
     shown = []
@@ -429,28 +429,58 @@ def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch, form):
     assert (saved[-1]["species"], saved[-1]["shiny"], picker.species.value, picker.shiny.value) == (6, True, "6", True)
 
 
-def test_a_rebuild_keeps_the_ribbons_chosen_on_the_last_build(monkeypatch):
-    """Building again made a fresh record and dropped every ribbon the panel had put on."""
-    made, checked = [], []
+def test_ribbons_marked_before_a_build_are_worn_after_every_build_and_a_refused_one_is_named(monkeypatch):
+    """The panel waited for a first build, and a rebuild that PKHeX refused with every ribbon on dropped them all
+    without a word."""
+    ribbons = [{"id": "RibbonEffort", "name": "Effort", "value": 0, "top": 1, "legal": 1, "fixed": False,
+                "icon": None, "icon_set": None},
+               {"id": "RibbonChampionG3", "name": "Champion", "value": 0, "top": 1, "legal": 1, "fixed": False,
+                "icon": None, "icon_set": None}]
+    worn: dict[str, dict] = {}
+
+    def make(game, species, owner, level, shiny, nickname, version, options):
+        assert "ribbons" not in options
+        worn["built.pk8"] = {}
+        return {"file": "built.pk8", "species": "Pikachu", "level": 5, "legal": True, "report": "",
+                "encounter": "", "moves": []}
+
+    def check(game, path, fields):
+        on = {**worn[path], **fields["ribbons"]}
+        return {"data": on, "species": "Pikachu", "level": 5, "legal": "RibbonChampionG3" not in on, "report": "",
+                "encounter": "", "moves": []}
+
+    def keep(game, reply):
+        worn[f"worn{len(worn)}.pk8"] = reply["data"]
+        return f"worn{len(worn) - 1}.pk8"
+
     monkeypatch.setattr(pokemon.SERVICE, "species", lambda game: [{"id": 25, "name": "Pikachu"}])
-    monkeypatch.setattr(pokemon.SERVICE, "make", lambda game, species, owner, level, shiny, nickname, version, options:
-                        made.append(options) or {"file": "built.pk8", "species": "Pikachu", "level": 5, "legal": True, "report": "",
-                                                 "encounter": "", "moves": []})
-    monkeypatch.setattr(pokemon.SERVICE, "check", lambda game, path, fields: checked.append((path, fields)) or
-                        {"data": "", "species": "Pikachu", "level": 5, "legal": True, "report": "", "encounter": "", "moves": []})
-    monkeypatch.setattr(pokemon.SERVICE, "keep", lambda game, reply: "worn.pk8")
-    app = SimpleNamespace(settings=SimpleNamespace(sprites=False), ui=lambda fn: None)   # the loaders' threads draw nothing
-    picker = pokemon.PokemonPicker(app, "swsh", {"species": 25, "options": {"ribbons": {"RibbonEffort": 1}}},
-                                   lambda v: None)
+    monkeypatch.setattr(pokemon.SERVICE, "make", make)
+    monkeypatch.setattr(pokemon.SERVICE, "check", check)
+    monkeypatch.setattr(pokemon.SERVICE, "keep", keep)
+    monkeypatch.setattr(pokemon.SERVICE, "ribbons", lambda game, path: [
+        {**r, "value": worn.get(path, {}).get(r["id"], 0)} for r in ribbons])
+    monkeypatch.setattr(pokemon.SERVICE, "allow_illegal", False)
+    monkeypatch.setattr(pokemon.Path, "unlink", lambda self, missing_ok=False: None)
+    monkeypatch.setattr(ft.Control, "update", lambda self: None, raising=False)
+    app = SimpleNamespace(settings=SimpleNamespace(sprites=False), ui=lambda fn: fn(),
+                          page=SimpleNamespace(run_task=lambda fn: None))    # the options' form draws nothing
+    saved = []
+    picker = pokemon.PokemonPicker(app, "swsh", {}, saved.append)
     picker.control = SimpleNamespace(update=lambda: None)
-    picker._show_result = lambda: None
-    picker.owner = lambda: {}
-    app.ui = lambda fn: fn()
     monkeypatch.setattr(pokemon.threading, "Thread", lambda target, daemon: SimpleNamespace(start=target))
-    picker._build(None)
-    assert made == [{}], picker.result.content and picker.result.content.value
-    assert checked == [("built.pk8", {"ribbons": {"RibbonEffort": 1}})]
-    assert picker.value.get("file") == "worn.pk8", picker.result.content.value
+    picker.owner = lambda: {}
+    picker.ribbons.control.update = picker.options.label.update = lambda: None
+    picker.show_sprite = picker.load_variants = lambda *a, **k: None    # sprites and forms play no part
+    picker.options._show(True)
+    picker._pick(SimpleNamespace(control=SimpleNamespace(value="25")))
+    assert picker.ribbons.control.visible and [r["name"] for r in picker.ribbons.shown] == ["Effort", "Champion"]
+    for ribbon in list(picker.ribbons.shown):
+        picker.ribbons._flip(ribbon)
+    assert saved[-1]["options"]["ribbons"] == {"RibbonEffort": 1, "RibbonChampionG3": 1}
+    for left_off in (["Champion"], []):    # named once, then unmarked
+        picker._build(None)
+        assert (picker.value["ribbon_names"], picker.value["ribbons_left_off"]) == (["Effort"], left_off)
+    assert picker.options.chosen["ribbons"] == {"RibbonEffort": 1}
 
 
 @pytest.mark.parametrize("assembler", [True, False])   # a computer without the Arm toolchain sees the install hint
@@ -1021,6 +1051,7 @@ def test_trade_preview_keeps_the_selected_form_when_shiny_changes_and_resets_on_
     picker.sprite = SimpleNamespace(show=lambda species, shiny, **kw: shown.append((species, shiny, kw["form"])))
     picker.options = OfferOptions(picker)
     picker.load_variants = lambda: None
+    picker.ribbons = SimpleNamespace(refresh=lambda: None, show=lambda open: None)
     picker._form(SimpleNamespace(control=SimpleNamespace(value="9")))
     picker._shiny(SimpleNamespace(control=SimpleNamespace(value=True)))
     picker.options._clear(None)

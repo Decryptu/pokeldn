@@ -492,20 +492,24 @@ resumes. A name PokeAPI lacks (TMs, most Legends Z-A items) shows none.
 
 ## Ribbons
 
-Ribbons, the last section of a built or loaded Pokemon's More options, lists what the helper's `ribbons` command returns:
+Ribbons, the last section of a Pokemon's More options, lists what the helper's `ribbons` command returns:
 each ribbon of the record's format (`RibbonInfo.GetRibbonInfo`) that PKHeX's legality analysis accepts
 when added alone to the record as it stands, at the highest count it accepts. A Gen 3 contest ribbon is
 a count, Normal (1) to Master (4). A worn ribbon the encounter gives (an event's Classic) cannot be taken
 off. Marks are a wild encounter's roll and are left out, as are the Gen 4 memory counts on a PK3, which
 no Gen 3 game writes. Under Allow non-legal Pokemon every ribbon is listed, the illegal ones in red.
-The list is read again when that setting changes. The ribbons put on are kept in the trade's options
-(`ribbons`, `{name: count}`) and put back with the helper's `check` after every later build; a build the
-ribbons make illegal keeps none of them unless the setting is on. Before the first build the section says to build first.
+The list is read again when that setting changes.
 
-A tap sends `check` with `ribbons` `{property: count}` and keeps the result as a new file; a result PKHeX
-refuses is dropped unless Allow non-legal Pokemon is on. The list depends on the record: a level 100
-Scarlet Pikachu built with defaults lists Best Friends, Effort, Master Rank and Paldea Champion; a
-Legends Z-A build lists none. Building again starts from no ribbons.
+Before a build the list is read from a throwaway record of the chosen species, form and options, deleted
+once read, and a tap only marks the ribbon. The marked ribbons are kept in the trade's options (`ribbons`,
+`{name: count}`) and put on with the helper's `check` after every build: all together, or, when PKHeX
+refuses the set, each one it accepts, with the rest named under the result as left off and unmarked.
+Allow non-legal Pokemon keeps the whole set.
+
+On a built or loaded record a tap sends `check` with `ribbons` `{property: count}` and keeps the result as
+a new file; a result PKHeX refuses is dropped unless Allow non-legal Pokemon is on. The record's worn
+ribbons show on a line of the result. The list depends on the record: a level 100 Scarlet Pikachu built
+with defaults lists Best Friends, Effort, Master Rank and Paldea Champion; a Legends Z-A build lists none.
 
 ## Raid events
 

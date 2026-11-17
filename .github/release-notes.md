@@ -1,12 +1,12 @@
-# pokeldn 0.66.4
+# pokeldn 0.66.5
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- A duplicated trade keeps its own form: choosing the Alolan form on a copy no longer turned the original's sprite Alolan too.
-- More options says Default, not Random, for the ball, held item, Gigantamax and Alpha: left empty, they keep the encounter's own value (most often a Poke Ball). Nature, ability, gender and Tera Type are still random.
+- Ribbons can be chosen as soon as a species is picked, in More options, without building first. Every build puts them on, and the build summary lists the ribbons the Pokemon wears.
+- A ribbon PKHeX refuses on a new build is named under the summary instead of every ribbon disappearing without a word.
 
 The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 
