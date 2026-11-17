@@ -1051,7 +1051,7 @@ def test_trade_preview_keeps_the_selected_form_when_shiny_changes_and_resets_on_
     picker.sprite = SimpleNamespace(show=lambda species, shiny, **kw: shown.append((species, shiny, kw["form"])))
     picker.options = OfferOptions(picker)
     picker.load_variants = lambda: None
-    picker.ribbons = SimpleNamespace(refresh=lambda: None, show=lambda open: None)
+    picker.ribbons = SimpleNamespace(refresh=lambda: None, show=lambda open: None, redraw=lambda: None)
     picker._form(SimpleNamespace(control=SimpleNamespace(value="9")))
     picker._shiny(SimpleNamespace(control=SimpleNamespace(value=True)))
     picker.options._clear(None)

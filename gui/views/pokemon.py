@@ -726,6 +726,11 @@ class RibbonPanel:
         self.body = ft.Row([], spacing=6, run_spacing=6, wrap=True)
         self.control = ft.Column([self.title, self.body], spacing=6, visible=False)
 
+    def redraw(self) -> None:
+        """The chips again after the picks changed outside the panel."""
+        if self.shown:
+            self._show(self.shown, "")
+
     def name(self, ribbon: str) -> str:
         return next((r["name"] for r in self.shown if r["id"] == ribbon), None) or ribbon_label(ribbon)
 
@@ -924,8 +929,9 @@ class OfferOptions:
                                       self.label], spacing=8),
                               padding=ft.Padding(2, 4, 2, 4), border_radius=8, on_click=self._toggle)
         self.extra = ft.Container(visible=False, padding=ft.Padding(0, 4, 0, 0))   # the picker's ribbons
-        # Open, the options end with room before the card's buttons: they are not part of the options.
-        self.tail = ft.Container(height=10, visible=False)
+        # Open, the options end with Clear, below the ribbons it also clears.
+        self.tail = ft.Container(ft.Row([t.link_button(tr('pokemon.clear_83b12c', 'Clear'), self._clear)],
+                                        alignment=ft.MainAxisAlignment.END), padding=ft.Padding(0, 0, 0, 6), visible=False)
         self.control = ft.Column([header, self.body, self.extra, self.tail], spacing=8)
         self._label()
 
@@ -1094,9 +1100,6 @@ class OfferOptions:
             ft.Container(height=2),
             self._stats("ivs", tr('pokemon.ivs_39e3d6', 'IVs'), 31, "0-31"),
             self._stats("effort", EFFORT[effort["kind"]], effort["max"], limit, effort.get("total"), effort_tip),
-            ft.Row([t.text(tr('pokemon.empty_keeps_default', "Empty keeps the encounter's own value, rolled at random for nature, ability, gender and Tera Type. The build is checked by PKHeX's legality analysis."), 12, t.FAINT,
-                           expand=True),
-                    t.link_button(tr('pokemon.clear_83b12c', 'Clear'), self._clear)]),
         ]
 
     def _choice(self, key: str, names: list[dict], search: bool = False, any_label: str = "") -> ft.Dropdown:
@@ -1215,7 +1218,7 @@ class OfferOptions:
         for box in boxes:
             box.expand = True
         self.lazy += boxes
-        return ft.Column([t.text(tr('pokemon.moves_empty_means_the_encounter_s_own_c7b0d3', "Moves (empty means the encounter's own)"), 12, t.MUTED),
+        return ft.Column([t.text(tr('pokemon.moves', 'Moves'), 12, t.MUTED),
                           ft.Row(boxes[:2], spacing=6), ft.Row(boxes[2:], spacing=6)], spacing=4)
 
     def _number(self, key: str, top: int, hint: str = "-") -> ft.TextField:
@@ -1274,6 +1277,7 @@ class OfferOptions:
         self.chosen.clear()
         self.picker.show_sprite()
         self.picker.load_variants()
+        self.picker.ribbons.redraw()
         species, self.loaded_for = self.loaded_for, None
         if species:
             self._load()
