@@ -469,7 +469,7 @@ def test_ribbons_marked_before_a_build_are_worn_after_every_build_and_a_refused_
     picker.control = SimpleNamespace(update=lambda: None)
     monkeypatch.setattr(pokemon.threading, "Thread", lambda target, daemon: SimpleNamespace(start=target))
     picker.owner = lambda: {}
-    picker.ribbons.control.update = picker.options.label.update = lambda: None
+    picker.ribbons.control.update = picker.options.head.update = lambda: None
     picker.show_sprite = picker.load_variants = lambda *a, **k: None    # sprites and forms play no part
     picker.options._show(True)
     picker._pick(SimpleNamespace(control=SimpleNamespace(value="25")))

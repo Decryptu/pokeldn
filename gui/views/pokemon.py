@@ -72,7 +72,8 @@ class PokemonPicker:
                                   spacing=6, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER,
                                   visible=bool(self.value.get("source")))
         species = t.labeled_control(tr('pokemon.species_56205e', 'Species'), self.species, expand=True)
-        level_shiny = [t.labeled_control(tr('pokemon.level_170930', 'Level'), self.level),
+        level_shiny = [t.labeled_control(tr('pokemon.level_170930', 'Level'), self.level,
+                                         trailing=t.pill_button(tr('pokemon.max_pill', 'Max'), self._max_level)),
                        t.labeled_control(tr('pokemon.shiny_039a0a', 'Shiny'), ft.Container(
                            self.shiny, width=64, height=t.CONTROL_HEIGHT, alignment=ft.Alignment.CENTER))]
         # Species takes its own line: beside Level and Shiny a long name is cut in a narrow column.
@@ -116,6 +117,11 @@ class PokemonPicker:
         self.name_slot.visible = not wide
         self.level_row.controls = [*self.level_row.controls[:2], *([self.name_row] if wide else [])]
         self.body.update()
+
+    def _max_level(self, e) -> None:
+        self.value["level"] = self.level.value = "100"
+        t.mark_invalid(self.level, False)
+        self.level.update()
 
     def _level(self, e) -> None:
         raw = e.control.value.strip()
@@ -178,7 +184,7 @@ class PokemonPicker:
         self.options._label()
         self.options.species_changed()
         self.ribbons.refresh()
-        self.options.label.update()
+        self.options.head.update()
 
     def _sweet(self, e) -> None:
         if e.control.value == ANY:
@@ -187,7 +193,7 @@ class PokemonPicker:
             self.options.chosen["sweet"] = int(e.control.value)
         self.show_sprite()
         self.options._label()
-        self.options.label.update()
+        self.options.head.update()
 
     def show_sprite(self, update=True) -> None:
         self.sprite.show(int(self.value.get("species") or 0), bool(self.value.get("shiny")),
@@ -925,20 +931,22 @@ class OfferOptions:
         self.body = ft.Column([], spacing=10, visible=False)
         self.chevron = t.pixel_icon("chevron-right", color=t.FAINT)
         self.label = t.text("", 12, t.MUTED)
-        header = ft.Container(ft.Row([self.chevron, t.text(tr('pokemon.more_options_bc79cd', 'More options'), 13, t.TEXT, weight=ft.FontWeight.W_600),
-                                      self.label], spacing=8),
+        self.clear = t.link_button(tr('pokemon.clear_83b12c', 'Clear'), self._clear)
+        self.head = ft.Row([self.chevron, t.text(tr('pokemon.more_options_bc79cd', 'More options'), 13, t.TEXT, weight=ft.FontWeight.W_600),
+                            ft.Container(self.label, expand=True), self.clear], spacing=8,
+                           vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        header = ft.Container(self.head,
                               padding=ft.Padding(2, 4, 2, 4), border_radius=8, on_click=self._toggle)
         self.extra = ft.Container(visible=False, padding=ft.Padding(0, 4, 0, 0))   # the picker's ribbons
-        # Open, the options end with Clear, below the ribbons it also clears.
-        self.tail = ft.Container(ft.Row([t.link_button(tr('pokemon.clear_83b12c', 'Clear'), self._clear)],
-                                        alignment=ft.MainAxisAlignment.END), padding=ft.Padding(0, 0, 0, 6), visible=False)
+        # Open, the options end with room before the card's buttons: they are not part of the options.
+        self.tail = ft.Container(height=10, visible=False)
         self.control = ft.Column([header, self.body, self.extra, self.tail], spacing=8)
         self._label()
 
     def relabel(self) -> None:
         self._label()
         try:
-            self.label.update()
+            self.head.update()
         except RuntimeError:    # not on the page yet
             pass
 
@@ -947,6 +955,7 @@ class OfferOptions:
         count = sum(1 for k, v in self.chosen.items()
                     if k not in ("form", "sweet") and (v if isinstance(v, dict) else v is not None))
         self.label.value = tr('pokemon.set_f4c8f3', '{value0} set', value0=count) if count else tr('pokemon.default', 'Default')
+        self.clear.visible = bool(count)
 
     def _toggle(self, e) -> None:
         self._show(not self.open)
@@ -1111,7 +1120,7 @@ class OfferOptions:
             else:
                 self.chosen[key] = int(e.control.value)
             self._label()
-            self.label.update()
+            self.head.update()
         options = [(ANY, any_label or tr('pokemon.random_67bc48', 'Random'))] + [(str(n["id"]), n["name"]) for n in
                                        (sorted(names, key=lambda n: n["name"]) if search else names)]
         icon = None
@@ -1134,7 +1143,7 @@ class OfferOptions:
             else:
                 self.chosen["encounter"] = e.control.value
             self._label()
-            self.label.update()
+            self.head.update()
         versions = len({n["version"] for n in encounters}) > 1
         options = [(ANY, tr('pokemon.encounter_any', 'Any legal encounter'))] + [
             (n["key"], encounter_label(n, versions)) for n in encounters]
@@ -1182,7 +1191,7 @@ class OfferOptions:
             else:
                 self.chosen["gender"] = int(value)
             self._label()
-            self.label.update()
+            self.head.update()
         current = self.chosen.get("gender")
         return t.choice_field([(ANY, tr('pokemon.random_67bc48', 'Random')), *GENDERS],
                               ANY if current is None else str(current), picked)
@@ -1194,7 +1203,7 @@ class OfferOptions:
             else:
                 self.chosen[key] = value == "yes"
             self._label()
-            self.label.update()
+            self.head.update()
         current = self.chosen.get(key)
         return t.choice_field([(ANY, tr('pokemon.default', 'Default')), ("yes", tr('pokemon.yes_85a39a', 'Yes')),
                                ("no", tr('pokemon.no_1ea442', 'No'))],
@@ -1211,7 +1220,7 @@ class OfferOptions:
             else:
                 self.chosen.pop("moves", None)
             self._label()
-            self.label.update()
+            self.head.update()
         boxes = [t.dropdown(options, str(m) if m else ANY, on_select=lambda e, n=n: picked(e, n),
                             enable_filter=True, editable=True, menu_height=320)
                  for n, m in enumerate(moves)]
