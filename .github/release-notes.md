@@ -1,11 +1,12 @@
-# pokeldn 0.66.6
+# pokeldn 0.66.7
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- More options is shorter: the explanation under the IVs and EVs is gone, the moves heading reads Moves, and Clear sits at the end, under the ribbons it also clears.
+- More options' Clear sits on the More options line and shows only once something in it is set, instead of next to the card's own clear button.
+- Level has a Max button, like Friendship, IVs and EVs.
 
 The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 
