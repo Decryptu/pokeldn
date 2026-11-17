@@ -1,12 +1,11 @@
-# pokeldn 0.66.5
+# pokeldn 0.66.6
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Ribbons can be chosen as soon as a species is picked, in More options, without building first. Every build puts them on, and the build summary lists the ribbons the Pokemon wears.
-- A ribbon PKHeX refuses on a new build is named under the summary instead of every ribbon disappearing without a word.
+- More options is shorter: the explanation under the IVs and EVs is gone, the moves heading reads Moves, and Clear sits at the end, under the ribbons it also clears.
 
 The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 
