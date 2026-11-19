@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or help
+    url: https://discord.gg/PyvaVYnpXC
+    about: Setup help and questions go to Discord, not to issues.

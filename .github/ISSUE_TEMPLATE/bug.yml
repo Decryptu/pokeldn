@@ -1,0 +1,63 @@
+name: Bug report
+description: Something fails, hangs or behaves wrongly. The log is required.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        An issue without the run's log is closed without a reply, because nothing in it can be diagnosed.
+        In the app, open the tool that failed, press Copy the log and paste it below. Older logs are in the `logs/` folder of the app's data folder.
+        From the command line, add `--capture FILE` to the launcher and attach that file. Never use `--verbose`.
+  - type: input
+    id: version
+    attributes:
+      label: pokeldn version
+      description: The release you downloaded, for example 0.66.7.
+    validations:
+      required: true
+  - type: dropdown
+    id: game
+    attributes:
+      label: Game
+      options:
+        - FireRed / LeafGreen
+        - Brilliant Diamond / Shining Pearl
+        - Sword / Shield
+        - Let's Go Pikachu / Eevee
+        - Legends Arceus
+        - Scarlet / Violet
+        - Legends Z-A
+        - No game (app, board, plugin)
+    validations:
+      required: true
+  - type: input
+    id: setup
+    attributes:
+      label: Computer, radio board and console
+      description: For example macOS 15, XIAO ESP32C6, Switch 2.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What you did and what happened
+      description: The tool, the buttons you pressed on the console, and what each screen showed.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log of the failed run
+      description: Paste the whole log, not a few lines. Drag a file in here if it is long.
+      render: text
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before sending
+      options:
+        - label: The log above is from the run that failed, with the app on its latest release.
+          required: true
+        - label: The log holds no keys; I never paste `prod.keys`.
+          required: true
