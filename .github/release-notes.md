@@ -1,12 +1,14 @@
-# pokeldn 0.66.7
+# pokeldn 0.66.8
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- More options' Clear sits on the More options line and shows only once something in it is set, instead of next to the card's own clear button.
-- Level has a Max button, like Friendship, IVs and EVs.
+- Linux: on Wayland the app opens through XWayland when it is available, which fixes a black empty window on some drivers.
+- Board page: after an install the app finds the board again, even under a new port name, and waits for it to finish restarting before saying whether the firmware answered.
+- Board page: a board showing two entries on one cable (its serial chip and its native USB) is told which entry to pick.
+- Dynamax Adventure: the seed picker can rank seeds by a chosen type, and Size has a Max button.
 
 The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 
