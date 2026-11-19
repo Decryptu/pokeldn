@@ -14,6 +14,7 @@ from gui.views.sprites import MINI, Sprite
 from pokeldn.swsh import lair, raid_event
 
 SEARCH_LIMIT = 5000                 # seeds tried for a wanted rental; one is offered every ~75
+TYPE_LIMIT = 100_000                # seeds tried for a type: about two minutes, 1 ms each
 
 
 def seed_of(text: str) -> int | None:
@@ -33,12 +34,22 @@ class LairSeedPicker:
                                  on_select=lambda e: setattr(self, "want", e.control.value),
                                  editable=True, menu_height=320,
                                  hint_text=tr('lair_seed.a_rental_you_want_8e2b71', 'A rental you want'))
+        self.type_id, self.kind, self._cancel, self._searching = None, "of", False, False
+        self.type_pick = t.dropdown([(str(i), translate(name)) for i, name in enumerate(lair.TYPES)], None,
+                                    on_select=lambda e: setattr(self, "type_id", int(e.control.value)),
+                                    menu_height=320, hint_text=tr('lair_seed.a_type_8d3f60', 'A type'))
+        self.rank = t.dropdown([("of", tr('lair_seed.encounters_of_this_type_5e1a94', 'Encounters of this type')),
+                                ("weak", tr('lair_seed.encounters_weak_to_this_type_b72c08', 'Encounters weak to this type'))],
+                               "of", on_select=lambda e: setattr(self, "kind", e.control.value))
         self.status = t.text("", 12, t.MUTED)
+        self.by_type = t.secondary_button(tr('lair_seed.search_by_type_c40e7b', 'Search by type'), self._find_type, "search")
         self.preview = ft.Column(spacing=8, tight=True)
         buttons = ft.Row([t.secondary_button(tr('lair_seed.new_seed_4c0d9a', 'New seed'), self._roll, "shuffle"),
-                          t.secondary_button(tr('lair_seed.find_a_seed_2f7e15', 'Find a seed'), self._find, "search")],
+                          t.secondary_button(tr('lair_seed.find_a_seed_2f7e15', 'Find a seed'), self._find, "search"),
+                          self.by_type],
                          spacing=8, wrap=True, run_spacing=8)
-        self.control = ft.Column([ft.Row([self.seed]), ft.Row([self.wanted]), buttons, self.status, self.preview],
+        self.control = ft.Column([ft.Row([self.seed]), ft.Row([self.wanted]), ft.Row([self.type_pick, self.rank], wrap=True),
+                                 buttons, self.status, self.preview],
                                  spacing=8, tight=True)
         self._show(str(value or ""), update=False)
 
@@ -99,6 +110,38 @@ class LairSeedPicker:
                 if found is not None:
                     self._set(found)
                 else:
+                    self.status.update()
+            self.app.ui(done)
+        threading.Thread(target=run, daemon=True).start()
+
+    def _find_type(self, _event) -> None:
+        """Rank TYPE_LIMIT random seeds by the ten encounters, not knowing which a path meets
+        (docs/swsh_raid.md, The adventure seed); a second press ends the search."""
+        if self._searching:
+            self._cancel = True
+            return
+        if self.type_id is None:
+            return
+        wanted, kind, self._cancel, self._searching = self.type_id, self.kind, False, True
+        self.status.value = tr('lair_seed.searching_7a1b33', 'Searching...')
+        self.status.update()
+
+        def progress(n):
+            self.app.ui(lambda: (setattr(self.status, "value", f"{n} / {TYPE_LIMIT}"), self.status.update()))
+
+        def run():
+            seed, score = lair.search(lambda offer, found: lair.type_score(kind, wanted, offer, found),
+                                      TYPE_LIMIT, rows=self.rows, progress=progress, cancel=lambda: self._cancel)
+
+            def done():
+                self._searching = False
+                if seed is not None and score[0]:
+                    self.status.value = tr('lair_seed.encounters_of_the_ten_c19d52',
+                                           '{value0} of the ten encounters, {value1} of the three rentals.',
+                                           value0=score[0], value1=score[1])
+                    self._set(seed)
+                else:
+                    self.status.value = tr('lair_seed.no_seed_found_try_again_0c5e8d', 'No seed found; try again.')
                     self.status.update()
             self.app.ui(done)
         threading.Thread(target=run, daemon=True).start()

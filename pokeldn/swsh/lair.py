@@ -224,14 +224,14 @@ def _draw(next32, top, mask):
 
 
 def _mt19937(seed):
+    """MT19937 outputs, each twisted on demand: a pick that stops early never pays for the rest."""
     state = [seed]
     for i in range(1, 624):
         state.append((1812433253 * (state[-1] ^ state[-1] >> 30) + i) & 0xFFFFFFFF)
     while True:
         for i in range(624):
             y = (state[i] & 0x80000000) | (state[(i + 1) % 624] & 0x7FFFFFFF)
-            state[i] = state[(i + 397) % 624] ^ y >> 1 ^ (0x9908B0DF if y & 1 else 0)
-        for y in state:
+            y = state[i] = state[(i + 397) % 624] ^ y >> 1 ^ (0x9908B0DF if y & 1 else 0)
             y ^= y >> 11
             y ^= y << 7 & 0x9D2C5680
             y ^= y << 15 & 0xEFC60000
@@ -243,6 +243,56 @@ def adventure(seed, partners=2, rows=None):
     gives with `partners` computer partners (docs/swsh_raid.md, The adventure seed)."""
     picked, _ = _walk(seed, partners, table() if rows is None else rows)
     return picked[:OFFER], picked[OFFER:]
+
+
+TYPES = ("Normal", "Fighting", "Flying", "Poison", "Ground", "Rock", "Bug", "Ghost", "Steel", "Fire",
+         "Water", "Grass", "Electric", "Psychic", "Ice", "Dragon", "Dark", "Fairy")
+# attacking type -> (types it hits for double, types that resist or are immune to it), game order
+_CHART = {0: ((), (5, 8, 7)), 1: ((0, 5, 8, 14, 16), (2, 3, 6, 13, 17, 7)),
+          2: ((1, 6, 11), (5, 8, 12)), 3: ((11, 17), (3, 4, 5, 7, 8)),
+          4: ((3, 5, 8, 9, 12), (6, 11, 2)), 5: ((2, 6, 9, 14), (1, 4, 8)),
+          6: ((11, 13, 16), (1, 2, 3, 7, 8, 9, 17)), 7: ((7, 13), (16, 0)),
+          8: ((5, 14, 17), (8, 9, 10, 12)), 9: ((6, 8, 11, 14), (5, 9, 10, 15)),
+          10: ((4, 5, 9), (10, 11, 15)), 11: ((4, 5, 10), (2, 3, 6, 8, 9, 11, 15)),
+          12: ((2, 10), (11, 12, 15, 4)), 13: ((1, 3), (8, 13, 16)),
+          14: ((2, 4, 11, 15), (8, 9, 10, 14)), 15: ((15,), (8, 17)),
+          16: ((7, 13), (1, 16, 17)), 17: ((1, 15, 16), (3, 8, 9))}
+
+
+def weak_to(attack, row):
+    """True when a row's Pokemon takes double or more from the type `attack` (both its types)."""
+    double = sum(t in _CHART[attack][0] for t in dict.fromkeys(row[4:6]))
+    return double > 0 and not any(t in _CHART[attack][1] for t in dict.fromkeys(row[4:6]))
+
+
+def type_score(kind, wanted, offer, encounters):
+    """-> (encounters, rentals) for the type `wanted`: `kind` "of" counts the ten encounters of that
+    type, "weak" those weak to it; the three rentals shown that are of the type break ties."""
+    rentals = sum(wanted in r[4:6] for r in offer[:3])
+    if kind == "weak":
+        return sum(weak_to(wanted, r) for r in encounters), rentals
+    return sum(wanted in r[4:6] for r in encounters), rentals
+
+
+def search(score, limit, rand=None, rows=None, progress=None, cancel=None):
+    """-> (seed, score) of the best of `limit` random seeds by `score(offer, encounters)`, a tuple;
+    stops early on a perfect one (ten encounters, three rentals). `progress(n)` is called every
+    500 seeds; `cancel()` true ends the search."""
+    rand, rows = rand or random.SystemRandom(), table() if rows is None else rows
+    best_seed, best = None, None
+    for n in range(limit):
+        seed = rand.getrandbits(64)
+        got = score(*adventure(seed, rows=rows))
+        if best is None or got > best:
+            best_seed, best = seed, got
+            if got >= (ENCOUNTERS, 3):
+                break
+        if n % 500 == 499:
+            if progress:
+                progress(n + 1)
+            if cancel and cancel():
+                break
+    return best_seed, best
 
 
 def partner_places(seed, taken, partners=2):
@@ -267,11 +317,13 @@ def _walk(seed, partners, rows):
     def pick():
         mt = _mt19937(rng.next()).__next__
         order = list(range(len(rows)))
-        for i in range(len(order)):
+        taken = {(r[0], r[1]) for r in picked}
+        for i in range(len(order)):      # slot i is final after step i: stop at the first usable row
             j = i + _draw(mt, len(order) - i - 1, 0x1FF)
             order[i], order[j] = order[j], order[i]
-        taken = {(r[0], r[1]) for r in picked}
-        row = next(rows[i] for i in order if not rows[i][2] and (rows[i][0], rows[i][1]) not in taken)
+            row = rows[order[i]]
+            if not row[2] and (row[0], row[1]) not in taken:
+                break
         picked.append(row)
         return row
 

@@ -415,7 +415,7 @@ closes the network once the console has left or after 10 s.
 
 The app's Dynamax Adventure (Host) tool runs these flags: the legendary, an optional Link Code and
 the seed. Its seed picker shows the three rentals and ten encounters `lair.adventure` gives for a
-seed, draws a new one, and searches seeds for a chosen rental (about one in 75 offers a given one).
+seed, draws a new one, and searches seeds for a chosen rental (about one in 75 offers a given one). A second search ranks 100 000 random seeds by a chosen type, either the encounters of that type or the encounters weak to it (`lair.type_score`, `lair.weak_to`), breaking ties on the shown rentals of that type, and keeps the best. It scores all ten encounters, since which ones a path meets is unknown. A pick stops its shuffle at the first usable row (slot i is final after step i), about 1 ms per seed.
 The legendary at the end of the map is the species BigBossFixed names; the guest's own BigBoss is
 all zero. Rentals are chosen in turns, the host's first, and a computer partner takes the seat of a
 player who has left.

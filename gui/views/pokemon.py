@@ -1086,8 +1086,10 @@ class OfferOptions:
             second.append(t.labeled_control(tr('pokemon.dynamax_level', 'Dynamax level (0-10)'),
                                             self._number("dynamax_level", 10), width=130))
         if found.get("size"):
-            second.append(t.labeled_control(tr('pokemon.size', 'Size'), self._number("size", 255, hint="0-255"),
-                                            expand=True))
+            size = self._number("size", 255, hint="0-255")
+            second.append(t.labeled_control(tr('pokemon.size', 'Size'), size, expand=True,
+                                            trailing=t.pill_button(tr('pokemon.max_pill', 'Max'),
+                                                                   lambda e: self._max_number("size", 255))))
         if found.get("alpha"):
             second.append(t.labeled_control(tr('pokemon.alpha_b1a96d', 'Alpha'), self._yes_no("alpha"), expand=True))
         elif found.get("alpha") is False:
@@ -1229,6 +1231,14 @@ class OfferOptions:
         self.lazy += boxes
         return ft.Column([t.text(tr('pokemon.moves', 'Moves'), 12, t.MUTED),
                           ft.Row(boxes[:2], spacing=6), ft.Row(boxes[2:], spacing=6)], spacing=4)
+
+    def _max_number(self, key: str, top: int) -> None:
+        box = self.fields[key][key]
+        box.value = str(top)
+        self.chosen[key] = top
+        t.mark_invalid(box, False)
+        self._label()
+        self.control.update()
 
     def _number(self, key: str, top: int, hint: str = "-") -> ft.TextField:
         def changed(e):

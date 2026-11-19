@@ -186,3 +186,78 @@ def test_our_board_lobby_takes_the_scene_of_the_console_it_finds(monkeypatch):
     assert scene() is None
     air.append(Network(swsh_host.COMM_ID, 50480))
     assert scene() == 50480
+
+
+def _full_shuffle_walk(seed, rows):
+    """The first reading of the seed's walk: a whole 273-row shuffle per pick, partners 0."""
+    rng, picked = lair._Xoroshiro(seed), []
+
+    def pick():
+        state = [rng.next()]
+        for i in range(1, 624):
+            state.append((1812433253 * (state[-1] ^ state[-1] >> 30) + i) & 0xFFFFFFFF)
+        def outputs():
+            while True:
+                for i in range(624):
+                    y = (state[i] & 0x80000000) | (state[(i + 1) % 624] & 0x7FFFFFFF)
+                    state[i] = state[(i + 397) % 624] ^ y >> 1 ^ (0x9908B0DF if y & 1 else 0)
+                yield from state
+
+        outs = outputs()
+
+        def mt():
+            y = next(outs)
+            y ^= y >> 11
+            y ^= y << 7 & 0x9D2C5680
+            y ^= y << 15 & 0xEFC60000
+            return y ^ y >> 18
+        order = list(range(len(rows)))
+        for i in range(len(order)):
+            j = i + lair._draw(mt, len(order) - i - 1, 0x1FF)
+            order[i], order[j] = order[j], order[i]
+        taken = {(r[0], r[1]) for r in picked}
+        picked.append(next(rows[i] for i in order if not rows[i][2] and (rows[i][0], rows[i][1]) not in taken))
+        return picked[-1]
+    for _ in range(4):
+        pick()
+    for threshold in (2, 1, 0):
+        if threshold:
+            pick()
+    rng.draw(2)
+    rng.draw(9)
+    for _ in range(lair.ENCOUNTERS):
+        if pick()[4] != picked[-1][5]:
+            rng.next()
+    return picked
+
+
+def test_the_early_stopping_pick_is_the_full_shuffle_pick():
+    import random
+    rows, rand = lair.table(), random.Random(7)
+    for _ in range(40):
+        seed = rand.getrandbits(64)
+        assert lair._walk(seed, 0, rows)[0] == _full_shuffle_walk(seed, rows)
+
+
+@pytest.mark.parametrize("attack, types, weak", [
+    (14, (15, 2), True),        # Ice against Dragon/Flying: 4x
+    (14, (10, 4), False),       # Ice against Water/Ground: Water resists, Ground is weak
+    (4, (9, 2), False),         # Ground against Fire/Flying: Flying is immune
+    (4, (9, 9), True),          # Ground against a mono Fire type
+    (15, (17, 17), False),      # Dragon against a mono Fairy type: immune
+    (1, (0, 7), False),         # Fighting against Normal/Ghost: Ghost is immune
+    (12, (10, 2), True),        # Electric against Water/Flying: 4x
+])
+def test_weakness_follows_the_type_chart(attack, types, weak):
+    assert lair.weak_to(attack, [0, 0, False, 0, *types]) is weak
+
+
+def test_the_type_search_returns_the_best_seed_it_tried():
+    import random
+    rows = lair.table()
+    score = lambda offer, encounters: lair.type_score("of", 14, offer, encounters)
+    seed, best = lair.search(score, 300, rand=random.Random(3), rows=rows)
+    rand = random.Random(3)
+    assert best == max(score(*lair.adventure(rand.getrandbits(64), rows=rows)) for _ in range(300))
+    assert score(*lair.adventure(seed, rows=rows)) == best
+    assert lair.search(score, 10_000, rand=random.Random(3), rows=rows, cancel=lambda: True)[1] <= best + (10, 3)

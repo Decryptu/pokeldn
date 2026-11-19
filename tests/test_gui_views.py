@@ -1577,8 +1577,8 @@ def gift_picker(monkeypatch, value=None, view=None):
         return None
     monkeypatch.setattr(ft.Column, "scroll_to", scrolled)
     work = []   # the picker's own workers; the sprites' (they take args) never run
-    monkeypatch.setattr(event_gifts.threading, "Thread", lambda target, daemon, args=None: SimpleNamespace(
-        start=lambda: args is None and work.append(target)))
+    monkeypatch.setattr(event_gifts, "threading", SimpleNamespace(Thread=lambda target, daemon, args=None: SimpleNamespace(
+        start=lambda: args is None and work.append(target))))   # the view's own module: the global Thread stays real
     asked = []
     monkeypatch.setattr(DISPLAY_SERVICE, "gift_events",
                         lambda game, who: asked.append((game, who)) or GIFT_EVENTS)
