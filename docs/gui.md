@@ -842,6 +842,9 @@ Packaging traps:
   `ENTITLEMENT_NOT_FOUND`.
 - On Linux `pokeldn/app/paths.py` restores the user's `LD_LIBRARY_PATH` (the bundled `libstdc++`
   breaks Fedora's EGL) and sets `FLET_LINUX_DISTRO`.
+- On a Wayland session with XWayland (`DISPLAY` set) `paths.py` sets `GDK_BACKEND=x11` unless the
+  user set it: on some drivers the viewer logs `Failed to create OpenGL context` under Wayland and
+  shows a black window. `GDK_BACKEND=wayland` overrides it.
 - Unicorn aborts under Control Flow Guard with `0xC0000409`
   ([unicorn#2281](https://github.com/unicorn-engine/unicorn/issues/2281)); the packer clears
   `GUARD_CF` in `pokeldn.exe` (`0xC160` to `0x8160`). Never enable `faulthandler` in the frozen

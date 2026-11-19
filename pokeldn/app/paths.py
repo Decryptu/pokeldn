@@ -17,6 +17,9 @@ if sys.platform.startswith("linux") and getattr(sys, "frozen", False):
         os.environ.pop("LD_LIBRARY_PATH", None)
     for _client in Path(ROOT, "flet_desktop", "app").glob("flet-linux-*-light-*.tar.gz"):
         os.environ.setdefault("FLET_LINUX_DISTRO", _client.name.split("-")[2])
+# Under Wayland the viewer finds no EGL config on some drivers and draws a black window; XWayland does.
+if sys.platform.startswith("linux") and os.environ.get("WAYLAND_DISPLAY") and os.environ.get("DISPLAY"):
+    os.environ.setdefault("GDK_BACKEND", "x11")
 
 
 def _data_dir() -> Path:

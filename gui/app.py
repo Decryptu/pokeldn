@@ -2,6 +2,7 @@ import errno
 import os
 import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
@@ -164,6 +165,11 @@ class App:
                                tr('app.another_program_holds_the_port_close_it_or_unplug_and_r_6addae', 'Another program holds the port. Close it, or unplug and replug the board.'),
                                port)
         if ident == NO_FIRMWARE:
+            if board.wrong_port(found, self.chips.get(port, "")) and (
+                    native := next((p.device for p in present if p.native and p.device != port), "")):
+                # A board with a USB hub shows its UART bridge and its native USB on one cable.
+                return BoardStatus("wrong-port", tr('app.use_the_board_s_native_usb_entry', "Use this board's other entry"),
+                                   tr('app.native_usb_entry_detail', 'This entry is the {value0} serial bridge; its firmware talks over the native USB, listed as {value1}. Pick that one.', value0=self.chips[port], value1=native), port)
             if board.wrong_port(found, self.chips.get(port, "")):
                 return BoardStatus("wrong-port", tr('app.use_the_board_s_other_usb_port_f8c42f', "Use the board's other USB port"),
                                    tr('app.the_firmware_talks_over_the_native_usb_port_move_the_ca_a14e6b', 'The {value0} firmware talks over the native USB port. Move the cable to the port marked USB (not COM or UART).', value0=self.chips[port]), port)
@@ -182,7 +188,8 @@ class App:
         return BoardStatus("denied" if state in ("permission", "denied") else "missing", titles.get(state, ""),
                            android.usb_guidance(state))
 
-    def check_board(self, device: str, blink: bool = False, log=None, erase_gift: bool = False) -> None:
+    def check_board(self, device: str, blink: bool = False, log=None, erase_gift: bool = False,
+                    attempts: int = 1) -> None:
         """Ask the board's firmware for its identity in the background; opening the port can restart it."""
         if self.busy or not device:
             return
@@ -191,7 +198,14 @@ class App:
 
         def work():
             try:
-                ident = board.identify(device, blink=blink, erase_gift=erase_gift)
+                for attempt in range(attempts):
+                    try:
+                        ident = board.identify(device, blink=blink, erase_gift=erase_gift)
+                        break
+                    except Exception:
+                        if attempt + 1 == attempts:
+                            raise
+                        time.sleep(2.0)   # a board still booting after a flash
                 self.identities[device] = ident
                 say(f'[app] {ident.firmware}, protocol {ident.protocol}, chip revision {ident.chip_revision}, MAC {ident.sta_mac}')
                 if not ident.current:

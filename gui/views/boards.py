@@ -682,8 +682,22 @@ class BoardView:
             threading.Timer(3.0, lambda: self.app.ui(self._after_install)).start()
         self.app.ui(done)
 
-    def _after_install(self) -> None:
-        self.selected = "" if self.selected not in [p.device for p in board.ports()] else self.selected
+    def _after_install(self, waited: float = 0.0) -> None:
+        """Linux and macOS may give a native-USB board a new node after its reset; its USB serial
+        number (the MAC) follows it. A first HELLO before the firmware has booted gets no reply."""
+        present = board.ports()
+        serial = next((p.serial_number for p in self.ports if p.device == self.selected and p.serial_number), "")
+        same = next((p.device for p in present if serial and p.serial_number == serial), "")
+        if not same and self.selected in [p.device for p in present]:
+            same = self.selected
+        if not same and waited < 10:
+            threading.Timer(1.0, lambda: self.app.ui(lambda: self._after_install(waited + 1))).start()
+            return
+        self.selected = same
+        if same and not self.app.busy:
+            self.app.identities.pop(same, None)
+            self.log.add(f'[app] Checking {same}; the board may restart.')
+            self.app.check_board(same, log=self.log.add, attempts=4)
         self.scan()
 
     def _failed(self, why: str) -> None:
