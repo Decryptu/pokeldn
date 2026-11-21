@@ -90,8 +90,9 @@ def test_master_steps_the_barrier_once_the_console_mirrors_it():
     m.receive(0, raid_battle.sync(raid_battle.PING_REPLY), console)
     out = m.receive(1, raid_battle.framework(raid_battle.BATTLE, console, 909, bytes.fromhex("00000100")),
                     console)
-    bodies = [raid_battle.parse_framework(p)["body"].hex() for _, p, _ in out]
+    bodies = [raid_battle.parse_framework(p)["body"].hex() for port, p, _ in out if port == 1]
     assert bodies == ["0100", "01000100"]
+    assert [p for port, p, _ in out if port == 0] == [raid_battle.seat(ours, 1, raid_battle.CLIENT_VERSION)]
 
 
 def test_den_advert_points_at_the_bosss_den_slot_as_the_emulated_host_did():
@@ -145,6 +146,31 @@ def test_an_emulated_den_hosts_rewards_fit_its_den_slot():
     assert kept == pairs and refused == [(1, 1)]
 
 
+def test_a_console_reached_first_on_port_0_still_serves():
+    """A console files ServerVersion records as they arrive and serves only if the first valid slot
+    of the highest version is its own (main 0x8b4030). Port 0 can overtake port 1: in a retail
+    Sword's black-screen raids it filed our 0x6d record alone, published it as object 0 and sent
+    EmptyCommand (8 of 26 hosted raids). Our record must reach it only after its own."""
+    console, ours = 0x7F00030000020000, 0x7F00020000020000
+    m = raid_battle.Master(ours, [console], log=lambda *a: None)
+    table = {}
+
+    def deliver(out):
+        for port in (0, 1):                 # the reordering the captures show
+            for p, payload, _ in out:
+                fw = raid_battle.parse_framework(payload) if p == 1 else None
+                if fw and fw["station"] is None and fw["base"] < 8 and len(fw["body"]) == 16:
+                    table[fw["base"]] = fw["body"]
+                elif p == port == 0 and payload.startswith(b"\x10\x27\x00\x00") and len(payload) > 6:
+                    table.setdefault(min(set(range(8)) - set(table)), raid_battle.server_record(ours, 1, 0x6D))
+        best = max(table.values(), key=lambda r: r[9])
+        return int.from_bytes(next(r for k, r in sorted(table.items()) if r[9] == best[9])[:8], "little")
+
+    assert deliver(m.receive(0, raid_battle.sync(raid_battle.PING_REPLY), console)) == console
+    own = raid_battle.seat(console, 0, raid_battle.SERVER_VERSION)
+    assert [p for _, p, _ in m.receive(0, own, console)] == [raid_battle.seat(ours, 1, raid_battle.CLIENT_VERSION)]
+
+
 def test_two_consoles_start_together_and_both_must_mirror_the_barrier():
     """Two emulated Shields in one hosted lobby: the start waits for both, BattleStart lists both
     consoles then us, object k is console k's record and ours is last, and the framework barrier
@@ -192,7 +218,7 @@ def test_two_consoles_start_together_and_both_must_mirror_the_barrier():
     step = raid_battle.framework(raid_battle.BATTLE, a, 909, bytes.fromhex("00000100"))
     assert m.receive(1, step, a) == []
     out = m.receive(1, raid_battle.framework(raid_battle.BATTLE, b, 909, bytes.fromhex("00000100")), b)
-    assert [raid_battle.parse_framework(p)["body"].hex() for _, p, _ in out] == ["0100", "01000100"]
+    assert [raid_battle.parse_framework(p)["body"].hex() for port, p, _ in out if port == 1] == ["0100", "01000100"]
 
 
 @pytest.mark.parametrize("shine", [0, 7, None])

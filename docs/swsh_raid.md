@@ -89,6 +89,14 @@ network object `+0x190 + 16 * i`; `0x8b4030` picks the first valid slot with the
 position in BattleStart (`0x1025120`). The collecting station publishes the slots as 40000
 framework objects 0 to 7.
 
+In 9 of 26 raids a hosted retail Sword published object 0 itself, holding our `0x6d` record, before
+its own ServerVersion; in 8 of them it sent EmptyCommand, never published object 8 and stayed on a
+black screen with its music playing. Our ServerVersion went out on port 0 in the same burst as the
+objects on port 1, two separate streams. That port 0 arrived first, so our record was the only one
+in the console's table, is deduced and not measured. The host sends its
+own ServerVersion only once every console has sent its own, or has mirrored base-20000 body
+`00000100`, which follows the objects on port 1.
+
 ### The action
 
 The 88-byte action is eleven 8-byte entries. Entry 2 as a little-endian u24 is
