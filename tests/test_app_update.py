@@ -222,6 +222,49 @@ def test_a_failed_copy_puts_the_old_app_back_and_says_why(files, tmp_path):
     assert "could not copy" in json.loads(outcome.read_text())["error"]
 
 
+def test_a_rename_that_fails_midway_puts_back_what_moved_and_keeps_the_rest(tmp_path, monkeypatch):
+    """Windows still holds the quitting pokeldn.exe after _internal moved: nothing of the old app is lost."""
+    root = packed_app(tmp_path / "Apps", "win32", "0.1.0")
+    (root / "Received").mkdir()
+    (root / "Received" / "0025 PIKACHU.pk8").write_bytes(b"\x01" * 344)
+    new = packed_app(tmp_path / "update/new", "win32", "9.0.0")
+    rename = os.rename
+
+    def locked(source, dest):
+        if Path(source).name == "pokeldn.exe":
+            raise PermissionError("in use")
+        rename(source, dest)
+    monkeypatch.setattr(update.os, "rename", locked)
+    monkeypatch.setattr(update, "RENAME_WAIT", 0.0)
+    outcome, opened = tmp_path / "outcome.json", []
+    assert not update.apply(new, root, exited_pid(), "9.0.0", "win32", outcome, opened.append)
+    assert "could not move" in json.loads(outcome.read_text())["error"]
+    assert opened == [root] and version_file(root).read_text() == "0.1.0"
+    assert "0.1.0" in update.executable_in(root, "win32").read_text()
+    assert (root / "Received" / "0025 PIKACHU.pk8").read_bytes() == b"\x01" * 344
+    assert not (tmp_path / "Apps" / ".pokeldn.old").exists()
+
+
+def test_a_rollback_that_cannot_move_an_entry_back_keeps_it_and_says_where(tmp_path, monkeypatch):
+    """A copy fails and the old _internal cannot go back: it stays in .pokeldn.old, never deleted."""
+    root = packed_app(tmp_path / "Apps", "win32", "0.1.0")
+    new = packed_app(tmp_path / "update/new", "win32", "9.0.0")
+    old = tmp_path / "Apps" / ".pokeldn.old"
+    rename = os.rename
+
+    def stuck(source, dest):
+        if Path(source).parent == old and Path(source).name == "_internal":
+            raise PermissionError("in use")
+        rename(source, dest)
+    monkeypatch.setattr(update.os, "rename", stuck)
+    monkeypatch.setattr(update, "_copy", lambda *a: (_ for _ in ()).throw(OSError("disk full")))
+    outcome, opened = tmp_path / "outcome.json", []
+    assert not update.apply(new, root, exited_pid(), "9.0.0", "win32", outcome, opened.append)
+    error = json.loads(outcome.read_text())["error"]
+    assert "could not copy" in error and str(old) in error
+    assert (old / "_internal" / "VERSION").read_text() == "0.1.0"
+
+
 @pytest.mark.parametrize("system", ["win32", "linux"])
 @pytest.mark.parametrize("folder", ["Desktop", "pokeldn"])
 def test_an_update_replaces_only_the_apps_own_entries(tmp_path, system, folder):

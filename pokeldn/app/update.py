@@ -562,17 +562,27 @@ def apply(new: Path, target: Path, pid: int, version: str, system: str = sys.pla
     end_processes_from(target, 10.0)
     shutil.rmtree(old, ignore_errors=True)
     moved: list[str] = []
+    copied: list[str] = []
 
-    def restore() -> None:
-        for name in ours:
+    def restore() -> str:
+        """-> "" once the old app is whole again, else where its entries still are."""
+        # Only what the copy wrote goes: an entry a failed rename left in place is still the old app's.
+        for name in copied:
             entry = target / name
             if entry.is_dir() and not entry.is_symlink():
                 shutil.rmtree(entry, ignore_errors=True)
             elif entry.exists() or entry.is_symlink():
                 entry.unlink(missing_ok=True)
+        stuck = []
         for name in moved:
-            os.rename(old / name, target / name)
+            try:
+                os.rename(old / name, target / name)
+            except OSError:
+                stuck.append(name)
+        if stuck:     # never delete the only copy of the old app
+            return f"; the old {', '.join(stuck)} stayed in {old}"
         shutil.rmtree(old, ignore_errors=True)
+        return ""
 
     old.mkdir(parents=True)
     end = time.monotonic() + RENAME_WAIT
@@ -586,13 +596,14 @@ def apply(new: Path, target: Path, pid: int, version: str, system: str = sys.pla
                 break
             except OSError as error:
                 if time.monotonic() > end:
-                    restore()
-                    _record(outcome, version, f"could not move the old app aside ({error})")
+                    left = restore()
+                    _record(outcome, version, f"could not move the old app aside ({error}){left}")
                     relaunch(target)
                     return False
                 time.sleep(0.5)
     try:
         for entry in new.iterdir():
+            copied.append(entry.name)
             if entry.is_dir() and not entry.is_symlink():
                 _copy(entry, target / entry.name, system)
             else:
@@ -600,8 +611,8 @@ def apply(new: Path, target: Path, pid: int, version: str, system: str = sys.pla
         if not executable_in(target, system).is_file():
             raise OSError("the copied app has no executable")
     except (OSError, subprocess.CalledProcessError) as error:
-        restore()
-        _record(outcome, version, f"could not copy the new app ({error})")
+        left = restore()
+        _record(outcome, version, f"could not copy the new app ({error}){left}")
         relaunch(target)
         return False
     shutil.rmtree(old, ignore_errors=True)
