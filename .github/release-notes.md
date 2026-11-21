@@ -1,16 +1,15 @@
-# pokeldn 0.66.8
+# pokeldn 0.66.9
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Linux: on Wayland the app opens through XWayland when it is available, which fixes a black empty window on some drivers.
-- Board page: after an install the app finds the board again, even under a new port name, and waits for it to finish restarting before saying whether the firmware answered.
-- Board page: a board showing two entries on one cable (its serial chip and its native USB) is told which entry to pick.
-- Dynamax Adventure: the seed picker can rank seeds by a chosen type, and Size has a Max button.
+- Windows: Update now keeps your files beside the app when it replaces it in place.
+- Sword/Shield Max Raid (Host): the board waits for each console's own server record before sending its own, which fixes a black screen on the joined console.
+- ESP32-S3, C3 and C6 boards answer on either USB socket, so a board with a separate USB-UART port works through that port too. Install the new firmware from the Board page.
 
-The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
+The radio firmware is now 1.12.0; the controller firmware stays at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
