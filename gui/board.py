@@ -151,8 +151,9 @@ class Port:
 
 
 def wrong_port(port: Port, chip: str) -> bool:
-    """S2, S3, C3 and C6 firmware talks over native USB only; flashing through a UART bridge still works."""
-    return chip in ("ESP32-S2", "ESP32-S3", "ESP32-C3", "ESP32-C6") and not port.native
+    """The S2 firmware talks over native USB only (S3, C3 and C6 from firmware 1.12.0 answer on
+    either socket); flashing through a UART bridge still works."""
+    return chip == "ESP32-S2" and not port.native
 
 
 @dataclass(frozen=True)

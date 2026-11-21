@@ -6,10 +6,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* S3, C3 and C6 use native USB Serial/JTAG; ESP32 uses UART0. Connect the matching USB port.
-   docs/hardware_esp32.md, Supported boards. */
+/* S3, C3 and C6 answer on native USB Serial/JTAG and on UART0, whichever socket last carried a
+   valid frame; ESP32 uses UART0, the S2 TinyUSB only. docs/hardware_esp32.md, Supported boards. */
 #if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
 #define WIRE_USB 1
+#define WIRE_JTAG 1
 #include "driver/usb_serial_jtag.h"
 #elif CONFIG_IDF_TARGET_ESP32S2
 #define WIRE_USB 1
@@ -19,7 +20,14 @@
 #include "tusb.h"
 #else
 #define WIRE_USB 0
+#endif
+#ifndef WIRE_JTAG
+#define WIRE_JTAG 0
+#endif
+#define WIRE_HAS_UART (!WIRE_USB || WIRE_JTAG)
+#if WIRE_HAS_UART
 #include "driver/uart.h"
+#include "soc/uart_pins.h"
 #endif
 #include "ble.h"
 #include "esp_system.h"
@@ -30,7 +38,7 @@
 
 #define WIRE_CORE (configNUMBER_OF_CORES - 1)
 
-#if !WIRE_USB
+#if WIRE_HAS_UART
 #define WIRE_UART UART_NUM_0
 #endif
 #define MSG_LOG 0x83
@@ -58,9 +66,10 @@ typedef struct {
 #define WIRE_UART_EVENTS 64
 
 static QueueHandle_t s_out;
-#if !WIRE_USB
+#if WIRE_HAS_UART
 static QueueHandle_t s_uart_events;
 #endif
+static atomic_bool s_on_uart = !WIRE_USB;   /* the socket replies go to */
 static wire_handler_t s_handler;
 /* Set when the host watchdog judges the host gone: messages are discarded, not dropped, until the
    host speaks again; a dead host's queue would otherwise count a drop per 500 ms write. */
@@ -138,6 +147,7 @@ void wire_log(const char *format, ...)
 }
 
 uint32_t wire_dropped(void) { return atomic_load(&s_dropped); }
+bool wire_on_uart(void) { return atomic_load(&s_on_uart); }
 
 void wire_set_host_away(bool away) { atomic_store(&s_host_away, away); }
 uint32_t wire_consumed(void) { return atomic_load(&s_consumed_total); }
@@ -255,7 +265,7 @@ static void writer(void *arg)
             uint32_t baud;
             memcpy(&baud, m->bytes, 4);
             free(m);
-#if WIRE_USB
+#if !WIRE_HAS_UART
             (void)baud;   /* USB CDC has no line rate: the host's BAUD is acknowledged and nothing switches */
 #else
             /* The 16 KB TX ring can hold a second and more at 115200; a 100 ms wait switched
@@ -268,7 +278,8 @@ static void writer(void *arg)
         memcpy(frame, m->bytes, n);
         free(m);
         if (atomic_load(&s_host_away)) continue;
-#if !WIRE_USB
+#if WIRE_HAS_UART
+        if (atomic_load(&s_on_uart)) {
         /* uart_write_bytes spins on a full TX ring (IDF 6.1 uart.c:1662) and this task outranks
            the reader on its core, which it starved in the middle of esp_wifi_internal_tx: 111 ms
            sends under a line-rate flood. Sleep until the frame fits. docs/hardware_esp32.md */
@@ -278,6 +289,7 @@ static void writer(void *arg)
              uart_get_tx_buffer_free_size(WIRE_UART, &free_size) == ESP_OK && free_size < need;)
             vTaskDelay(1);
         raise_max(&s_write_max_us, esp_timer_get_time() - waited);
+        }
 #endif
         if (frame[0] == MSG_CREDIT && n == 5) {
             atomic_store(&s_credit_queued, false);
@@ -314,7 +326,9 @@ static void writer(void *arg)
 #endif
             continue;
         }
-#if WIRE_USB
+#if WIRE_JTAG
+        if (atomic_load(&s_on_uart)) uart_write_bytes(WIRE_UART, encoded, out); else write_usb(encoded, out);
+#elif WIRE_USB
         write_usb(encoded, out);
 #else
         uart_write_bytes(WIRE_UART, encoded, out);
@@ -325,7 +339,7 @@ static void writer(void *arg)
 /* The ISR posts UART_DATA every 32 bytes into the queue that carries the overflow events (IDF 6.1
    uart.c:1369, 1543): 64 entries fill in 14 ms at 1500000 and the ISR drops the rest. Counted on a
    task above the reader, every tick. docs/hardware_esp32.md, The serial ceiling. */
-#if !WIRE_USB
+#if WIRE_HAS_UART
 static void events(void *arg)
 {
     for (;;) {
@@ -343,14 +357,15 @@ static void events(void *arg)
 #endif
 
 /* A frame that fails here is a command lost between host and board; wire_rx_bad counts them. */
-static void deliver(const uint8_t *encoded, size_t used)
+/* `link` is the socket, 1 UART, 0 USB, -1 Bluetooth. */
+static void deliver(const uint8_t *encoded, size_t used, int link)
 {
     static uint8_t frame[WIRE_MAX_PAYLOAD + 8];
     size_t read = 0, out = 0;
     while (read < used) {
         const uint8_t code = encoded[read++];
         if (!code || read + code - 1 > used || out + code > sizeof(frame)) {
-            atomic_fetch_add(&s_rx_bad, 1);
+            if (link < 0 || link == atomic_load(&s_on_uart)) atomic_fetch_add(&s_rx_bad, 1);
             return;
         }
         for (int i = 1; i < code; ++i) frame[out++] = encoded[read++];
@@ -358,9 +373,11 @@ static void deliver(const uint8_t *encoded, size_t used)
     }
     uint32_t crc;
     if (out < 5 || (memcpy(&crc, frame + out - 4, 4), crc != crc32(frame, out - 4))) {
-        atomic_fetch_add(&s_rx_bad, 1);
+        if (link < 0 || link == atomic_load(&s_on_uart)) atomic_fetch_add(&s_rx_bad, 1);
         return;
     }
+    /* Only a valid frame moves the replies: an unpowered bridge chip can drive RX with noise. */
+    if (link >= 0) atomic_store(&s_on_uart, link);
     const int64_t started = esp_timer_get_time();
     s_handler(frame[0], frame + 1, out - 5);
     const int64_t took = esp_timer_get_time() - started;
@@ -370,6 +387,26 @@ static void deliver(const uint8_t *encoded, size_t used)
     }
     if (took > 50000) wire_log("slow command 0x%02x: %u ms", frame[0], (unsigned)(took / 1000));
 }
+
+/* One decoder per socket, so noise on the idle one never splices into a frame. */
+typedef struct {
+    uint8_t encoded[WIRE_MAX_PAYLOAD + 32];
+    size_t used;
+    bool overflow;
+} link_rx_t;
+
+#if WIRE_HAS_UART
+/* uart_read_bytes waits its timeout again for every ring item until `length` is met: a host
+   trickling 21-byte commands every 15 ms was read 461 ms late. Wait for one byte, then take what
+   is buffered. docs/hardware_esp32.md, The serial ceiling. */
+static int read_uart(uint8_t *chunk, TickType_t wait)
+{
+    size_t buffered = 0;
+    uart_get_buffered_data_len(WIRE_UART, &buffered);
+    return buffered ? uart_read_bytes(WIRE_UART, chunk, buffered < 512 ? buffered : 512, 0)
+                    : uart_read_bytes(WIRE_UART, chunk, 1, wait);
+}
+#endif
 
 /* Dual-core targets install the host link on core 1 to separate Wi-Fi interrupts; C3 and C6 use core 0.
    Moving classic UART interrupts to core 0 lost 500 host commands in 7 s under a receive flood.
@@ -386,7 +423,8 @@ static void reader(void *arg)
     usb_config.rx_buffer_size = 16384;
     usb_config.tx_buffer_size = 16384;
     ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_config));
-#else
+#endif
+#if WIRE_HAS_UART
     const uart_config_t config = {
         .baud_rate = 115200,
         .data_bits = UART_DATA_8_BITS,
@@ -397,8 +435,8 @@ static void reader(void *arg)
     };
     ESP_ERROR_CHECK(uart_driver_install(WIRE_UART, 16384, 16384, WIRE_UART_EVENTS, &s_uart_events, 0));
     ESP_ERROR_CHECK(uart_param_config(WIRE_UART, &config));
-    /* With CONFIG_ESP_CONSOLE_NONE nothing routes UART0 to GPIO1/3; the board stays mute without this. */
-    ESP_ERROR_CHECK(uart_set_pin(WIRE_UART, 1, 3, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    /* With CONFIG_ESP_CONSOLE_NONE nothing routes UART0 to its pins (GPIO1/3 on the ESP32); the board stays mute without this. */
+    ESP_ERROR_CHECK(uart_set_pin(WIRE_UART, U0TXD_GPIO_NUM, U0RXD_GPIO_NUM, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     /* The driver drains the 128-byte FIFO at 120 by default: 8 bytes, 53 us at 1500000, and a
        Scarlet seat's opening overflowed it 235 times. At 32 the margin is 640 us.
        docs/hardware_esp32.md, The serial ceiling. */
@@ -406,13 +444,12 @@ static void reader(void *arg)
     xTaskCreatePinnedToCore(events, "wire_ev", 2048, NULL, 21, NULL, WIRE_CORE);
 #endif
     xTaskCreatePinnedToCore(writer, "wire_tx", 4096, NULL, 20, NULL, WIRE_CORE);
-    static uint8_t chunk[512], encoded[WIRE_MAX_PAYLOAD + 32];
-    size_t used = 0;
-    bool overflow = false;
+    static uint8_t chunk[512];
+    static link_rx_t usb_rx, uart_rx;
     for (;;) {
         const int64_t turn = esp_timer_get_time();
         int n;
-        bool cable = true;
+        bool cable = true, uart = atomic_load(&s_on_uart);
 #if POKELDN_BLE
         cable = !ble_linked();
         if (!cable) n = ble_read(chunk, sizeof(chunk), pdMS_TO_TICKS(20)); else
@@ -421,18 +458,20 @@ static void reader(void *arg)
 #if CONFIG_IDF_TARGET_ESP32S2
         n = tud_cdc_read(chunk, sizeof(chunk));
         if (!n) vTaskDelay(1);   /* let the TinyUSB task service its endpoints */
+#elif WIRE_JTAG
+        /* The idle socket is polled, the one replies go to waits; a host on either is heard. */
+        n = uart ? read_uart(chunk, 0) : usb_serial_jtag_read_bytes(chunk, sizeof(chunk), 0);
+        if (n <= 0) {
+            n = uart ? usb_serial_jtag_read_bytes(chunk, sizeof(chunk), 0) : read_uart(chunk, 0);
+            if (n > 0) uart = !uart;
+        }
+        if (n <= 0) n = uart ? read_uart(chunk, pdMS_TO_TICKS(20))
+                             : usb_serial_jtag_read_bytes(chunk, sizeof(chunk), pdMS_TO_TICKS(20));
 #elif WIRE_USB
         /* The USB driver returns whatever is buffered as soon as there is any, so one call does both. */
         n = usb_serial_jtag_read_bytes(chunk, sizeof(chunk), pdMS_TO_TICKS(20));
 #else
-        /* uart_read_bytes waits its timeout again for every ring item until `length` is met: a
-           host trickling 21-byte commands every 15 ms was read 461 ms late. Wait for one byte,
-           then take what is buffered. docs/hardware_esp32.md, The serial ceiling. */
-        size_t buffered = 0;
-        uart_get_buffered_data_len(WIRE_UART, &buffered);
-        n = buffered
-            ? uart_read_bytes(WIRE_UART, chunk, buffered < sizeof(chunk) ? buffered : sizeof(chunk), 0)
-            : uart_read_bytes(WIRE_UART, chunk, 1, pdMS_TO_TICKS(20));
+        n = read_uart(chunk, pdMS_TO_TICKS(20));
 #endif
         }
         raise_max(&s_read_max_us, esp_timer_get_time() - turn);
@@ -443,17 +482,21 @@ static void reader(void *arg)
             send_credit();
         }
         if (cable && n > 0) atomic_fetch_add(&s_cable_total, (unsigned)n);
+        link_rx_t *rx = cable && uart ? &uart_rx : &usb_rx;
         for (int i = 0; i < n; ++i) {
-            ++s_consumed;
-            atomic_fetch_add(&s_consumed_total, 1);   /* before the handler, so a HELLO's reset excludes its own delimiter */
+            const bool counted = !cable || uart == atomic_load(&s_on_uart);
+            if (counted) {
+                ++s_consumed;
+                atomic_fetch_add(&s_consumed_total, 1);   /* before the handler, so a HELLO's reset excludes its own delimiter */
+            }
             if (chunk[i]) {
-                if (used < sizeof(encoded)) encoded[used++] = chunk[i]; else overflow = true;
+                if (rx->used < sizeof(rx->encoded)) rx->encoded[rx->used++] = chunk[i]; else rx->overflow = true;
                 continue;
             }
-            if (used && overflow) atomic_fetch_add(&s_rx_bad, 1);
-            if (used && !overflow) deliver(encoded, used);
-            used = 0;
-            overflow = false;
+            if (rx->used && rx->overflow && counted) atomic_fetch_add(&s_rx_bad, 1);
+            if (rx->used && !rx->overflow) deliver(rx->encoded, rx->used, cable ? uart : -1);
+            rx->used = 0;
+            rx->overflow = false;
         }
         if (s_consumed - s_credited >= CREDIT_STEP) send_credit();
         const int64_t held = esp_timer_get_time() - turn;

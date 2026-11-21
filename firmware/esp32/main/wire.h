@@ -23,6 +23,8 @@ void wire_set_baud(uint32_t baud);
    handler, so the count starts after the HELLO frame on both sides. */
 void wire_credit_reset(void);
 uint32_t wire_dropped(void);
+/* True while replies go to UART0 (an S3, C3 or C6 on its bridge socket, or a classic ESP32). */
+bool wire_on_uart(void);
 /* True once the host watchdog judges the host gone: every message is discarded, uncounted, until the
    host sends a command again. */
 void wire_set_host_away(bool away);

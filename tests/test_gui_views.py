@@ -212,9 +212,9 @@ def _app(port, ident, chip=""):
 
 
 @pytest.mark.parametrize("port, ident, chip, state", [
-    (UART, NO_FIRMWARE, "ESP32-S3", "wrong-port"),   # flashed through the UART socket: it never answers there
-    (UART, NO_FIRMWARE, "ESP32-C3", "wrong-port"),
-    (UART, NO_FIRMWARE, "ESP32-C6", "wrong-port"),
+    (UART, NO_FIRMWARE, "ESP32-S2", "wrong-port"),   # TinyUSB only: it never answers on the UART socket
+    (UART, NO_FIRMWARE, "ESP32-S3", "flash"),        # firmware 1.12.0 answers there; older needs installing
+    (UART, NO_FIRMWARE, "ESP32-C6", "flash"),
     (NATIVE, NO_FIRMWARE, "ESP32-S3", "flash"),      # the right socket: reset or flash, never "move the cable"
     (UART, NO_FIRMWARE, "ESP32", "flash"),           # a classic ESP32 talks over its bridge
     (UART, NO_FIRMWARE, "", "flash"),                # nothing flashed this session: no guess about the socket
@@ -263,12 +263,12 @@ def test_start_waits_for_keys_and_a_built_offer_but_not_for_a_doubtful_board(tmp
 
 
 def test_a_board_that_never_answers_on_a_bridge_is_named_by_its_rom_and_sent_to_the_usb_socket(monkeypatch):
-    """No flash this session: the ROM bootloader still says S3, which never answers on a UART socket."""
+    """No flash this session: the ROM bootloader still says S2, which never answers on a UART socket."""
     import time
     monkeypatch.setattr(board_module, "ports", lambda: [UART])
     monkeypatch.setattr(board_module, "identify", lambda port, blink=False: (_ for _ in ()).throw(
         RuntimeError("no answer")))
-    monkeypatch.setattr(board_module, "detect_chip", lambda port: "ESP32-S3")
+    monkeypatch.setattr(board_module, "detect_chip", lambda port: "ESP32-S2")
     app = _app(UART, None)
     app.process, app.board_busy, app.board_listeners = None, False, []
     app.ui = lambda fn: fn()

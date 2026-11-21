@@ -1,6 +1,6 @@
 idf_build_get_property(idf_target IDF_TARGET)
 if(idf_target STREQUAL "esp32s3" OR idf_target STREQUAL "esp32c3" OR idf_target STREQUAL "esp32c6")
-    set(wire_driver esp_driver_usb_serial_jtag)
+    set(wire_driver esp_driver_usb_serial_jtag esp_driver_uart)   # either socket answers (wire.c)
 elseif(idf_target STREQUAL "esp32s2")
     # The S2 uses USB OTG with TinyUSB, resolved by the component manifest.
 elseif(idf_target STREQUAL "esp32")

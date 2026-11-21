@@ -17,16 +17,17 @@ host, except in the [portable beacon](#portable-beacon). `pokeldn.ldn.esp32_wlan
 |---|---|---|
 | classic ESP32 (ESP32-D0WD, WROOM-32E) | UART0 through a USB serial bridge | `pokeldn-radio.bin` |
 | ESP32-S2 (Flipper Zero Wi-Fi Developer Board) | native USB CDC (TinyUSB) | `pokeldn-radio-s2.bin` |
-| ESP32-S3 | native USB Serial/JTAG | `pokeldn-radio-s3.bin` |
-| ESP32-C3 | native USB Serial/JTAG | `pokeldn-radio-c3.bin` |
-| ESP32-C6 | native USB Serial/JTAG | `pokeldn-radio-c6.bin` |
+| ESP32-S3 | native USB Serial/JTAG, or UART0 through a USB serial bridge | `pokeldn-radio-s3.bin` |
+| ESP32-C3 | native USB Serial/JTAG, or UART0 through a USB serial bridge | `pokeldn-radio-c3.bin` |
+| ESP32-C6 | native USB Serial/JTAG, or UART0 through a USB serial bridge | `pokeldn-radio-c6.bin` |
 | classic ESP32, ESP32-C6 | Bluetooth LE (the iOS app), and USB as above | `pokeldn-radio-ble.bin`, `pokeldn-radio-ble-c6.bin` |
 
-All targets use 2.4 GHz; the S2 is [below](#the-esp32-s2-flipper-zero-wi-fi-developer-board). An S2, S3, C3 or C6 with separate UART and native USB
-sockets must use the native socket (S3 GPIO19/20, C3 GPIO18/19); through the UART socket the firmware
-never answers. When no firmware answers through a USB serial bridge, the desktop app reads the chip
-from the ROM bootloader (esptool `detect_chip`) and names an S2, S3, C3 or C6 as plugged into the wrong
-socket. `303a:1001` is shared by several chips; flashing detects the chip with esptool.
+All targets use 2.4 GHz; the S2 is [below](#the-esp32-s2-flipper-zero-wi-fi-developer-board). From firmware 1.12.0 an S3, C3 or C6
+with separate UART and native USB sockets answers on either: the firmware listens on USB Serial/JTAG
+and on UART0 (`U0TXD_GPIO_NUM`/`U0RXD_GPIO_NUM`) and replies on the socket that last carried a valid
+frame, so noise from an unpowered bridge chip never moves the replies. An S2 must use its
+native socket. When no firmware answers through a USB serial bridge, the desktop app reads the chip
+from the ROM bootloader (esptool `detect_chip`) and names an S2 as plugged into the wrong socket. `303a:1001` is shared by several chips; flashing detects the chip with esptool.
 
 | board | antenna | BOOT | user LED | CPU, task core | idle free heap | BENCH over native USB, macOS |
 |---|---|---|---|---|---|---|

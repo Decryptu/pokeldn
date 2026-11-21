@@ -100,8 +100,8 @@ static void watch_task(void *arg)
             last_change = now;
             snap(healthy);
             healthy_us = now;
-        } else if (ble_linked()) {
-            last_change = now;   /* Bluetooth carries the link: a USB stall costs nothing */
+        } else if (ble_linked() || wire_on_uart()) {
+            last_change = now;   /* Bluetooth or the UART socket carries the link: a USB stall costs nothing */
         } else if ((armed || wire_cable_consumed()) && now - last_change > STALL_US) {
             s_report.stalls = s_report.magic == WATCH_MAGIC ? s_report.stalls + 1 : 1;
             s_report.healthy_us = healthy_us;

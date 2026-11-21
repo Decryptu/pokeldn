@@ -229,8 +229,8 @@ class App:
         threading.Thread(target=work, daemon=True).start()
 
     def _probe_chip(self, device: str, say) -> None:
-        """Through a USB-to-serial bridge, the ROM bootloader still names the chip: an S3, C3 or C6 there
-        is on its UART socket, where the radio firmware never answers."""
+        """Through a USB-to-serial bridge, the ROM bootloader still names the chip: an S2 there is on
+        its UART socket, where the radio firmware never answers."""
         port = next((p for p in board.ports() if p.device == device), None)
         if port is None:
             return
