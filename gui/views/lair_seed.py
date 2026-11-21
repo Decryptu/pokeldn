@@ -48,7 +48,7 @@ class LairSeedPicker:
                           t.secondary_button(tr('lair_seed.find_a_seed_2f7e15', 'Find a seed'), self._find, "search"),
                           self.by_type],
                          spacing=8, wrap=True, run_spacing=8)
-        self.control = ft.Column([ft.Row([self.seed]), ft.Row([self.wanted]), ft.Row([self.type_pick, self.rank], wrap=True),
+        self.control = ft.Column([ft.Row([self.seed]), ft.Row([self.wanted]), ft.Row([self.type_pick, self.rank], spacing=8),
                                  buttons, self.status, self.preview],
                                  spacing=8, tight=True)
         self._show(str(value or ""), update=False)

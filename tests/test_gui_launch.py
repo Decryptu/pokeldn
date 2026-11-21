@@ -15,6 +15,12 @@ LAUNCH = r'''
 import sys
 import flet as ft
 sys.path.insert(0, sys.argv[1])
+built = []
+for kind in (ft.Row, ft.Column):
+    def init(self, *a, _init=kind.__init__, **k):
+        _init(self, *a, **k)
+        built.append(self)
+    kind.__init__ = init
 
 
 class Page:
@@ -53,6 +59,20 @@ main.main(page)
 for key, *_ in (*main.PAGES, main.PLUGINS, main.SETTINGS):
     apps[0].navigate(key)
     print("opened", key)
+from pokeldn.app.catalog import GAMES
+apps[0].ui = lambda fn: fn()
+ft.BaseControl.update = lambda self: None      # off the page: every tool's form is only built
+for game in GAMES:
+    for tool in game.tools:
+        if not tool.unavailable:
+            apps[0].navigate("games", game=game.key, tool=tool.key)
+# Flutter's Wrap takes no Expanded child; a release build draws the error as a grey box (0.66.10).
+for box in built:
+    if box.wrap:
+        for child in box.controls:
+            if getattr(child, "expand", None):
+                name = getattr(child, "hint_text", None) or getattr(child, "label", None)
+                print("expand in wrap", type(box).__name__, type(child).__name__, name, file=sys.stderr)
 '''
 
 
@@ -65,4 +85,5 @@ def test_the_app_starts_and_opens_every_page(tmp_path):
     done = subprocess.run([sys.executable, "-c", LAUNCH, str(ROOT)], cwd=ROOT, env=env, capture_output=True,
                           text=True, timeout=180)
     assert done.returncode == 0, done.stderr[-3000:]
+    assert "expand in wrap" not in done.stderr, done.stderr[-3000:]
     assert "opened settings" in done.stdout and "opened gts" in done.stdout, done.stdout
