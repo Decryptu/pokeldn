@@ -562,9 +562,11 @@ def apply(new: Path, target: Path, pid: int, version: str, system: str = sys.pla
     end_processes_from(target, 10.0)
     shutil.rmtree(old, ignore_errors=True)
     moved: list[str] = []
+    copied: list[str] = []
 
     def restore() -> None:
-        for name in ours:
+        # Only what the copy wrote goes: an entry a failed rename left in place is still the old app's.
+        for name in copied:
             entry = target / name
             if entry.is_dir() and not entry.is_symlink():
                 shutil.rmtree(entry, ignore_errors=True)
@@ -593,6 +595,7 @@ def apply(new: Path, target: Path, pid: int, version: str, system: str = sys.pla
                 time.sleep(0.5)
     try:
         for entry in new.iterdir():
+            copied.append(entry.name)
             if entry.is_dir() and not entry.is_symlink():
                 _copy(entry, target / entry.name, system)
             else:
