@@ -89,13 +89,13 @@ network object `+0x190 + 16 * i`; `0x8b4030` picks the first valid slot with the
 position in BattleStart (`0x1025120`). The collecting station publishes the slots as 40000
 framework objects 0 to 7.
 
-In 9 of 26 raids a hosted retail Sword published object 0 itself, holding our `0x6d` record, before
-its own ServerVersion; in 8 of them it sent EmptyCommand, never published object 8 and stayed on a
-black screen with its music playing. Our ServerVersion went out on port 0 in the same burst as the
-objects on port 1, two separate streams. That port 0 arrived first, so our record was the only one
-in the console's table, is deduced and not measured. The host sends its
-own ServerVersion only once every console has sent its own, or has mirrored base-20000 body
-`00000100`, which follows the objects on port 1.
+A retail Sword files a ServerVersion message in the slot of its sender's Pia station index, so the
+session host's lands in slot 0, and framework object k in slot k; the later write wins. With the
+console's record published as object 0, our ServerVersion overwrote it: in 20 of 20 hosted raids the
+console then published our `0x6d` record as object 0, sent EmptyCommand, never published object 8
+and stayed on a black screen with its music playing. The host publishes its own record as object 0
+and console k's as object k + 1, the slots the ServerVersion messages fill, so the order the two
+ports arrive in no longer matters.
 
 ### The action
 
@@ -233,7 +233,7 @@ With `--raid-console-serves` the joined console serves the battle and the host a
 |---|---|
 | BattleStart | lists the console first, so the console's client id is 0 |
 | 0x7C port 0 | sends ping; answers the console's ping and pingSynced |
-| framework objects | publishes object 0 = the console's ServerVersion record, object 1 = its own |
+| framework objects | publishes object 0 = its own ServerVersion record, object 1 = the console's |
 | 0x7C port 0 | sends its own ServerVersion (client id 1) |
 | base 20000 | publishes the counter and its own body, 0000 / 00000100, then 0100 / 01000100, 01000200, 0200 / 02000200, each once the console mirrors the last body |
 | object 8 | the console publishes it (24 bytes, a seed); the host answers EmptyCommand (10000 field 1) |
@@ -252,8 +252,8 @@ that never started; at `0x6d` it served and the battle loaded.
 
 Up to three consoles share one hosted lobby (`raid_host.RaidParty`). The host starts the battle once
 every joined console is ready; BattleStart lists the consoles in join order, then the host. The
-first console serves. The host publishes framework object k as console k's ServerVersion record and
-its own last, and steps the base-20000 barrier once every console mirrors its body.
+first console serves. The host publishes its own ServerVersion record as framework object 0 and
+console k's as object k + 1, and steps the base-20000 barrier once every console mirrors its body.
 
 A second console needs from the Pia host: the session update delivered to it (on loopback each
 station gets its own copy); mesh join response byte 8, the active station maximum, above the stations

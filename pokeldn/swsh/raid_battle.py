@@ -102,7 +102,6 @@ class Guest:
         self.host_clock = 0x680
         self.started = False
         self.seat_sent = False
-        self.seated = set()               # consoles whose own ServerVersion arrived
         self.ping_sent = False
 
     def _pairs(self, advance=0):
@@ -171,8 +170,8 @@ def server_record(station, client_id, version=SERVER_VERSION):
 
 
 class Master:
-    """The station that publishes the framework objects, here a battle client: object k is console
-    k's record, so `consoles[0]` serves and we answer as the last client. The steps follow the
+    """The station that publishes the framework objects, here a battle client: object 0 is ours,
+    object k + 1 console k's, so `consoles[0]` serves and we answer as the last client. The steps follow the
     recorded host's framework; the battle itself is answered by a `Guest`. `receive` returns
     (port, payload, destination), destination None for every console."""
 
@@ -190,8 +189,6 @@ class Master:
         self.mirrors = {}                 # console -> its last base-20000 body
         self.mirrored = {bytes(4), bytes.fromhex("000018fc")}
         self.empty_sent = False
-        self.seat_sent = False
-        self.seated = set()               # consoles whose own ServerVersion arrived
 
     def start(self):
         return [(0, sync(PING), None)]
@@ -205,32 +202,22 @@ class Master:
         return (1, framework(BATTLE, None, self.t_clock(), struct.pack("<H", step)), None)
 
     def _setup(self):
+        # A console files a ServerVersion in the sender's Pia station slot, ours (the session host)
+        # in 0; the objects must match or our record overwrites a console's (docs/swsh_raid.md).
         c = self.t_clock()
         out = [self._anon(0), (1, framework(SEAT, self.station, c, bytes(4)), None),
-               self._ours(bytes.fromhex("000018fc"))]
+               self._ours(bytes.fromhex("000018fc")),
+               (1, framework(0, None, c, server_record(self.station, self.slot, CLIENT_VERSION)), None)]
         for k, console in enumerate(self.consoles):
-            out.append((1, framework(k, None, c, server_record(console, k)), None))
+            out.append((1, framework(k + 1, None, c, server_record(console, k)), None))
         out += [self._ours(bytes.fromhex("00000100")),
-                (1, framework(self.slot, None, c, server_record(self.station, self.slot, CLIENT_VERSION)), None)]
-        self.log(f"[raid] -> framework objects 0..{self.slot - 1} (the consoles) and {self.slot} (us)")
+                (0, seat(self.station, self.slot, CLIENT_VERSION), None)]
+        self.log(f"[raid] -> framework objects 0 (us) and 1..{self.slot} (the consoles)")
         return out
-
-    def _seat(self):
-        # Port 0 can overtake port 1: a console holding only our record files it in slot 0 and waits
-        # for us to serve, a black screen (docs/swsh_raid.md, Which station serves).
-        if self.seat_sent:
-            return []
-        self.seat_sent = True
-        return [(0, seat(self.station, self.slot, CLIENT_VERSION), None)]
 
     def receive(self, port, payload, src=None):
         src = self.server if src is None else src
         out = []
-        if self.synced and port == 0 and payload.startswith(struct.pack("<I", SEAT)) \
-                and 3 in _read_fields(payload[4:]):
-            self.seated.add(src)
-            if self.seated >= set(self.consoles):
-                out += self._seat()
         if payload == sync(PING_REPLY) and src not in self.replied:
             self.replied.add(src)
             out.append((0, sync(PING_SYNCED), src))
@@ -254,7 +241,6 @@ class Master:
                     out.append((1, framework(BATTLE, self.station, self.t_clock(), body), None))
                 # The recorded host's barrier: once every console mirrors our body, the next step.
                 if all(self.mirrors.get(c) == self.ours for c in self.consoles):
-                    out += self._seat()
                     nxt = {"00000100": lambda: [self._anon(1), self._ours(bytes.fromhex("01000100"))],
                            "01000100": lambda: [self._ours(bytes.fromhex("01000200"))],
                            "01000200": lambda: [self._anon(2), self._ours(bytes.fromhex("02000200"))]}

@@ -92,7 +92,6 @@ def test_master_steps_the_barrier_once_the_console_mirrors_it():
                     console)
     bodies = [raid_battle.parse_framework(p)["body"].hex() for port, p, _ in out if port == 1]
     assert bodies == ["0100", "01000100"]
-    assert [p for port, p, _ in out if port == 0] == [raid_battle.seat(ours, 1, raid_battle.CLIENT_VERSION)]
 
 
 def test_den_advert_points_at_the_bosss_den_slot_as_the_emulated_host_did():
@@ -146,34 +145,36 @@ def test_an_emulated_den_hosts_rewards_fit_its_den_slot():
     assert kept == pairs and refused == [(1, 1)]
 
 
-def test_a_console_reached_first_on_port_0_still_serves():
-    """A console files ServerVersion records as they arrive and serves only if the first valid slot
-    of the highest version is its own (main 0x8b4030). Port 0 can overtake port 1: in a retail
-    Sword's black-screen raids it filed our 0x6d record alone, published it as object 0 and sent
-    EmptyCommand (8 of 26 hosted raids). Our record must reach it only after its own."""
+@pytest.mark.parametrize("seat_first", [True, False])
+def test_the_console_serves_whichever_port_arrives_first(seat_first):
+    """A retail Sword files each ServerVersion in its sender's Pia station slot, the session host's
+    (ours) in slot 0, and object k in slot k; it serves only if the first valid slot of the highest
+    version is its own (main 0x8b4030). With the console's record as object 0, our ServerVersion
+    overwrote it: 20 of 20 hosted raids published our 0x6d record as object 0, sent EmptyCommand and
+    stayed on a black screen (Decryptu/pokeldn#73)."""
     console, ours = 0x7F00030000020000, 0x7F00020000020000
     m = raid_battle.Master(ours, [console], log=lambda *a: None)
-    table = {}
-
-    def deliver(out):
-        for port in (0, 1):                 # the reordering the captures show
-            for p, payload, _ in out:
-                fw = raid_battle.parse_framework(payload) if p == 1 else None
-                if fw and fw["station"] is None and fw["base"] < 8 and len(fw["body"]) == 16:
-                    table[fw["base"]] = fw["body"]
-                elif p == port == 0 and payload.startswith(b"\x10\x27\x00\x00") and len(payload) > 6:
-                    table.setdefault(min(set(range(8)) - set(table)), raid_battle.server_record(ours, 1, 0x6D))
-        best = max(table.values(), key=lambda r: r[9])
-        return int.from_bytes(next(r for k, r in sorted(table.items()) if r[9] == best[9])[:8], "little")
-
-    assert deliver(m.receive(0, raid_battle.sync(raid_battle.PING_REPLY), console)) == console
-    own = raid_battle.seat(console, 0, raid_battle.SERVER_VERSION)
-    assert [p for _, p, _ in m.receive(0, own, console)] == [raid_battle.seat(ours, 1, raid_battle.CLIENT_VERSION)]
+    out = m.receive(0, raid_battle.sync(raid_battle.PING_REPLY), console)
+    out += m.receive(0, raid_battle.seat(console, 0, raid_battle.SERVER_VERSION), console)
+    table = {1: raid_battle.server_record(console, 0)}      # the console's own, at station 1
+    ports = (0, 1) if seat_first else (1, 0)
+    for port in ports:
+        for p, payload, _ in out:
+            if p != port:
+                continue
+            fw = raid_battle.parse_framework(payload) if p == 1 else None
+            if fw and fw["station"] is None and fw["base"] < 8 and len(fw["body"]) == 16:
+                table[fw["base"]] = fw["body"]
+            elif p == 0 and payload == raid_battle.seat(ours, 1, raid_battle.CLIENT_VERSION):
+                table[0] = raid_battle.server_record(ours, 1, raid_battle.CLIENT_VERSION)
+    best = max(r[9] for r in table.values())
+    winner = next(r for _, r in sorted(table.items()) if r[9] == best)
+    assert int.from_bytes(winner[:8], "little") == console and winner[8] == 0
 
 
 def test_two_consoles_start_together_and_both_must_mirror_the_barrier():
     """Two emulated Shields in one hosted lobby: the start waits for both, BattleStart lists both
-    consoles then us, object k is console k's record and ours is last, and the framework barrier
+    consoles then us, object 0 is ours and object k + 1 console k's, and the framework barrier
     steps only once both consoles mirror it. Each failure was a stall or a split battle."""
     from pokeldn.swsh import raid_host
     ours, a, b = 0x7F00020000020000, 0x7F00030000020000, 0x7F00040000020000
@@ -212,9 +213,9 @@ def test_two_consoles_start_together_and_both_must_mirror_the_barrier():
     records = {raid_battle.parse_framework(p)["base"]: raid_battle.parse_framework(p)["body"]
                for _, p, _ in out if raid_battle.parse_framework(p)
                and raid_battle.parse_framework(p)["station"] is None}
-    assert records[0] == raid_battle.server_record(a, 0)
-    assert records[1] == raid_battle.server_record(b, 1)
-    assert records[2] == raid_battle.server_record(ours, 2, raid_battle.CLIENT_VERSION)
+    assert records[0] == raid_battle.server_record(ours, 2, raid_battle.CLIENT_VERSION)
+    assert records[1] == raid_battle.server_record(a, 0)
+    assert records[2] == raid_battle.server_record(b, 1)
     step = raid_battle.framework(raid_battle.BATTLE, a, 909, bytes.fromhex("00000100"))
     assert m.receive(1, step, a) == []
     out = m.receive(1, raid_battle.framework(raid_battle.BATTLE, b, 909, bytes.fromhex("00000100")), b)
