@@ -697,8 +697,10 @@ At launch the app asks `api.github.com/repos/Decryptu/pokeldn/releases/latest` (
 Update now (`pokeldn.app.update`) downloads the platform archive and `SHA256SUMS` into `update/`,
 refuses a checksum mismatch, unpacks (`ditto -x -k`, `tarfile` `data` filter, `zipfile`), and starts
 `pokeldn --apply-update NEW TARGET PID VERSION` (`gui/updating.py`). The helper waits for the old app
-to quit (and on Windows for its processes), renames it to `.<name>.old`, copies the new one in and
-opens it; any failure restores the old app. The new app reads `update/outcome.json` once. The checksum
+to quit (and on Windows for its processes), moves the entries a packed app ships (`pokeldn.exe`,
+`_internal`, `Contents`, and every top-level name of the new archive) into `.<name>.old` beside the
+folder, copies the new ones in and opens it; any other entry in the folder stays where it is, and any
+failure restores the old app. The new app reads `update/outcome.json` once. The checksum
 detects corruption and does not authenticate the release.
 
 | situation | behaviour |
@@ -710,7 +712,7 @@ detects corruption and does not authenticate the release.
 | Windows, `C:\Program Files` | Update now behind UAC (`ShellExecuteExW` `runas`) |
 | Windows, the root of another drive (`D:\pokeldn`) | Update now without UAC: the swap only adds folders beside the app, which a volume's root allows users. A release before 0.34.0 probed the root with a file, asked for UAC there, and a standard user's update stopped on "Windows did not give pokeldn permission to change D:\"; from such a release the next version is downloaded once by hand |
 | Windows, a mapped or `subst` drive | the drive letter is kept; the helper finds the old app's processes under either spelling; behind UAC the helper gets the folder the letter stands for, since an elevated process sees no letter the user's session mapped |
-| the app's folder holds entries a packed app does not ship (`pokeldn.exe` and `_internal` loose on a Desktop) | Download only; the helper refuses the same folder from an older app, since the swap renames the folder and deletes it whole |
+| the app's folder holds entries a packed app does not ship (a `Received` or `Bank` folder kept beside the exe, `pokeldn.exe` and `_internal` loose on a Desktop) | Update now; only the app's own entries are replaced. Releases up to 0.66.8 offered Download only here, and from one of them the next version is downloaded once by hand |
 | a session, flash or cleanup running | asks to finish first |
 
 `scripts/check_update.py ARCHIVE FOLDER` tests a packed app's update against 127.0.0.1;

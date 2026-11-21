@@ -140,25 +140,19 @@ def executable_in(root: Path, system: str = sys.platform) -> Path:
     return root / ("pokeldn.exe" if system == "win32" else "pokeldn")
 
 
-# What a packed app holds at its top level; anything else there means the folder is not ours alone.
+# What a packed app holds at its top level; an update replaces these and leaves everything else.
 # pokeldn-run.exe: the console copy apps up to 0.65 ship; a folder holding it is still ours to replace.
 APP_ENTRIES = {"darwin": {"Contents", ".DS_Store"}, "win32": {"pokeldn.exe", "pokeldn-run.exe", "_internal"},
                "linux": {"pokeldn", "_internal"}}
 
 
-def foreign(root: Path, system: str = sys.platform, new: Path | None = None) -> list[str]:
-    """The entries in root no pokeldn app ships. The swap renames root and deletes it whole, so a
-    root that holds any (pokeldn.exe left loose on the Desktop) is never replaced."""
+def app_entries(root: Path, new: Path | None = None, system: str = sys.platform) -> set[str]:
+    """The entries an update replaces in root: what pokeldn ships, never the player's own files."""
     system = "linux" if system.startswith("linux") else system
-    if system == "darwin" and root.suffix != ".app":
-        return [root.name]
-    allowed = set(APP_ENTRIES.get(system, ()))
+    names = set(APP_ENTRIES.get(system, ())) - {".DS_Store"}
     if new is not None:
-        allowed |= {entry.name for entry in new.iterdir()}
-    try:
-        return sorted(entry.name for entry in root.iterdir() if entry.name not in allowed)
-    except OSError as error:
-        return [str(error)]
+        names |= {entry.name for entry in new.iterdir()}
+    return names
 
 
 def _writable(folder: Path, entry: str = "file") -> bool:
@@ -183,9 +177,8 @@ def blocker(root: Path | None, system: str = sys.platform) -> str:
     if "AppTranslocation" in root.parts:
         # macOS runs a quarantined app from Downloads out of a random read-only copy.
         return "Move pokeldn to your Applications folder, open it from there, then update."
-    if foreign(root, system):
-        return (f"{root} holds other files besides pokeldn. Put pokeldn in a folder of its own, "
-                "open it from there, then update.")
+    if system == "darwin" and root.suffix != ".app":
+        return "Only pokeldn.app updates itself."
     if not needs_admin(root, system) and not (_writable(root.parent, "folder") and _writable(root)):
         return f"pokeldn cannot write to {root.parent}."
     return ""
@@ -556,37 +549,58 @@ def apply(new: Path, target: Path, pid: int, version: str, system: str = sys.pla
         outcome.write_text(json.dumps({"version": version, "error": error, "helper": helper}))
 
     old = target.parent / f".{target.name}.old"
-    # Older apps pass the exe's folder unchecked: pokeldn.exe loose on a Desktop names the Desktop.
-    others = foreign(target, system, new)
-    if others:
-        _record(outcome, version, f"{target} holds files that are not pokeldn ({', '.join(others[:5])}); "
-                                  "nothing was changed")
+    # Only the app's own entries move: the player's folders kept beside the exe (Received, Bank) stay.
+    if system == "darwin" and target.suffix != ".app":
+        _record(outcome, version, f"{target} is not pokeldn.app; nothing was changed")
         if wait_for_exit(pid, EXIT_WAIT):
             relaunch(target)
         return False
+    ours = sorted(app_entries(target, new, system))
     if not wait_for_exit(pid, EXIT_WAIT):
         _record(outcome, version, "the old app did not quit")
         return False
     end_processes_from(target, 10.0)
     shutil.rmtree(old, ignore_errors=True)
+    moved: list[str] = []
+
+    def restore() -> None:
+        for name in ours:
+            entry = target / name
+            if entry.is_dir() and not entry.is_symlink():
+                shutil.rmtree(entry, ignore_errors=True)
+            elif entry.exists() or entry.is_symlink():
+                entry.unlink(missing_ok=True)
+        for name in moved:
+            os.rename(old / name, target / name)
+        shutil.rmtree(old, ignore_errors=True)
+
+    old.mkdir(parents=True)
     end = time.monotonic() + RENAME_WAIT
-    while True:
-        try:
-            os.rename(target, old)
-            break
-        except OSError as error:
-            if time.monotonic() > end:
-                _record(outcome, version, f"could not move the old app aside ({error})")
-                relaunch(target)
-                return False
-            time.sleep(0.5)
+    for name in ours:
+        if not (target / name).exists() and not (target / name).is_symlink():
+            continue
+        while True:
+            try:
+                os.rename(target / name, old / name)
+                moved.append(name)
+                break
+            except OSError as error:
+                if time.monotonic() > end:
+                    restore()
+                    _record(outcome, version, f"could not move the old app aside ({error})")
+                    relaunch(target)
+                    return False
+                time.sleep(0.5)
     try:
-        _copy(new, target, system)
+        for entry in new.iterdir():
+            if entry.is_dir() and not entry.is_symlink():
+                _copy(entry, target / entry.name, system)
+            else:
+                shutil.copy2(entry, target / entry.name, follow_symlinks=False)
         if not executable_in(target, system).is_file():
             raise OSError("the copied app has no executable")
     except (OSError, subprocess.CalledProcessError) as error:
-        shutil.rmtree(target, ignore_errors=True)
-        os.rename(old, target)
+        restore()
         _record(outcome, version, f"could not copy the new app ({error})")
         relaunch(target)
         return False
@@ -607,8 +621,7 @@ def finish(root: Path | None, outcome: Path = OUTCOME, work: Path = WORK) -> dic
     found = found if isinstance(found, dict) else None
     outcome.unlink(missing_ok=True)      # the helper closes its window when this file goes
     (work / READY.name).unlink(missing_ok=True)
-    if not foreign(root):
-        shutil.rmtree(root.parent / f".{root.name}.old", ignore_errors=True)
+    shutil.rmtree(root.parent / f".{root.name}.old", ignore_errors=True)
     helper = found.get("helper") if found else None
 
     def remove_new():

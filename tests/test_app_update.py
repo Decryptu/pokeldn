@@ -223,30 +223,30 @@ def test_a_failed_copy_puts_the_old_app_back_and_says_why(files, tmp_path):
 
 
 @pytest.mark.parametrize("system", ["win32", "linux"])
-def test_an_app_left_loose_among_the_users_files_never_replaces_their_folder(tmp_path, system):
-    """pokeldn.exe and _internal dropped straight on a Desktop: the exe's folder is the Desktop."""
-    desktop = tmp_path / "Desktop"
-    exe = update.executable_in(desktop, system)
+@pytest.mark.parametrize("folder", ["Desktop", "pokeldn"])
+def test_an_update_replaces_only_the_apps_own_entries(tmp_path, system, folder):
+    """A Received and Bank folder kept beside the exe, or the app loose on a Desktop: they stay."""
+    root = tmp_path / folder
+    exe = update.executable_in(root, system)
     exe.parent.mkdir(parents=True)
     exe.write_text("0.1.0")
-    (desktop / "_internal").mkdir(exist_ok=True)
-    (desktop / "thesis.docx").write_text("years of work")
-    (desktop / "photos").mkdir()
-    (desktop / "desktop.ini").write_text("")
-    before = sorted(p.relative_to(desktop) for p in desktop.rglob("*"))
-    assert "folder of its own" in update.blocker(desktop, system)
+    (root / "_internal").mkdir()
+    (root / "_internal" / "stale.dll").write_text("old")
+    (root / "Received").mkdir()
+    (root / "Received" / "0025 PIKACHU.pk8").write_bytes(b"\x01" * 344)
+    (root / "Bank").mkdir()
+    (root / "thesis.docx").write_text("years of work")
+    assert update.blocker(root, system) == ""
 
     new = packed_app(tmp_path / "update/new", system, "9.0.0")
     outcome, opened = tmp_path / "outcome.json", []
-    # What an older app's start_swap hands the new helper, which must refuse it on its own.
-    assert not update.apply(new, desktop, exited_pid(), "9.0.0", system, outcome, opened.append)
-    assert "not pokeldn" in json.loads(outcome.read_text())["error"]
-    assert opened == [desktop]
-    assert sorted(p.relative_to(desktop) for p in desktop.rglob("*")) == before
-    assert (desktop / "thesis.docx").read_text() == "years of work"
-
-    assert "not pokeldn" in update.finish(desktop, outcome, tmp_path / "update")["error"]
-    assert (desktop / "thesis.docx").exists()
+    assert update.apply(new, root, exited_pid(), "9.0.0", system, outcome, opened.append)
+    assert opened == [root] and version_file(root).read_text() == "9.0.0"
+    assert not (root / "_internal" / "stale.dll").exists()
+    assert (root / "Received" / "0025 PIKACHU.pk8").read_bytes() == b"\x01" * 344
+    assert (root / "Bank").is_dir() and (root / "thesis.docx").read_text() == "years of work"
+    assert update.finish(root, outcome, tmp_path / "update")["error"] == ""
+    assert not (tmp_path / f".{folder}.old").exists()
 
 
 def test_the_helper_waits_for_the_old_app_to_quit(tmp_path, monkeypatch):
