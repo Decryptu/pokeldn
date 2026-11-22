@@ -96,6 +96,11 @@ def network_info(r):
     return info
 
 
+def daemon_running(path: str = DEFAULT_PIPE) -> bool:
+    """Whether the ldnrs daemon's pipe exists; False off Windows."""
+    return sys.platform == "win32" and os.path.exists(path)
+
+
 class Pipe:
     @classmethod
     async def open(cls, path):

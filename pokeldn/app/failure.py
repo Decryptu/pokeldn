@@ -12,7 +12,7 @@ DONE = re.compile(r"^\[done\] \w+ \d+ complete")
 @dataclass(frozen=True)
 class Failure:
     text: str
-    action: str = ""     # board, settings, copy or "" (the console steps are already on the panel)
+    action: str = ""     # board, settings, plugins, copy or "" (the console steps are already on the panel)
     retry: bool = False  # starting again may get past it (Settings, Retry failed trades)
 
 
@@ -47,6 +47,11 @@ def _join():
                       "close to the console and start again."), retry=True)
 
 
+def _ldnrs():
+    return Failure(tr('failure.ldnrs_not_running', "The radio is set to USB Wi-Fi (ldnrs), but its program is not "
+                      "running. With an ESP32 board, pick The board under Plugins, Radio."), "plugins")
+
+
 # (pattern, cause): the first line of a run that matches names the cause; later matches never replace it.
 CAUSES = (
     (re.compile(r"\[esp32\] The board's USB connection failed|the board left USB"), lambda line: _board_dropped()),
@@ -57,6 +62,7 @@ CAUSES = (
      lambda line: _no_answer()),
     (re.compile(r"prod\.keys has no "), _keys),
     (re.compile(r"the board could not join"), lambda line: _join()),
+    (re.compile(r"Cannot connect to ldnrs"), lambda line: _ldnrs()),
 )
 
 

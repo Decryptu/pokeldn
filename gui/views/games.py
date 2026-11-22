@@ -11,10 +11,10 @@ import flet as ft
 from gui.app import keys_problem
 from pokeldn import console_trainer, panel, progress
 from pokeldn.app import bank, command, failure, panels, events_gallery, gift_builder, online, received, runner
-from pokeldn.ldn import LINK_PREFIX
+from pokeldn.ldn import LINK_PREFIX, ldnrs
 from pokeldn.swsh import raid_event as swsh_raid_event
 from pokeldn.sv import raid_event as raid_events
-from gui import theme as t
+from gui import board, theme as t
 from pokeldn import plugins
 from pokeldn.app.catalog import Field, Game, Tool, activities, activity_of
 from pokeldn.app.introspect import flags_of
@@ -924,9 +924,16 @@ class SessionPanel:
             items = [("ok", tr('games.no_board_needed_lan', 'No board needed: this computer\'s network'), "", "")]
         elif self.app.settings.radio:
             radio = self.app.plugin_radio()
-            items.append(("ok", tr('games.radio_78fa73', 'Radio: {value0}', value0=radio.label), "", "") if radio else
-                         ("block", tr('games.radio_plugin_not_loaded_199762', 'Radio plugin not loaded'), tr('games.turn_its_plugin_on_or_pick_the_board_d49846', 'Turn its plugin on, or pick the board.'),
-                          "plugins"))
+            if radio and self.app.settings.radio == "ldnrs" and not ldnrs.daemon_running():
+                board_in = bool(board.ports())
+                items.append(("block", tr('games.ldnrs_not_running', 'The radio is set to USB Wi-Fi (ldnrs), which is not running'),
+                              tr('games.ldnrs_board_plugged', 'A board is plugged in: use it instead.') if board_in else
+                              tr('games.ldnrs_start_or_board', 'Start the ldnrs daemon after its adapter wizard, or use an ESP32 board.'),
+                              "use_board"))
+            else:
+                items.append(("ok", tr('games.radio_78fa73', 'Radio: {value0}', value0=radio.label), "", "") if radio else
+                             ("block", tr('games.radio_plugin_not_loaded_199762', 'Radio plugin not loaded'), tr('games.turn_its_plugin_on_or_pick_the_board_d49846', 'Turn its plugin on, or pick the board.'),
+                              "plugins"))
         else:
             status = self.app.board_status()
             board_state = ("ok" if status.ready else "wait" if status.state == "checking" else
@@ -946,7 +953,8 @@ class SessionPanel:
                            t.secondary_button(tr('games.board_4816cb', 'Board'), lambda e: self.app.navigate("board"), "cpu")], spacing=8)
         looks = {"ok": ("checkbox-on", t.GREEN), "wait": ("refresh", t.BLUE),
                  "warn": ("warning-diamond", t.AMBER), "block": ("warning-diamond", t.RED)}
-        labels = {"settings": tr('games.settings_74a883', 'Settings'), "board": tr('games.board_4816cb', 'Board'), "plugins": tr('games.plugins_9514b7', 'Plugins')}
+        labels = {"settings": tr('games.settings_74a883', 'Settings'), "board": tr('games.board_4816cb', 'Board'), "plugins": tr('games.plugins_9514b7', 'Plugins'),
+                  "use_board": tr('games.use_the_board', 'Use the board')}
         rows = []
         for state, what, how, page in items:
             icon, color = looks[state]
@@ -956,9 +964,15 @@ class SessionPanel:
                           ([t.text(how, 12, t.MUTED)] if how else []), spacing=1, expand=True),
             ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START))
             if page and state != "ok":
-                rows.append(ft.Row([t.secondary_button(labels[page], lambda e, k=page: self.app.navigate(k))],
+                rows.append(ft.Row([t.secondary_button(labels[page], self._use_board if page == "use_board" else
+                                                       lambda e, k=page: self.app.navigate(k))],
                                    alignment=ft.MainAxisAlignment.END))
         return t.section(tr('games.before_you_start_74e492', 'Before you start'), ft.Column(rows, spacing=10))
+
+    def _use_board(self, e=None) -> None:
+        self.app.settings.radio = ""
+        self.app.settings.save()
+        self.refresh()
 
     def refresh(self, update: bool = True) -> None:
         tool, s = self.tool, self.app.settings
@@ -1323,7 +1337,8 @@ class SessionPanel:
         if self.failure is not None:
             icon, color = "warning-diamond", t.RED
             what = self.failure.text
-            pages = {"board": (tr('games.board_4816cb', 'Board'), "cpu"), "settings": (tr('games.settings_74a883', 'Settings'), "gear")}
+            pages = {"board": (tr('games.board_4816cb', 'Board'), "cpu"), "settings": (tr('games.settings_74a883', 'Settings'), "gear"),
+                     "plugins": (tr('games.plugins_9514b7', 'Plugins'), "plug")}
             if self.failure.action in pages:
                 label, glyph = pages[self.failure.action]
                 button = t.secondary_button(label, lambda e, k=self.failure.action: self.app.navigate(k), glyph)

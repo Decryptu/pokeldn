@@ -103,3 +103,10 @@ def test_a_damaged_settings_file_is_kept_and_its_good_fields_survive(tmp_path, m
     assert settings.damaged["fields"] == [] and settings.BAD.read_text() == "{ truncated"
     settings.load()                       # the app loads twice at launch; the notice must survive it
     assert settings.damaged is not None
+
+
+def test_an_ldnrs_radio_with_no_daemon_sends_the_player_to_the_radio_picker():
+    """The message pokeldn.ldn.ldnrs.Pipe.open raises when the daemon's pipe is absent."""
+    lines = lines_of(FileNotFoundError(2, "Cannot connect to ldnrs. Start its daemon after completing the adapter wizard."))
+    verdict = watched(lines).verdict(1, stopped=False)
+    assert verdict is not None and verdict.action == "plugins" and "ldnrs" in verdict.text
