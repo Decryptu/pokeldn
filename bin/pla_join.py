@@ -31,6 +31,7 @@ if os.path.isdir(BUNDLED_LDN):
 import trio
 
 from pokeldn.host_support import open_output
+from pokeldn import trade_owner
 from pokeldn import pokemon as pokemon_service
 from pokeldn import gen8, pla, trade_back
 from pokeldn.host_support import resolve_keys, needs_root
@@ -94,6 +95,10 @@ class TradeBackSession(joiner.JoinerSession):
         super().__init__(*a, **kw)
         self.rounds = trade_back.Rounds([self.offer, *next_offers], log=self.log)
 
+    def _set_console_offers(self, trainer):
+        super()._set_console_offers(trainer)
+        self.rounds.offers = [self.offer, *self.next_offers]
+
     @property
     def queue_done(self):
         return self.rounds.finished
@@ -113,7 +118,8 @@ def make_session(args, keys, our_ip, our_mac, offer, exchange, **kw):
                    player_id=bytes.fromhex(args.join_player_id),
                    drive=args.drive, net_answer=not args.no_net_answer,
                    join_delay=args.join_delay, log=print,
-                   next_offers=getattr(args, "next_offers", ()), **kw)
+                   next_offers=getattr(args, "next_offers", ()),
+                   console_owner=trade_owner.mode(args) == "console", **kw)
     if getattr(args, "save_shown", None):
         session.on_record = lambda record: pokemon_service.save_shown("pla", args.save_shown, record)
     return session
@@ -164,6 +170,8 @@ async def run_session(args, keys, sock, host_ip, our_ip, our_mac, offer, exchang
                            flags=m.message_flags, payload=m.payload.hex())
                 try:
                     send(session.receive(messages))
+                except pokemon_service.BuilderError:
+                    raise
                 except Exception as exc:
                     # The console is still there after a fault in one message.
                     print(f"[pla] the joiner raised on a message, still seated: "
@@ -302,6 +310,8 @@ def main_radio(args, offer, exchange, record):
                 return [x for i in inner for x in leaves(i)] if inner else [e]
             detail = "; ".join(f"{type(e).__name__}: {e}" for e in leaves(exc))
             print(f"[pla] the seat ended: {detail}")
+            if trade_owner.failed(exc):
+                return 1
             record(rec="seat_failed", detail=detail, t=time.time())
         if outcome.get("session") is not None and outcome["session"].traded:
             break
@@ -397,6 +407,7 @@ def build_parser():
                          "default is the reference Azelf under our player name. Repeatable: one per "
                          "trade in order, on this seat or in the host role once taken")
     trade_back.add_arguments(ap)
+    trade_owner.add_arguments(ap)
     ap.add_argument("--offer-out", default=None,
                     help="write the record the console traded to this file")
     launcher.add_save_shown_argument(ap)
@@ -446,8 +457,9 @@ def host_argv(args, channel, seconds):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    trade_owner.check(ap, args, args.offer)
     trade_back.check(ap, args, "--offer")
-    args.offer = [pokemon_service.prepare_file("pla", path, fresh=args.fresh_pid) for path in args.offer]
+    args.offer = [trade_owner.prepare_file("pla", path, args, fresh=args.fresh_pid) for path in args.offer]
     args.fresh_pid = False
     try:
         sys.stdout.reconfigure(line_buffering=True)

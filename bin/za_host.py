@@ -17,6 +17,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.host_support import open_output
+from pokeldn import trade_owner
 from pokeldn import pokemon as pokemon_service
 from pokeldn import config, za
 from pokeldn.za import host as za_host
@@ -71,6 +72,7 @@ def build_parser():
     online.add_arguments(ap)
     receiver_gift.add_arguments(ap, "--trade-offer")
     trade_back.add_arguments(ap)
+    trade_owner.add_arguments(ap)
     return ap
 
 
@@ -121,12 +123,13 @@ def describe_offer(body):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    trade_owner.check(ap, args, args.trade_offer, local=not (args.online or args.for_receiver))
     trade_back.check(ap, args, "--trade-offer", "--online", "--for-receiver")
     if args.online and args.trade_offer:
         print("[za-host] --online offers the partner's Pokemon; --trade-offer is ignored")
         args.trade_offer = []
     renew_offer = args.fresh_pid
-    args.trade_offer = [pokemon_service.prepare_file("za", path, fresh=args.fresh_pid)
+    args.trade_offer = [trade_owner.prepare_file("za", path, args, fresh=args.fresh_pid)
                         for path in args.trade_offer]
     args.fresh_pid = False
     try:
@@ -178,6 +181,15 @@ def main(argv=None):
     state = {"done_at": None, "back_at": None, "trades": 0, "closing": None}
     deadline = time.time() + args.seconds
 
+    def seat_partner(ip):
+        if trade_owner.mode(args) == "console":
+            return trade_owner.ReceiverTrade("za", offers, gift_offer, return_each=args.trade_back)
+        if args.trade_back:
+            return trade_back.TradeBack("za", offers)
+        if receiving is not None:
+            return receiver_gift.ReceiverGift("za", *receiving, notify=receiver_gift.pop_up(f"gift-{ip}"))
+        return partner
+
     def pump():
         seated = {p[1] for p in list(transport.participants)}
         for ip in seated - set(sessions):
@@ -192,9 +204,7 @@ def main(argv=None):
                 log=print, record=record,
                 renew_offer=(lambda raw: pokemon_service.offer_bytes("za",
                     pokemon_service.prepare("za", raw, fresh=True))) if renew_offer else None,
-                partner=(trade_back.TradeBack("za", offers) if args.trade_back
-                         else partner if receiving is None else receiver_gift.ReceiverGift(
-                             "za", *receiving, notify=receiver_gift.pop_up(f"gift-{ip}"))))
+                partner=seat_partner(ip))
         for ip in set(sessions) - seated:
             s = sessions.pop(ip)
             print(f"[za-host] the console at {ip} left; {s.console_offers} offer(s), "

@@ -18,6 +18,7 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.host_support import open_output
+from pokeldn import trade_owner
 from pokeldn import pokemon as pokemon_service
 from pokeldn import config
 from pokeldn import gen8, pla
@@ -150,6 +151,7 @@ def build_parser():
     online.add_arguments(ap)
     receiver_gift.add_arguments(ap, "--trade-box-record")
     trade_back.add_arguments(ap)
+    trade_owner.add_arguments(ap)
     launcher.add_radio_arguments(ap)
     ap.add_argument("--channel", type=int, default=None)
     ap.add_argument("--app-version", type=int, default=0,
@@ -276,6 +278,7 @@ def build_parser():
 def main():
     ap = build_parser()
     args = ap.parse_args()
+    trade_owner.check(ap, args, args.trade_box_record, local=args.trade_box and not (args.online or args.for_receiver))
     trade_back.check(ap, args, "--trade-box-record", "--online", "--for-receiver")
     offer_check = {}            # a gift made for the receiving player takes it too (pokeldn.receiver_gift)
     if args.trade_box_record:
@@ -284,7 +287,7 @@ def main():
                  ("pid", int(args.trade_box_pid, 16) if args.trade_box_pid else None)) if v is not None}
         offer_check = dict(fresh=args.fresh_pid, transform=lambda raw: pla_pokemon.encrypt(
             pla_pokemon.write(pla_pokemon.load(raw), **edits)))
-        args.trade_box_record = [pokemon_service.prepare_file("pla", path, **offer_check)
+        args.trade_box_record = [trade_owner.prepare_file("pla", path, args, **offer_check)
                                  for path in args.trade_box_record]
         args.trade_box_level = args.trade_box_experience = args.trade_box_nickname = args.trade_box_pid = None
         args.fresh_pid = False
@@ -391,13 +394,18 @@ def main():
         receiving = receiver_gift.setup("pla", args, [state["record"] for state in box_states],
                                         lambda raw: box_offer(pla_pokemon.encrypt(pla_pokemon.load(raw))),
                                         **offer_check)
-    helped = partner is not None or receiving is not None or args.trade_back
+    console_owner = trade_owner.mode(args) == "console"
+    helped = partner is not None or receiving is not None or args.trade_back or console_owner
 
     def online_box(ip):
         """The console's trade box with the online partner, or with a gift made for its own save."""
         if ip not in online_boxes:
             helper = partner
-            if args.trade_back:
+            if console_owner:
+                helper = trade_owner.ReceiverTrade(
+                    "pla", [state["record"] for state in box_states],
+                    lambda raw: pla_pokemon.encrypt(pla_pokemon.load(raw)), return_each=args.trade_back)
+            elif args.trade_back:
                 helper = trade_back.TradeBack("pla", [state["record"] for state in box_states])
             elif receiving is not None:
                 helper = receiver_gift.ReceiverGift("pla", *receiving,
@@ -517,8 +525,11 @@ def main():
             # Probe every address that ever joined, and keep probing after an answer: a searching
             # console rebinds its station every cycle, and each needs the Net 0x11 to pass
             # WaitConnected.
-            for entry in list(transport.participants):
-                seen_ips.add(entry[1])
+            present = {entry[1] for entry in list(transport.participants)}
+            seen_ips.update(present)
+            if console_owner:
+                for ip in online_boxes.keys() - present:
+                    del online_boxes[ip]
             if not gone and left_after_trade(transport.participants):
                 gone = True
                 for ip in list(arriving):
@@ -620,6 +631,8 @@ def main():
                             print(f"[pla] -> {src_ip}: session leave response (type 4); "
                                   f"the console is leaving")
                             arrived(src_ip)
+                            if console_owner:
+                                online_boxes.pop(src_ip, None)
                         if (msg.protocol == PROTO_SESSION and msg.payload
                                 and msg.payload[0] == SESSION_JOIN_REQUEST):
                             j = pia_connect.parse_session_join_v11(msg.payload)
@@ -935,7 +948,7 @@ def main():
                                     # (pokeldn.receiver_gift) and for the app (pokeldn.console_trainer).
                                     # Trap: it is sequence 1 on port 1, after sequence 1 on port 0.
                                     receiver_gift.hear(
-                                        online_box(src_ip).partner if receiving is not None else None,
+                                        online_box(src_ip).partner if receiving is not None or console_owner else None,
                                         lambda payload: data_exchange.read_trainer(data_exchange.decompress(payload)),
                                         rm["payload"], game="pla")
                                 # The console reads entry[1] and requires its station byte to be the

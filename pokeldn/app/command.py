@@ -4,7 +4,7 @@ import re
 import time
 from functools import cache
 
-from pokeldn import gen9
+from pokeldn import gen9, trade_owner
 from pokeldn.app import events_gallery, gift_builder
 from pokeldn.app.catalog import Field, Tool
 from pokeldn.app.i18n import t as tr
@@ -211,6 +211,8 @@ def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = N
             if field.kind == "builder":     # a backup's file is named after the run
                 items = [item.replace("{stamp}", stamp) for item in items]
             args += [tokens.get(item, item) for item in items]
+    if any(f.key == trade_owner.MODE and value_of(f, values) == "settings" for f in tool.fields):
+        args += [trade_owner.TRAINER, tokens["{ot}"], tokens["{tid}"], tokens["{sid}"], tokens["{gender}"]]
     known = accepted(tool.script)
     if "--keys" in known and "--keys" not in args:
         args += ["--keys", os.path.expanduser(settings.keys)]

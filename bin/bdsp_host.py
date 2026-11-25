@@ -21,6 +21,7 @@ sys.path.insert(0, PROJECT_ROOT)
 import pathlib
 
 from pokeldn.host_support import open_output, write_file
+from pokeldn import trade_owner
 from pokeldn import pokemon as pokemon_service
 from pokeldn.ldn import hold_after_trade_over, left_after_trade
 from pokeldn.online import session as online
@@ -95,17 +96,19 @@ def build_parser():
     online.add_arguments(ap)
     receiver_gift.add_arguments(ap, "--offer")
     trade_back.add_arguments(ap)
+    trade_owner.add_arguments(ap)
     return ap
 
 
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    trade_owner.check(ap, args, args.offer, local=not (args.online or args.for_receiver))
     trade_back.check(ap, args, "--offer", "--online", "--for-receiver")
     if args.online and args.offer:
         print("[bh] --online offers the partner's Pokemon; --offer is ignored")
         args.offer = []
-    args.offer = [pokemon_service.prepare_file("bdsp", path, fresh=args.fresh_pid) for path in args.offer]
+    args.offer = [trade_owner.prepare_file("bdsp", path, args, fresh=args.fresh_pid) for path in args.offer]
     if needs_root():
         print("[bh] needs the ESP32 board (POKELDN_RADIO) or root"); return 1
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
@@ -158,7 +161,9 @@ def main(argv=None):
     # A gift made for the receiving player stands in for an online partner (pokeldn.receiver_gift).
     receiving = None if remote is not None else receiver_gift.setup("bdsp", args, offers, pokemon.build_from,
                                                                     fresh=args.fresh_pid)
-    if args.trade_back:
+    if trade_owner.mode(args) == "console":
+        remote = trade_owner.ReceiverTrade("bdsp", offers, pokemon.build_from, return_each=args.trade_back)
+    elif args.trade_back:
         remote = trade_back.TradeBack("bdsp", offers)
     elif receiving is not None:
         remote = receiver_gift.ReceiverGift("bdsp", *receiving, notify=receiver_gift.pop_up())
@@ -210,6 +215,9 @@ def main(argv=None):
         if session.joiner is not None and not any(p[1] == session.joiner.ip for p in present):
             print(f"[bh] t={now:7.2f} the console left its seat")
             session.leave(now)
+            if isinstance(remote, trade_owner.ReceiverTrade):
+                remote.reset()
+                partner.sent = None
         if left_after_trade(present):
             print(f"[bh] t={now:7.2f} the console left after the trade; closing")
             return False

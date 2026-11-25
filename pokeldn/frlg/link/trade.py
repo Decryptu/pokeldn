@@ -2,8 +2,8 @@
 blocks and reacts to SET_MONS -> START -> CONFIRM_FINISH; it never emits Leader broadcasts
 [trade.c:1637-1666]. By REQ size: 200 LinkPlayerBlock then party, 100 card, 220 mail, 40 ribbons."""
 
-from pokeldn import console_trainer
-from pokeldn.frlg.link import linkplayer
+from pokeldn import console_trainer, pokemon
+from pokeldn.frlg.link import linkplayer, trade_runtime
 from pokeldn.frlg.save import mon as monmod
 from pokeldn.gba import barrier as barriermod, block, rfu
 
@@ -244,11 +244,12 @@ class EntryPhase:
 class TradeEngine:
     def __init__(self, party, trade_slot=1, link_player=None,
                  anim_delay=None, mpid=1, decline=False, refuse_partner_deoxys_mew=False,
-                 trades=1, offered_slots=None, trust_pia=False, log=lambda *a: None):
+                 trades=1, offered_slots=None, trust_pia=False, log=lambda *a: None, console_owner=False):
         """mpid must be 1 (the Follower, right seat). Each round replays exchange -> select ->
         confirm -> anim -> commit; after the last, cancel-to-leave."""
         assert mpid == 1, f"sim must be the RIGHT-seat Follower (mpId==1), got mpId={mpid}"
         self.party = list(party)
+        self.console_owner = console_owner
         self.on_party = None    # called with the host's 600-byte party once it has all arrived
         self.trade_slot = trade_slot
         self.mpid = mpid
@@ -584,6 +585,8 @@ class TradeEngine:
             if self.round == 0 and not self._lp_sent:
                 self._lp_sent = True
                 return linkplayer.build_block(self.lp).ljust(200, b"\x00")
+            if self.console_owner and self.host_link_player is None:
+                raise pokemon.BuilderError("The console did not send its LinkPlayer before the party exchange.")
             i = self._party_sent
             self._party_sent += 1
             return self._party_blocks[i] if i < len(self._party_blocks) else b"\x00" * 200
@@ -615,6 +618,10 @@ class TradeEngine:
                 if self.host_link_player is None:
                     self.host_link_player = lp
                     console_trainer.from_link_player("frlg", lp)
+                    if self.console_owner:
+                        self.party = trade_runtime.console_party(self.party, lp)
+                        self._party600 = monmod.build_player_party(self.party)
+                        self._party_blocks = monmod.party_blocks(self._party600)
                     self.log(f"host LinkPlayer: {lp.name} v0x{lp.version:04x}")
                     self.info("Exchanged player info with the host.")
             elif self._host_party_blocks < 3:

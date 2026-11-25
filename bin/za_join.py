@@ -26,8 +26,9 @@ import trio
 from pokeldn.ldn import api as ldn, radios
 
 from pokeldn.host_support import open_output
+from pokeldn import trade_owner
 from pokeldn import pokemon as pokemon_service, trade_back
-from pokeldn import console_trainer, za
+from pokeldn import za
 from pokeldn.za import host as za_host, streams
 from pokeldn.za.host import (MSG_CANCEL, OFFER_PICK, OFFER_PREVIEW,  # noqa: F401
                              build_command, command_round)
@@ -125,7 +126,7 @@ class GameStreams:
         self.received = None          # the console's pick, the record a trade delivers
         # --trade-back offers the console's pick back as it came (pokeldn/trade_back.py)
         self.rounds = trade_back.Rounds(self.offers) if getattr(args, "trade_back", False) else None
-        if self.offers:
+        if self.offers and trade_owner.mode(args) != "console":
             self._load_offer(self.offers[0], renew=getattr(args, "fresh_pid", False))
             screen.offer("za", self.offer)
         self.seen = {}
@@ -298,10 +299,13 @@ class GameStreams:
             # The console host's save, for the app (docs/gui.md, Find your trainer); a protocol-11
             # frame's declared length leaves out the station prefix.
             inner = streams.frame_payload(payload)[4:] if proto == GAME_BROADCAST else r.payload
-            try:
-                console_trainer.show("za", za.reference.identity_trainer(inner), "session")
-            except Exception:    # the console's bytes, in a shape not measured
-                pass
+            trainer = trade_owner.read_trainer("za", za.reference.identity_trainer, inner)
+            if trainer and self.offers and self.offer is None and trade_owner.mode(self.args) == "console":
+                self.offers = trade_owner.rewrite("za", self.offers, trainer, bytes)
+                if self.rounds:
+                    self.rounds.offers = self.offers
+                self._load_offer(self.offers[0])
+                screen.offer("za", self.offer)
         if proto == GAME_RELIABLE and r.seq not in self.acted:
             self.acted.add(r.seq)
             print(f"[za] host {head[:2].hex()} ({len(r.payload)} bytes) at {elapsed:.2f}s")
@@ -394,6 +398,7 @@ def build_parser():
                     help="a 354-byte offer message to send once the streams are open. Repeatable, "
                          "one per trade in the seat; the last serves every later trade")
     trade_back.add_arguments(ap)
+    trade_owner.add_arguments(ap)
     ap.add_argument("--selection-delay", type=float, default=0.5,
                     help="seconds after the identity before the selection record starts; a "
                          "reference joiner waits about 0.46 s")
@@ -771,6 +776,8 @@ def main_ip(args):
                     break
             except Exception as exc:
                 print(f"[za] the seat ended: {type(exc).__name__}: {exc}")
+                if trade_owner.failed(exc):
+                    return 1
             finally:
                 mark_seat(args.seat_marker, "ENDED", session=synced_id.hex())
                 try:
@@ -789,9 +796,10 @@ def main_ip(args):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    trade_owner.check(ap, args, args.trade_offer)
     trade_back.check(ap, args, "--trade-offer", "--scan-only", "--net-probe", "--no-answer")
     # Every queued record gets its own PID here; a later trade on the last record renews it again.
-    args.trade_offer = [pokemon_service.prepare_file("za", path, fresh=args.fresh_pid)
+    args.trade_offer = [trade_owner.prepare_file("za", path, args, fresh=args.fresh_pid)
                         for path in args.trade_offer]
     args.renew_offer, args.fresh_pid = args.fresh_pid, False
     try:
@@ -916,6 +924,8 @@ def main(argv=None):
                     return [x for i in inner for x in leaves(i)] if inner else [e]
                 detail = "; ".join(f"{type(e).__name__}: {e}" for e in leaves(exc))
                 print(f"[za] the seat ended: {detail}")
+                if trade_owner.failed(exc):
+                    return 1
                 record(rec="seat_failed", detail=detail, t=time.time())
     except KeyboardInterrupt:
         print("\n[za] interrupted")

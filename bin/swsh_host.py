@@ -31,13 +31,13 @@ from pokeldn import pokemon as pokemon_service
 from pokeldn.host_support import write_file
 from pokeldn import config, gen8
 from pokeldn.host_support import resolve_keys, needs_root
-from pokeldn import launcher
+from pokeldn import launcher, trade_owner
 from pokeldn.ldn import hold_after_trade_over, host4, left_after_trade, mesh_protocol as mesh
 from pokeldn.ldn import api as ldn
 from pokeldn.ldn import pia_lan
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, find_ap_phy
-from pokeldn.swsh import beacon, host_trade, lair, lair_host, league_card, pokemon as swsh_pokemon, raid, raid_event, raid_host, trade_payload
+from pokeldn.swsh import beacon, host_trade, lair, lair_host, league_card, pokemon as swsh_pokemon, raid, raid_event, raid_host, trade_offer, trade_payload
 from pokeldn.ldn.pia5 import password_crc
 from pokeldn.swsh.session import COMM_ID, GAME_KEY, PASSPHRASE, session_keys
 from pokeldn.app import screen
@@ -116,12 +116,12 @@ def offer_record(args, offer_file, renew, slot_record):
         raise ValueError(f"offer slot {args.offer_slot} is empty; pass --offer-file")
     fresh = bool(args.fresh_pid or renew)
     # PKHeX keeps the PID of a record that is legal only with it (an event, a correlated encounter).
-    if getattr(args, "validate_offer", False):
+    if getattr(args, "validate_offer", False) or (fresh and args.offer_owner == "settings"):
         return swsh_pokemon.encrypt(gen8.load(pokemon_service.prepare("swsh", raw, fresh=fresh)))
     return swsh_pokemon.encrypt(gen8.fresh_identity(gen8.decrypt(raw))) if fresh else raw
 
 
-def prepare_snapshot(source, args, app_data, offer_file=None, renew=False):
+def prepare_snapshot(source, args, app_data, offer_file=None, renew=False, *, prepared_offer=None):
     """Build this host's trade payload from a saved or joining console's 0x84 snapshot."""
     snapshot = trade_payload.inflate_short(source)
     original = snapshot
@@ -140,7 +140,7 @@ def prepare_snapshot(source, args, app_data, offer_file=None, renew=False):
                                      **identity)
     snapshot = original[:swsh_pokemon.PARTY_BLOCK] + snapshot[swsh_pokemon.PARTY_BLOCK:]
     at = (args.offer_slot - 1) * swsh_pokemon.SIZE_PARTY
-    raw = offer_record(args, offer_file, renew, original[at:at + swsh_pokemon.SIZE_PARTY])
+    raw = prepared_offer or offer_record(args, offer_file, renew, original[at:at + swsh_pokemon.SIZE_PARTY])
     snapshot = snapshot[:at] + raw + snapshot[at + swsh_pokemon.SIZE_PARTY:]
     if args.card_set:
         edits = {}
@@ -271,6 +271,7 @@ def build_parser():
                          "our seat and picks our rental")
     online.add_arguments(ap)
     trade_back.add_arguments(ap)
+    trade_owner.add_arguments(ap)
     return ap
 
 
@@ -397,8 +398,13 @@ def main(argv=None):
     if args.online and args.offer_file:
         print("[sw] --online offers the partner's Pokemon; --offer-file is ignored")
         args.offer_file = []
-    args.offer_file = [pokemon_service.prepare_file("swsh", path, fresh=args.fresh_pid)
-                       for path in args.offer_file]
+    trade_owner.check(ap, args, args.offer_file, local=not (
+        args.online or args.raid_boss or args.raid_event or args.lair_legendary is not None))
+    console_owner = args.offer_owner == "console"
+    if console_owner and args.snapshot:
+        ap.error("--offer-owner console needs the live snapshot; drop --snapshot")
+    args.offer_file = [trade_owner.prepare_file(
+        "swsh", path, args, fresh=args.fresh_pid and not console_owner) for path in args.offer_file]
     # A trade past the queue offers the last file again, under a new PID with --fresh-pid.
     args.renew_offer, args.fresh_pid = args.fresh_pid, False
     if not (args.ip_host or args.lan) and needs_root():
@@ -498,10 +504,11 @@ def main(argv=None):
     def offer_file(n):
         return args.offer_file[min(n, len(args.offer_file) - 1)] if args.offer_file else None
 
-    def build_snapshot(source, n):
+    def build_snapshot(source, n, prepared_offer=None):
         # Online, the snapshot's slot keeps the console's own Pokemon: the offer goes on 20030.
         snapshot, offer = prepare_snapshot(source, args, app_data, offer_file(n),
-                                           renew=args.renew_offer and n >= len(args.offer_file))
+                                           renew=args.renew_offer and n >= len(args.offer_file),
+                                           prepared_offer=prepared_offer)
         if partner is None:
             screen.offer("swsh", offer)
         return snapshot, offer
@@ -560,6 +567,10 @@ def main(argv=None):
         # A reader that raises stops the host mid-trade; the console calls that an interruption.
         try:
             fn(*a)
+        except pokemon_service.BuilderError:
+            if args.offer_owner != "original":
+                raise
+            traceback.print_exc()
         except Exception:
             traceback.print_exc()
 
@@ -608,12 +619,28 @@ def main(argv=None):
                 write_file(path, bytes.fromhex(row['pk8']))
                 print(f"[sw] the joiner's Pokemon written to {path}")
 
+        console_offers = {}
+
+        def prepared(i):
+            raw = console_offers.get(offer_file(i))
+            if raw is not None and args.renew_offer and i >= len(args.offer_file):
+                return gen8.encrypt(gen8.load(pokemon_service.prepare("swsh", raw, fresh=True)))
+            return raw
+
+        def live_snapshot(source):
+            if console_owner:
+                console_offers.update(trade_offer.console_offers(
+                    source, args.offer_file, fresh=args.renew_offer))
+                if args.trade_back:
+                    partner.replace_offers(console_offers.values())
+            return build_snapshot(source, n, prepared(n))
+
         def next_offer(k):
             i = n + k - 1
             print(f"[sw] {st.ip}: trade {i + 1} offers "
                   f"{offer_file(i) or 'the snapshot slot again'}")
-            return offer_record(args, offer_file(i), args.renew_offer and i >= len(args.offer_file),
-                                trades[st.ip].offer_pk8)
+            return prepared(i) or offer_record(
+                args, offer_file(i), args.renew_offer and i >= len(args.offer_file), trades[st.ip].offer_pk8)
 
         snapshot = offer = None
         if args.snapshot:
@@ -648,8 +675,7 @@ def main(argv=None):
                                              send_broadcast, send_mesh,
                                              end_delay=args.end_delay, record=on_record,
                                              migrate=args.migrate,
-                                             snapshot_builder=(lambda peer: build_snapshot(peer, n))
-                                             if snapshot is None else None,
+                                             snapshot_builder=live_snapshot if snapshot is None else None,
                                              next_offer=next_offer, accept_first=args.accept_first,
                                              lead=args.lead, queued=len(args.offer_file) - n,
                                              partner=partner)
@@ -750,6 +776,9 @@ def main(argv=None):
                     print(f"[sw] trade {completed[0]} complete"
                           + (f"; {left} queued" if left > 0 else ""))
             transport.wait_readable(0.02)
+    except pokemon_service.BuilderError as error:
+        print(f"[sw] {error}", flush=True)
+        return 1
     except KeyboardInterrupt:
         print("\n[sw] stopping")
     finally:

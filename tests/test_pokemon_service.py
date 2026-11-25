@@ -209,6 +209,94 @@ def test_a_file_imported_with_the_players_trainer_keeps_its_shine(service, game)
         assert retrained["shiny"] and "note" not in retrained
 
 
+@pytest.mark.parametrize("game", FORMATS)
+def test_local_trade_rewrites_and_checks_the_wire_record_for_each_format(service, game):
+    from pokeldn import trade_owner
+    from pokeldn.bdsp import pokemon as bdsp
+    from pokeldn.frlg.save.mon import Mon
+    from pokeldn.lgpe import pb7
+    from pokeldn.pla import pokemon as pla
+    from pokeldn.sv import trade as sv
+    from pokeldn.swsh import pokemon as swsh
+
+    # Each launcher takes the checked record in its own wire form.
+    loaders = {"frlg": lambda raw: Mon.from_pk3(raw).party_bytes(),
+               "lgpe": lambda raw: raw if pb7.valid(raw) else pb7.encrypt(raw),
+               "swsh": lambda raw: swsh.build_from(raw), "bdsp": bdsp.build_from,
+               "pla": lambda raw: pla.encrypt(pla.load(raw)), "sv": sv.load_offer, "za": bytes}
+    built = service.make(game, 25, TRAINER)
+    data = Path(built["file"]).read_bytes()
+    trainer = {"ot": "Link", "tid": 53699, "sid": 611, "gender": 1}
+    [result] = trade_owner.rewrite(game, [data], trainer, loaders[game])
+    entity = pokemon.entity_bytes(game, result)
+    checked = service.check_bytes(game, entity)
+    owner = service.owner(game, entity)
+    assert checked["legal"]
+    assert {key: owner[key] for key in trainer} == trainer
+    assert owner["species"] == 25
+    assert Path(built["file"]).read_bytes() == data
+
+
+@pytest.mark.parametrize("version", ["FR", "LG", "R", "S", "E"])
+def test_gba_link_player_is_applied_before_both_roles_send_their_party(service, version):
+    from pokeldn.frlg.link import host_trade, linkplayer, trade
+    from pokeldn.frlg.save import mon
+
+    versions = {"FR": linkplayer.VERSION_FIRE_RED, "LG": linkplayer.VERSION_LEAF_GREEN,
+                "R": linkplayer.VERSION_RUBY, "S": linkplayer.VERSION_SAPPHIRE,
+                "E": linkplayer.VERSION_EMERALD}
+    built = service.make("frlg", 25, TRAINER, version=version)
+    party = [mon.Mon.from_file(built["file"])]
+    lp = linkplayer.LinkPlayer(name="Link", trainer_id=0xBEEF1234, gender=1, version=versions[version])
+    packet = linkplayer.build_block(lp).ljust(200, b"\0")
+
+    follower = trade.TradeEngine(party, trade_slot=0, console_owner=True)
+    follower._on_host_block(trade.COUNT_PARTY, packet)
+    assert follower._party_blocks[0][:100] == follower.party[0].party_bytes()
+
+    leader = host_trade.HostTradeEngine(party, console_owner=True)
+    leader._expected = "link_player"
+    leader._after_child_block(trade.COUNT_PARTY, packet)
+
+    for engine in (follower, leader):
+        owner = service.owner("frlg", engine.party[0].party_bytes())
+        assert (owner["ot"], owner["tid"], owner["sid"], owner["gender"]) == ("Link", 0x1234, 0xBEEF, 1)
+
+
+def test_sword_console_ot_uses_live_save_ids_for_every_offer(service, capsys):
+    from test_swsh_trade_payload import a_payload
+    from pokeldn import console_trainer, gen8
+    from pokeldn.swsh import pokemon as swsh_pokemon, trade_offer, trade_payload
+
+    snapshot = bytearray(a_payload(count=0, tid=65000, sid=54321, name="SwordSave"))
+    snapshot[trade_payload.MY_STATUS_OFFSET + trade_payload.MY_STATUS_GENDER] = 1
+    offered = [service.make("swsh", species, TRAINER)["file"] for species in (25, 133)]
+    originals = [Path(path).read_bytes() for path in offered]
+
+    queue = trade_offer.console_offers(snapshot, offered)
+
+    message = next(m for line in capsys.readouterr().out.splitlines() if (m := console_trainer.read(line)))
+    assert (message["ot"], message["tid"], message["sid"], message["version"]) == (
+        "SwordSave", 65000, 54321, 44)
+    assert list(queue) == offered
+    for path, original, species in zip(offered, originals, (25, 133)):
+        assert Path(path).read_bytes() == original
+        fields = swsh_pokemon.read(queue[path])
+        assert (fields["species"], fields["ot_name"], fields["trainer_id"], fields["secret_id"],
+                fields["ot_gender"]) == (species, "SwordSave", 65000, 54321, 1)
+        assert service.check_bytes("swsh", gen8.decrypt(queue[path]))["legal"]
+
+
+def test_sword_console_ot_rejects_a_fixed_event_in_the_queue(service):
+    from test_swsh_trade_payload import a_payload
+    from pokeldn.swsh import trade_offer
+
+    event = service.make("swsh", 809, TRAINER)
+    ordinary = service.make("swsh", 25, TRAINER)
+    with pytest.raises(pokemon.BuilderError, match=r"Offer 2 cannot use the console's OT"):
+        trade_offer.console_offers(a_payload(), [ordinary["file"], event["file"]])
+
+
 def test_an_event_pokemon_offered_under_a_new_pid_keeps_its_own(service, capsys):
     """Melmetal reaches Sword only as an event; its PID is part of the event."""
     built = service.make("swsh", 809, TRAINER)

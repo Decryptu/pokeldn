@@ -14,6 +14,7 @@ if os.path.isdir(BUNDLED):
 
 import trio, ldn
 from pokeldn.host_support import open_output
+from pokeldn import trade_owner
 from pokeldn import console_trainer, pokemon as pokemon_service, trade_back
 from pokeldn.bdsp import COMM_ID, PASSPHRASE, PIA_PORT, pokemon, room, session_keys
 from pokeldn.bdsp.host import player_info
@@ -180,6 +181,8 @@ async def main_async(args):
             offered = pokemon.read(poke)
             print(f"[cx] trade {n} offers species {offered['species']}, {offered['nickname']!r}, "
                   f"OT {offered['ot_name']!r}, IVs {offered['ivs']}, pid {offered['pid']:08x}")
+        trainer = None
+        offer_owner_ready = trade_owner.mode(args) != "console"
         # --trade-back: every other round returns the console's last PB8 as it came (docs/architecture.md)
         rounds = trade_back.Rounds(st["our_pokes"]) if args.trade_back else None
 
@@ -1097,6 +1100,8 @@ async def main_async(args):
         async def answer_the_trade(g, payload, now):
             try:
                 await _answer_the_trade(g, payload, now)
+            except trade_owner.TrainerError:
+                raise
             except Exception as exc:                                  # noqa: BLE001
                 # A handler that raises drops our station, which the console reads as a
                 # cancellation.
@@ -1106,6 +1111,7 @@ async def main_async(args):
 
         async def _answer_the_trade(g, payload, now):
             """Answer the console's half of a trade, its trainer and then its Pokemon, with ours."""
+            nonlocal trainer, offer_owner_ready
             if not args.trade_reply:
                 return
             if g["data_id"] == room.TRADE_POKE_CHECK_OK:
@@ -1183,7 +1189,10 @@ async def main_async(args):
                 label = "our ready-ok (THE CONSOLE SAVES AFTER THIS)"
             elif g["data_id"] == room.TRADE_TRANER:
                 st["their_traner"] = room.parse_trade_traner(payload[room.HEADER_SIZE:])
-                show_their_trainer(payload[room.HEADER_SIZE:])
+                if not offer_owner_ready:
+                    trainer = trade_owner.read_trainer("bdsp", room.traner_trainer, payload[room.HEADER_SIZE:])
+                else:
+                    show_their_trainer(payload[room.HEADER_SIZE:])
                 print(f"\n[rx] t={now:6.2f} *** THEIR TRAINER RECORD: {st['their_traner']} ***")
                 record(rec="their_traner", t=now, fields=st["their_traner"])
                 reply = room.build_trade_traner(args.trade_name, args.trade_tid, args.trade_sid)
@@ -1209,6 +1218,13 @@ async def main_async(args):
                 if not st["our_pokes"]:
                     print("[cx] no --trade-template, so nothing to offer back")
                     return
+                if not offer_owner_ready:
+                    st["our_pokes"] = trade_owner.rewrite(
+                        "bdsp", st["our_pokes"], trainer, pokemon.build_from, shown=st["their_raw"])
+                    if rounds:
+                        rounds.offers = st["our_pokes"]
+                    offer_owner_ready = True
+                    screen.offer("bdsp", our_offer())
                 reply = room.build_trade_poke(our_offer())
                 label = "our Pokemon"
             send_trade_message(reply, label, now)
@@ -1683,6 +1699,7 @@ def build_parser():
                          "again after the list")
     ap.add_argument("--trade-nickname", metavar="TEXT", help="nickname for the offered Pokemon")
     trade_back.add_arguments(ap)
+    trade_owner.add_arguments(ap)
     ap.add_argument("--answer-return-select", action="store_true",
                     help="answer the console's NetDataReturnSelectData, a round reset, ONCE; "
                          "the answer has no measured effect")
@@ -1843,12 +1860,13 @@ def build_parser():
 def main():
     ap = build_parser()
     args = ap.parse_args()
+    trade_owner.check(ap, args, args.trade_template, local=args.trade_reply)
     trade_back.check(ap, args, "--trade-template", "--answer-with", "--ug-join")
     if args.trade_back and not args.complete_trade:
         ap.error("--trade-back needs --complete-trade: no trade completes without it")
     fields = {k: v for k, v in (("nickname", args.trade_nickname), ("ot_name", args.trade_ot))
               if v is not None}
-    args.trade_template = [pokemon_service.prepare_file("bdsp", path, fresh=args.fresh_pid, fields=fields)
+    args.trade_template = [trade_owner.prepare_file("bdsp", path, args, fresh=args.fresh_pid, fields=fields)
                            for path in args.trade_template]
     args.trade_nickname = args.trade_ot = None
     args.fresh_pid = False

@@ -24,7 +24,7 @@ import trio, ldn
 from pokeldn.host_support import open_output, write_file
 from pokeldn import pokemon as pokemon_service
 from pokeldn.host_support import resolve_keys, needs_root
-from pokeldn import launcher
+from pokeldn import launcher, trade_owner
 from pokeldn.ldn import pia_lan
 from pokeldn.ldn import (broadcast4, ldn_mitm, ldn_mitm_host, local_protocol as lp,
                         mesh_protocol as mesh, pia4, reliable4,
@@ -40,7 +40,7 @@ from pokeldn.swsh import lair as swsh_lair
 from pokeldn.ldn import sync_clock
 from pokeldn import gen8, trade_back
 from pokeldn.swsh import pokemon as swsh_pokemon
-from pokeldn.swsh import trade_payload
+from pokeldn.swsh import trade_offer, trade_payload
 from pokeldn.ldn import hold_after_trade_over, show_done
 from pokeldn.app import screen
 
@@ -342,6 +342,7 @@ async def main_async(args):
               "their_ack_id": 0, "data_seqs": 0,
               "their_payload": None, "ack_by_proto": {}, "said_by_proto": {},
               "seen_by_proto": {}, "answer_queue": [],
+              "offer_error": None,
               "snapshot_in": 0, "snapshot_total": None, "snapshot_indexes": set(),
               "snapshot_bodies": {},
               "their_sequence": None, "snapshot_out": 0, "snapshot_acked": None,
@@ -413,14 +414,20 @@ async def main_async(args):
                                                                               fresh=fresh)))
             return swsh_pokemon.encrypt(gen8.fresh_identity(gen8.decrypt(raw))) if fresh else raw
 
+        console_offers = {}
+
+        def file_offer(path):
+            if path in console_offers:
+                return console_offers[path]
+            return swsh_pokemon.encrypt(gen8.load(Path(path).read_bytes()))
+
         def queued_offer(n):
             """-> our record for trade n > 1: the n-th --offer-file, else the last again, else the
             first trade's; one offered again gets a new PID under --fresh-pid."""
             files = args.offer_file
             if n <= len(files):
-                return validated(swsh_pokemon.encrypt(gen8.load(Path(files[n - 1]).read_bytes())))
-            raw = (swsh_pokemon.encrypt(gen8.load(Path(files[-1]).read_bytes())) if files
-                   else st["first_pk8"])
+                return validated(file_offer(files[n - 1]))
+            raw = file_offer(files[-1]) if files else st["first_pk8"]
             return validated(raw, fresh=args.fresh_pid)
 
         def next_trade():
@@ -1515,8 +1522,16 @@ async def main_async(args):
                 payload = Path(args.send_snapshot).read_bytes()
             if len(payload) != trade_payload.PAYLOAD_LENGTH:
                 payload = trade_payload.inflate_short(payload)
+            if args.offer_owner == "console":
+                try:
+                    console_offers.update(trade_offer.console_offers(
+                        payload, args.offer_file, fresh=args.fresh_pid))
+                except pokemon_service.BuilderError as error:
+                    st["offer_error"] = str(error)
+                    print(f"[cx] {error}", flush=True)
+                    return
             original_party = payload
-            was = trade_payload.read(payload)["trainer_name"]
+            was = trade_payload.trainer(payload)["ot"]
             # The tail's three ids are not drawn on the trade screen (docs/swsh_protocol.md).
             profile = trade_payload.read_tail(payload)
             theirs = profile["device_id"] + profile["account_uid"] + profile["nsa_id"]
@@ -1536,7 +1551,7 @@ async def main_async(args):
             if edits or args.offer_file:
                 at = (args.offer_slot - 1) * swsh_pokemon.SIZE_PARTY
                 if args.offer_file:
-                    raw = swsh_pokemon.encrypt(gen8.load(Path(args.offer_file[0]).read_bytes()))
+                    raw = file_offer(args.offer_file[0])
                     print(f"[tx] slot {args.offer_slot} is {args.offer_file[0]}")
                 else:
                     raw = original_party[at:at + swsh_pokemon.SIZE_PARTY]
@@ -2093,6 +2108,8 @@ async def main_async(args):
                 if st["host_leaving"] is not None:
                     leave = False
                     break
+                if st["offer_error"]:
+                    break
                 if (not mid_trade()
                         and hold_after_trade_over(args.hold_after_trade, queue_done())):
                     print(f"\n[cx] leaving the seat {args.hold_after_trade:.0f}s after trade "
@@ -2158,7 +2175,7 @@ async def main_async(args):
                broadcast_stray_ids=sorted(st["broadcast_stray_ids"]))
     if cap:
         cap.close()
-    return 0
+    return 1 if st["offer_error"] else 0
 
 
 LADDER_FINAL_PHASE = 4        # `0x010dbf40`: phase 4 -> state 13 -> 14, the teardown, no send
@@ -2636,15 +2653,16 @@ def build_parser():
                          "nothing and only records what the console offers us")
     ap.add_argument("--offer-file", action="append", default=[], metavar="FILE",
                     help="a .pk8 to put in --offer-slot in place of the snapshot's record: stored "
-                         "or party form, encrypted or PKHeX's decrypted export. Its OT name and "
-                         "ids become the snapshot's unless --offer-file-as-is. Repeatable, one per "
+                         "or party form, encrypted or PKHeX's decrypted export. Use --offer-owner "
+                         "to choose the OT. Repeatable, one per "
                          "trade on the session: the console's player picks again from the box; the "
                          "last serves every later trade")
     trade_back.add_arguments(ap)
+    trade_owner.add_arguments(ap)
     ap.add_argument("--fresh-pid", action="store_true",
                     help="draw a new encryption constant and PID for every offered Pokemon")
     ap.add_argument("--offer-file-as-is", action="store_true",
-                    help="keep the file's own OT name and trainer ids")
+                    help="keep the file's OT and trainer IDs (the default)")
     ap.add_argument("--offer-species", type=lambda s: int(s, 0), default=None,
                     help="build the record in --offer-slot instead of sending it as it came: this "
                          "national dex number, in the party record the snapshot advertises AND in "
@@ -2747,30 +2765,36 @@ def build_parser():
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
-    preset = build_parser().parse_known_args(argv)[0].preset
+    ap = build_parser()
+    preset = ap.parse_known_args(argv)[0].preset
     if preset:
         argv = shlex.split(PRESETS[preset]) + argv
-    args = build_parser().parse_args(argv)
+    args = ap.parse_args(argv)
     if preset == "trade" and not args.send_snapshot:
         args.send_snapshot = "live"
     args.raid_join = args.raid_join or args.lair_join
-    trade_back.check(build_parser(), args, "--offer-file", "--raid-join", "--lair-join", "--offer-echo")
+    trade_back.check(ap, args, "--offer-file", "--raid-join", "--lair-join", "--offer-echo")
     args.connect_station_first = int(_expand(args.connect_station)[0], 0)
     try:
         offer_edits(args)
     except ValueError as e:
-        build_parser().error(str(e))
+        ap.error(str(e))
+    trade_owner.check(ap, args, args.offer_file, local=args.offer_slot and not (args.raid_join or args.offer_echo))
+    if args.offer_owner != "original" and args.offer_file_as_is:
+        ap.error("--offer-file-as-is requires --offer-owner original")
+    console_owner = args.offer_owner == "console"
+    if console_owner and args.send_snapshot != "live":
+        ap.error("--offer-owner console needs --send-snapshot live")
     if args.offer_file:
         edits = offer_edits(args)
-        args.offer_file = [pokemon_service.prepare_file(
-            "swsh", path, fresh=args.fresh_pid,
+        args.offer_file = [trade_owner.prepare_file(
+            "swsh", path, args, fresh=args.fresh_pid and not console_owner,
             transform=lambda raw: swsh_pokemon.build_from(raw, **edits)) for path in args.offer_file]
-        args.offer_file_as_is = True
         for key in ("species", "ability", "level", "experience", "nickname", "ot", "ivs", "moves"):
             setattr(args, "offer_" + key, None)
     args.validate_offer = True
     if not (args.ip_join or args.lan) and needs_root():
-        build_parser().error("must run as root (LDN needs the raw radio)")
+        ap.error("must run as root (LDN needs the raw radio)")
     try:
         return trio.run(main_async, args)
     except BaseException as e:

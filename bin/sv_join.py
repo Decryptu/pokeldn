@@ -33,8 +33,9 @@ import trio
 from pokeldn.ldn import api as ldn, radios
 
 from pokeldn.host_support import open_output
+from pokeldn import trade_owner
 from pokeldn import pokemon as pokemon_service
-from pokeldn import console_trainer, gen9, panel, progress, sv, trade_back
+from pokeldn import gen9, panel, progress, sv, trade_back
 from pokeldn.ldn import ldn_mitm, pia6, pia_connect, reliable5
 from pokeldn.sv import circle, pokemon, port2, raid, reference, streams, trade, wild
 from pokeldn.ldn import channel_table, game_channel
@@ -303,6 +304,7 @@ def build_parser():
                          "(pokeldn.sv.trade). Repeatable: the second and later records are "
                          "offered in the same seat, one per trade, as each trade closes")
     trade_back.add_arguments(ap)
+    trade_owner.add_arguments(ap)
     ap.add_argument("--offer-set", action="append", metavar="FIELD=VALUE", default=[],
                     help="a field written into the offered record before it is sealed, by its "
                          "pokeldn.sv.pokemon name: nickname=SHINY, species=906, ivs=31,31,31,31,"
@@ -555,6 +557,7 @@ def species_level(text):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    trade_owner.check(ap, args, args.trade_offer, local=not (args.union_circle or args.raid_pokemon))
     trade_back.check(ap, args, "--trade-offer", "--raid-pokemon", "--union-circle")
     if args.raid_pokemon:
         raid_guest(ap, args)
@@ -563,7 +566,7 @@ def main(argv=None):
     elif args.circle_task or args.spawn or args.follow_host or args.spawn_legal:
         ap.error("--circle-task, --spawn, --spawn-legal and --follow-host need --union-circle")
     if args.trade_offer:
-        args.trade_offer = [pokemon_service.prepare_file("sv", p, fresh=args.fresh_pid,
+        args.trade_offer = [trade_owner.prepare_file("sv", p, args, fresh=args.fresh_pid,
             transform=lambda raw: trade.load_offer(raw, args.offer_set)) for p in args.trade_offer]
         args.offer_set = []
         args.fresh_pid = False
@@ -696,6 +699,8 @@ def main(argv=None):
                     return [x for i in inner for x in leaves(i)] if inner else [e]
                 detail = "; ".join(f"{type(e).__name__}: {e}" for e in leaves(exc))
                 print(f"[sv] the seat ended: {detail}")
+                if trade_owner.failed(exc):
+                    return 1
                 record(rec="seat_failed", detail=detail, t=time.time())
             if trades_done():
                 print("[sv] the seat ended after a trade; closing")
@@ -802,6 +807,8 @@ def main_ip(args):
                          record)
             except Exception as exc:
                 print(f"[sv] the seat ended: {type(exc).__name__}: {exc}")
+                if trade_owner.failed(exc):
+                    return 1
             finally:
                 try:
                     tcp.close()
@@ -862,7 +869,8 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
     channel = {"opened": False, "table": None, "key80": False, "port2": False,
                "keys": None, "keys_at": None, "port2_at": None}
     stage = trade_stage(args)
-    if stage is not None:
+    offer_owner_ready = trade_owner.mode(args) != "console"
+    if stage is not None and offer_owner_ready:
         screen.offer("sv", stage.offer)
     pending_trade = []          # (due, port, payload) the trade stage asked to send
 
@@ -1470,10 +1478,10 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                         for spec in args.send_on_open:
                             delay, rest = spec.split(":", 1)
                             pending_open.append((time.time() + float(delay), rest))
-                        if stage is not None and args.offer_after_open is not None:
+                        if stage is not None and offer_owner_ready and args.offer_after_open is not None:
                             for delay, out_port, payload in stage.offer_first():
                                 schedule_trade(args.offer_after_open + delay, out_port, payload)
-                    if stage is not None:
+                    if stage is not None and (offer_owner_ready or msg.port == 1):
                         for delay, out_port, payload in stage.on_message(msg.port, cm["payload"]):
                             schedule_trade(delay, out_port, payload)
                         while offers_seen < len(stage.host_offers):
@@ -1537,10 +1545,18 @@ async def run_session(args, keys, host_ip, host_mac, our_ip, our_mac, record):
                     if (key == (streams.PROTOCOL_STREAM, streams.HOST_INDEX) and addr[0] == host_ip
                             and note.startswith(" zlib ->")):
                         # Record 1 of the host's identity block names its save (docs/sv.md, The records).
-                        try:
-                            console_trainer.show("sv", reference.identity_trainer(body), "session")
-                        except ValueError as exc:
-                            print(f"[sv] the host's identity record 1 does not read: {exc}")
+                        trainer = trade_owner.read_trainer("sv", reference.identity_trainer, body)
+                        if trainer and not offer_owner_ready:
+                            records = stage.rounds.offers if stage.rounds else stage.offers
+                            checked = trade_owner.rewrite("sv", records, trainer, trade.load_offer)
+                            stage.offers = checked if stage.rounds is None else checked[:1]
+                            if stage.rounds:
+                                stage.rounds.offers = checked
+                            offer_owner_ready = True
+                            screen.offer("sv", stage.offer)
+                            if channel["key80"] and args.offer_after_open is not None:
+                                for delay, out_port, outgoing in stage.offer_first():
+                                    schedule_trade(args.offer_after_open + delay, out_port, outgoing)
                     if args.print_packets:
                         print(f"[sv] <- RECORD 0x{msg.protocol:02x}:{msg.port} seq {rm['sequence_id']} "
                               f"{reliable5.flag_names(rm['flags'])} {len(rm['payload'])}B{note}")

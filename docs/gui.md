@@ -16,6 +16,12 @@ radio firmware for ESP32, ESP32-S2, ESP32-S3, ESP32-C3 and ESP32-C6. The user su
 Every trade tool's Pokemon to offer may be left empty: Start has PKHeX build a random legal Pokemon
 of that game for your trainer (`command.prepare`), new at each run.
 
+In a local trade, **Original Trainer (OT)** applies to the queue. **Keep the Pokémon’s OT** is the
+default. **Trainer from Settings** uses the trainer configured for the game. **Trainer from this
+console** reads the receiving save’s OT, TID and SID during the link exchange. If the console needs
+to show a Pokémon first, select one to continue. PKHeX checks the resulting record. An event with a
+fixed OT can be sent using **Keep the Pokémon’s OT**.
+
 Mystery Gift tools share one builder (preset, build your own, `.pokegift`, `.wc8` on Sword/Shield).
 Save gift file exports without a board as `.pokegift`, `.wc3` or `.wc8`
 ([Mystery Gift files](gifts.md#desktop-app)).

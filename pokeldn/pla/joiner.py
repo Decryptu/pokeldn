@@ -7,9 +7,9 @@ import time
 
 from pokeldn.ldn import pia6, pia_connect, reliable5
 from pokeldn.ldn import channel_table
-from pokeldn.pla import data_exchange, game_channel, trade_box
+from pokeldn.pla import data_exchange, game_channel, pokemon as pla_pokemon, trade_box
 from pokeldn.ldn import show_done
-from pokeldn import console_trainer
+from pokeldn import trade_owner
 from pokeldn.app import screen
 
 PROTO_NET = 0x2C
@@ -58,7 +58,7 @@ class JoinerSession:
     def __init__(self, keys, our_ip, our_mac, offer, exchange, *, name=" ",
                  player_id=pia6.DEFAULT_PLAYER_ID, our_var=None, phase_waits=PHASE_WAITS,
                  drive=False, net_answer=True, join_delay=0.0, log=print, clock=time.monotonic,
-                 next_offers=()):
+                 next_offers=(), console_owner=False):
         self.net_answer = net_answer   # False: no Net 0x12 (docs/pla.md, Unresolved)
         self.join_delay = join_delay   # after the first Net 0x11 (docs/pla.md, Joining)
         self.keys, self.our_ip, self.offer, self.exchange = keys, our_ip, bytes(offer), exchange
@@ -75,6 +75,7 @@ class JoinerSession:
         self.last_rtt = self.last_clock = self.last_stream_ack = 0.0
         self.clock_seq = 0
         self.stream_high = {}          # 0x81 port -> the host's highest sequence
+        self.console_owner = console_owner
         self.host_record = None        # the host's data exchange record
         self.content_sent = False
         self.seq = {}                  # (protocol, port) -> our next sequence
@@ -296,11 +297,11 @@ class JoinerSession:
             who = data_exchange.read_record(self.host_record)
             self.log(f"[pla] <- the host's data exchange record: player {who['name']!r}, "
                      f"id {who['player_id'].hex()}")
-            try:                        # the console's record names its save, for the app
-                console_trainer.show("pla", data_exchange.read_trainer(self.host_record), "session")
-            except Exception:
-                pass
-        if self.host_record is not None and not self.content_sent:
+            trainer = trade_owner.read_trainer("pla", data_exchange.read_trainer, self.host_record)
+            if self.console_owner:
+                self._set_console_offers(trainer)
+                self.console_owner = False
+        if self.host_record is not None and not self.console_owner and not self.content_sent:
             self.content_sent = True
             seq = self._next_seq(PROTO_STREAM, data_exchange.JOINER_PORT)
             out.append(self._reliable(
@@ -327,6 +328,11 @@ class JoinerSession:
         seq = self._next_seq(PROTO_GAME, game_channel.HOST_PORT)
         return self._reliable(game_channel.build_message(key, body, seq), PROTO_GAME,
                               game_channel.HOST_PORT, seq)
+
+    def _set_console_offers(self, trainer):
+        self.offer, *self.next_offers = trade_owner.rewrite(
+            "pla", [self.offer, *self.next_offers], trainer,
+            lambda data: pla_pokemon.encrypt(pla_pokemon.load(data)))
 
     def _send_box(self, selector, counter):
         seq = self._next_seq(PROTO_GAME, trade_box.PORT)
@@ -401,7 +407,7 @@ class JoinerSession:
             ours = ("ours", offered["selector"], offered["counter"])
             if offered["selector"] == trade_box.SELECTOR_OFFERING and ours in self.answered:
                 self.answered.add(mark)           # our offer for this round is already out
-            if mark not in self.answered:
+            if not self.console_owner and mark not in self.answered:
                 self.answered.add(mark)
                 self.answered.add(ours)
                 out.append(self._send_box(offered["selector"], offered["counter"]))
@@ -439,6 +445,8 @@ class JoinerSession:
             screen.arrived()
 
     def _advance(self):
+        if self.console_owner:
+            return []
         out = []
         now = self.clock()
         if (not self.shown and self.host_opened

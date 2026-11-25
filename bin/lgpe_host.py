@@ -20,6 +20,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.host_support import open_output
+from pokeldn import trade_owner
 from pokeldn import launcher
 from pokeldn import pokemon as pokemon_service
 from pokeldn.ldn import clone, pia3, pia4, reliable3, station4, station9, sync_clock
@@ -157,6 +158,7 @@ def build_parser():
     online.add_arguments(ap)
     receiver_gift.add_arguments(ap, "--offer and --next-offer")
     trade_back.add_arguments(ap)
+    trade_owner.add_arguments(ap)
     return ap
 
 
@@ -192,6 +194,7 @@ def boxed(raw):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
+    trade_owner.check(ap, args, args.offer and args.offer != "echo", local=not (args.online or args.for_receiver))
     trade_back.check(ap, args, "--offer", "--online", "--for-receiver")
     if args.trade_back and args.offer == "echo":
         ap.error("--trade-back needs a Pokemon file for --offer")
@@ -200,8 +203,8 @@ def main(argv=None):
         args.offer, args.next_offer = None, []
     fresh, args.fresh_pid = args.fresh_pid, False
     if args.offer and args.offer != "echo":
-        args.offer = pokemon_service.prepare_file("lgpe", args.offer, fresh=fresh)
-    args.next_offer = [pokemon_service.prepare_file("lgpe", path, fresh=fresh) for path in args.next_offer]
+        args.offer = trade_owner.prepare_file("lgpe", args.offer, args, fresh=fresh)
+    args.next_offer = [trade_owner.prepare_file("lgpe", path, args, fresh=fresh) for path in args.next_offer]
     for path in args.next_offer:
         with open(path, "rb") as fh:
             if not pb7.valid(fh.read()):
@@ -270,7 +273,9 @@ def main(argv=None):
            our_ip=host.our_ip, our_mac=host.our_mac.hex())
 
     partner = online.partner("lgpe", args, code=args.code, name=args.trainer_name)
-    if args.trade_back:
+    if trade_owner.mode(args) == "console":
+        partner = trade_owner.ReceiverTrade("lgpe", offers, boxed, return_each=args.trade_back)
+    elif args.trade_back:
         partner = trade_back.TradeBack("lgpe", offers)
     elif receiving is not None:
         partner = receiver_gift.ReceiverGift("lgpe", *receiving, shown=lambda body: screen.offer("lgpe", body),
@@ -490,6 +495,8 @@ class Session:
                 self.record(rec="seat", ip=ip, mac=bytes(mac).hex(), name=bytes(name).hex())
         for payload, src_ip in self.host.recv():
             if not pia3.is_pia3(payload):
+                continue
+            if isinstance(self.partner, trade_owner.ReceiverTrade) and self.peer_ip not in (None, src_ip):
                 continue
             if self.peer_ip is None:
                 self.peer_ip = src_ip
@@ -746,6 +753,8 @@ class Session:
 
     def send_offer(self):
         """Unprompted: a station offers as its own state word reaches 2 (docs/lgpe_session.md)."""
+        if isinstance(self.partner, trade_owner.ReceiverTrade):
+            return
         if not self.args.offer or self.args.offer == "echo":
             print("[lgh] game: no --offer structure to send first")
             return
