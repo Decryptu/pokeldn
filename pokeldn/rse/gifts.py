@@ -4,9 +4,10 @@ pokeldn.frlg.gift.gift_composer under Emerald's numbers. docs/rse.md, Mystery Gi
 
 from dataclasses import dataclass
 
-from pokeldn.frlg.gift import gift_composer as gc
+from pokeldn.frlg.gift import gift_composer as gc, wonder_card_events as events
 from pokeldn.frlg.gift.stamp_rally import MysteryGiftDistribution
 from pokeldn.frlg.gift.wonder_card import build_wonder_card
+from pokeldn.frlg.rom.scrcmd import VAR_0x8008
 from pokeldn.rse import constants as em
 from pokeldn.rse.scripts import LOCK, FACEPLAYER, RELEASE, END, SETFLAG, ADDVAR, SETVAR, VAR_RESULT, Script
 
@@ -115,7 +116,80 @@ def composed(definition, flag_id=None):
     built = gc.compile_definition(definition, flag_id=flag_id, rules=em.EMERALD_RULES)
     if isinstance(built, dict):
         raise ValueError("A stamp rally is not offered for Emerald.")
-    return MysteryGiftDistribution(built.card, built.ram_script, game="emerald")
+    return MysteryGiftDistribution(built.card, built.ram_script, mevent=built.mevent, game="emerald")
+
+
+BATTLE_COUNT_PRIZE_TAKEN = em.VAR_GIFT_SLOT_VARS[0]
+
+BATTLE_COUNT_GIFT = gc.WonderGift(
+    slug=events.GIFT_BATTLE_COUNT,
+    card=gc.WonderCardSpec(
+        icon_species=events.SPECIES_CLEFAIRY_MEVENT,
+        card_type=gc.CARD_TYPE_LINK_STAT,
+        title="BATTLE COUNT CARD",
+        subtitle="Your record against holders",
+        body=(
+            "This CARD keeps track of your",
+            "battles against TRAINERS who",
+            "hold the same CARD.",
+            "Win three for a prize!",
+        ),
+        footer1="pokeldn",
+        default_flag_id=events.BATTLE_COUNT_FLAG_ID,
+    ),
+    intro_message=THANKS,
+    event=gc.GiftSpec(repeatable=True),
+    delivery=gc.DeliveryPlan(delivery=(
+        gc.DeliveryStage(
+            gc.SetVar(VAR_RESULT, gc.GET_CARD_BATTLES_WON),
+            gc.ReadSpecial(VAR_0x8008, em.SPECIAL_GET_MYSTERY_GIFT_CARD_STAT),
+        ),
+        gc.DeliveryStage(
+            gc.Message(
+                "Congratulations!\n"
+                "You have won a prize for winning\n"
+                "three battles!"),
+            gc.GiveItem(events.ITEM_POTION),
+            gc.SetVar(BATTLE_COUNT_PRIZE_TAKEN, 1),
+            condition=gc.AllOf((
+                gc.VarEquals(VAR_0x8008, events.BATTLE_COUNT_PRIZE_WINS),
+                gc.Not(gc.VarEquals(BATTLE_COUNT_PRIZE_TAKEN, 1)),
+            )),
+        ),
+        gc.DeliveryStage(
+            gc.Message(
+                "Look for and battle TRAINERS who\n"
+                "have the same CARD as you."),
+        ),
+    )),
+    completed_message="Look for and battle TRAINERS who\nhave the same CARD as you.",
+)
+
+NATIONAL_DEX_GIFT = gc.WonderGift(
+    slug="national-dex",
+    card=gc.WonderCardSpec(
+        icon_species=137,
+        title="NATIONAL POKéDEX",
+        subtitle="Every POKéMON, right away",
+        body=("Upgrade your POKéDEX to the", "NATIONAL POKéDEX now. Visit", "the delivery man on the 2nd",
+              "floor of a POKéMON CENTER."),
+        footer1="pokeldn",
+        default_flag_id=1011,
+    ),
+    intro_message=THANKS,
+    event=gc.GiftSpec(),
+    delivery=gc.DeliveryPlan(delivery=(
+        gc.DeliveryStage(gc.Exit(), condition=gc.FlagSet(em.FLAG_SYS_NATIONAL_DEX)),
+        gc.DeliveryStage(gc.ReadSpecial(VAR_0x8008, em.SPECIAL_ENABLE_NATIONAL_POKEDEX),
+                         gc.Message("Done! Your POKéDEX is now the\nNATIONAL POKéDEX.")),
+    )),
+    completed_message="Your POKéDEX is the\nNATIONAL POKéDEX!",
+)
+
+
+def event_pokemon(pk3=events.WISHMKR_JIRACHI_PK3, *, name="WISHMKR Jirachi", flag_id=None):
+    """-> an Emerald distribution sending `pk3` straight to the party via `givepokemon`."""
+    return composed(events.build_event_pokemon_gift(pk3, name=name), flag_id=flag_id)
 
 
 @dataclass(frozen=True)

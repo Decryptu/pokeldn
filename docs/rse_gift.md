@@ -55,16 +55,34 @@ script.
 | Aurora Ticket | 1000 | the ticket and `FLAG_ENABLE_SHIP_BIRTH_ISLAND` |
 | Mystic Ticket | 1001 | the ticket and `FLAG_ENABLE_SHIP_NAVEL_ROCK` |
 | Old Sea Map | 1002 | the map and `FLAG_ENABLE_SHIP_FARAWAY_ISLAND` |
-| Altering Cave rumor | 1003 | the next of the cave's nine wild tables |
 | Eon Ticket | 1007 | the game's own handout [cable_club.inc:33]: the ticket and `FLAG_ENABLE_SHIP_SOUTHERN_ISLAND` |
-| Master Ball, Rare Candy x5, Surfing Pichu egg | 1004..1006 | composed under `EMERALD_RULES` |
+| Altering Cave rumor | 1003 | the next of the cave's nine wild tables |
+| Wish Egg, PokePark egg, Pokemon Center Japan egg | 1005, 1003 | official distribution eggs composed under `EMERALD_RULES` |
+| Battle count card | 1005 | link-battle counter card using Emerald's `GetMysteryGiftCardStat` (392) |
+| Pokemon Box eggs (Swablu, Zigzagoon, Skitty, Surfing Pichu) | 1008..1010, 1006 | bonus eggs with their official moves and fateful encounter |
+| National Pokedex, Rare berries, Starter egg, Master Ball, Rare Candy x5 | 1011..1013, 1004..1005 | composed under `EMERALD_RULES` |
 
     POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/frlg_mg_host.py --live --version emerald \
         --gift-file old-sea-map.pokegift --keys "$HOME/Documents/Switch/23.0.0 keys/prod.keys"
 
-A preset becomes a file with `pokeldn.gifts.save(PATH, pokeldn.rse.gift_builder.compile(PRESET[key].state))`.
-An Emerald gift file has one variant, `emerald` ([Mystery Gift files](gifts.md)). Native code, save
-backup and the FireRed presets are refused for Emerald.
+## Event and GameCube Pokemon
+
+Emerald's Mystery Event VM (`CLI_RUN_MEVENT_SCRIPT`) carries the same `givepokemon` command as FireRed
+with relative offsets into the receive buffer, so one `emerald` variant serves every Emerald cartridge.
+`--gift event-pokemon --event-pokemon NAME` asks PKHeX for a fresh legal copy and delivers it straight
+to the party when the card is saved. Supported names cover GameCube distributions and transfers
+(`WISHMKR Jirachi`, `CHANNEL Jirachi`, `Colosseum Pikachu`, `AGETO Celebi`, `MATTLE Ho-Oh`,
+`DUKING Plusle`, `XD Eevee`, `XD Chikorita`, `XD Cyndaquil`, `XD Totodile`, `XD Lugia`), the Berry
+Glitch Fix shiny Zigzagoons (`RUBY Zigzagoon`, `SAPHIRE Zigzagoon`), `Aura Mew`, `MYSTRY Mew`,
+`DOEL Deoxys`, `SPACE C Deoxys`, `ROCKS Metang` and the 21 `10 ANIV` Pokemon:
+
+    POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/frlg_mg_host.py --live --version emerald \
+        --gift event-pokemon --event-pokemon "WISHMKR Jirachi" --keys "$HOME/Documents/Switch/23.0.0 keys/prod.keys"
+
+A compiled preset becomes a file with `pokeldn.gifts.save(PATH, pokeldn.rse.gift_builder.compile(PRESET[key].state))`;
+an event preset exports with `--export-gift PATH`. An Emerald gift file has one variant, `emerald`
+([Mystery Gift files](gifts.md)), holding `card`, `ram_script` and an optional `mevent`. Native code,
+save backup, Wonder News and the other FireRed presets are refused for Emerald.
 
 ## Unresolved
 

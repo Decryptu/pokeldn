@@ -24,6 +24,9 @@ def build(tool, values, extra, settings):
         config = module.build_run_config(parser, args)
     except SystemExit as exc:
         raise ValueError("The gift options are invalid; check the launcher options.") from exc
-    preset = gift_builder.module("frlg").PRESET[value["preset"]]
+    game = gift_builder.GAMES[tool.key]
+    preset = gift_builder.module(game).PRESET[value["preset"]]
+    if hasattr(config.payload, "distribution"):
+        return config.payload.file
     return from_payload(config.payload, console_build=config.console_build,
                         version=config.console_version, name=preset.label)

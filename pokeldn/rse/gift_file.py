@@ -16,17 +16,26 @@ def validate(gift):
 
 
 def distribution(variant):
-    if set(variant.data) != {"card", "ram_script"} or variant.options:
-        raise ValueError("An Emerald gift is a Wonder Card and its delivery script.")
+    keys = set(variant.data)
+    if not {"card", "ram_script"} <= keys or keys - {"card", "ram_script", "mevent"} or variant.options:
+        raise ValueError("An Emerald gift is a Wonder Card, its delivery script and an optional Mystery Event.")
     card, script = variant.data["card"], variant.data["ram_script"]
+    mevent = variant.data.get("mevent")
     if len(card) != wonder_card.WONDER_CARD_SIZE:
         raise ValueError(f"An Emerald Wonder Card is {wonder_card.WONDER_CARD_SIZE} bytes.")
     EMERALD_RULES.flag_for_flag_id(int.from_bytes(card[:2], "little"))
     if not 0 < len(script) <= mg_server.MysteryGiftServer.MAX_RAM_SCRIPT_SIZE:
         raise ValueError("The delivery script must contain 1 to 995 bytes.")
-    return MysteryGiftDistribution(bytes(card), bytes(script), game=TARGET)
+    try:
+        mg_server.MysteryGiftServer(card, script, mevent=mevent, game=TARGET)
+    except (mg_server.MysteryGiftServerError, ValueError) as exc:
+        raise ValueError(str(exc)) from exc
+    return MysteryGiftDistribution(bytes(card), bytes(script),
+                                   mevent=None if mevent is None else bytes(mevent), game=TARGET)
 
 
 def from_distribution(chosen, *, name):
-    return gifts.Gift("rse", name, {TARGET: gifts.Variant({"card": bytes(chosen.card),
-                                                          "ram_script": bytes(chosen.ram_script)})})
+    data = {"card": bytes(chosen.card), "ram_script": bytes(chosen.ram_script)}
+    if chosen.mevent is not None:
+        data["mevent"] = bytes(chosen.mevent)
+    return gifts.Gift("rse", name, {TARGET: gifts.Variant(data)})
