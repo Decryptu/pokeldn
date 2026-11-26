@@ -5,6 +5,8 @@
 import os
 import sys
 
+import pytest
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tests"))
@@ -17,23 +19,26 @@ from pokeldn.frlg.link import linkplayer  # noqa: E402
 from pokeldn.frlg.rom import buffer_script  # noqa: E402
 from pokeldn.frlg.save import mon  # noqa: E402
 from pokeldn.frlg.gift.gift_composer import (  # noqa: E402
-    GET_CARD_BATTLES_WON, SPECIAL_GET_MYSTERY_GIFT_CARD_STAT, VAR_MYSTERY_GIFT_1,
-    compile_definition,
+    FRLG_RULES, GET_CARD_BATTLES_WON, compile_definition,
 )
+from pokeldn.rse.constants import EMERALD_RULES  # noqa: E402
 from pokeldn.frlg.rom.scrcmd import VAR_0x8008, VAR_RESULT  # noqa: E402
 from test_gift_composer import ScriptVM  # noqa: E402
 
 
-def _script():
-    return compile_definition(event.BATTLE_COUNT_GIFT).ram_script
+RULES = pytest.mark.parametrize("rules", [FRLG_RULES, EMERALD_RULES], ids=lambda r: r.game)
 
 
-def _talk(wins, *, prize_taken=0):
+def _script(rules=FRLG_RULES):
+    return compile_definition(event.battle_count_gift(rules), rules=rules).ram_script
+
+
+def _talk(wins, *, prize_taken=0, rules=FRLG_RULES):
     """One conversation, with the console reporting `wins` from GetMysteryGiftCardStat."""
     vm = ScriptVM(
-        _script(),
-        variables={VAR_MYSTERY_GIFT_1: 0, event.BATTLE_COUNT_PRIZE_TAKEN: prize_taken},
-        special_results={SPECIAL_GET_MYSTERY_GIFT_CARD_STAT: wins})
+        _script(rules),
+        variables={rules.var_gift_1: 0, rules.slot_vars[0]: prize_taken},
+        special_results={rules.special_card_stat: wins})
     vm.run()
     return vm
 
@@ -66,33 +71,36 @@ def test_the_card_is_registered_and_reads_the_wins_selector():
     selector = bytes([0x16]) + VAR_RESULT.to_bytes(2, "little") \
         + GET_CARD_BATTLES_WON.to_bytes(2, "little")
     read = bytes([0x26]) + VAR_0x8008.to_bytes(2, "little") \
-        + SPECIAL_GET_MYSTERY_GIFT_CARD_STAT.to_bytes(2, "little")
+        + FRLG_RULES.special_card_stat.to_bytes(2, "little")
     script = _script()
     assert script.index(selector) + len(selector) == script.index(read)
 
 
-def test_under_three_wins_the_card_only_talks():
+@RULES
+def test_under_three_wins_the_card_only_talks(rules):
     for wins in (0, 1, 2):
-        vm = _talk(wins)
+        vm = _talk(wins, rules=rules)
         assert vm.items == [], f"a prize was given at {wins} wins"
-        assert vm.vars[event.BATTLE_COUNT_PRIZE_TAKEN] == 0
+        assert vm.vars[rules.slot_vars[0]] == 0
         assert vm.messages
 
 
-def test_at_three_wins_the_prize_is_given_once():
-    vm = _talk(3)
+@RULES
+def test_at_three_wins_the_prize_is_given_once(rules):
+    vm = _talk(3, rules=rules)
     assert vm.items == [(event.ITEM_POTION, 1)]
-    assert vm.vars[event.BATTLE_COUNT_PRIZE_TAKEN] == 1
+    assert vm.vars[rules.slot_vars[0]] == 1
 
-    again = _talk(3, prize_taken=1)
+    again = _talk(3, prize_taken=1, rules=rules)
     assert again.items == [], "the prize is once, as in the official script"
     assert again.messages
 
 
-def test_a_count_past_three_is_not_a_prize_either():
+@RULES
+def test_a_count_past_three_is_not_a_prize_either(rules):
     """`vgoto_if_ne VAR_0x8008, 3` [decomp:data/mystery_event_msg.s:167] is an equality."""
-    assert _talk(4).items == []
-    assert _talk(9).items == []
+    assert _talk(4, rules=rules).items == []
+    assert _talk(9, rules=rules).items == []
 
 
 def test_our_trainer_card_is_what_arms_the_console():

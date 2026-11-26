@@ -1590,6 +1590,42 @@ static partial class Program
                 .GetField("Encounter_WC3", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!
                 .GetValue(null)!).Where(e => !e.IsEgg && e.Language != (byte)LanguageID.Japanese);
 
+        // Colosseum, Japanese Colosseum Bonus Disc and XD gifts that transfer to GBA as PK3, found by species so a
+        // PKHeX update that reorders a table fails instead of handing out another Pokemon. Language 0 follows the request.
+        [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.NonPublicFields,
+            "PKHeX.Core.Encounters3RSE", "PKHeX.Core")]
+        [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.NonPublicFields,
+            "PKHeX.Core.Encounters3Colo", "PKHeX.Core")]
+        [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.NonPublicFields,
+            "PKHeX.Core.Encounters3XD", "PKHeX.Core")]
+        IEnumerable<(string Name, IEncounterConvertible Encounter, int FixedLanguage, ushort Tid)> GameCubeGen3Events()
+        {
+            var asm = typeof(PK3).Assembly;
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+            IEncounterConvertible[] Table(string type, string field) =>
+                (IEncounterConvertible[])asm.GetType($"PKHeX.Core.{type}")!.GetField(field, flags)!.GetValue(null)!;
+            IEncounterConvertible Pick(IEncounterConvertible[] table, ushort species) =>
+                table.FirstOrDefault(e => ((IEncounterable)e).Species == species)
+                ?? throw new InvalidDataException($"PKHeX's GameCube gift table has no species {species}.");
+            var coloR = Table("Encounters3RSE", "ColoGiftsR");
+            var coloS = Table("Encounters3RSE", "ColoGiftsS");
+            var colo = Table("Encounters3Colo", "Gifts");
+            var xd = Table("Encounters3XD", "Gifts");
+            var xdShadow = Table("Encounters3XD", "Shadow");
+            return
+            [
+                ("MATTLE Ho-Oh", Pick(coloS, 250), 0, 10048),
+                ("DUKING Plusle", Pick(colo, 311), 0, 37149),
+                ("Colosseum Pikachu", Pick(coloR, 25), (int)LanguageID.Japanese, 31121),
+                ("AGETO Celebi", Pick(coloR, 251), (int)LanguageID.Japanese, 31121),
+                ("XD Eevee", Pick(xd, 133), 0, 0),
+                ("XD Chikorita", Pick(xd, 152), 0, 0),
+                ("XD Cyndaquil", Pick(xd, 155), 0, 0),
+                ("XD Totodile", Pick(xd, 158), 0, 0),
+                ("XD Lugia", Pick(xdShadow, 249), 0, 0),
+            ];
+        }
+
         string EventName(EncounterGift3 e) => $"{e.OriginalTrainerName} {strings.specieslist[e.Species]}";
 
         JsonObject Events()
@@ -1601,6 +1637,13 @@ static partial class Program
                     ["name"] = EventName(e), ["species"] = e.Species, ["level"] = e.Level,
                     ["language"] = e.Language, ["trainer_id"] = e.TID16,
                 });
+            foreach (var e in GameCubeGen3Events())
+                list.Add((JsonNode?)new JsonObject
+                {
+                    ["name"] = e.Name, ["species"] = ((IEncounterable)e.Encounter).Species,
+                    ["level"] = ((IEncounterable)e.Encounter).LevelMin,
+                    ["language"] = e.FixedLanguage, ["trainer_id"] = e.Tid,
+                });
             return new JsonObject { ["events"] = list };
         }
 
@@ -1610,22 +1653,53 @@ static partial class Program
         {
             var name = (string)request["name"]!;
             var language = (int?)request["language"] ?? 0;
+            IEncounterConvertible encounter;
+            ITrainerInfo trainer;
             var matches = Gen3Events().Where(e => EventName(e) == name).ToList();
-            if (matches.Count == 0)
-                throw new ArgumentException($"No Gen 3 event is named {name}.");
-            var encounter = matches.FirstOrDefault(e => e.Language == language)
-                            ?? matches.FirstOrDefault(e => e.Language == (byte)LanguageID.English) ?? matches[0];
-            var trainer = new SimpleTrainerInfo(GameVersion.FR)
+            if (matches.Count > 0)
             {
-                Language = language is > 0 and <= 7 ? language : (int)LanguageID.English,
-            };
+                encounter = matches.FirstOrDefault(e => e.Language == language)
+                            ?? matches.FirstOrDefault(e => e.Language == (byte)LanguageID.English) ?? matches[0];
+                trainer = new SimpleTrainerInfo(GameVersion.FR)
+                {
+                    Language = language is > 0 and <= 7 ? language : (int)LanguageID.English,
+                };
+            }
+            else if (GameCubeGen3Events().FirstOrDefault(e => e.Name == name) is { Encounter: not null } gift)
+            {
+                encounter = gift.Encounter;
+                var useLang = gift.FixedLanguage != 0 ? gift.FixedLanguage
+                              : language is > 0 and <= 7 ? language : (int)LanguageID.English;
+                var xdSeed = XDRNG.Next((uint)Random.Shared.NextInt64(0, 1L << 32));
+                var tid = (ushort)(xdSeed >> 16);
+                var sid = (ushort)(XDRNG.Next(xdSeed) >> 16);
+                trainer = new SimpleTrainerInfo(GameVersion.E)
+                {
+                    OT = useLang == (int)LanguageID.Japanese ? "ミハエル" : "MICHAEL",
+                    TID16 = tid,
+                    SID16 = sid,
+                    Language = useLang,
+                };
+            }
+            else
+                throw new ArgumentException($"No Gen 3 event is named {name}.");
             // A random roll can land on a PID its own check rejects (seen on 10 ANIV Entei): roll again.
             PKM pk = null!;
             LegalityAnalysis la = null!;
-            for (var attempt = 0; attempt < 32; attempt++)
+            var berrySeed = Random.Shared.Next(0x100);
+            var limit = encounter is EncounterGift3 { Method: PIDType.BACD_RBCD } ? 256 : 32;
+            for (var attempt = 0; attempt < limit; attempt++)
             {
                 pk = encounter.ConvertToPKM(trainer, EncounterCriteria.Unrestricted);
+                if (pk is CK3 ck)
+                    pk = ck.ConvertToPK3();
+                else if (pk is XK3 xk)
+                    pk = xk.ConvertToPK3();
+                // PKHeX's Berry Glitch Fix generator picks RUBY's fixed seed for SAPHIRE too; scan all 8-bit seeds.
+                if (attempt > 0 && encounter is EncounterGift3 { Method: PIDType.BACD_RBCD } berry)
+                    berry.GenerateSeed32(pk, (uint)((berrySeed + attempt) & 0xFF));
                 pk.ResetPartyStats();
+                pk.RefreshChecksum();
                 la = new LegalityAnalysis(pk);
                 if (la.Valid)
                     break;

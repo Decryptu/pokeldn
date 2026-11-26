@@ -71,6 +71,7 @@ class Preset:
     args: tuple
     when: str = ""                  # where the player uses it, shown before sending
     species_id: int = 0             # National Pokedex number for the app sprite, not a GBA internal id
+    shiny: bool = False
 
     @property
     def state(self):
@@ -80,19 +81,73 @@ class Preset:
         return state_of(GIFT_REGISTRY.entry(self.args[1]).definition)
 
 
-def _card(slug, label, summary, species_id=0):
-    return Preset(slug, label, "Wonder Cards", summary, ("--gift", slug), species_id=species_id)
-
-
+WONDER_CARDS = "Wonder Cards"
 EVENTS = "Event Pokemon"
+GAMECUBE = "GameCube & Bonus Disc"
 ANNIVERSARY = "10th Anniversary Pokemon"
+EVENT_WHEN = "Delivered straight to your party when the card is saved. Make sure you have a free slot."
 
 
-def _event(name, species_id, summary, group=EVENTS):
+def _card(slug, label, summary, species_id=0, group=WONDER_CARDS):
+    return Preset(slug, label, group, summary, ("--gift", slug), species_id=species_id)
+
+
+def _event(name, species_id, summary, group=EVENTS, shiny=False):
     """A fresh copy PKHeX makes at launch [docs/frlg_gift.md, Event Pokemon]."""
     key = "event-" + re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return Preset(key, name, group, summary, ("--gift", events.GIFT_EVENT_POKEMON, "--event-pokemon", name),
-                  species_id=species_id)
+                  when=EVENT_WHEN, species_id=species_id, shiny=shiny)
+
+
+# The presets every GBA title offers, in its own numbers (wonder_card_events.gba_cards); the Emerald
+# builder lists these same entries.
+GBA_CARDS = (
+    _card("master-ball", "Master Ball", "One Master Ball."),
+    _card("rare-candy", "Rare Candy x5", "Five Rare Candies."),
+    _card("wish-egg", "Wish Egg", "One of six eggs that knows Wish, picked by the console."),
+    _card("pokepark-egg", "PokePark egg", "One of fifteen eggs with special moves, picked by the console."),
+    _card("pc-japan-egg", "Pokemon Center Japan egg", "One of four eggs with special moves."),
+    _card("starter-egg", "Starter egg", "An egg of one of the nine first partners."),
+    _card("rare-berries", "Rare berries", "An Enigma, a Lansat and a Starf Berry."),
+    _card("national-dex", "National Pokedex", "Upgrades the Pokedex to the National Pokedex."),
+    _card("battle-count-card", "Battle count card", "A card that counts link battles."),
+    _card("box-swablu", "Pokemon Box Swablu egg", "A Swablu egg that hatches knowing False Swipe.", 333, GAMECUBE),
+    _card("box-zigzagoon", "Pokemon Box Zigzagoon egg", "A Zigzagoon egg that hatches knowing ExtremeSpeed.",
+          263, GAMECUBE),
+    _card("box-skitty", "Pokemon Box Skitty egg", "A Skitty egg that hatches knowing Pay Day.", 300, GAMECUBE),
+    _card("surf-pichu", "Surfing Pichu egg", "A Pichu egg from Pokemon Box that hatches knowing Surf.", 172,
+          GAMECUBE),
+)
+EVENT_PRESETS = (
+    _event("WISHMKR Jirachi", 385, "The Colosseum Bonus Disc Jirachi, level 5.", GAMECUBE),
+    _event("CHANNEL Jirachi", 385, "The Pokemon Channel Jirachi, level 5.", GAMECUBE),
+    _event("Colosseum Pikachu", 25,
+           "The Japanese Colosseum bonus disc Pikachu, level 10. Its Japanese trainer name shows as dots.",
+           GAMECUBE),
+    _event("AGETO Celebi", 251,
+           "The Japanese Colosseum bonus disc Celebi, level 10. Its Japanese trainer name shows as dots.",
+           GAMECUBE),
+    _event("MATTLE Ho-Oh", 250, "The Ho-Oh Colosseum gave for 100 Mt. Battle wins, level 70.", GAMECUBE),
+    _event("DUKING Plusle", 311, "Duking's Plusle from Pokemon Colosseum, level 13.", GAMECUBE),
+    _event("XD Eevee", 133, "The starter Eevee from Pokemon XD: Gale of Darkness, level 10.", GAMECUBE),
+    _event("XD Chikorita", 152, "Mt. Battle prize from Pokemon XD, level 5, knowing Frenzy Plant.", GAMECUBE),
+    _event("XD Cyndaquil", 155, "Mt. Battle prize from Pokemon XD, level 5, knowing Blast Burn.", GAMECUBE),
+    _event("XD Totodile", 158, "Mt. Battle prize from Pokemon XD, level 5, knowing Hydro Cannon.", GAMECUBE),
+    _event("XD Lugia", 249, "The purified Shadow Lugia from Pokemon XD, level 50.", GAMECUBE),
+    _event("RUBY Zigzagoon", 263, "The Berry Glitch Fix shiny Zigzagoon (Ruby), level 5.", shiny=True),
+    _event("SAPHIRE Zigzagoon", 263, "The Berry Glitch Fix shiny Zigzagoon (Sapphire), level 5.", shiny=True),
+    _event("Aura Mew", 151, "The Aura Mew, level 10."),
+    _event("MYSTRY Mew", 151, "The MYSTRY Mew, level 10."),
+    _event("DOEL Deoxys", 386, "The DOEL Deoxys, level 70."),
+    _event("SPACE C Deoxys", 386, "The SPACE C Deoxys, level 70."),
+    _event("ROCKS Metang", 375, "The ROCKS Metang, level 30, with the National Ribbon."),
+    *(_event(f"10 ANIV {name}", species, "Level 70, from the 10th anniversary.", ANNIVERSARY)
+      for species, name in ((1, "Bulbasaur"), (6, "Charizard"), (9, "Blastoise"), (25, "Pikachu"),
+                            (65, "Alakazam"), (144, "Articuno"), (145, "Zapdos"), (146, "Moltres"),
+                            (149, "Dragonite"), (157, "Typhlosion"), (196, "Espeon"), (197, "Umbreon"),
+                            (243, "Raikou"), (244, "Entei"), (245, "Suicune"), (248, "Tyranitar"),
+                            (251, "Celebi"), (257, "Blaziken"), (359, "Absol"), (380, "Latias"), (381, "Latios"))),
+)
 
 
 POKEMON_TOOLS = "Change a Pokemon"
@@ -346,19 +401,12 @@ PRESETS = (
     _card("beast-cutscene", "Legendary beast", "Two berries, a Master Ball and a battle with the beast "
           "that follows the starter."),
     _card("celebi", "Celebi", "A level 50 Celebi from the delivery man.", 251),
-    _card("master-ball", "Master Ball", "One Master Ball."),
     _card("altering-cave", "Altering Cave", "Changes which Pokemon live in Altering Cave."),
-    _card("wish-egg", "Wish Egg", "One of six eggs that knows Wish, picked by the console."),
-    _card("pokepark-egg", "PokePark egg", "One of fifteen eggs with special moves, picked by the console."),
-    _card("pc-japan-egg", "Pokemon Center Japan egg", "One of four eggs with special moves."),
-    _card("starter-egg", "Starter egg", "An egg of one of the nine first partners."),
-    _card("rare-berries", "Rare berries", "An Enigma, a Lansat and a Starf Berry."),
-    _card("national-dex", "National Pokedex", "Upgrades the Pokedex to the National Pokedex."),
+    *(p for p in GBA_CARDS if p.group == WONDER_CARDS),
     _card("porygon-tm-gift", "Porygon TM gift", "A Porygon and a TM.", 137),
     _card("solrock-stamp", "Sun and Moon Rally: Solrock", "A rally stamp."),
     _card("lunatone-stamp", "Sun and Moon Rally: Lunatone", "A rally stamp."),
     _card("visiting-trainer", "Visiting trainer", "A trainer who waits in the Pokemon Center."),
-    _card("battle-count-card", "Battle count card", "A card that counts link battles."),
     _card("worlds-xp", "Worlds XP", "The Worlds card."),
     _team("nature-mint", "Nature mint", POKEMON_TOOLS, "Pick which stat a Pokemon's nature raises and lowers."),
     _team("ability-capsule", "Ability capsule", POKEMON_TOOLS, "Switches a Pokemon to its other ability."),
@@ -411,23 +459,8 @@ PRESETS = (
           "The delivery man tells your Trainer ID and Secret ID."),
     _team("gender-swap", "New trainer name or look", MORE_GIFTS, "Rename yourself, or switch between boy and girl."),
     _team("rival-name", "Rename your rival", MORE_GIFTS, "Gives your rival a new name."),
-    _event("WISHMKR Jirachi", 385, "The Colosseum Bonus Disc Jirachi, level 5."),
-    _event("CHANNEL Jirachi", 385, "The Pokemon Channel Jirachi, level 5."),
-    _event("Aura Mew", 151, "The Aura Mew, level 10."),
-    _event("MYSTRY Mew", 151, "The MYSTRY Mew, level 10."),
-    _event("DOEL Deoxys", 386, "The DOEL Deoxys, level 70."),
-    _event("SPACE C Deoxys", 386, "The SPACE C Deoxys, level 70."),
-    _event("ROCKS Metang", 375, "The ROCKS Metang, level 30, with the National Ribbon."),
-    *(_event(f"10 ANIV {name}", species, "Level 70, from the 10th anniversary.", ANNIVERSARY)
-      for species, name in ((1, "Bulbasaur"), (6, "Charizard"), (9, "Blastoise"), (25, "Pikachu"),
-                            (65, "Alakazam"), (144, "Articuno"), (145, "Zapdos"), (146, "Moltres"),
-                            (149, "Dragonite"), (157, "Typhlosion"), (196, "Espeon"), (197, "Umbreon"),
-                            (243, "Raikou"), (244, "Entei"), (245, "Suicune"), (248, "Tyranitar"),
-                            (251, "Celebi"), (257, "Blaziken"), (359, "Absol"), (380, "Latias"), (381, "Latios"))),
-    _team("box-eggs", "Pokemon Box eggs", EVENTS, "A Swablu, Zigzagoon, Skitty or Pichu egg with a special move."),
-    _team("colosseum-pikachu", "Colosseum Pikachu", EVENTS, "The Japanese Colosseum bonus disc Pikachu. Its Japanese trainer name shows as dots.", 25),
-    _team("ageto-celebi", "AGETO Celebi", EVENTS, "The Japanese Colosseum bonus disc Celebi. Its Japanese trainer name shows as dots.", 251),
-    _team("mattle-ho-oh", "MATTLE Ho-Oh", EVENTS, "The Ho-Oh Colosseum gave for 100 Mt. Battle wins.", 250),
+    *(p for p in GBA_CARDS if p.group == GAMECUBE),
+    *EVENT_PRESETS,
     Preset("news-pokeldn", "One berry in Cerulean City", "Wonder News",
            "A short news; the man in Cerulean City hands over a berry.", ("--news", "pokeldn")),
     Preset("news-berry", "Ten-line news", "Wonder News", "A long news that scrolls, with a berry.",
@@ -453,7 +486,10 @@ PRESET = {p.key: p for p in PRESETS}
 # Presets an older settings file may name -> (preset, settings).
 ALIASES = {**{b.key: ("boosts", {"on": [b.key]}) for b in BOOST_LIST},
            "save-shiny": ("boosts", {"on": ["hook-shiny"], "keep": True}),
-           "save-noclip": ("boosts", {"on": ["hook-noclip"], "keep": True})}
+           "save-noclip": ("boosts", {"on": ["hook-noclip"], "keep": True}),
+           # GB-Link Team cards the shared event and Pokemon Box presets replace
+           "colosseum-pikachu": ("event-colosseum-pikachu", {}), "ageto-celebi": ("event-ageto-celebi", {}),
+           "mattle-ho-oh": ("event-mattle-ho-oh", {}), "box-eggs": ("box-swablu", {})}
 
 
 def blank():

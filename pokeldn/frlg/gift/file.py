@@ -103,8 +103,11 @@ def validate(gift):
 
 
 def from_payload(payload, *, console_build="auto", version=None, name=None):
-    if isinstance(payload, FilePayload):
-        return (gifts.Gift("frlg", name, dict(payload.file.variants)) if name else payload.file)
+    """-> the gift file a payload sends; a payload that already carries one (FilePayload,
+    pokeldn.rse.gifts.EmeraldPayload) returns it, renamed when `name` is given."""
+    if getattr(payload, "file", None) is not None:
+        file = payload.file
+        return gifts.Gift(file.game, name, dict(file.variants)) if name else file
     from pokeldn.frlg.config import plan_builds
     plan = plan_builds(payload, console_build, version)
     candidates = plan.per_build or {code: plan.distribution for code in builds.GAME_CODES}

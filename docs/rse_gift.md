@@ -55,16 +55,35 @@ script.
 | Aurora Ticket | 1000 | the ticket and `FLAG_ENABLE_SHIP_BIRTH_ISLAND` |
 | Mystic Ticket | 1001 | the ticket and `FLAG_ENABLE_SHIP_NAVEL_ROCK` |
 | Old Sea Map | 1002 | the map and `FLAG_ENABLE_SHIP_FARAWAY_ISLAND` |
-| Altering Cave rumor | 1003 | the next of the cave's nine wild tables |
 | Eon Ticket | 1007 | the game's own handout [cable_club.inc:33]: the ticket and `FLAG_ENABLE_SHIP_SOUTHERN_ISLAND` |
-| Master Ball, Rare Candy x5, Surfing Pichu egg | 1004..1006 | composed under `EMERALD_RULES` |
+| Altering Cave rumor | 1003 | the next of the cave's nine wild tables |
 
     POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/frlg_mg_host.py --live --version emerald \
         --gift-file old-sea-map.pokegift --keys "$HOME/Documents/Switch/23.0.0 keys/prod.keys"
 
-A preset becomes a file with `pokeldn.gifts.save(PATH, pokeldn.rse.gift_builder.compile(PRESET[key].state))`.
-An Emerald gift file has one variant, `emerald` ([Mystery Gift files](gifts.md)). Native code, save
-backup and the FireRed presets are refused for Emerald.
+The other presets are the Wonder Cards and event Pokemon FireRed offers
+([FireRed's gifts](frlg_gift.md#cards-every-gba-title-shares)), compiled under `EMERALD_RULES`:
+`wonder_card_events.gba_cards(EMERALD_RULES)` swaps in Emerald's card-stat special (392),
+`EnableNationalPokedex` (499) and `FLAG_SYS_NATIONAL_DEX` (`0x896`).
+
+The three tickets' received flags are `sReceivedGiftFlags[0..2]` [mystery_gift.c:229] and the Eon
+handout reads flagId 1007's. A composed card clears its receipt flag on the first talk and sets it at
+the end, so `pokeldn.rse.gifts.composed` refuses flagIds 1000, 1001, 1002 and 1007.
+
+## Event Pokemon
+
+`--gift event-pokemon --event-pokemon NAME` sends FireRed's event card
+([Event Pokemon](frlg_gift.md#event-pokemon)) under Emerald's numbers. Emerald's Mystery Event VM
+(`CLI_RUN_MEVENT_SCRIPT`) runs the same `givepokemon`, with offsets relative to the receive buffer, so
+one `emerald` variant serves every Emerald cartridge.
+
+    POKELDN_RADIO=esp32:auto ./.venv/bin/python -u bin/frlg_mg_host.py --live --version emerald \
+        --gift event-pokemon --event-pokemon "WISHMKR Jirachi" --keys "$HOME/Documents/Switch/23.0.0 keys/prod.keys"
+
+A compiled preset becomes a file with `pokeldn.gifts.save(PATH, pokeldn.rse.gift_builder.compile(PRESET[key].state))`;
+an event preset exports with `--export-gift PATH`. An Emerald gift file has one variant, `emerald`
+([Mystery Gift files](gifts.md)), holding `card`, `ram_script` and an optional `mevent`. Native code,
+save backup, Wonder News, the questionnaire and FireRed's other presets are refused for Emerald.
 
 ## Unresolved
 

@@ -4,7 +4,7 @@ pokeldn.frlg.gift.gift_composer under Emerald's numbers. docs/rse.md, Mystery Gi
 
 from dataclasses import dataclass
 
-from pokeldn.frlg.gift import gift_composer as gc
+from pokeldn.frlg.gift import gift_composer as gc, wonder_card_events as events
 from pokeldn.frlg.gift.stamp_rally import MysteryGiftDistribution
 from pokeldn.frlg.gift.wonder_card import build_wonder_card
 from pokeldn.rse import constants as em
@@ -115,8 +115,17 @@ def composed(definition, flag_id=None):
     built = gc.compile_definition(definition, flag_id=flag_id, rules=em.EMERALD_RULES)
     if isinstance(built, dict):
         raise ValueError("A stamp rally is not offered for Emerald.")
-    return MysteryGiftDistribution(built.card, built.ram_script, game="emerald")
+    if int.from_bytes(built.card[:2], "little") in TICKET_FLAG_IDS:
+        raise ValueError("Card ids 1000, 1001, 1002 and 1007 are the Emerald tickets' own; choose another.")
+    return MysteryGiftDistribution(built.card, built.ram_script, mevent=built.mevent, game="emerald")
 
+
+
+CARDS = events.gba_cards(em.EMERALD_RULES)
+EON_FLAG_ID = 1007
+# sReceivedGiftFlags[0..2] are the three tickets' received flags [mystery_gift.c:229] and the Eon
+# handout reads 1007's: a composed card clears and sets its own, handing a ticket out again or withholding it.
+TICKET_FLAG_IDS = (1000, 1001, 1002, EON_FLAG_ID)
 
 @dataclass(frozen=True)
 class EmeraldPayload:
@@ -126,6 +135,13 @@ class EmeraldPayload:
     dump_file: str | None = None
     definition = None
     requires_build_selection = False
+
+    @classmethod
+    def composed(cls, definition, *, name, flag_id=None, dump_file=None):
+        """A gift_composer definition built under Emerald's numbers, as the file it would export."""
+        from pokeldn.rse import gift_file
+        return cls(gift_file.from_distribution(composed(definition, flag_id=flag_id), name=name),
+                   dump_file=dump_file)
 
     @property
     def distribution(self):

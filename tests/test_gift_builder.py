@@ -13,6 +13,7 @@ from pokeldn.app.catalog import GAMES
 from pokeldn.app.settings import Settings
 from pokeldn.frlg.gift import builder as frlg, gift_composer as gc
 from pokeldn.frlg.rom import buffer_script, builds, custom_code, mystery_event
+from pokeldn.rse import gift_builder as rse
 from pokeldn.swsh import gift_builder as swsh, wc8
 from tests.test_frlg_build_selection import _drive, _session
 from tests.test_mystery_gift_end_to_end import _run_full_stack
@@ -100,13 +101,16 @@ def test_the_template_assembles_and_reads_the_trainer_id_and_errors_name_their_l
     assert error.value.line == 2
 
 
-PRESETS = [("frlg-gift", p.key) for p in frlg.PRESETS] + [("swsh-gift", p.key) for p in swsh.PRESETS]
+PRESETS = ([("frlg-gift", p.key) for p in frlg.PRESETS]
+           + [("rse-gift", p.key) for p in rse.PRESETS]
+           + [("swsh-gift", p.key) for p in swsh.PRESETS])
 
 
 @pytest.mark.parametrize("key,preset", PRESETS, ids=[f"{k}:{p}" for k, p in PRESETS])
 def test_every_preset_is_accepted_by_its_launcher(key, preset, monkeypatch, tmp_path):
-    args = _launch(TOOLS[key], {"mode": "preset", "preset": preset}, monkeypatch, tmp_path)
-    if key == "frlg-gift":
+    version = "emerald" if key == "rse-gift" else "firered"
+    args = _launch(TOOLS[key], {"mode": "preset", "preset": preset}, monkeypatch, tmp_path, version)
+    if key in ("frlg-gift", "rse-gift"):
         _frlg_run(args)
     else:
         assert wc8.sealed(swsh_gift_host.build_record(swsh_gift_host.build_parser().parse_args(args)))

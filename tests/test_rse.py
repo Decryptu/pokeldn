@@ -126,6 +126,7 @@ def test_the_emerald_numbers_are_the_decomps():
     assert specials[em.SPECIAL_HAS_ALL_HOENN_MONS] == "HasAllHoennMons"
     assert specials[em.SPECIAL_START_LEGENDARY_BATTLE] == "BattleSetup_StartLegendaryBattle"
     assert specials[em.SPECIAL_GET_MYSTERY_GIFT_CARD_STAT] == "GetMysteryGiftCardStat"
+    assert specials[em.SPECIAL_ENABLE_NATIONAL_POKEDEX] == "EnableNationalPokedex"
 
 
 def _emerald_game_data(news=False):
@@ -241,3 +242,109 @@ def test_a_banked_pk3_stays_a_firered_pokemon():
     would file every FireRed Pokemon as Emerald, release builds included."""
     from pokeldn.app import bank
     assert bank.GAME_OF["pk3"] == "frlg"
+
+
+def _pkhex_available():
+    from pokeldn import pokemon
+    try:
+        pokemon._command()
+    except pokemon.BuilderError:
+        return False
+    return True
+
+
+def test_emerald_gift_file_round_trips_mevent_and_refuses_malformed_mevent():
+    from pokeldn import gifts as giftmod
+    from pokeldn.frlg.gift import wonder_card_events as events
+    from pokeldn.rse import gift_file
+
+    dist = gifts.composed(events.EVENT_POKEMON_GIFT)
+    assert dist.game == "emerald" and dist.has_mevent
+    saved = gift_file.from_distribution(dist, name="WISHMKR Jirachi")
+    loaded = giftmod.loads(giftmod.dumps(saved), game="rse")
+    rebuilt = gift_file.distribution(loaded.variants[gift_file.TARGET])
+    assert rebuilt == dist
+
+    base = dict(saved.variants[gift_file.TARGET].data)
+    for bad in (b"", b"\x00", b"\x00" * 1025):
+        with pytest.raises(ValueError):
+            giftmod.Gift("rse", "Bad mevent", {gift_file.TARGET: giftmod.Variant({**base, "mevent": bad})})
+    with pytest.raises(ValueError):
+        giftmod.Gift("rse", "Extra component", {
+            gift_file.TARGET: giftmod.Variant({**base, "trainer": b"\x00" * 188})})
+
+
+def test_an_emerald_console_receives_an_event_pokemon_through_the_whole_stack():
+    import frlg_mg_host
+    from pokeldn.frlg.save.mon import decode_mon
+    from tests.test_frlg_build_selection import _drive, _session
+
+    parser = frlg_mg_host.build_parser()
+    config = frlg_mg_host.build_run_config(
+        parser, parser.parse_args(["--version", "emerald", "--gift", "event-pokemon"]))
+    host, console = _session(config, game_code=b"BPEE", version="emerald")
+    _drive(host, console)
+    assert console.error is None
+    assert console.saved_card == config.payload.distribution.card
+    assert len(console.mevent_results) == 1
+    assert console.mevent_results[0].status == 2
+    mon = decode_mon(console.mevent_results[0].effects[0][1])
+    assert (mon["species_name"], mon["otName"], mon["otid"] & 0xFFFF) == ("JIRACHI", "WISHMKR", 20043)
+
+
+def test_every_compiled_emerald_preset_builds_valid_rse_gift_with_emerald_numbers():
+    from pokeldn import gifts as giftmod
+    from pokeldn.rse import gift_builder, gift_file
+
+    compiled = [p for p in gift_builder.PRESETS if not p.args]
+    assert {p.key for p in compiled} >= {
+        "aurora-ticket", "mystic-ticket", "old-sea-map", "eon-ticket", "altering-cave",
+        "wish-egg", "pokepark-egg", "pc-japan-egg", "battle-count-card",
+        "box-swablu", "box-zigzagoon", "box-skitty", "surf-pichu",
+        "national-dex", "rare-berries", "starter-egg", "master-ball", "rare-candy",
+    }
+    for preset in compiled:
+        gift = gift_builder.compile(preset.state)
+        loaded = giftmod.loads(giftmod.dumps(gift), game="rse")
+        dist = gift_file.distribution(loaded.variants[gift_file.TARGET])
+        assert dist.game == "emerald", preset.key
+        assert gc.FLAG_MYSTERY_GIFT_DONE.to_bytes(2, "little") not in dist.ram_script, preset.key
+        assert gc.VAR_MYSTERY_GIFT_1.to_bytes(2, "little") not in dist.ram_script, preset.key
+
+
+def test_emerald_launcher_accepts_event_pokemon_and_refuses_firered_payloads():
+    import frlg_mg_host
+
+    parser = frlg_mg_host.build_parser()
+    run = frlg_mg_host.build_run_config(
+        parser, parser.parse_args(["--version", "emerald", "--gift", "event-pokemon"]))
+    assert isinstance(run.payload, gifts.EmeraldPayload)
+    assert run.payload.distribution.game == "emerald"
+    assert run.payload.distribution.has_mevent
+
+    for bad_args in (
+        ["--version", "emerald"],
+        ["--version", "emerald", "--gift", "celebi"],
+        ["--version", "emerald", "--news", "pokeldn"],
+        ["--version", "emerald", "--buffer-script", "trainer-id-probe"],
+        ["--version", "emerald", "--gift", "event-pokemon", "--questionnaire", "1,2,3,4"],
+        *(["--version", "emerald", "--gift", "event-pokemon", "--flag-id", str(i)] for i in gifts.TICKET_FLAG_IDS),
+    ):
+        with pytest.raises(SystemExit):
+            frlg_mg_host.build_run_config(parser, parser.parse_args(bad_args))
+
+
+def test_emerald_gift_files_export_works_for_compiled_and_event_presets():
+    from pokeldn.app import gift_files
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.app.settings import Settings
+
+    tool = next(t for g in GAMES for t in g.tools if t.key == "rse-gift")
+    compiled = gift_files.build(tool, {"--gift-file": {"mode": "preset", "preset": "old-sea-map"}}, {}, Settings())
+    assert compiled.game == "rse" and set(compiled.variants) == {"emerald"}
+
+    if _pkhex_available():
+        event_gift = gift_files.build(
+            tool, {"--gift-file": {"mode": "preset", "preset": "event-wishmkr-jirachi"}}, {}, Settings())
+        assert event_gift.game == "rse"
+        assert "mevent" in event_gift.variants["emerald"].data

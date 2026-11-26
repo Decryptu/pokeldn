@@ -657,9 +657,10 @@ def build_run_config(parser, args):
     if args.version in ("ruby", "sapphire"):
         parser.error("Ruby and Sapphire have no Mystery Gift menu, only the e-Reader's Mystery "
                      "Event (docs/rse.md)")
-    if emerald and not args.gift_file:
-        parser.error("an Emerald console takes a gift file made for Emerald, --gift-file; the "
-                     "presets, news and console code are FireRed's (docs/rse.md, Mystery Gift)")
+    if emerald and not args.gift_file and (args.news is not None or args.buffer_script is not None
+                                           or args.gift != wonder_card_events.GIFT_EVENT_POKEMON):
+        parser.error("an Emerald console takes an Emerald --gift-file or --gift event-pokemon; the "
+                     "other presets, news and console code are FireRed's (docs/rse.md, Mystery Gift)")
     try:
         if args.gift_file and emerald:
             from pokeldn import gifts
@@ -847,10 +848,20 @@ def build_run_config(parser, args):
                 parser.error("--news-id is only meaningful with --news")
             phrase = (None if args.questionnaire is None
                       else easychat.parse_phrase(args.questionnaire))
-            payload = configmod.MysteryGiftPayload(
-                gift=args.gift, flag_id=gift_registry.resolve_flag_id(args),
-                questionnaire=phrase, denied_message=args.denied_message,
-                definition=_event_definition(parser, args) or _hunt_definition(parser, args))
+            definition = _event_definition(parser, args) or _hunt_definition(parser, args)
+            if emerald:
+                if phrase is not None or args.denied_message is not None:
+                    parser.error("--questionnaire gates a FireRed session; an Emerald session sends "
+                                 "no questionnaire check")
+                from pokeldn.rse.gifts import EmeraldPayload
+                payload = EmeraldPayload.composed(
+                    definition or gift_registry.GIFT_REGISTRY.entry(args.gift).definition,
+                    name=args.event_pokemon or wonder_card_events.DEFAULT_EVENT_POKEMON,
+                    flag_id=gift_registry.resolve_flag_id(args), dump_file=args.dump_file)
+            else:
+                payload = configmod.MysteryGiftPayload(
+                    gift=args.gift, flag_id=gift_registry.resolve_flag_id(args),
+                    questionnaire=phrase, denied_message=args.denied_message, definition=definition)
         return configmod.MysteryGiftRunConfig(
             profile=profile, ldn=ldn, role=role,
             payload=payload, expect_console=args.expect_console,
@@ -1006,9 +1017,8 @@ def main(argv=None):
         from pokeldn import gifts
         from pokeldn.frlg.gift.file import from_payload
         try:
-            gift = (config.payload.file if hasattr(config.payload, "distribution") else
-                    from_payload(config.payload, console_build=config.console_build,
-                                 version=config.console_version))
+            gift = from_payload(config.payload, console_build=config.console_build,
+                                version=config.console_version)
             gifts.save(args.export_gift, gift,
                        build=None if config.console_build == "auto" else config.console_build)
         except (OSError, ValueError) as exc:
