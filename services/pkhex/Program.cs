@@ -1590,36 +1590,39 @@ static partial class Program
                 .GetField("Encounter_WC3", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!
                 .GetValue(null)!).Where(e => !e.IsEgg && e.Language != (byte)LanguageID.Japanese);
 
-        // Colosseum, Japanese Colosseum Bonus Disc and XD: Gale of Darkness gifts that transfer to GBA as PK3.
+        // Colosseum, Japanese Colosseum Bonus Disc and XD gifts that transfer to GBA as PK3, found by species so a
+        // PKHeX update that reorders a table fails instead of handing out another Pokemon. Language 0 follows the request.
         [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.NonPublicFields,
             "PKHeX.Core.Encounters3RSE", "PKHeX.Core")]
         [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.NonPublicFields,
             "PKHeX.Core.Encounters3Colo", "PKHeX.Core")]
         [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.NonPublicFields,
             "PKHeX.Core.Encounters3XD", "PKHeX.Core")]
-        IEnumerable<(string Name, IEncounterConvertible Encounter, int FixedLanguage, ushort Species, byte Level, ushort Tid)> GameCubeGen3Events()
+        IEnumerable<(string Name, IEncounterConvertible Encounter, int FixedLanguage, ushort Tid)> GameCubeGen3Events()
         {
             var asm = typeof(PK3).Assembly;
             const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
-            var rse = asm.GetType("PKHeX.Core.Encounters3RSE")!;
-            var coloR = (IEncounterConvertible[])rse.GetField("ColoGiftsR", flags)!.GetValue(null)!;
-            var coloS = (IEncounterConvertible[])rse.GetField("ColoGiftsS", flags)!.GetValue(null)!;
-            var coloGifts = (IEncounterConvertible[])asm.GetType("PKHeX.Core.Encounters3Colo")!.GetField("Gifts", flags)!.GetValue(null)!;
-            var xd = asm.GetType("PKHeX.Core.Encounters3XD")!;
-            var xdGifts = (IEncounterConvertible[])xd.GetField("Gifts", flags)!.GetValue(null)!;
-            var xdLugia = ((IEncounterConvertible[])xd.GetField("Shadow", flags)!.GetValue(null)!)
-                .First(e => ((IEncounterable)e).Species == 249);
+            IEncounterConvertible[] Table(string type, string field) =>
+                (IEncounterConvertible[])asm.GetType($"PKHeX.Core.{type}")!.GetField(field, flags)!.GetValue(null)!;
+            IEncounterConvertible Pick(IEncounterConvertible[] table, ushort species) =>
+                table.FirstOrDefault(e => ((IEncounterable)e).Species == species)
+                ?? throw new InvalidDataException($"PKHeX's GameCube gift table has no species {species}.");
+            var coloR = Table("Encounters3RSE", "ColoGiftsR");
+            var coloS = Table("Encounters3RSE", "ColoGiftsS");
+            var colo = Table("Encounters3Colo", "Gifts");
+            var xd = Table("Encounters3XD", "Gifts");
+            var xdShadow = Table("Encounters3XD", "Shadow");
             return
             [
-                ("MATTLE Ho-Oh", coloS[0], 0, 250, 70, 10048),
-                ("DUKING Plusle", coloGifts[0], 0, 311, 13, 37149),
-                ("Colosseum Pikachu", coloR[0], (int)LanguageID.Japanese, 25, 10, 31121),
-                ("AGETO Celebi", coloR[1], (int)LanguageID.Japanese, 251, 10, 31121),
-                ("XD Eevee", xdGifts[0], 0, 133, 10, 0),
-                ("XD Chikorita", xdGifts[1], 0, 152, 5, 0),
-                ("XD Cyndaquil", xdGifts[2], 0, 155, 5, 0),
-                ("XD Totodile", xdGifts[3], 0, 158, 5, 0),
-                ("XD Lugia", xdLugia, 0, 249, 50, 0),
+                ("MATTLE Ho-Oh", Pick(coloS, 250), 0, 10048),
+                ("DUKING Plusle", Pick(colo, 311), 0, 37149),
+                ("Colosseum Pikachu", Pick(coloR, 25), (int)LanguageID.Japanese, 31121),
+                ("AGETO Celebi", Pick(coloR, 251), (int)LanguageID.Japanese, 31121),
+                ("XD Eevee", Pick(xd, 133), 0, 0),
+                ("XD Chikorita", Pick(xd, 152), 0, 0),
+                ("XD Cyndaquil", Pick(xd, 155), 0, 0),
+                ("XD Totodile", Pick(xd, 158), 0, 0),
+                ("XD Lugia", Pick(xdShadow, 249), 0, 0),
             ];
         }
 
@@ -1637,7 +1640,8 @@ static partial class Program
             foreach (var e in GameCubeGen3Events())
                 list.Add((JsonNode?)new JsonObject
                 {
-                    ["name"] = e.Name, ["species"] = e.Species, ["level"] = e.Level,
+                    ["name"] = e.Name, ["species"] = ((IEncounterable)e.Encounter).Species,
+                    ["level"] = ((IEncounterable)e.Encounter).LevelMin,
                     ["language"] = e.FixedLanguage, ["trainer_id"] = e.Tid,
                 });
             return new JsonObject { ["events"] = list };
@@ -1661,10 +1665,10 @@ static partial class Program
                     Language = language is > 0 and <= 7 ? language : (int)LanguageID.English,
                 };
             }
-            else if (GameCubeGen3Events().FirstOrDefault(e => e.Name == name) is { Encounter: not null } gc)
+            else if (GameCubeGen3Events().FirstOrDefault(e => e.Name == name) is { Encounter: not null } gift)
             {
-                encounter = gc.Encounter;
-                var useLang = gc.FixedLanguage != 0 ? gc.FixedLanguage
+                encounter = gift.Encounter;
+                var useLang = gift.FixedLanguage != 0 ? gift.FixedLanguage
                               : language is > 0 and <= 7 ? language : (int)LanguageID.English;
                 var xdSeed = XDRNG.Next((uint)Random.Shared.NextInt64(0, 1L << 32));
                 var tid = (ushort)(xdSeed >> 16);

@@ -88,6 +88,8 @@ SPECIAL_START_LEGENDARY_BATTLE = 312
 # [decomp:include/constants/mystery_gift.h:4]) for the held card [decomp:src/field_specials.c:1955];
 # index counted in data/specials.inc.
 SPECIAL_GET_MYSTERY_GIFT_CARD_STAT = 390
+SPECIAL_ENABLE_NATIONAL_POKEDEX = 367
+FLAG_SYS_NATIONAL_DEX = 0x840
 GET_NUM_STAMPS = 0
 GET_MAX_STAMPS = 1
 GET_CARD_BATTLES_WON = 2
@@ -111,6 +113,8 @@ class GameRules:
     special_has_all_regional: int
     special_legendary_battle: int
     special_card_stat: int
+    special_enable_national_dex: int
+    flag_national_dex: int          # EnableNationalPokedex sets it [event_data.c:104]
     max_special: int = 0xFFFF       # FireRed bounds `special` itself [scrcmd.c:101]; Emerald does not
 
     def flag_for_flag_id(self, flag_id):
@@ -121,7 +125,8 @@ class GameRules:
 FRLG_RULES = GameRules("frlg", VAR_MYSTERY_GIFT_1, VAR_MYSTERY_GIFT_SLOT_VARS, FLAG_MYSTERY_GIFT_DONE,
                        flag_for_flag_id(1000), MAX_ITEM, MAX_FLAG, MAX_OBJECT_GRAPHICS,
                        SPECIAL_HAS_ALL_KANTO_MONS, SPECIAL_START_LEGENDARY_BATTLE,
-                       SPECIAL_GET_MYSTERY_GIFT_CARD_STAT)
+                       SPECIAL_GET_MYSTERY_GIFT_CARD_STAT, SPECIAL_ENABLE_NATIONAL_POKEDEX,
+                       FLAG_SYS_NATIONAL_DEX)
 # compile_definition's `rules`, read by the emitters below while one definition compiles.
 _RULES = contextvars.ContextVar("gift_rules", default=FRLG_RULES)
 

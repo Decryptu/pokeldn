@@ -258,7 +258,7 @@ def test_emerald_gift_file_round_trips_mevent_and_refuses_malformed_mevent():
     from pokeldn.frlg.gift import wonder_card_events as events
     from pokeldn.rse import gift_file
 
-    dist = gifts.event_pokemon(events.WISHMKR_JIRACHI_PK3, name="WISHMKR Jirachi")
+    dist = gifts.composed(events.EVENT_POKEMON_GIFT)
     assert dist.game == "emerald" and dist.has_mevent
     saved = gift_file.from_distribution(dist, name="WISHMKR Jirachi")
     loaded = giftmod.loads(giftmod.dumps(saved), game="rse")
@@ -312,68 +312,6 @@ def test_every_compiled_emerald_preset_builds_valid_rse_gift_with_emerald_number
         assert gc.VAR_MYSTERY_GIFT_1.to_bytes(2, "little") not in dist.ram_script, preset.key
 
 
-def test_emerald_egg_presets_give_official_moves_as_fateful_encounter():
-    from pokeldn.frlg.gift import wonder_card_events as events
-    from pokeldn.rse import gift_builder
-    from test_gift_composer import ScriptVM
-
-    party = 3
-    for key, eggs in (("wish-egg", events.WISH_EGGS),
-                      ("pokepark-egg", events.POKEPARK_EGGS),
-                      ("pc-japan-egg", events.PC_JAPAN_EGGS)):
-        script = gift_builder.distribution(gift_builder.PRESET[key].state).ram_script
-        for pick, (species, moves) in enumerate(eggs):
-            vm = ScriptVM(script, party_size=party, random_values=[pick])
-            vm.run()
-            assert vm.random_limits == [len(eggs)]
-            assert vm.eggs == [species]
-            assert vm.moves == [(7, slot, move) for slot, move in enumerate(moves)]
-            assert vm.fateful == [party] and vm.met_locations == [(party, 0xFF)]
-            assert em.FLAG_MYSTERY_GIFT_DONE in vm.flags
-        full = ScriptVM(script, party_size=6)
-        full.run()
-        assert full.eggs == [] and em.FLAG_MYSTERY_GIFT_DONE not in full.flags
-
-    for key, expected_species, expected_moves in (
-        ("box-swablu", 358, (64, 45, 206)),
-        ("box-zigzagoon", 288, (33, 45, 39, 245)),
-        ("box-skitty", 315, (45, 33, 39, 6)),
-        ("surf-pichu", 172, (84, 204, 57)),
-    ):
-        script = gift_builder.distribution(gift_builder.PRESET[key].state).ram_script
-        vm = ScriptVM(script, party_size=party)
-        vm.run()
-        assert vm.eggs == [expected_species], key
-        assert vm.moves == [(7, slot, move) for slot, move in enumerate(expected_moves)], key
-        assert vm.fateful == [party] and vm.met_locations == [(party, 0xFF)], key
-        assert em.FLAG_MYSTERY_GIFT_DONE in vm.flags, key
-
-
-def test_emerald_battle_count_and_national_dex_use_emeralds_specials_and_flags():
-    from pokeldn.rse import gift_builder
-    from test_gift_composer import ScriptVM
-
-    battle_script = gift_builder.distribution(gift_builder.PRESET["battle-count-card"].state).ram_script
-    assert gc.SPECIAL_GET_MYSTERY_GIFT_CARD_STAT.to_bytes(2, "little") not in battle_script
-    assert gc.VAR_MYSTERY_GIFT_2.to_bytes(2, "little") not in battle_script
-    first = ScriptVM(battle_script, special_results={em.SPECIAL_GET_MYSTERY_GIFT_CARD_STAT: 3})
-    first.run()
-    assert first.items == [(13, 1)]
-    assert first.vars[em.VAR_GIFT_SLOT_VARS[0]] == 1
-    second = ScriptVM(battle_script, variables=first.vars, flags=first.flags,
-                      special_results={em.SPECIAL_GET_MYSTERY_GIFT_CARD_STAT: 3})
-    second.run()
-    assert second.items == []
-
-    dex_script = gift_builder.distribution(gift_builder.PRESET["national-dex"].state).ram_script
-    off = ScriptVM(dex_script)
-    off.run()
-    assert em.SPECIAL_ENABLE_NATIONAL_POKEDEX in off.specials
-    on = ScriptVM(dex_script, flags={em.FLAG_SYS_NATIONAL_DEX})
-    on.run()
-    assert em.SPECIAL_ENABLE_NATIONAL_POKEDEX not in on.specials
-
-
 def test_emerald_launcher_accepts_event_pokemon_and_refuses_firered_payloads():
     import frlg_mg_host
 
@@ -390,6 +328,7 @@ def test_emerald_launcher_accepts_event_pokemon_and_refuses_firered_payloads():
         ["--version", "emerald", "--news", "pokeldn"],
         ["--version", "emerald", "--buffer-script", "trainer-id-probe"],
         ["--version", "emerald", "--gift", "event-pokemon", "--questionnaire", "1,2,3,4"],
+        *(["--version", "emerald", "--gift", "event-pokemon", "--flag-id", str(i)] for i in gifts.TICKET_FLAG_IDS),
     ):
         with pytest.raises(SystemExit):
             frlg_mg_host.build_run_config(parser, parser.parse_args(bad_args))
@@ -409,42 +348,3 @@ def test_emerald_gift_files_export_works_for_compiled_and_event_presets():
             tool, {"--gift-file": {"mode": "preset", "preset": "event-wishmkr-jirachi"}}, {}, Settings())
         assert event_gift.game == "rse"
         assert "mevent" in event_gift.variants["emerald"].data
-
-
-@pytest.mark.skipif(not _pkhex_available(), reason="needs services/pkhex built")
-def test_every_emerald_event_and_gamecube_preset_is_a_legal_distribution():
-    from pokeldn import pokemon
-    from pokeldn.frlg.gift.builder import national_species
-    from pokeldn.frlg.rom import mystery_event
-    from pokeldn.frlg.save.mon import decode_mon
-    from pokeldn.rse import gift_builder
-
-    event_presets = [p for p in gift_builder.PRESETS if "--event-pokemon" in p.args]
-    names = {p.args[3] for p in event_presets}
-    assert {
-        "WISHMKR Jirachi", "CHANNEL Jirachi", "Colosseum Pikachu", "AGETO Celebi",
-        "MATTLE Ho-Oh", "DUKING Plusle", "XD Eevee", "XD Chikorita", "XD Cyndaquil",
-        "XD Totodile", "XD Lugia", "RUBY Zigzagoon", "SAPHIRE Zigzagoon",
-        "Aura Mew", "MYSTRY Mew", "DOEL Deoxys", "SPACE C Deoxys", "ROCKS Metang",
-    } <= names
-    assert len(event_presets) == 39
-
-    for preset in event_presets:
-        name = preset.args[3]
-        pk3, _summary = pokemon.SERVICE.event(name, 2)
-        verdict = pokemon.SERVICE.check_bytes("rse", pk3)
-        assert verdict["legal"], f"{name}: {verdict.get('report')}"
-        if preset.shiny:
-            assert verdict["shiny"], name
-        dist = gifts.event_pokemon(pk3, name=name)
-        [(_op, opname, (pointer,)), _end] = mystery_event.decode(dist.mevent)
-        assert opname == "givepokemon"
-        assert mystery_event.run(dist.mevent, party_count=3).status == 2, name
-        raw = dist.mevent[pointer:pointer + 100]
-        assert raw[85] == 0xFF
-        assert national_species(decode_mon(raw)["species"]) == preset.species_id, name
-
-    for name in ("MATTLE Ho-Oh", "DUKING Plusle", "XD Lugia"):
-        for lang in (1, 3):
-            pk3, _ = pokemon.SERVICE.event(name, lang)
-            assert pokemon.SERVICE.check_bytes("rse", pk3)["legal"], (name, lang)

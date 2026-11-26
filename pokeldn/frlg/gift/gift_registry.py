@@ -172,16 +172,10 @@ def build_default_registry():
     registry.register_definition(wonder_card_events.RNG_MON_HUNT_BOTH_GIFT)
     registry.register_definition(wonder_card_events.RNG_MON_HUNT_LOG_GIFT)
     registry.register_definition(wonder_card_events.MEVENT_SWEEP_GIFT)
-    registry.register_definition(wonder_card_events.MASTER_BALL_GIFT)
     registry.register_definition(wonder_card_events.ALTERING_CAVE_GIFT)
-    registry.register_definition(wonder_card_events.BATTLE_COUNT_GIFT)
-    registry.register_definition(wonder_card_events.WISH_EGG_GIFT)
-    registry.register_definition(wonder_card_events.POKEPARK_EGG_GIFT)
-    registry.register_definition(wonder_card_events.PC_JAPAN_EGG_GIFT)
     registry.register_definition(wonder_card_events.EVENT_POKEMON_GIFT)
-    registry.register_definition(wonder_card_events.NATIONAL_DEX_GIFT)
-    registry.register_definition(wonder_card_events.RARE_BERRIES_GIFT)
-    registry.register_definition(wonder_card_events.STARTER_EGG_GIFT)
+    for definition in wonder_card_events.gba_cards().values():
+        registry.register_definition(definition)
     for card in team_cards.cards().values():
         registry.register(GiftCatalogEntry(
             slug=card.slug, default_flag_id=card.default_flag_id, live=True, static=True,

@@ -125,7 +125,9 @@ a Mystery Event gift alone, with no prompt.
 | `event-pokemon` | a Gen 3 distribution Pokemon, straight into the party |
 | `starter-egg` | an egg of one of the nine first partners, drawn by `random` |
 | `rare-berries` | an Enigma, a Lansat and a Starf Berry, one stage each |
-| `national-dex` | `EnableNationalPokedex` (special 367) unless `IsNationalPokedexEnabled` (403) answers 1 |
+| `national-dex` | `EnableNationalPokedex` (special 367) unless `FLAG_SYS_NATIONAL_DEX` (`0x840`) is set |
+| `rare-candy` | five Rare Candies |
+| `box-swablu`, `box-zigzagoon`, `box-skitty`, `surf-pichu` | the Pokemon Box Ruby & Sapphire bonus eggs |
 | `nature-mint`, `pc-anywhere` and 42 more | the GB-Link Team cards |
 | `battle-count-card` | the official Battle Count Card |
 | `visiting-trainer` | a Battle Tower trainer as ident 26 (FireRed only) |
@@ -193,16 +195,44 @@ location 0xFF. A full party refuses before the draw.
 | `pokepark-egg` (PokePark Market Fantasia) | Cacnea, Corphish, Corsola, Igglybuff, Minun, Pichu, Plusle, Psyduck, Skitty, Spinda, Spoink, Surskit, Taillow, Whismur, Wynaut |
 | `pc-japan-egg` (Pokemon Center Japan) | Bellsprout (Teeter Dance), Meowth (Petal Dance), Oddish (Leech Seed), Poliwag (Sweet Kiss) |
 
+### Cards every GBA title shares
+
+`wonder_card_events.gba_cards(rules)` builds the cards FireRed, LeafGreen and Emerald all offer:
+`master-ball`, `rare-candy`, the three distribution eggs, `starter-egg`, `rare-berries`, `national-dex`,
+`battle-count-card` and the four Pokemon Box eggs. The battle count and national dex cards take their
+special and flag numbers from `rules` (`GameRules`); the rest compile under either game's numbers as
+they are. `pokeldn.frlg.gift.builder.GBA_CARDS` and `EVENT_PRESETS` are the app's presets for them,
+which [Emerald's gifts](rse_gift.md) list too.
+
+| Pokemon Box egg | moves [PKHeX EncountersWC3] |
+|---|---|
+| Swablu | Peck, Growl, False Swipe |
+| Zigzagoon | Tackle, Growl, Tail Whip, ExtremeSpeed |
+| Skitty | Growl, Tackle, Tail Whip, Pay Day |
+| Pichu | ThunderShock, Charm, Surf |
+
+Each egg is a fateful encounter met at location `0xFF`, as `GiveEgg` writes it.
+
 ### Event Pokemon
 
-`--gift event-pokemon --event-pokemon NAME` sends a Gen 3 distribution made by PKHeX.Core from
-`EncounterGift3` (non-egg, non-Japanese) by its PID/IV method, legality-checked, through the Mystery
-Event `givepokemon` when the card is saved. A full party answers status 3 and the card can be received
-again. The default is the WISHMKR Jirachi.
+`--gift event-pokemon --event-pokemon NAME` sends a Gen 3 distribution made by PKHeX.Core,
+legality-checked, through the Mystery Event `givepokemon` when the card is saved. A full party answers
+status 3 and the card can be received again. The default is the WISHMKR Jirachi.
 
-`NAME` is trainer name and species: `WISHMKR Jirachi`, `CHANNEL Jirachi`, `Aura Mew`, `MYSTRY Mew`,
-`DOEL Deoxys`, `SPACE C Deoxys`, `ROCKS Metang`, every `10 ANIV` species, and the European
-`10ANNIV`, `10JAHRE`, `10ANNI` and `10ANIV` releases; `--language` picks among languages.
+`NAME` is trainer name and species from `EncounterGift3` (non-egg, non-Japanese, by its PID/IV
+method): `WISHMKR Jirachi`, `CHANNEL Jirachi`, `RUBY Zigzagoon`, `SAPHIRE Zigzagoon`, `Aura Mew`,
+`MYSTRY Mew`, `DOEL Deoxys`, `SPACE C Deoxys`, `ROCKS Metang`, every `10 ANIV` species, and the
+European `10ANNIV`, `10JAHRE`, `10ANNI` and `10ANIV` releases; `--language` picks among languages. The
+GameCube gifts that transfer to a GBA game come from PKHeX's Colosseum and XD tables, found by
+species: `MATTLE Ho-Oh`, `DUKING Plusle`, `Colosseum Pikachu`, `AGETO Celebi` (both Japanese),
+`XD Eevee`, `XD Chikorita`, `XD Cyndaquil`, `XD Totodile` and `XD Lugia`.
+
+Two PKHeX generation traps, handled in `services/pkhex`:
+
+- `SAPHIRE Zigzagoon` (`BACD_RBCD`) is generated from `RUBY`'s fixed seed `0x00D5` and fails
+  `PIDTypeMismatch`; the helper scans the 256 eight-bit seeds, of which 103 are valid.
+- A random trainer id and secret id fail an XD gift about 37% of the time ("not obtainable from any
+  RNG seed"); the helper draws them from two consecutive `XDRNG` steps, as XD makes a save.
 
 The card is build-independent; `tests/test_frlg_english_cartridges.py` runs it through each
 cartridge's `RunMysteryEventScript`.
@@ -221,7 +251,7 @@ rebuilt with the composer.
 | change a Pokemon | `nature-mint`, `ability-capsule`, `poke-ball-changer`, `pokemon-gender`, `nickname`, `stat-judge`, `hidden-power`, `hidden-power-type`, `ev-training`, `friendship`, `pp-max`, `max-conditions`, `pokerus`, `unown-letters`, `trade-evolution`, `espeon-umbreon`, `move-tutor` |
 | per-frame hooks | `speed-2`, `speed-3`, `speed-4`, `speed-0-75`, `speed-0-5`, `fast-text`, `travel-anywhere`, `pc-anywhere`, `hm-moves`, `reusable-tms`, `physical-special-split`, `exp-share`, `shiny-hunting`, `roamer` |
 | other | `no-encounters`, `legendary-respawn`, `instant-eggs`, `gift-box`, `pocket-casino`, `gift-ribbons`, `trainer-ids`, `gender-swap`, `rival-name` |
-| event Pokemon | `box-eggs`, `colosseum-pikachu`, `ageto-celebi`, `mattle-ho-oh` |
+| event Pokemon | `box-eggs`, `colosseum-pikachu`, `ageto-celebi`, `mattle-ho-oh` (command line only; the app lists the shared Pokemon Box eggs and PKHeX's event copies) |
 
 Differences from their build:
 

@@ -269,7 +269,10 @@ def test_the_dump_proves_its_own_alignment_through_nullfieldspecial():
 
 def test_the_special_the_battle_count_card_uses_is_where_the_table_says():
     """`special 390` [decomp:data/mystery_event_msg.s:162] is GetMysteryGiftCardStat in the table."""
-    assert special_names.SPECIALS[390] == "GetMysteryGiftCardStat"
+    from pokeldn.frlg.gift.gift_composer import FRLG_RULES
+    assert special_names.SPECIALS[390] == "GetMysteryGiftCardStat" \
+        == special_names.SPECIALS[FRLG_RULES.special_card_stat]
+    assert special_names.SPECIALS[FRLG_RULES.special_enable_national_dex] == "EnableNationalPokedex"
     assert rom_map.special_function("GetMysteryGiftCardStat") == rom_map.thumb(0x080D024C)
 
 
