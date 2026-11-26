@@ -1670,9 +1670,13 @@ static partial class Program
                 encounter = gift.Encounter;
                 var useLang = gift.FixedLanguage != 0 ? gift.FixedLanguage
                               : language is > 0 and <= 7 ? language : (int)LanguageID.English;
-                var xdSeed = XDRNG.Next((uint)Random.Shared.NextInt64(0, 1L << 32));
-                var tid = (ushort)(xdSeed >> 16);
-                var sid = (ushort)(XDRNG.Next(xdSeed) >> 16);
+                // A Japanese XD's TID/SID pair follows its name screen's ball roll; PKHeX refuses one no seed reaches.
+                ushort tid, sid;
+                do
+                {
+                    var xdSeed = XDRNG.Next((uint)Random.Shared.NextInt64(0, 1L << 32));
+                    (tid, sid) = ((ushort)(xdSeed >> 16), (ushort)(XDRNG.Next(xdSeed) >> 16));
+                } while (!MethodCXD.TryGetSeedTrainerID(tid, sid, out _));
                 trainer = new SimpleTrainerInfo(GameVersion.E)
                 {
                     OT = useLang == (int)LanguageID.Japanese ? "ミハエル" : "MICHAEL",
