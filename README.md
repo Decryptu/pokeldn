@@ -151,8 +151,8 @@ Contributors to this repository (GitHub does not list contributors on a fork):
   of Scarlet/Violet raid event deliveries the app downloads, with pkNX's text of each
 - [Matcore962](https://github.com/Matcore962): importing Pokemon files and game saves into the Bank
 - [gfaraujosousa](https://github.com/gfaraujosousa): installing firmware on a board whose flasher stub
-  never starts, through its ROM loader, a traded Pokemon made the receiving player's own, and the
-  GameCube event Pokemon and Pokemon Box eggs as Mystery Gifts
+  never starts, through its ROM loader, compressed and retried, a traded Pokemon made the receiving
+  player's own, and the GameCube event Pokemon and Pokemon Box eggs as Mystery Gifts
 
 ## Code signing policy
 

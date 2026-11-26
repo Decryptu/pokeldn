@@ -58,8 +58,7 @@ class BoardView:
         self.visible = False
         self.downloading = False
         self.installing = ""        # the firmware being written, from the press until the board answers
-        self.flash_kind = "radio"
-        self.confirming = False     # the "Checking the board" line after an install, until the board answers
+        self.confirming: tuple[str, str] | None = None  # device and expected firmware kind
         self.pad_child = None
         self.pad: dict | None = None    # the S3 controller's status over Bluetooth
         self.pad_error = ""
@@ -218,12 +217,24 @@ class BoardView:
                        t.FAINT, text_align=ft.TextAlign.CENTER),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6), padding=24))
         self.list.controls = rows
+        if self.confirming:
+            device, kind = self.confirming
+            if device in self.app.identities:
+                self.confirming = None
+                f = self.facts(device)
+                if not f.kind:
+                    self._unconfirmed()
+                elif f.kind != kind:
+                    self.progress_text.color = t.AMBER
+                    self.progress_text.value = tr('boards.flash_wrong_firmware', 'Installed, but the board runs a different firmware. Install it again.')
+                elif f.state == "old":
+                    self.progress_text.color = t.AMBER
+                    self.progress_text.value = tr('boards.flash_incompatible', 'Installed, but this firmware is too old for the app. Update it below.')
+                else:
+                    self.progress_text.color = t.GREEN
+                    self.progress_text.value = tr('boards.installed_ready_to_use', 'Installed. Ready to use.')
         if self.selected:
             f = self.facts(self.selected)
-            if self.confirming and f.state != "checking":
-                self.confirming = False
-                self.progress_text.value = (tr('boards.installed_ready_to_use', 'Installed. Ready to use.')
-                                            if f.state == "ready" else "")
             cards = [self.header(f), self.firmware_card(f), self.about_card(f)]
             if f.state in PROBLEMS or f.state == "none":
                 cards.append(self.help_card())
@@ -233,8 +244,9 @@ class BoardView:
 
     def _select(self, key: str) -> None:
         self.panes.show(1, update=False)
-        if not self.installing:
-            self.progress_text.value = ""
+        if self.installing or self.confirming:
+            return
+        self.progress_text.value = ""
         self.selected = key
         self._check_selected()
         self.render()
@@ -254,6 +266,8 @@ class BoardView:
             rows.append(ft.Row(actions, alignment=ft.MainAxisAlignment.END))
         elif not ios.active():
             rows.append(ft.Row([self.report_button()], alignment=ft.MainAxisAlignment.END))
+        if self.progress_text.value:
+            rows.append(ft.Column([self.progress, self.progress_text], spacing=6))
         return t.surface(ft.Container(ft.Column(rows, spacing=14), padding=ft.Padding(18, 16, 18, 18)))
 
     def header(self, f: Facts) -> ft.Control:
@@ -277,6 +291,7 @@ class BoardView:
             radio = board.FIRMWARE_BY_KIND["radio"]
             icon, color, title, detail = "warning-diamond", t.AMBER, tr('boards.no_pokeldn_firmware_091f1a', 'No pokeldn firmware'), (
                 tr('boards.install_a_firmware_below_the_wireless_firmware_is_the_o_7af2bf', 'Install a firmware below. The Wireless firmware is the one every Games tool needs.'))
+            action.append(t.secondary_button(tr('boards.check_again_fb7099', 'Check again'), self._identify, "refresh", disabled=busy))
             action.append(t.button(tr('boards.install_fa4031', 'Install {value0}', value0=radio.name), lambda e: self.confirm(radio), "download",
                                    disabled=busy))
         elif f.state == "old":
@@ -631,8 +646,9 @@ class BoardView:
         self._flash(self.installing, image, from_loader=True)
 
     def _flash(self, kind: str, image: str = "", from_loader: bool = False) -> None:
-        self.flash_kind = kind
-        args = ["--module", "gui.board", "--port", self.selected, "--kind", kind]
+        device = self.selected
+        serial = next((p.serial_number for p in self.ports if p.device == device), "")
+        args = ["--module", "gui.board", "--port", device, "--kind", kind]
         if from_loader:
             args.append("--from-loader")
         if image:
@@ -642,7 +658,8 @@ class BoardView:
         env = dict(os.environ, NO_COLOR="1", PYTHONUNBUFFERED="1")
         env.pop("POKELDN_RADIO", None)
         self.app.process_label = "flash"
-        self.app.process = runner.Process(args, str(SESSION), env, self._flash_line, self._flashed,
+        self.app.process = runner.Process(args, str(SESSION), env, self._flash_line,
+                                          lambda code: self._flashed(code, device, kind, serial),
                                           popups=self.app.popups, label=tr('boards.board_installer_517967', 'Board installer'))
 
     def _flash_line(self, line: str) -> None:
@@ -660,44 +677,52 @@ class BoardView:
                 self.progress_text.update()
             self.app.ui(show)
 
-    def _flashed(self, code: int) -> None:
-        device, kind = self.selected, self.flash_kind
-
+    def _flashed(self, code: int, device: str, kind: str, serial: str) -> None:
         def done():
-            self.installing = ""
             self.app.identities.pop(device, None)
             if code:
                 self._failed(tr('boards.the_install_did_not_finish_5f28a2', 'The install did not finish.'))
                 return
             self.progress.value = 1
-            self.progress_text.color = t.GREEN
-            self.progress_text.value = (
-                tr('boards.installed_plug_the_board_into_the_switch_s_usb_c_port_a_7dda2a', "Installed. Plug the board into the Switch's USB-C port and open Control.") if kind == "pad"
-                else tr('boards.installed_checking_the_board_72e948', 'Installed. Checking the board...'))
             self.pad, self.pad_error = None, ""
-            self.confirming = kind != "pad"
+            if kind == "pad":
+                self.installing = ""
+                self.progress_text.color = t.GREEN
+                self.progress_text.value = tr('boards.installed_plug_the_board_into_the_switch_s_usb_c_port_a_7dda2a', "Installed. Plug the board into the Switch's USB-C port and open Control.")
+            else:
+                self.progress_text.value = tr('boards.installed_checking_the_board_72e948', 'Installed. Checking the board...')
             self.render()
             self.control.update()
             # A native-USB board comes back under a new port name, or as a controller with none.
-            threading.Timer(3.0, lambda: self.app.ui(self._after_install)).start()
+            threading.Timer(3.0, lambda: self.app.ui(
+                lambda: self._after_install(device, kind, serial))).start()
         self.app.ui(done)
 
-    def _after_install(self, waited: float = 0.0) -> None:
+    def _unconfirmed(self) -> None:
+        self.progress_text.color = t.AMBER
+        self.progress_text.value = tr('boards.flash_unconfirmed', 'Installed, but the board did not answer.')
+
+    def _after_install(self, device: str, kind: str, serial: str, waited: int = 0) -> None:
         """Linux and macOS may give a native-USB board a new node after its reset; its USB serial
         number (the MAC) follows it. A first HELLO before the firmware has booted gets no reply."""
         present = board.ports()
-        serial = next((p.serial_number for p in self.ports if p.device == self.selected and p.serial_number), "")
         same = next((p.device for p in present if serial and p.serial_number == serial), "")
-        if not same and self.selected in [p.device for p in present]:
-            same = self.selected
-        if not same and waited < 10:
-            threading.Timer(1.0, lambda: self.app.ui(lambda: self._after_install(waited + 1))).start()
+        if not same and any(p.device == device for p in present):
+            same = device
+        if (not same or self.app.busy) and waited < 10:
+            threading.Timer(1.0, lambda: self.app.ui(
+                lambda: self._after_install(device, kind, serial, waited + 1))).start()
             return
+        self.installing = ""
         self.selected = same
         if same and not self.app.busy:
             self.app.identities.pop(same, None)
+            if kind != "pad":
+                self.confirming = (same, kind)
             self.log.add(f'[app] Checking {same}; the board may restart.')
             self.app.check_board(same, log=self.log.add, attempts=4)
+        elif kind != "pad":
+            self._unconfirmed()
         self.scan()
 
     def _failed(self, why: str) -> None:
