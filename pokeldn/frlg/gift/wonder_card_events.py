@@ -1,12 +1,12 @@
 from pokeldn.frlg.gift.gift_composer import (
+    FRLG_RULES,
+    FlagSet,
     AddVar,
     AllOf,
     CARD_TYPE_LINK_STAT,
     GET_CARD_BATTLES_WON,
     GiveRandomEgg,
     ReadSpecial,
-    SPECIAL_GET_MYSTERY_GIFT_CARD_STAT,
-    VAR_MYSTERY_GIFT_2,
     AnyOf,
     BattleLegendary,
     DeliveryPlan,
@@ -1464,59 +1464,62 @@ GIFT_BATTLE_COUNT = "battle-count-card"
 BATTLE_COUNT_FLAG_ID = 1005
 ITEM_POTION = 13
 BATTLE_COUNT_PRIZE_WINS = 3
-# The prize is gated on its own var, not FLAG_MYSTERY_GIFT_DONE, so the card stays talkable under
-# three wins.
-BATTLE_COUNT_PRIZE_TAKEN = VAR_MYSTERY_GIFT_2
+# The prize is gated on the first card-scoped slot var, not FLAG_MYSTERY_GIFT_DONE, so the card
+# stays talkable under three wins.
 
 # MysteryEventScript_BattleCard [decomp:data/mystery_event_msg.s:162] reads a counter through
 # GetMysteryGiftCardStat. The console arms the counters only in a Union Room card exchange carrying
 # its flag id: frlg_trade_host.py --card-flag-id [docs/frlg_gift.md].
-BATTLE_COUNT_GIFT = WonderGift(
-    slug=GIFT_BATTLE_COUNT,
-    card=WonderCardSpec(
-        icon_species=SPECIES_CLEFAIRY_MEVENT,
-        # IncrementCardStat is a no-op for any other card type [decomp:src/mystery_gift.c:461].
-        card_type=CARD_TYPE_LINK_STAT,
-        title="BATTLE COUNT CARD",
-        subtitle="Your record against holders",
-        body=(
-            "This CARD keeps track of your",
-            "battles against TRAINERS who",
-            "hold the same CARD.",
-            "Win three for a prize!",
+def battle_count_gift(rules=FRLG_RULES):
+    return WonderGift(
+        slug=GIFT_BATTLE_COUNT,
+        card=WonderCardSpec(
+            icon_species=SPECIES_CLEFAIRY_MEVENT,
+            # IncrementCardStat is a no-op for any other card type [decomp:src/mystery_gift.c:461].
+            card_type=CARD_TYPE_LINK_STAT,
+            title="BATTLE COUNT CARD",
+            subtitle="Your record against holders",
+            body=(
+                "This CARD keeps track of your",
+                "battles against TRAINERS who",
+                "hold the same CARD.",
+                "Win three for a prize!",
+            ),
+            footer1="pokeldn",
+            default_flag_id=BATTLE_COUNT_FLAG_ID,
         ),
-        footer1="pokeldn",
-        default_flag_id=BATTLE_COUNT_FLAG_ID,
-    ),
-    intro_message="Thank you for using the MYSTERY\nGIFT System.",
-    event=GiftSpec(repeatable=True),
-    delivery=DeliveryPlan(delivery=(
-        DeliveryStage(
-            # gSpecialVar_Result selects the stat GetMysteryGiftCardStat reads
-            # [decomp:src/field_specials.c:1957].
-            SetVar(VAR_RESULT, GET_CARD_BATTLES_WON),
-            ReadSpecial(VAR_0x8008, SPECIAL_GET_MYSTERY_GIFT_CARD_STAT),
-        ),
-        DeliveryStage(
-            Message(
-                "Congratulations!\n"
-                "You have won a prize for winning\n"
-                "three battles!"),
-            GiveItem(ITEM_POTION),
-            SetVar(BATTLE_COUNT_PRIZE_TAKEN, 1),
-            condition=AllOf((
-                VarEquals(VAR_0x8008, BATTLE_COUNT_PRIZE_WINS),
-                Not(VarEquals(BATTLE_COUNT_PRIZE_TAKEN, 1)),
-            )),
-        ),
-        DeliveryStage(
-            Message(
-                "Look for and battle TRAINERS who\n"
-                "have the same CARD as you."),
-        ),
-    )),
-    completed_message="Look for and battle TRAINERS who\nhave the same CARD as you.",
-)
+        intro_message="Thank you for using the MYSTERY\nGIFT System.",
+        event=GiftSpec(repeatable=True),
+        delivery=DeliveryPlan(delivery=(
+            DeliveryStage(
+                # gSpecialVar_Result selects the stat GetMysteryGiftCardStat reads
+                # [decomp:src/field_specials.c:1957].
+                SetVar(VAR_RESULT, GET_CARD_BATTLES_WON),
+                ReadSpecial(VAR_0x8008, rules.special_card_stat),
+            ),
+            DeliveryStage(
+                Message(
+                    "Congratulations!\n"
+                    "You have won a prize for winning\n"
+                    "three battles!"),
+                GiveItem(ITEM_POTION),
+                SetVar(rules.slot_vars[0], 1),
+                condition=AllOf((
+                    VarEquals(VAR_0x8008, BATTLE_COUNT_PRIZE_WINS),
+                    Not(VarEquals(rules.slot_vars[0], 1)),
+                )),
+            ),
+            DeliveryStage(
+                Message(
+                    "Look for and battle TRAINERS who\n"
+                    "have the same CARD as you."),
+            ),
+        )),
+        completed_message="Look for and battle TRAINERS who\nhave the same CARD as you.",
+    )
+
+
+BATTLE_COUNT_GIFT = battle_count_gift()
 
 
 GIFT_ALTERING_CAVE = "altering-cave"
@@ -1684,7 +1687,10 @@ WISHMKR_JIRACHI_PK3 = bytes.fromhex(
     "10000d00")
 
 
-def build_event_pokemon_gift(pk3=WISHMKR_JIRACHI_PK3, *, name="WISHMKR Jirachi"):
+DEFAULT_EVENT_POKEMON = "WISHMKR Jirachi"
+
+
+def build_event_pokemon_gift(pk3=WISHMKR_JIRACHI_PK3, *, name=DEFAULT_EVENT_POKEMON):
     """A distribution Pokemon as `givepokemon` [decomp:src/mystery_event_script.c:234]: the record
     goes into the party as it is, PID, IVs, OT and ribbons kept. Relative blob offsets, so one
     build serves every cartridge."""
@@ -1720,32 +1726,32 @@ EVENT_POKEMON_GIFT = build_event_pokemon_gift()
 
 
 # GB-Link Team cards with no native code (GB-Link-Switch-LDN `cards/build.mjs`), ported to the composer.
-SPECIAL_ENABLE_NATIONAL_POKEDEX = 367       # counted in data/specials.inc
-SPECIAL_IS_NATIONAL_POKEDEX_ENABLED = 403
-DEX_STATE_VAR = 0x8008
+DEX_STATE_VAR = 0x8008      # EnableNationalPokedex returns nothing; the var only receives r0
 
-NATIONAL_DEX_GIFT = WonderGift(
-    slug="national-dex",
-    card=WonderCardSpec(
-        icon_species=137,
-        title="NATIONAL POKéDEX",
-        subtitle="Every POKéMON, right away",
-        body=("Upgrade your POKéDEX to the", "NATIONAL POKéDEX now. Visit", "the delivery man on the 2nd",
-              "floor of a POKéMON CENTER."),
-        footer1="pokeldn",
-        default_flag_id=1007,
-    ),
-    intro_message=DISTRIBUTION_INTRO,
-    event=GiftSpec(),
-    delivery=DeliveryPlan(delivery=(
-        DeliveryStage(ReadSpecial(DEX_STATE_VAR, SPECIAL_IS_NATIONAL_POKEDEX_ENABLED)),
-        DeliveryStage(Exit(), condition=Not(VarEquals(DEX_STATE_VAR, 0))),
-        # EnableNationalPokedex returns nothing; the var only receives what r0 held.
-        DeliveryStage(ReadSpecial(DEX_STATE_VAR, SPECIAL_ENABLE_NATIONAL_POKEDEX),
-                      Message("Done! Your POKéDEX is now the\nNATIONAL POKéDEX.")),
-    )),
-    completed_message="Your POKéDEX is the\nNATIONAL POKéDEX!",
-)
+def national_dex_gift(rules=FRLG_RULES):
+    return WonderGift(
+        slug="national-dex",
+        card=WonderCardSpec(
+            icon_species=137,
+            title="NATIONAL POKéDEX",
+            subtitle="Every POKéMON, right away",
+            body=("Upgrade your POKéDEX to the", "NATIONAL POKéDEX now. Visit", "the delivery man on the 2nd",
+                  "floor of a POKéMON CENTER."),
+            footer1="pokeldn",
+            default_flag_id=1011,
+        ),
+        intro_message=DISTRIBUTION_INTRO,
+        event=GiftSpec(),
+        delivery=DeliveryPlan(delivery=(
+            DeliveryStage(Exit(), condition=FlagSet(rules.flag_national_dex)),
+            DeliveryStage(ReadSpecial(DEX_STATE_VAR, rules.special_enable_national_dex),
+                          Message("Done! Your POKéDEX is now the\nNATIONAL POKéDEX.")),
+        )),
+        completed_message="Your POKéDEX is the\nNATIONAL POKéDEX!",
+    )
+
+
+NATIONAL_DEX_GIFT = national_dex_gift()
 
 ITEM_LANSAT_BERRY, ITEM_STARF_BERRY, ITEM_ENIGMA_BERRY = 173, 174, 175
 RARE_BERRIES_GIFT = WonderGift(
@@ -1788,6 +1794,47 @@ STARTER_EGG_GIFT = WonderGift(
 )
 
 
+def _box_egg(slug, species, moves, line, flag_id):
+    """A Pokemon Box Ruby & Sapphire bonus egg: internal species, its official moves [PKHeX
+    EncountersWC3]."""
+    return WonderGift(
+        slug=slug,
+        card=WonderCardSpec(icon_species=species, title="POKéMON EGG", subtitle="POKéMON BOX BONUS",
+                            body=line, default_flag_id=flag_id),
+        intro_message=DISTRIBUTION_INTRO,
+        event=GiftSpec(),
+        delivery=DeliveryPlan(delivery=(DeliveryStage(GiveEgg(species, moves=moves, fateful_encounter=True)),)),
+    )
+
+
+BOX_EGG_GIFTS = (
+    _box_egg("box-swablu", 358, (64, 45, 206), ("An EGG of a SWABLU with FALSE SWIPE.",), 1008),
+    _box_egg("box-zigzagoon", 288, (33, 45, 39, 245), ("An EGG of a ZIGZAGOON that knows", "EXTREMESPEED."),
+             1009),
+    _box_egg("box-skitty", 315, (45, 33, 39, 6), ("An EGG of a SKITTY with PAY DAY.",), 1010),
+    _box_egg("surf-pichu", 172, (84, 204, 57), ("An EGG of a PICHU that knows SURF.",), 1006),
+)
+
+ITEM_RARE_CANDY = 68
+RARE_CANDY_GIFT = WonderGift(
+    slug="rare-candy",
+    card=WonderCardSpec(icon_species=25, title="RARE CANDY", body=("Five RARE CANDIES for you.",),
+                        default_flag_id=1005),
+    intro_message=DISTRIBUTION_INTRO,
+    event=GiftSpec(),
+    delivery=DeliveryPlan(delivery=(DeliveryStage(GiveItem(ITEM_RARE_CANDY, 5)),)),
+)
+
+
+def gba_cards(rules=FRLG_RULES):
+    """{slug: definition} of the Wonder Cards FireRed, LeafGreen and Emerald all offer, each to be
+    compiled under `rules`."""
+    return {gift.slug: gift for gift in (
+        MASTER_BALL_GIFT, RARE_CANDY_GIFT, WISH_EGG_GIFT, POKEPARK_EGG_GIFT, PC_JAPAN_EGG_GIFT,
+        STARTER_EGG_GIFT, RARE_BERRIES_GIFT, national_dex_gift(rules), battle_count_gift(rules),
+        *BOX_EGG_GIFTS)}
+
+
 __all__ = [
     "CELEBI_GIFT", "DIR_WEST", "GIFT_MEVENT_PROBE", "GIFT_PORYGON_TMS",
     "GIFT_VISITING_TRAINER",
@@ -1796,9 +1843,10 @@ __all__ = [
     "GIFT_MASTER_BALL", "MASTER_BALL_GIFT", "MASTER_BALL_FLAG_ID",
     "GIFT_ALTERING_CAVE", "ALTERING_CAVE_GIFT", "ALTERING_CAVE_FLAG_ID",
     "WISH_EGG_GIFT", "POKEPARK_EGG_GIFT", "PC_JAPAN_EGG_GIFT", "GIFT_EVENT_POKEMON",
-    "EVENT_POKEMON_GIFT", "NATIONAL_DEX_GIFT", "RARE_BERRIES_GIFT", "STARTER_EGG_GIFT", "STARTERS", "EVENT_POKEMON_FLAG_ID", "build_event_pokemon_gift", "WISH_EGGS", "POKEPARK_EGGS", "PC_JAPAN_EGGS",
+    "EVENT_POKEMON_GIFT", "NATIONAL_DEX_GIFT", "RARE_BERRIES_GIFT", "STARTER_EGG_GIFT", "STARTERS", "EVENT_POKEMON_FLAG_ID", "DEFAULT_EVENT_POKEMON", "build_event_pokemon_gift", "WISH_EGGS", "POKEPARK_EGGS", "PC_JAPAN_EGGS",
     "GIFT_BATTLE_COUNT", "BATTLE_COUNT_GIFT", "BATTLE_COUNT_FLAG_ID",
-    "BATTLE_COUNT_PRIZE_WINS", "BATTLE_COUNT_PRIZE_TAKEN", "ITEM_POTION",
+    "BATTLE_COUNT_PRIZE_WINS", "ITEM_POTION", "battle_count_gift", "national_dex_gift",
+    "BOX_EGG_GIFTS", "RARE_CANDY_GIFT", "ITEM_RARE_CANDY", "gba_cards",
     "VAR_ALTERING_CAVE_WILD_SET", "NUM_ALTERING_CAVE_TABLES", "ALTERING_CAVE_WRAP",
     "GIFT_RNG_SHINY_DITTO", "RNG_SHINY_DITTO_GIFT", "RNG_SHINY_DITTO_FLAG_ID",
     "RNG_DITTO_SEED", "SPECIES_DITTO", "build_rng_shiny_ditto_script",

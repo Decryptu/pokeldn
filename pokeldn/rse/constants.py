@@ -54,7 +54,7 @@ EMERALD_RULES = GameRules(
     "emerald", VAR_GIFT_UNUSED_1, VAR_GIFT_SLOT_VARS, FLAG_MYSTERY_GIFT_DONE,
     FLAG_RECEIVED_AURORA_TICKET, MAX_ITEM, MAX_FLAG, NUM_OBJ_EVENT_GFX - 1,
     SPECIAL_HAS_ALL_HOENN_MONS, SPECIAL_START_LEGENDARY_BATTLE, SPECIAL_GET_MYSTERY_GIFT_CARD_STAT,
-    NUM_SPECIALS - 1)
+    SPECIAL_ENABLE_NATIONAL_POKEDEX, FLAG_SYS_NATIONAL_DEX, NUM_SPECIALS - 1)
 
 # The save [include/global.h, src/save.c]: the flash layout, sector signature 0x08012025 and
 # checksum are FireRed's; the blocks are larger and fields move.
