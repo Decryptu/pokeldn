@@ -279,10 +279,13 @@ def test_a_board_whose_stub_never_starts_is_written_through_its_rom_loader(flash
     assert flasher.connections == ["COM3", "COM3"]
     assert flasher.writes == [("ESP32", flasher.images["ESP32"].read_bytes())]
     assert "--no-stub" in calls[-1] and "--baud" not in calls[-1]
+    assert "--compress" in calls[-1]
     assert calls[-1][calls[-1].index("--after") + 1] == "hard-reset"
 
 
-def test_a_dropped_rom_write_is_tried_again_on_a_fresh_connection(flasher, monkeypatch):
+@pytest.mark.parametrize("error", [esptool.FatalError("No more data to read from the serial port."),
+                                   board.serial.SerialException("could not open COM3: Access is denied")])
+def test_a_dropped_rom_write_is_tried_again_on_a_fresh_connection(flasher, monkeypatch, error):
     """The same board drops about half of its ROM writes within the first few kB; the next one finishes."""
     flasher.chip = Chip("ESP32")
     rom = []
@@ -292,10 +295,11 @@ def test_a_dropped_rom_write_is_tried_again_on_a_fresh_connection(flasher, monke
             raise esptool.FatalError(STUB_SILENT)
         rom.append(args)
         if len(rom) < board.ROM_ATTEMPTS:
-            raise esptool.FatalError("No more data to read from the serial port.")
+            raise error
         flasher.writes.append((esp.CHIP_NAME, Path(args[-1]).read_bytes()))
 
     monkeypatch.setattr(esptool, "main", write)
+    monkeypatch.setattr(board.time, "sleep", lambda seconds: None)
     board.flash("COM3")
     assert len(flasher.connections) == 1 + board.ROM_ATTEMPTS
     assert len(flasher.writes) == 1

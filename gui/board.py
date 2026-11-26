@@ -480,18 +480,22 @@ def flash(port: str, firmware: str = "", kind: str = "radio", from_loader: bool 
     print("[app] The board's flasher stub did not start; writing through its ROM loader instead "
           "(slower).", flush=True)
     for attempt in range(1, ROM_ATTEMPTS + 1):
-        connection = _connect(port, kind, from_loader) if name == "ESP32-S2" else esptool.detect_chip(port)
-        with connection as chip:
-            if chip.CHIP_NAME != name:
-                raise esptool.FatalError(tr('board.merged_firmware_does_not_match_941ee6', 'Merged firmware does not match {value0}: {value1}', value0=chip.CHIP_NAME, value1=path))
-            try:
-                esptool.main(["--no-stub", "--after", after, "write-flash",
+        try:
+            with _connect(port, kind, from_loader) as chip:
+                if chip.CHIP_NAME != name:
+                    break
+                options = ["--compress"] if name == "ESP32" else []
+                esptool.main(["--no-stub", "--after", after, "write-flash", *options,
                               "0x0", os.path.abspath(path)], esp=chip)
                 return
-            except esptool.FatalError as error:
-                if attempt == ROM_ATTEMPTS:
-                    raise
-                print(f"[app] The write stopped ({str(error).splitlines()[0]}); trying again.", flush=True)
+        except (esptool.FatalError, OSError) as error:
+            if attempt == ROM_ATTEMPTS:
+                raise
+            print(f"[app] The write stopped ({str(error).splitlines()[0]}); trying again.", flush=True)
+            time.sleep(1.0)
+    raise esptool.FatalError(tr('board.merged_firmware_does_not_match_941ee6',
+                                'Merged firmware does not match {value0}: {value1}',
+                                value0=chip.CHIP_NAME, value1=path))
 
 
 def main() -> int:

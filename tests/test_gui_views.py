@@ -2182,8 +2182,13 @@ def test_a_failed_trade_run_retries_on_the_offers_it_has_not_traded(tmp_path, mo
     assert panel.retry_at is None and len(runs) == 2
 
 
-@pytest.mark.parametrize("current, shown", [(True, "Installed. Ready to use."), (False, "")])
-def test_the_line_after_an_install_ends_when_the_board_answers(monkeypatch, current, shown):
+@pytest.mark.parametrize("kind, current, shown", [
+    ("radio_ble", True, "Installed. Ready to use."),
+    ("radio_ble", False, "Firmware verified. The board requires a compatible update."),
+    ("radio", True, "Firmware verified, but the board reported a different firmware."),
+    (None, False, "Firmware verified, but the board did not confirm it over USB."),
+])
+def test_the_line_after_an_install_ends_when_the_board_answers(monkeypatch, kind, current, shown):
     from gui.views import boards
     view = object.__new__(boards.BoardView)
     port = SimpleNamespace(device="COM3")
@@ -2192,14 +2197,14 @@ def test_the_line_after_an_install_ends_when_the_board_answers(monkeypatch, curr
                                board_status=lambda ports, key=None: SimpleNamespace(state="checking", detail=""))
     view.ports, view.selected, view.list, view.detail = [port], "COM3", ft.ListView(), ft.Column()
     view.progress_text = SimpleNamespace(value="Installed. Checking the board...")
-    view.confirming = True
+    view.confirming = ("COM3", "radio_ble")
     for card in ("header", "firmware_card", "about_card", "help_card", "line"):
         monkeypatch.setattr(view, card, lambda *a: "", raising=False)
     view.render()
     assert view.progress_text.value == "Installed. Checking the board..."
     monkeypatch.setattr(boards.board, "Identity", SimpleNamespace)
-    identities["COM3"] = SimpleNamespace(kind="radio_e32r40t", firmware_version="1", sta_mac="", gift_kept=False, chip="",
-                                         current=current)
+    identities["COM3"] = (SimpleNamespace(kind=kind, firmware_version="1", sta_mac="", gift_kept=False, chip="",
+                                          current=current) if kind else boards.NO_FIRMWARE)
     view.render()
     assert view.progress_text.value == shown and not view.confirming
 
