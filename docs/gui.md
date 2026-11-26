@@ -181,8 +181,9 @@ console's own link data names its save before our offer goes out:
 | Legends Z-A joiner | the host's identity |
 | Let's Go, BDSP, Legends Arceus, Scarlet/Violet, Legends Z-A hosts | a Pokemon the console offers that its save caught, else the session, as for a [gift made for the receiving player](gift_simulated.md#whose-save-it-is) |
 
-A gender or language the link data lacks comes from the Pokemon the console showed, then from the
-offer's own record (`for_receiver.trainer_from`). A record PKHeX refuses during the trade goes as given,
+A gender the link data lacks comes from the Pokemon the console showed, then from the offer's own
+record (`for_receiver.trainer_from`); a retrain writes no language, so an unreadable language byte
+stops nothing. A record PKHeX refuses during the trade goes as given,
 with a log line and a pop-up (`for_receiver.remake`, `ReceiverGift`). Send it back returns our offer to
 us, so `--trade-back` leaves the marks unused. A retrain takes under 3 ms per record once the PKHeX
 service is up, which every launcher's offer check at launch does, so the launchers run it inside

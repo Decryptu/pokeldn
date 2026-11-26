@@ -115,9 +115,9 @@ def from_session(game, heard, f, given):
     return (trainer, version), notes
 
 
-def trainer_from(game, heard, f, given):
+def trainer_from(game, heard, f, given, needs=("gender", "language")):
     """-> (trainer, [what came from where]): `from_session`'s trainer, its version left out; None when the session
-    names none or a gender or language comes from nowhere."""
+    names none or a field of `needs` comes from nowhere. A retrain needs the gender alone (`remake`)."""
     if not heard or not heard.get("ot"):
         return None
     given = given or {}
@@ -126,6 +126,8 @@ def trainer_from(game, heard, f, given):
     trainer, notes = {"ot": heard["ot"], "tid": heard["tid"], "sid": heard["sid"]}, []
     languages = LANGUAGES | {11} if game == "za" else LANGUAGES     # Z-A adds Latin American Spanish
     for field, valid in (("gender", {0, 1}), ("language", languages)):
+        if field not in needs:
+            continue
         if heard.get(field) in valid:
             trainer[field] = heard[field]
         elif own_ot and f.get(field) in valid:
@@ -309,7 +311,7 @@ def remake(game, records, marked, heard, load, *, shown=None, log=print, notify=
             given = read(body)
         except ValueError:
             given = {}
-        found = trainer_from(game, heard, f, given)
+        found = trainer_from(game, heard, f, given, needs=("gender",))
         try:
             if found is None:
                 raise ValueError("the console's session did not name its trainer")
