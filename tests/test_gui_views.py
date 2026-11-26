@@ -1948,7 +1948,7 @@ def test_the_finder_s_bar_shows_how_far_a_search_is(monkeypatch):
     count.value = "1000"
     assert not bar.visible
     rank = next(c for c in raid_controls(shown[0].content)
-                if isinstance(c, ft.Dropdown) and c.options[0].text == "Lowest overall bulk")
+                if isinstance(c, ft.Dropdown) and c.options and c.options[0].text == "Lowest overall bulk")
     rank.value = "rewards"
     shown[0].actions[-1].on_click(None)
     status = next(c for c in raid_controls(shown[0].content) if isinstance(c, ft.Text)
