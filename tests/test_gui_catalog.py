@@ -29,19 +29,17 @@ def test_the_tool_builds_arguments_its_entry_point_accepts(tool):
             _check(tool, {**base, choice.key: key})
 
 
-@pytest.mark.parametrize("tool", [t for t in TOOLS if any(f.key == "--offer-owner" for f in t.fields)],
-                         ids=lambda t: t.key)
-def test_local_trade_settings_send_the_configured_trainer_ids(tool):
-    from pokeldn.app import introspect
+TRADES = [tool for tool in TOOLS if any(f.kind == "pokemon" and f.queue > 1 and not f.events for f in tool.fields)]
 
-    settings = Settings(ot="Tester", gender=1, switch_tid=123456, switch_sid=789, tid=99, sid=333)
-    game = tool.key.split("-")[0]
+
+@pytest.mark.parametrize("tool", TRADES, ids=[t.key for t in TRADES])
+def test_a_trade_marks_each_offer_the_receiver_owns_by_its_place_in_the_queue(tool):
+    """Every trade tool's launcher takes the card's Original trainer choice (pokeldn.for_receiver): trade 2 of three,
+    the receiver's own, reaches its parser as offer 2."""
     offer = next(f for f in tool.fields if f.kind == "pokemon")
-    values = {offer.key: {"file": "offer.bin"}, "--offer-owner": "settings"}
-    args = introspect.parser_of(tool.script).parse_args(build(tool, values, {}, settings))
-    assert args.offer_owner == "settings"
-    tid, sid = settings.ids(game)
-    assert args.offer_trainer == ["Tester", str(tid), str(sid), "1"]
+    queue = [{"file": "a.bin"}, {"file": "b.bin", "owner": "receiver"}, {"file": "c.bin", "owner": "me"}]
+    args = parser_of(tool.script).parse_args(build(tool, {offer.key: queue}, {}, Settings()))
+    assert args.receiver_owns == [2]
 
 
 LINKED = [tool for tool in TOOLS if tool.key != "swsh-gift"]   # the gift host advertises a card, no player
@@ -322,10 +320,10 @@ def test_the_other_switch_games_simulate_their_mystery_gifts_through_their_trade
     assert (receiver.key, receiver.kind, receiver.default) == ("--for-receiver", "switch", True)
     # Trade back would return the console's own Pokemon in place of the next gift (pokeldn.trade_back).
     assert [f.key for f in gift.fields[2:]] == [f.key for f in host.fields
-                                                if f.kind != "pokemon" and f.key not in ("--trade-back", "--offer-owner")]
+                                                if f.kind != "pokemon" and f.key != "--trade-back"]
     args = build(gift, {offer: {"file": "/tmp/gift.bin", "event": "9028-808-0"}}, {}, Settings(), stamp="fixed")
     assert args.count(offer) == 1 and args[args.index(offer) + 1] == "/tmp/gift.bin"
-    # The host makes a card that names its receiver again for the console's save (pokeldn.receiver_gift).
+    # The host makes a card that names its receiver again for the console's save (pokeldn.for_receiver).
     assert args[args.index("--gift-event") + 1] == "9028-808-0" and "--for-receiver" in args
     assert accepted(gift.script) >= {"--gift-event", "--for-receiver"}
     off = build(gift, {offer: {"file": "/tmp/gift.bin", "event": "9028-808-0"}, "--for-receiver": False}, {},

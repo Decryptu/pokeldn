@@ -6,7 +6,7 @@ what the console sent for that, and so on; the last queued offer serves every la
 launcher's last offer does. A returned record is the console's bytes, unchanged: never under a new PID.
 
 `TradeBack` takes an online partner's place (pokeldn.online.link.Partner) in a native trade host, as
-`pokeldn.receiver_gift.ReceiverGift` does, with each round's record up from the round's start, as a host's
+`pokeldn.for_receiver.ReceiverGift` does, with each round's record up from the round's start, as a host's
 own offer is, and our confirm waiting for the console's alone.
 """
 
@@ -41,12 +41,11 @@ def check(ap, args, offer_flag, *flags):
 
 
 class Rounds:
-    """A seat's offers in send order, optionally interleaved with the console's returned records."""
+    """What each trade of one seat offers, `offers` in the launcher's own send format."""
 
-    def __init__(self, offers, log=print, *, return_each=True):
+    def __init__(self, offers, log=print):
         self.offers = [bytes(o) for o in offers]
         self.log = log
-        self.return_each = return_each
         self.round = 0
         self.back = None            # what the console sent in the last queued round
 
@@ -54,11 +53,11 @@ class Rounds:
     def finished(self):
         """Every queued offer went out and came back: a launcher that stops after its last queued trade
         stops here."""
-        return self.round >= (2 if self.return_each else 1) * len(self.offers)
+        return self.round >= 2 * len(self.offers)
 
     @property
     def returning(self):
-        return self.return_each and self.round % 2 == 1 and self.back is not None
+        return self.round % 2 == 1 and self.back is not None
 
     def current(self):
         """-> this round's record; None when nothing is queued and nothing is owed back."""
@@ -66,13 +65,10 @@ class Rounds:
             return self.back
         if not self.offers:
             return None
-        return self.offers[min(self.round // (2 if self.return_each else 1), len(self.offers) - 1)]
+        return self.offers[min(self.round // 2, len(self.offers) - 1)]
 
     def done(self, received):
         """This round's trade completed with the console sending `received` (None when unknown)."""
-        if not self.return_each:
-            self.round += 1
-            return
         if self.round % 2 == 0:
             self.back = bytes(received) if received is not None else None
             if self.back is None:
@@ -108,17 +104,16 @@ class TradeBack:
     paired = True
     validate = None
 
-    def __init__(self, game, offers, log=print, *, return_each=True):
+    def __init__(self, game, offers, log=print):
         self.game = game
         self.log = log
-        self.rounds = Rounds(offers, log=log, return_each=return_each)
+        self.rounds = Rounds(offers, log=log)
         if not self.rounds.offers:
             raise ValueError("--trade-back needs an offer for the first trade")
         self.lock = threading.Lock()
         self.theirs_now = self._next()
         self.last = None
-        if return_each:
-            log("[trade-back] each trade is followed by one returning the console's Pokemon")
+        log("[trade-back] each trade is followed by one returning the console's Pokemon")
 
     def _next(self):
         up = Offer()
@@ -128,12 +123,6 @@ class TradeBack:
     def theirs(self):
         with self.lock:
             return self.theirs_now
-
-    def replace_offers(self, offers):
-        """Set the queue after reading the receiving save, keeping any pending return intact."""
-        with self.lock:
-            self.rounds.offers = list(offers)
-            self.theirs_now = self._next()
 
     def offer(self, body):
         with self.lock:

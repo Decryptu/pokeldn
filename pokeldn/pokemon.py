@@ -448,7 +448,7 @@ def offer_bytes(game, data):
 def prepare_offer(game, data, *, fresh=False, fields=None, transform=None):
     """-> `data` as a host offers it, through the offer check every offer takes: `transform`, the
     plugins' offer edits, PKHeX's check (`prepare`) and the game's offer form. A Mystery Gift made
-    during the trade takes it too (pokeldn.receiver_gift)."""
+    during the trade takes it too (pokeldn.for_receiver)."""
     data = entity_bytes(game, data)
     if transform is not None:
         data = entity_bytes(game, transform(data))
@@ -471,8 +471,12 @@ def plugin_edits(game, data):
 
 
 def prepare_file(game, path, *, fresh=False, fields=None, transform=None):
-    data = prepare_offer(game, Path(path).expanduser().read_bytes(), fresh=fresh, fields=fields,
-                         transform=transform)
+    return offer_file(game, prepare_offer(game, Path(path).expanduser().read_bytes(), fresh=fresh, fields=fields,
+                                          transform=transform))
+
+
+def offer_file(game, data):
+    """-> a new file in the run's offers folder holding `data`, an offer as a launcher reads its files."""
     folder = SESSION / "offers"
     folder.mkdir(parents=True, exist_ok=True)
     extension = "bin" if game == "za" else EXTENSIONS[game]

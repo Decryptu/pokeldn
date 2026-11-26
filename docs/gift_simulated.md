@@ -105,17 +105,19 @@ a save receiving its own OT clears the handler and PKHeX then refuses it
 ([What a trade rewrites](sv.md#what-a-trade-rewrites)). The app passes each offer as `--gift-event KEY`
 (`command._args`).
 
-At launch the host asks `gift_event` for the card under the probe trainer `receiver_gift.PROBE`,
+At launch the host asks `gift_event` for the card under the probe trainer `for_receiver.PROBE`,
 which tells whether the card names its receiver (`your_ot`) and starts the service. The five hosts
-share `pokeldn.receiver_gift`, whose `ReceiverGift` stands where an online partner would
-([In a launcher](online.md#in-a-launcher)).
+share `pokeldn.for_receiver`, whose `ReceiverGift` stands where an online partner would
+([In a launcher](online.md#in-a-launcher)). The same `ReceiverGift` makes a trade offer the player
+gave the receiver as original trainer ([Original trainer](gui.md#original-trainer)), retraining the
+offer itself where a gift is made again from its card.
 
 ### Whose save it is
 
 The offered Pokemon names the save when the save caught it: original trainer (handler 0), one of the
 game's versions, not an egg. It gives OT name, 16-bit TID and SID, gender, language and version
-(`receiver_gift.own_trainer`), read on a worker thread (`Service.owner`; Scarlet/Violet in Python,
-`receiver_gift.sv_owner`).
+(`for_receiver.own_trainer`), read on a worker thread (`Service.owner`; Scarlet/Violet in Python,
+`for_receiver.sv_owner`).
 
 | game | Your OT cards | the console's offer | versions |
 |---|---|---|---|
@@ -125,7 +127,7 @@ game's versions, not an egg. It gives OT name, 16-bit TID and SID, gender, langu
 | Scarlet/Violet | 9 cards, Mew (1521) and Pikachu (1501) among them | the 348-byte body of `80 00 02 00` ([The record a trade message carries](sv.md#the-record-a-trade-message-carries)) | 50 Scarlet, 51 Violet |
 | Legends Z-A | Charizard (1607), Ralts (1601) | the 354-byte pick | 52 |
 
-Otherwise the console's session names the save before any Pokemon (`receiver_gift.hear`):
+Otherwise the console's session names the save before any Pokemon (`for_receiver.hear`):
 
 | game | the console's message | what it names |
 |---|---|---|
@@ -170,7 +172,7 @@ The trade runs as an online one ([Online](online.md)):
 | Legends Z-A | `za_host.gift_offer` | a 354-byte offer that decrypts; a gift is never sent as a Bad Egg |
 
 A copy PKHeX cannot make or that fails a check goes as the app made it; the log
-(`[gift] could not be made ...`) and a pop-up name the save and the stage (`receiver_gift.maker`):
+(`[gift] could not be made ...`) and a pop-up name the save and the stage (`for_receiver.maker`):
 
 | where | the reason reads |
 |---|---|

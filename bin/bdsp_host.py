@@ -21,11 +21,10 @@ sys.path.insert(0, PROJECT_ROOT)
 import pathlib
 
 from pokeldn.host_support import open_output, write_file
-from pokeldn import trade_owner
 from pokeldn import pokemon as pokemon_service
 from pokeldn.ldn import hold_after_trade_over, left_after_trade
 from pokeldn.online import session as online
-from pokeldn import receiver_gift, trade_back
+from pokeldn import for_receiver, trade_back
 from pokeldn.bdsp import pokemon, room
 from pokeldn.bdsp.host import (APP_VERSION, MAX_PARTICIPANTS, SCENE_UNION_ROOM,
                                SCENE_UNION_ROOM_PASSWORD, Advertisement,
@@ -94,21 +93,19 @@ def build_parser():
                     help="seconds after the player's trade emote before our character approaches (no walk)")
     launcher.add_linux_arguments(ap, host=True)
     online.add_arguments(ap)
-    receiver_gift.add_arguments(ap, "--offer")
+    for_receiver.add_arguments(ap, "--offer")
     trade_back.add_arguments(ap)
-    trade_owner.add_arguments(ap)
     return ap
 
 
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
-    trade_owner.check(ap, args, args.offer, local=not (args.online or args.for_receiver))
     trade_back.check(ap, args, "--offer", "--online", "--for-receiver")
     if args.online and args.offer:
         print("[bh] --online offers the partner's Pokemon; --offer is ignored")
         args.offer = []
-    args.offer = [trade_owner.prepare_file("bdsp", path, args, fresh=args.fresh_pid) for path in args.offer]
+    args.offer = [pokemon_service.prepare_file("bdsp", path, fresh=args.fresh_pid) for path in args.offer]
     if needs_root():
         print("[bh] needs the ESP32 board (POKELDN_RADIO) or root"); return 1
     phy = find_ap_phy(log=print) if args.phy == "auto" else args.phy
@@ -158,15 +155,13 @@ def main(argv=None):
             write_file(f'{prefix}_{n}.pb8', raw)
 
     remote = online.partner("bdsp", args, code=args.password or "", name=tname)
-    # A gift made for the receiving player stands in for an online partner (pokeldn.receiver_gift).
-    receiving = None if remote is not None else receiver_gift.setup("bdsp", args, offers, pokemon.build_from,
+    # A gift made for the receiving player stands in for an online partner (pokeldn.for_receiver).
+    receiving = None if remote is not None else for_receiver.setup("bdsp", args, offers, pokemon.build_from,
                                                                     fresh=args.fresh_pid)
-    if trade_owner.mode(args) == "console":
-        remote = trade_owner.ReceiverTrade("bdsp", offers, pokemon.build_from, return_each=args.trade_back)
-    elif args.trade_back:
+    if args.trade_back:
         remote = trade_back.TradeBack("bdsp", offers)
     elif receiving is not None:
-        remote = receiver_gift.ReceiverGift("bdsp", *receiving, notify=receiver_gift.pop_up())
+        remote = for_receiver.ReceiverGift("bdsp", *receiving, notify=for_receiver.pop_up())
     partner = TradePartner(offers or bytes(0), tname, int(tid), int(sid), complete=args.complete_trade,
                            approach_delay=args.approach_delay, state=args.state,
                            recruiting=args.recruiting, save_theirs=save_theirs,
@@ -205,7 +200,7 @@ def main(argv=None):
         """No queued offer is left for this seat; an online partner's queue is theirs."""
         if isinstance(remote, trade_back.TradeBack):
             return remote.rounds.finished
-        if remote is not None and not isinstance(remote, receiver_gift.ReceiverGift):
+        if remote is not None and not isinstance(remote, for_receiver.ReceiverGift):
             return False
         return partner.trades >= len(offers)
 
@@ -215,9 +210,6 @@ def main(argv=None):
         if session.joiner is not None and not any(p[1] == session.joiner.ip for p in present):
             print(f"[bh] t={now:7.2f} the console left its seat")
             session.leave(now)
-            if isinstance(remote, trade_owner.ReceiverTrade):
-                remote.reset()
-                partner.sent = None
         if left_after_trade(present):
             print(f"[bh] t={now:7.2f} the console left after the trade; closing")
             return False

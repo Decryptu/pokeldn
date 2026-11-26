@@ -210,8 +210,10 @@ def test_a_file_imported_with_the_players_trainer_keeps_its_shine(service, game)
 
 
 @pytest.mark.parametrize("game", FORMATS)
-def test_local_trade_rewrites_and_checks_the_wire_record_for_each_format(service, game):
-    from pokeldn import trade_owner
+def test_an_offer_is_made_the_receivers_own_in_each_wire_form(service, game):
+    """--receiver-owns (pokeldn.for_receiver.remake): each launcher's send form goes through PKHeX's Retrain and
+    back, legal, under the session's trainer; the gender a session lacks comes from the record."""
+    from pokeldn import for_receiver
     from pokeldn.bdsp import pokemon as bdsp
     from pokeldn.frlg.save.mon import Mon
     from pokeldn.lgpe import pb7
@@ -219,26 +221,42 @@ def test_local_trade_rewrites_and_checks_the_wire_record_for_each_format(service
     from pokeldn.sv import trade as sv
     from pokeldn.swsh import pokemon as swsh
 
-    # Each launcher takes the checked record in its own wire form.
     loaders = {"frlg": lambda raw: Mon.from_pk3(raw).party_bytes(),
                "lgpe": lambda raw: raw if pb7.valid(raw) else pb7.encrypt(raw),
                "swsh": lambda raw: swsh.build_from(raw), "bdsp": bdsp.build_from,
                "pla": lambda raw: pla.encrypt(pla.load(raw)), "sv": sv.load_offer, "za": bytes}
-    built = service.make(game, 25, TRAINER)
-    data = Path(built["file"]).read_bytes()
-    trainer = {"ot": "Link", "tid": 53699, "sid": 611, "gender": 1}
-    [result] = trade_owner.rewrite(game, [data], trainer, loaders[game])
-    entity = pokemon.entity_bytes(game, result)
-    checked = service.check_bytes(game, entity)
-    owner = service.owner(game, entity)
-    assert checked["legal"]
-    assert {key: owner[key] for key in trainer} == trainer
-    assert owner["species"] == 25
-    assert Path(built["file"]).read_bytes() == data
+    data = loaders[game](pokemon.offer_bytes(game, Path(service.make(game, 25, TRAINER)["file"]).read_bytes()))
+    heard = {"ot": "Link", "tid": 53699, "sid": 611, "gender": 1, "language": 2}
+    said, popups = [], []
+    kept, made = for_receiver.remake(game, [data, data], {2}, heard, loaders[game], log=said.append,
+                                 notify=lambda *a: popups.append(a))
+    assert kept == data and popups == []
+    owner = service.owner(game, pokemon.entity_bytes(game, made))
+    assert service.check_bytes(game, pokemon.entity_bytes(game, made))["legal"]
+    assert {key: owner[key] for key in ("ot", "tid", "sid", "gender", "species")} == {
+        "ot": "Link", "tid": 53699, "sid": 611, "gender": 1, "species": 25}
+    assert said[-1].startswith("[receiver] offer 2 made Link's own")
+
+
+def test_a_fixed_trainer_event_marked_as_the_receivers_goes_as_given(service):
+    """Melmetal reaches Sword only as an event with its own trainer: PKHeX refuses another, and the offer goes
+    as it is, with the app's pop-up (pokeldn.for_receiver.remake)."""
+    from pokeldn import for_receiver
+    from pokeldn.swsh import pokemon as swsh
+
+    event = swsh.build_from(Path(service.make("swsh", 809, TRAINER)["file"]).read_bytes())
+    popups = []
+    heard = {"ot": "SwordSave", "tid": 65000, "sid": 54321, "gender": 1, "language": 2}
+    assert for_receiver.remake("swsh", [event], {1}, heard, swsh.build_from, log=lambda line: None,
+                           notify=lambda *a: popups.append(a)) == [event]
+    assert popups and popups[0][0] == for_receiver.OWN_TITLE and popups[0][1].startswith(
+        "Offer 1 could not be made the receiving player's own")
 
 
 @pytest.mark.parametrize("version", ["FR", "LG", "R", "S", "E"])
-def test_gba_link_player_is_applied_before_both_roles_send_their_party(service, version):
+def test_the_gba_link_player_makes_the_party_its_own_in_both_roles(service, version):
+    """Leader and Follower remake the marked entry when the console's LinkPlayer arrives, before their party
+    goes out (pokeldn.frlg.link.trade_runtime.console_party); the unmarked entry keeps its trainer."""
     from pokeldn.frlg.link import host_trade, linkplayer, trade
     from pokeldn.frlg.save import mon
 
@@ -246,55 +264,23 @@ def test_gba_link_player_is_applied_before_both_roles_send_their_party(service, 
                 "R": linkplayer.VERSION_RUBY, "S": linkplayer.VERSION_SAPPHIRE,
                 "E": linkplayer.VERSION_EMERALD}
     built = service.make("frlg", 25, TRAINER, version=version)
-    party = [mon.Mon.from_file(built["file"])]
+    party = [mon.Mon.from_file(built["file"]), mon.Mon.from_file(built["file"])]
     lp = linkplayer.LinkPlayer(name="Link", trainer_id=0xBEEF1234, gender=1, version=versions[version])
     packet = linkplayer.build_block(lp).ljust(200, b"\0")
 
-    follower = trade.TradeEngine(party, trade_slot=0, console_owner=True)
+    follower = trade.TradeEngine(party, trade_slot=0, owned=(2,))
     follower._on_host_block(trade.COUNT_PARTY, packet)
-    assert follower._party_blocks[0][:100] == follower.party[0].party_bytes()
+    assert follower._party_blocks == mon.party_blocks(mon.build_player_party(follower.party))
 
-    leader = host_trade.HostTradeEngine(party, console_owner=True)
+    leader = host_trade.HostTradeEngine(party, owned=(2,))
     leader._expected = "link_player"
     leader._after_child_block(trade.COUNT_PARTY, packet)
 
     for engine in (follower, leader):
-        owner = service.owner("frlg", engine.party[0].party_bytes())
-        assert (owner["ot"], owner["tid"], owner["sid"], owner["gender"]) == ("Link", 0x1234, 0xBEEF, 1)
-
-
-def test_sword_console_ot_uses_live_save_ids_for_every_offer(service, capsys):
-    from test_swsh_trade_payload import a_payload
-    from pokeldn import console_trainer, gen8
-    from pokeldn.swsh import pokemon as swsh_pokemon, trade_offer, trade_payload
-
-    snapshot = bytearray(a_payload(count=0, tid=65000, sid=54321, name="SwordSave"))
-    snapshot[trade_payload.MY_STATUS_OFFSET + trade_payload.MY_STATUS_GENDER] = 1
-    offered = [service.make("swsh", species, TRAINER)["file"] for species in (25, 133)]
-    originals = [Path(path).read_bytes() for path in offered]
-
-    queue = trade_offer.console_offers(snapshot, offered)
-
-    message = next(m for line in capsys.readouterr().out.splitlines() if (m := console_trainer.read(line)))
-    assert (message["ot"], message["tid"], message["sid"], message["version"]) == (
-        "SwordSave", 65000, 54321, 44)
-    assert list(queue) == offered
-    for path, original, species in zip(offered, originals, (25, 133)):
-        assert Path(path).read_bytes() == original
-        fields = swsh_pokemon.read(queue[path])
-        assert (fields["species"], fields["ot_name"], fields["trainer_id"], fields["secret_id"],
-                fields["ot_gender"]) == (species, "SwordSave", 65000, 54321, 1)
-        assert service.check_bytes("swsh", gen8.decrypt(queue[path]))["legal"]
-
-
-def test_sword_console_ot_rejects_a_fixed_event_in_the_queue(service):
-    from test_swsh_trade_payload import a_payload
-    from pokeldn.swsh import trade_offer
-
-    event = service.make("swsh", 809, TRAINER)
-    ordinary = service.make("swsh", 25, TRAINER)
-    with pytest.raises(pokemon.BuilderError, match=r"Offer 2 cannot use the console's OT"):
-        trade_offer.console_offers(a_payload(), [ordinary["file"], event["file"]])
+        owners = [service.owner("frlg", m.party_bytes()) for m in engine.party]
+        assert [(o["ot"], o["tid"], o["sid"], o["gender"]) for o in owners] == [
+            (TRAINER["ot"], TRAINER["tid"], TRAINER["sid"], TRAINER["gender"]), ("Link", 0x1234, 0xBEEF, 1)]
+        assert not engine.owned
 
 
 def test_an_event_pokemon_offered_under_a_new_pid_keeps_its_own(service, capsys):
@@ -751,13 +737,13 @@ RECEIVER_GIFTS = {"lgpe": ("2001-151-0", "0002-150-0", "GE", 43), "bdsp": ("9015
 
 @pytest.mark.parametrize("game", RECEIVER_GIFTS)
 def test_a_host_makes_again_only_the_gifts_that_name_their_receiver(service, game):
-    """--for-receiver (pokeldn.receiver_gift): the copy of a card that names its receiver is made again for the
+    """--for-receiver (pokeldn.for_receiver): the copy of a card that names its receiver is made again for the
     console's save on its version, through the checks the host's own offers take (its --fresh-pid, PKHeX's
     offer check, its loader), and PKHeX still finds it legal as the host sends it; one whose card fixes its
     trainer goes as made. The console's offer, in each host's own format, reads back as that save's."""
     import lgpe_host
     import za_host
-    from pokeldn import receiver_gift
+    from pokeldn import for_receiver
     from pokeldn.bdsp import pokemon as bdsp_pokemon
     from pokeldn.pla import pokemon as pla_pokemon
     from pokeldn.sv import trade
@@ -765,18 +751,18 @@ def test_a_host_makes_again_only_the_gifts_that_name_their_receiver(service, gam
             "pla": lambda raw: pokemon.validate("pla", pla_pokemon.encrypt(pla_pokemon.load(raw))),
             "sv": trade.load_offer, "za": za_host.gift_offer}[game]
     yours, fixed, version, number = RECEIVER_GIFTS[game]
-    assert receiver_gift.rounds(game, [yours, fixed], [b"yours", b"fixed"], log=lambda line: None) == [
+    assert for_receiver.rounds(game, [yours, fixed], [b"yours", b"fixed"], log=lambda line: None) == [
         (yours, b"yours"), ("", b"fixed")]
     save = {"ot": "Nemona", "tid": 4660, "sid": 66, "language": 5, "gender": 1}
-    body, what = receiver_gift.maker(game, load, fresh=True)(yours, save, version)
+    body, what = for_receiver.maker(game, load, fresh=True)(yours, save, version)
     assert service.check_bytes(game, body)["legal"]
-    read = receiver_gift.owner_reader(game)
+    read = for_receiver.owner_reader(game)
     f = read(body)
     assert (f["ot"], f["tid"], f["sid"], f["gender"], f["version"], f["egg"]) == ("Nemona", 4660, 66, 1, number, False)
     assert {"handler", "ht_name", "ht_gender", "ht_language"} <= set(f)
     assert " · level " in what
     try:                                    # an empty slot names no one, if it reads at all
-        assert receiver_gift.unknown(game, read(bytes(len(body))))
+        assert for_receiver.unknown(game, read(bytes(len(body))))
     except ValueError:
         pass
 

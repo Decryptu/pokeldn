@@ -4,7 +4,7 @@ import re
 import time
 from functools import cache
 
-from pokeldn import gen9, trade_owner
+from pokeldn import gen9
 from pokeldn.app import events_gallery, gift_builder
 from pokeldn.app.catalog import Field, Tool
 from pokeldn.app.i18n import t as tr
@@ -85,7 +85,9 @@ def offers(value) -> list[dict]:
     return [value] if isinstance(value, dict) else []
 
 
-GIFT_EVENT = "--gift-event"     # pokeldn.receiver_gift
+GIFT_EVENT = "--gift-event"     # pokeldn.for_receiver
+RECEIVER_OWNS = "--receiver-owns"
+RECEIVER = "receiver"           # an offer card's owner: its original trainer becomes the receiving player
 
 
 def locked(field: Field, tool: Tool, values: dict) -> str:
@@ -124,7 +126,10 @@ def _args(field: Field, value, tool: Tool) -> list[str]:
         # Each Mystery Gift Pokemon's card, in the same order, for a copy made for the receiving player.
         gifts = ([a for v in chosen for a in (GIFT_EVENT, v.get("event", ""))]
                  if field.events and GIFT_EVENT in accepted(tool.script) else [])
-        return out + gifts + ([field.count, str(len(files))] if field.count else [])
+        # Each offer whose original trainer is the receiving player, by its place in the queue (pokeldn.for_receiver).
+        owns = ([a for n, v in enumerate(chosen, 1) if v.get("owner") == RECEIVER for a in (RECEIVER_OWNS, str(n))]
+                if RECEIVER_OWNS in accepted(tool.script) else [])
+        return out + gifts + owns + ([field.count, str(len(files))] if field.count else [])
     if field.kind == "rewards":
         return [part for row in (value or ())
                 for part in (flags[0], f"{row.get('item_id', '')}:{row.get('quantity', '')}")]
@@ -211,8 +216,6 @@ def build(tool: Tool, values: dict, extra: dict, settings, stamp: str | None = N
             if field.kind == "builder":     # a backup's file is named after the run
                 items = [item.replace("{stamp}", stamp) for item in items]
             args += [tokens.get(item, item) for item in items]
-    if any(f.key == trade_owner.MODE and value_of(f, values) == "settings" for f in tool.fields):
-        args += [trade_owner.TRAINER, tokens["{ot}"], tokens["{tid}"], tokens["{sid}"], tokens["{gender}"]]
     known = accepted(tool.script)
     if "--keys" in known and "--keys" not in args:
         args += ["--keys", os.path.expanduser(settings.keys)]

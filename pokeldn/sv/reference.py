@@ -49,7 +49,7 @@ def player_name(payload):
 
 
 def identity_trainer(record):
-    """-> the trainer record 1 of a station's identity block names, decompressed, as pokeldn.receiver_gift
+    """-> the trainer record 1 of a station's identity block names, decompressed, as pokeldn.for_receiver
     takes it: id pair, version, gender, language and name; None for any other record."""
     if record[:2] != b"\x01\x00" or len(record) < NAME_OFFSET + NAME_SIZE:
         return None

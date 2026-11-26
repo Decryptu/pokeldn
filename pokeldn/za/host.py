@@ -5,7 +5,7 @@ import time
 import zlib
 from types import SimpleNamespace
 
-from pokeldn import receiver_gift, za
+from pokeldn import for_receiver, za
 from pokeldn.ldn import crypto, host_pia, pia_connect, reliable, show_done
 from pokeldn.app import screen
 from pokeldn.ldn.channel_table import TUPLE, decode_uint, encode_uint
@@ -101,7 +101,7 @@ class HostSession:
         self.selection = bytes(selection)
         # One 354-byte offer, or a list with one per trade; the last serves every later trade. With a
         # partner its pick is ours, and these go unused: a gift made for the receiving player keeps them
-        # to offer when the save names no one (pokeldn.receiver_gift).
+        # to offer when the save names no one (pokeldn.for_receiver).
         self.offers = [] if partner is not None else (
             [bytes(offer)] if isinstance(offer, (bytes, bytearray)) else [bytes(o) for o in offer or ()])
         self.offer = self.preview = None
@@ -356,8 +356,8 @@ class HostSession:
             self.log(f"[za-host] console {head} on {proto}, {len(inner)} bytes, at "
                      f"{self._elapsed(now):.2f}s")
         if head == MSG_IDENTITY:
-            # The console's save, for a gift made for it (pokeldn.receiver_gift).
-            receiver_gift.hear(self.partner, reference.identity_trainer, inner, log=self.log, game="za")
+            # The console's save, for a gift made for it (pokeldn.for_receiver).
+            for_receiver.hear(self.partner, reference.identity_trainer, inner, log=self.log, game="za")
         if proto != streams.PROTO_RELIABLE:
             return
         if head == MSG_OFFER:

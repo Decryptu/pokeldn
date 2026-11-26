@@ -9,12 +9,6 @@ nav_order: 3
 The Sword and Shield Link Trade, from the snapshot exchange to the save. Framing, content registration
 and the PK8 are on [The sync framework](swsh_protocol.md).
 
-In the desktop app, **Original Trainer (OT)** applies to the trade queue in both Host and Join.
-Choose **Keep the Pokémon’s OT**, **Trainer from Settings**, or **Trainer from this console**.
-The console option reads the receiving save's OT, TID and SID from the live trade session before
-sending an offer. PKHeX validates each offer and handles the PID and shininess as the encounter
-allows. When an event requires a fixed OT, choose **Keep the Pokémon’s OT** for that queue.
-
 ## The sequence
 
     1  the console broadcasts its 3456-byte snapshot on protocol 0x84, port 0
@@ -401,8 +395,8 @@ byte 0x52 is read by no accessor ([the BDSP trade page](bdsp_trade.md#duplicate-
 | `--offer-level N` | the level byte at 0x148 |
 | `--offer-experience N` | the experience word at 0x10 |
 | `--offer-ivs` | the six IVs |
-| `--offer-file FILE` | a `.pk8` in any of four shapes (stored or party, encrypted or PKHeX's decrypted export, told apart by the header checksum) |
-| `--offer-owner original/settings/console` | keeps the file's OT by default, or uses the configured trainer or the console's live save |
+| `--offer-file FILE` | a `.pk8` in any of four shapes (stored or party, encrypted or PKHeX's decrypted export, told apart by the header checksum), with its own OT |
+| `--receiver-owns N` | the N-th `--offer-file` goes under the trainer of the console's live snapshot ([Original trainer](gui.md#original-trainer)) |
 | `--save-offer FILE` | writes the built record before the radio is touched |
 
 A French Sword 1.3.2 does not check ability or moves against species, takes the level from the

@@ -26,10 +26,9 @@ if os.path.isdir(BUNDLED_LDN):
 import trio
 from pokeldn.ldn import api as ldn
 from pokeldn.host_support import open_output
-from pokeldn import trade_owner
 from pokeldn import launcher
 from pokeldn import pokemon as pokemon_service
-from pokeldn import trade_back
+from pokeldn import for_receiver, trade_back
 from pokeldn.ldn import pia3, pia4, station9, station4
 from pokeldn.ldn import mesh_protocol as mp
 from pokeldn.ldn import clone, hold_after_trade_over, sync_clock, ldn_mitm
@@ -333,7 +332,7 @@ def build_parser():
     ap.add_argument("--clone-requests", type=int, default=10,
                     help="answered clock requests of our own before the participate (measured 10)")
     trade_back.add_arguments(ap)
-    trade_owner.add_arguments(ap)
+    for_receiver.add_owns_argument(ap)
     return ap
 
 
@@ -359,15 +358,12 @@ def answer(args, state, msg, send):
     console's last offer is its trade's record, returned byte for byte, never under a fresh PID
     (pokeldn.trade_back)."""
     if msg["kind"] == pb7.FIRST_MESSAGE:
-        trainer = trade_owner.read_trainer("lgpe", pb7.first_trainer, msg["body"])
-        if trade_owner.mode(args) == "console" and trainer and not state.get("offer_owner_ready"):
-            args.offers = trade_owner.rewrite_files("lgpe", args.original_offers, trainer)
-            args.offer = args.offers[0]
+        # The console host's save, for the app (pokeldn.console_trainer) and the offers made its own.
+        heard = for_receiver.hear(None, pb7.first_trainer, msg["body"], game="lgpe")
+        if getattr(args, "owned", None):
+            args.offers = for_receiver.remake_files("lgpe", args.offers, args.owned, heard)
+            args.offer, args.owned = args.offers[0], set()
             show_offer(args.offer)
-            setup_trade_back(args)
-            state["offer_owner_ready"] = True
-    elif trade_owner.mode(args) == "console" and not state.get("offer_owner_ready"):
-        return
     rounds = getattr(args, "rounds", None)
     r = state.get("round", 0)
     if rounds is not None and msg["kind"] == pb7.RESULT_MESSAGE + 2 * r and state.get("committed"):
@@ -388,15 +384,14 @@ def answer(args, state, msg, send):
 def main(argv=None):
     ap = build_parser()
     args = ap.parse_args(argv)
-    trade_owner.check(ap, args, args.offer and "echo" not in args.offer, local=not args.scan_only)
     trade_back.check(ap, args, "--offer", "--scan-only")
     if args.trade_back and "echo" in args.offer:
         ap.error("--trade-back needs Pokemon files for --offer")
     args.offers = [path if path == "echo" else
-                   trade_owner.prepare_file("lgpe", path, args, fresh=args.fresh_pid)
+                   pokemon_service.prepare_file("lgpe", path, fresh=args.fresh_pid)
                    for path in args.offer or ()]
-    args.original_offers = tuple(args.offers)
     args.offer = args.offers[0] if args.offers else None
+    args.owned = for_receiver.owns(args) if args.offer and "echo" not in args.offers else set()
     show_offer(args.offer)
     args.fresh_pid = False
     setup_trade_back(args)

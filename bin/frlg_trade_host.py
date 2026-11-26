@@ -16,14 +16,13 @@ BUNDLED_LDN = os.path.join(PROJECT_ROOT, "vendor", "LDN")
 if os.path.isdir(os.path.join(BUNDLED_LDN, "ldn")):
     sys.path.insert(0, BUNDLED_LDN)
 
-from pokeldn import trade_owner
 from pokeldn import pokemon as pokemon_service
 from pokeldn.frlg import config as configmod, host_cli  # noqa: E402
 from pokeldn.frlg.link import trade_runtime  # noqa: E402
 from pokeldn.frlg.link import beacon as beaconmod
 from pokeldn.frlg.link.host_app import HostApplication  # noqa: E402
 from pokeldn.online import session as online  # noqa: E402
-from pokeldn import launcher, trade_back  # noqa: E402
+from pokeldn import launcher, for_receiver, trade_back  # noqa: E402
 from pokeldn.frlg.link import trade as tradeproto  # noqa: E402
 
 
@@ -116,7 +115,7 @@ def build_parser(file_config=None, *, shared_path=None, local_path=None):
     launcher.add_hold_after_trade_argument(parser, host=True)
     online.add_arguments(parser)
     trade_back.add_arguments(parser)
-    trade_owner.add_arguments(parser)
+    for_receiver.add_owns_argument(parser)
     host_cli.add_host_config_arguments(
         parser, shared_path=shared_path, local_path=local_path)
     host_cli.add_host_arguments(
@@ -168,10 +167,17 @@ def build_run_config(parser, args):
             player_ids_repeat_frames=args.player_ids_repeat_frames,
             link_player_idle_frames=args.link_player_idle_frames,
             save_rounds=_save_rounds(args), trust_pia=args.trust_pia,
-            shown_path=args.save_shown)
+            shown_path=args.save_shown, owned=_owned(args))
         return configmod.TradeRunConfig(profile, plan, ldn, options)
     except ValueError as exc:
         parser.error(str(exc))
+
+
+def _owned(args):
+    """--receiver-owns in a trade: a battle, a Union Room chat or an online partner offers none of ours."""
+    if args.online or args.colosseum or args.union_room:
+        return ()
+    return tuple(sorted(for_receiver.owns(args)))
 
 
 def _save_rounds(args):
@@ -191,7 +197,6 @@ def main(argv=None):
     parser = build_parser(
         file_config, shared_path=shared_path, local_path=local_path)
     args = parser.parse_args(argv)
-    trade_owner.check(parser, args, args.party, local=not (args.online or args.union_room or args.colosseum))
     trade_back.check(parser, args, "party", "--online", "--colosseum", "--union-room")
     if args.online:
         # The consoles see each other's parties; ours only fills the trainer card's slot.
@@ -199,7 +204,7 @@ def main(argv=None):
             print("[online] the partner's party is offered; the MON files are ignored")
         args.party, args.slot, args.slots, args.trades = [online_placeholder()], 0, "", 1
     elif args.party and not getattr(args, "print_effective_config", False):
-        args.party = [trade_owner.prepare_file("frlg", p, args) for p in args.party]
+        args.party = [pokemon_service.prepare_file("frlg", p) for p in args.party]
     if args.print_effective_config:
         host_cli.build_host_config(parser, args)
         print(host_cli.format_effective_config(args), end="")

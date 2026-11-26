@@ -3,9 +3,18 @@
 import os
 import time
 
-from pokeldn import console_trainer, trade_owner
+from pokeldn import console_trainer, for_receiver
 from pokeldn.app import screen
 from pokeldn.frlg.save import mon as monmod
+
+
+def console_party(party, lp, owned, log=print):
+    """-> `party` with each entry `owned` marks (1-based, file order) made the save's own that the console's
+    LinkPlayer `lp` names; None for a LinkPlayer not yet seen (pokeldn.for_receiver.remake)."""
+    heard = console_trainer.link_player_fields(lp) if lp is not None else None
+    records = [mon.party_bytes() for mon in party]
+    made = for_receiver.remake("frlg", records, set(owned), heard, bytes, log=log)
+    return [mon if new == old else monmod.Mon.from_pk3(new) for mon, old, new in zip(party, records, made)]
 
 
 class ConsoleLog:
@@ -51,11 +60,6 @@ def load_party(paths, log=lambda *parts: None):
     for index, pokemon in enumerate(party):
         log(f"  party slot {index}: {pokemon.describe()}")
     return party
-
-
-def console_party(party, lp):
-    trainer = console_trainer.link_player_fields(lp)
-    return trade_owner.rewrite("frlg", [mon.party_bytes() for mon in party], trainer, monmod.Mon.from_pk3)
 
 
 def show_offer(engine):
