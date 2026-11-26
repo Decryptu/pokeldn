@@ -1,11 +1,12 @@
-# pokeldn 0.66.12
+# pokeldn 0.67.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- When the radio is set to USB Wi-Fi (ldnrs) and its program is not running, the session panel says so before Start and offers Use the board in one click; a run that still hits it ends on a plain sentence instead of an unexpected error.
+- Each Pokemon in a trade queue has an Original trainer choice: its own, you, or the receiver. The receiver makes it the console player's own Pokemon during the trade, in every game and both roles; a Pokemon whose trainer is fixed, such as an event, goes as it is with a pop-up. Thanks to gfaraujosousa.
+- Sword/Shield trades fill Find mine with the console's trainer in both roles.
 
 The radio firmware stays at 1.12.0; the controller firmware stays at 1.3.0.
 
