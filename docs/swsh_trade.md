@@ -395,8 +395,8 @@ byte 0x52 is read by no accessor ([the BDSP trade page](bdsp_trade.md#duplicate-
 | `--offer-level N` | the level byte at 0x148 |
 | `--offer-experience N` | the experience word at 0x10 |
 | `--offer-ivs` | the six IVs |
-| `--offer-file FILE` | a `.pk8` in any of four shapes (stored or party, encrypted or PKHeX's decrypted export, told apart by the header checksum); OT name and ids moved to the snapshot's trainer |
-| `--offer-file-as-is` | keeps the file's OT |
+| `--offer-file FILE` | a `.pk8` in any of four shapes (stored or party, encrypted or PKHeX's decrypted export, told apart by the header checksum), with its own OT |
+| `--receiver-owns N` | the N-th `--offer-file` goes under the trainer of the console's live snapshot ([Original trainer](gui.md#original-trainer)) |
 | `--save-offer FILE` | writes the built record before the radio is touched |
 
 A French Sword 1.3.2 does not check ability or moves against species, takes the level from the

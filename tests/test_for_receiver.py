@@ -1,10 +1,10 @@
-"""A Mystery Gift Pokemon made for the receiving player (pokeldn.receiver_gift, docs/gift_simulated.md)."""
+"""A Mystery Gift Pokemon made for the receiving player (pokeldn.for_receiver, docs/gift_simulated.md)."""
 
 from types import SimpleNamespace
 
 import pytest
 
-from pokeldn import gen9, receiver_gift
+from pokeldn import for_receiver, gen9
 from pokeldn.sv import trade
 
 SAVE = {"ot": "Nemona", "tid": 0x1234, "sid": 0x0042, "language": 5, "gender": 1}
@@ -44,7 +44,7 @@ def builds(monkeypatch):
         def start(self):
             pending.append(self.call)
 
-    monkeypatch.setattr(receiver_gift.threading, "Thread", Thread)
+    monkeypatch.setattr(for_receiver.threading, "Thread", Thread)
 
     def run():
         while pending:
@@ -57,10 +57,10 @@ def gift_for(game, rounds, made, read=None, make=None, said=None, copy=MADE):
     are `gift.popups`."""
     popups = []
 
-    def maker(key, trainer, version):
+    def maker(key, trainer, version, body=b""):
         made.append((key, trainer, version))
         return copy, "the made copy"
-    gift = receiver_gift.ReceiverGift(game, rounds, make or maker, read=read,
+    gift = for_receiver.ReceiverGift(game, rounds, make or maker, read=read,
                                       log=(said.append if said is not None else lambda line: None),
                                       notify=lambda title="", text="": popups.append((title, text)))
     gift.popups = popups
@@ -71,45 +71,51 @@ def gift_for(game, rounds, made, read=None, make=None, said=None, copy=MADE):
                                                  ("bdsp", 49, "SP"), ("pla", 47, "PLA"), ("sv", 50, "SL"),
                                                  ("sv", 51, "VL"), ("za", 52, "ZA")])
 def test_a_pokemon_the_save_caught_names_its_trainer_and_version(game, version, name):
-    assert receiver_gift.own_trainer(game, owner(version)) == (SAVE, name)
-    assert receiver_gift.NAMES[name]
+    assert for_receiver.own_trainer(game, owner(version)) == (SAVE, name)
+    assert for_receiver.NAMES[name]
 
 
 @pytest.mark.parametrize("game, version", [("lgpe", 50), ("bdsp", 47), ("pla", 52), ("sv", 44), ("za", 50)])
 def test_a_pokemon_from_another_game_names_no_one(game, version):
-    assert receiver_gift.unknown(game, owner(version)) == "it came from another game"
-    assert receiver_gift.own_trainer(game, owner(version)) is None
+    assert for_receiver.unknown(game, owner(version)) == "it came from another game"
+    assert for_receiver.own_trainer(game, owner(version)) is None
 
 
 def test_a_scarlet_violet_offer_is_read_here():
-    assert receiver_gift.own_trainer("sv", receiver_gift.sv_owner(CAUGHT)) == (SAVE, "SL")
-    assert receiver_gift.own_trainer("sv", receiver_gift.sv_owner(record(version=gen9.VERSION_VIOLET)))[1] == "VL"
-    assert receiver_gift.shown_id(SAVE) == f"{(0x42 << 16 | 0x1234) % 1_000_000:06d}"
+    assert for_receiver.own_trainer("sv", for_receiver.sv_owner(CAUGHT)) == (SAVE, "SL")
+    assert for_receiver.own_trainer("sv", for_receiver.sv_owner(record(version=gen9.VERSION_VIOLET)))[1] == "VL"
+    assert for_receiver.shown_id(SAVE) == f"{(0x42 << 16 | 0x1234) % 1_000_000:06d}"
     with pytest.raises(ValueError):
-        receiver_gift.sv_owner(b"\x00" * 348)
+        for_receiver.sv_owner(b"\x00" * 348)
 
 
 @pytest.mark.parametrize("body, why", [
     (TRADED, "it came from another trainer, Arven"), (record(version=44), "it came from another game"),
     (record(is_egg=1), "it is an egg"), (record(ot_name=""), "it names no trainer"), (CAUGHT, "")])
 def test_a_pokemon_that_names_no_one_says_why(body, why):
-    f = receiver_gift.sv_owner(body)
-    assert receiver_gift.unknown("sv", f) == why
-    assert (receiver_gift.own_trainer("sv", f) is None) == bool(why)
+    f = for_receiver.sv_owner(body)
+    assert for_receiver.unknown("sv", f) == why
+    assert (for_receiver.own_trainer("sv", f) is None) == bool(why)
 
 
 def test_only_a_host_made_for_the_receiver_with_a_card_that_names_them_stands_in(monkeypatch):
     asked = []
-    monkeypatch.setattr(receiver_gift, "rounds", lambda game, keys, offers, log: [
-        (key if key.startswith("15") else "", body) for key, body in zip(keys, offers)])
-    monkeypatch.setattr(receiver_gift, "maker", lambda game, load, **check: asked.append((game, load, check)) or "make")
+    real = for_receiver.rounds
+    monkeypatch.setattr(for_receiver, "rounds", lambda game, keys, offers, log, marked: [
+        (key if key.startswith("15") else "", body) for key, body in zip(keys, offers)] if keys else
+        real(game, keys, offers, log, marked))
+    monkeypatch.setattr(for_receiver, "maker", lambda game, load, **check: asked.append((game, load, check)) or "make")
 
-    def setup(keys, on=True):
-        args = SimpleNamespace(for_receiver=on, gift_event=keys)
-        return receiver_gift.setup("lgpe", args, [PREVIEW] * len(keys), bytes, log=lambda line: None, fresh=True)
+    def setup(keys, on=True, owns=(), back=False, count=0):
+        args = SimpleNamespace(for_receiver=on, gift_event=keys, receiver_owns=list(owns), trade_back=back)
+        return for_receiver.setup("lgpe", args, [PREVIEW] * (count or len(keys)), bytes, log=lambda line: None,
+                              fresh=True)
     assert setup(["1501-808-0"]) == ([("1501-808-0", PREVIEW)], "make") and asked == [("lgpe", bytes, {"fresh": True})]
     assert setup(["0002-150-0"]) is None
     assert setup(["1501-808-0"], on=False) is None
+    # A trade's offers marked as the receiver's own (--receiver-owns), counted from 1; Send it back keeps ours.
+    assert setup([], on=False, owns=[2], count=3) == ([("", PREVIEW), (for_receiver.OWN, PREVIEW), ("", PREVIEW)], "make")
+    assert setup([], on=False, owns=[2], count=3, back=True) is None
 
 
 def test_a_copy_made_during_the_trade_takes_the_checks_the_host_offers_took(monkeypatch):
@@ -126,7 +132,7 @@ def test_a_copy_made_during_the_trade_takes_the_checks_the_host_offers_took(monk
 
     def edit(raw):
         return raw
-    make = receiver_gift.maker("sv", lambda raw: asked.append(raw) or b"sent", fresh=True, transform=edit)
+    make = for_receiver.maker("sv", lambda raw: asked.append(raw) or b"sent", fresh=True, transform=edit)
     assert make("1501-25-0-2", SAVE, "SL") == (b"sent", "Pikachu · level 5")
     assert asked == [("sv", "1501-25-0-2", SAVE, "SL", False), ("sv", b"made", {"fresh": True, "transform": edit}),
                      b"checked"]
@@ -219,10 +225,10 @@ def test_a_pokemon_that_names_no_one_gets_the_gift_under_the_trainer_from_settin
     builds()
     assert our_offers(ticked(stage)) == [given(808)] and made == []
     why = "it came from another trainer, Arven"
-    assert said == [receiver_gift.unnamed(receiver_gift.sv_owner(TRADED), why)]
+    assert said == [for_receiver.unnamed(for_receiver.sv_owner(TRADED), why)]
     assert said[0] == (f"[gift] the console's Pokemon [species 906] cannot name the save: {why}, so the gift goes "
                        "with your trainer from Settings")
-    assert gift.popups == [(receiver_gift.FALLBACK_TITLE, receiver_gift.unnamed_text(why))]
+    assert gift.popups == [(for_receiver.FALLBACK_TITLE, for_receiver.unnamed_text(why))]
     traded(stage, send)
     builds()
     assert made == []                                # the save is still unknown
@@ -242,7 +248,7 @@ def test_the_gift_is_made_for_the_save_when_it_offers_a_pokemon_it_caught(builds
     assert send(trade.KIND_OFFER, CAUGHT) == []
     assert ticked(stage) == [] and said == []        # nothing goes up while it is read and the copy made
     builds()
-    assert said[0] == f"[gift] making the gift for Nemona, ID {receiver_gift.shown_id(SAVE)}, Scarlet"
+    assert said[0] == f"[gift] making the gift for Nemona, ID {for_receiver.shown_id(SAVE)}, Scarlet"
     assert made == [("1501-25-0-2", SAVE, "SL")] and said[-1] == "[gift] made for Nemona: the made copy"
     assert our_offers(ticked(stage)) == [MADE] and ticked(stage) == []
     assert confirms(ticked(stage)) == []             # ours waits for the console's confirm
@@ -260,7 +266,7 @@ def test_six_mixed_gifts_trade_in_order_and_a_withdrawn_offer_keeps_its_round(bu
               ("", fixed), ("charizard", PREVIEW)]
     made = []
 
-    def make(key, trainer, version):
+    def make(key, trainer, version, body=b""):
         made.append((key, trainer, version))
         return copies[key], key
     stage, gift, _, _, send = sv_host(rounds, make=make)
@@ -296,7 +302,7 @@ def test_a_gift_the_save_cannot_receive_goes_under_the_trainer_from_settings(bui
     """The pop-up names the save and says why its copy was not made (`maker`)."""
     why = "the save cannot have received the card: card 1540 gave it to Violet alone, never to Scarlet"
 
-    def refuse(key, trainer, version):
+    def refuse(key, trainer, version, body=b""):
         raise ValueError(why)
     stage, gift, made, said, send = sv_host([("1540-1007-0-1", PREVIEW)], make=refuse)
     send(trade.KIND_OFFER, CAUGHT)
@@ -304,9 +310,39 @@ def test_a_gift_the_save_cannot_receive_goes_under_the_trainer_from_settings(bui
     builds()
     assert our_offers(ticked(stage)) == [PREVIEW]
     assert said[-1] == f"[gift] could not be made for Nemona, so it goes with your trainer from Settings: {why}"
-    assert gift.popups == [(receiver_gift.FALLBACK_TITLE, f"The gift could not be made for Nemona, ID "
-                                                          f"{receiver_gift.shown_id(SAVE)}, on Scarlet: {why}. It goes "
+    assert gift.popups == [(for_receiver.FALLBACK_TITLE, f"The gift could not be made for Nemona, ID "
+                                                          f"{for_receiver.shown_id(SAVE)}, on Scarlet: {why}. It goes "
                                                           "with the trainer from Settings instead.")]
+
+
+def test_a_trade_offer_marked_as_the_receivers_goes_up_made_for_the_save_that_caught_its_offer(builds):
+    """--receiver-owns on a host: the round waits for the console's offer like a gift's, then goes up retrained
+    for the save it names (`maker`'s OWN branch gets the round's own record)."""
+    bodies = []
+
+    def make(key, trainer, version, body=b""):
+        bodies.append((key, trainer, version, body))
+        return MADE, f"{trainer['ot']}'s own"
+    stage, gift, made, said, send = sv_host([(for_receiver.OWN, PREVIEW)], make=make)
+    send(trade.KIND_OFFER, CAUGHT)
+    assert ticked(stage) == []                       # while it is made
+    builds()
+    assert our_offers(ticked(stage)) == [MADE] and bodies == [(for_receiver.OWN, SAVE, "SL", PREVIEW)]
+    assert said[-2:] == [f"[receiver] making the offers for Nemona, ID {for_receiver.shown_id(SAVE)}, Scarlet",
+                         "[receiver] made for Nemona: Nemona's own"]
+
+
+def test_a_trade_offer_that_cannot_take_the_receiver_goes_as_given(builds):
+    why = "it is legal only with its own trainer"
+
+    def refuse(key, trainer, version, body=b""):
+        raise ValueError(why)
+    stage, gift, made, said, send = sv_host([(for_receiver.OWN, PREVIEW)], make=refuse)
+    send(trade.KIND_OFFER, CAUGHT)
+    builds()
+    assert our_offers(ticked(stage)) == [PREVIEW]
+    text = for_receiver.own_text("Offer 1", f"for Nemona, {why}")
+    assert said[-1] == f"[receiver] {text}" and gift.popups == [(for_receiver.OWN_TITLE, text)]
 
 
 @pytest.mark.parametrize("stage, why", [
@@ -333,7 +369,7 @@ def test_a_copy_not_made_for_the_save_says_where_it_stopped(monkeypatch, stage, 
         return raw
     monkeypatch.setattr(pokemon, "prepare_offer", check)
     with pytest.raises(ValueError) as caught:
-        receiver_gift.maker("lgpe", load)("1502-809-0", SAVE, "GE")
+        for_receiver.maker("lgpe", load)("1502-809-0", SAVE, "GE")
     assert str(caught.value) == why
 
 
@@ -440,7 +476,7 @@ def test_a_za_host_previews_and_picks_the_gift_for_the_console(builds, caught):
     assert [m[-1] for m in shown] == [1, 0] and shown[1] == (copy if caught else given_)
 
 
-# The console's own session data names its save when its Pokemon cannot (receiver_gift.hear).
+# The console's own session data names its save when its Pokemon cannot (for_receiver.hear).
 
 HEARD = {"ot": "Florian", "tid": 0x0BAD, "sid": 0x0F00, "version": 51, "gender": 0, "language": 2}
 FLORIAN = {"ot": "Florian", "tid": 0x0BAD, "sid": 0x0F00, "gender": 0, "language": 2}
@@ -448,29 +484,29 @@ FLORIAN = {"ot": "Florian", "tid": 0x0BAD, "sid": 0x0F00, "gender": 0, "language
 
 def test_the_session_names_the_save_with_what_it_carries():
     settings = owner(50)
-    assert receiver_gift.from_session("sv", HEARD, receiver_gift.sv_owner(TRADED), settings) == ((FLORIAN, "VL"), [])
-    assert receiver_gift.from_session("sv", None, None, settings) is None
-    assert receiver_gift.from_session("sv", {**HEARD, "ot": ""}, None, settings) is None
+    assert for_receiver.from_session("sv", HEARD, for_receiver.sv_owner(TRADED), settings) == ((FLORIAN, "VL"), [])
+    assert for_receiver.from_session("sv", None, None, settings) is None
+    assert for_receiver.from_session("sv", {**HEARD, "ot": ""}, None, settings) is None
 
 
 def test_what_the_session_lacks_comes_from_the_handler_when_it_is_this_save_and_from_settings_otherwise():
     settings = owner(49)                                   # Nemona's gender 1 and language 5
     bdsp = {"ot": "Florian", "tid": 0x0BAD, "sid": 0x0F00, "version": 48, "language": 2}
     handled = owner(48, ot="Arven", handler=1, ht_name="Florian", ht_gender=0, ht_language=3)
-    assert receiver_gift.from_session("bdsp", bdsp, handled, settings) == (
+    assert for_receiver.from_session("bdsp", bdsp, handled, settings) == (
         (FLORIAN, "BD"), ["gender from the Pokemon's handler"])
     for other in (owner(48, ot="Arven", handler=1, ht_name="Penny", ht_gender=0), owner(48, handler=0), None):
-        assert receiver_gift.from_session("bdsp", bdsp, other, settings) == (
+        assert for_receiver.from_session("bdsp", bdsp, other, settings) == (
             ({**FLORIAN, "gender": 1}, "BD"), ["gender from Settings"])
     # A value the game cannot hold is no value.
-    assert receiver_gift.from_session("lgpe", {**HEARD, "version": 7, "language": 6}, None, owner(43)) == (
+    assert for_receiver.from_session("lgpe", {**HEARD, "version": 7, "language": 6}, None, owner(43)) == (
         ({**FLORIAN, "language": 5}, "GE"), ["language from Settings", "version from Settings"])
     # Latin American Spanish (11) is a Z-A save's language only.
     latam = {**FLORIAN, "language": 11}
-    assert receiver_gift.from_session("za", latam, None, settings) == ((latam, "ZA"), [])
-    assert receiver_gift.from_session("sv", {**HEARD, "language": 11}, None, settings) == (
+    assert for_receiver.from_session("za", latam, None, settings) == ((latam, "ZA"), [])
+    assert for_receiver.from_session("sv", {**HEARD, "language": 11}, None, settings) == (
         ({**FLORIAN, "language": 5}, "VL"), ["language from Settings"])
-    assert receiver_gift.from_session("bdsp", bdsp, None, {}) is None
+    assert for_receiver.from_session("bdsp", bdsp, None, {}) is None
 
 
 BRED = owner(48, egg=True, ot="Florian", tid=0x0BAD, sid=0x0F00, gender=0, language=2)
@@ -481,11 +517,11 @@ def test_what_the_session_lacks_comes_from_an_egg_the_save_bred():
     session's, its OT gender is the save's. A received egg has a handler (docs/bdsp_trade.md)."""
     settings = owner(49)                                   # Nemona's gender 1 and language 5
     bdsp = {"ot": "Florian", "tid": 0x0BAD, "sid": 0x0F00, "version": 48, "language": 2}
-    assert receiver_gift.unknown("bdsp", BRED) == "it is an egg"
-    assert receiver_gift.from_session("bdsp", bdsp, BRED, settings) == (
+    assert for_receiver.unknown("bdsp", BRED) == "it is an egg"
+    assert for_receiver.from_session("bdsp", bdsp, BRED, settings) == (
         (FLORIAN, "BD"), ["gender from the Pokemon's original trainer"])
     for other in ({**BRED, "ot": "Arven"}, {**BRED, "sid": 0x0F01}, {**BRED, "handler": 1}):
-        assert receiver_gift.from_session("bdsp", bdsp, other, settings) == (
+        assert for_receiver.from_session("bdsp", bdsp, other, settings) == (
             ({**FLORIAN, "gender": 1}, "BD"), ["gender from Settings"])
 
 
@@ -508,7 +544,7 @@ def test_a_pokemon_that_names_no_one_has_the_gift_made_for_the_save_the_session_
     send(trade.KIND_OFFER, TRADED)
     builds()
     assert made == [("1501-25-0-2", FLORIAN, "VL")] and our_offers(ticked(stage)) == [MADE]
-    shown = receiver_gift.shown_id(FLORIAN)
+    shown = for_receiver.shown_id(FLORIAN)
     assert said == [f"[gift] the session names the console's trainer Florian, ID {shown}",
                     "[gift] the console's Pokemon [species 906] cannot name the save: it came from another trainer, "
                     "Arven; the session does",
@@ -548,16 +584,16 @@ def test_a_pokemon_the_save_caught_outranks_the_session(builds, made_yet):
     builds()
     assert made == [("1501-25-0-2", FLORIAN, "VL"), ("1502-25-0-2", FLORIAN, "VL"), ("1502-25-0-2", SAVE, "SL")]
     assert our_offers(ticked(stage)) == [MADE] and gift.named_by == "pokemon"
-    assert said[-2:] == [f"[gift] making the gift for Nemona, ID {receiver_gift.shown_id(SAVE)}, Scarlet",
+    assert said[-2:] == [f"[gift] making the gift for Nemona, ID {for_receiver.shown_id(SAVE)}, Scarlet",
                          "[gift] made for Nemona: the made copy"]
 
 
 def test_a_session_that_does_not_read_is_passed_over():
     said, heard = [], []
     partner = SimpleNamespace(hear=heard.append)
-    receiver_gift.hear(partner, lambda body: {"ot": "Florian", "tid": 1, "sid": 2}, b"x", log=said.append)
-    receiver_gift.hear(partner, lambda body: [][1], b"x", log=said.append)
-    receiver_gift.hear(object(), lambda body: 1 / 0, b"x", log=said.append)     # an online partner hears none
+    for_receiver.hear(partner, lambda body: {"ot": "Florian", "tid": 1, "sid": 2}, b"x", log=said.append)
+    for_receiver.hear(partner, lambda body: [][1], b"x", log=said.append)
+    for_receiver.hear(object(), lambda body: 1 / 0, b"x", log=said.append)     # an online partner hears none
     assert heard == [{"ot": "Florian", "tid": 1, "sid": 2}]
     assert said == ["[gift] the session's trainer does not read: list index out of range"]
 
@@ -644,15 +680,15 @@ def test_a_za_identity_names_the_save_and_its_host_passes_it_on():
 
 
 def test_a_host_s_pop_up_is_one_warning_per_console_a_newer_reason_replacing_it(monkeypatch):
-    """receiver_gift.pop_up: the run's pop-up (pokeldn.popup) under the console's own id."""
+    """for_receiver.pop_up: the run's pop-up (pokeldn.popup) under the console's own id."""
     from pokeldn import popup
     sent = []
     monkeypatch.setattr(popup, "_live", {})
     monkeypatch.setattr(popup, "_sink", sent.append)
-    tell = receiver_gift.pop_up("gift-169.254.1.2")
-    tell(receiver_gift.FALLBACK_TITLE, "The save names no one.")
-    tell(receiver_gift.FALLBACK_TITLE, "PKHeX refused the card.")
-    receiver_gift.pop_up("gift-169.254.1.3")(receiver_gift.FALLBACK_TITLE, "The save names no one.")
+    tell = for_receiver.pop_up("gift-169.254.1.2")
+    tell(for_receiver.FALLBACK_TITLE, "The save names no one.")
+    tell(for_receiver.FALLBACK_TITLE, "PKHeX refused the card.")
+    for_receiver.pop_up("gift-169.254.1.3")(for_receiver.FALLBACK_TITLE, "The save names no one.")
     assert [(m["id"], m["kind"], m["tone"], m["text"]) for m in sent] == [
         ("gift-169.254.1.2", "ack", "warning", "The save names no one."),
         ("gift-169.254.1.2", "ack", "warning", "PKHeX refused the card."),

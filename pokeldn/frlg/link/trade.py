@@ -3,7 +3,7 @@ blocks and reacts to SET_MONS -> START -> CONFIRM_FINISH; it never emits Leader 
 [trade.c:1637-1666]. By REQ size: 200 LinkPlayerBlock then party, 100 card, 220 mail, 40 ribbons."""
 
 from pokeldn import console_trainer
-from pokeldn.frlg.link import linkplayer
+from pokeldn.frlg.link import linkplayer, trade_runtime
 from pokeldn.frlg.save import mon as monmod
 from pokeldn.gba import barrier as barriermod, block, rfu
 
@@ -244,11 +244,12 @@ class EntryPhase:
 class TradeEngine:
     def __init__(self, party, trade_slot=1, link_player=None,
                  anim_delay=None, mpid=1, decline=False, refuse_partner_deoxys_mew=False,
-                 trades=1, offered_slots=None, trust_pia=False, log=lambda *a: None):
+                 trades=1, offered_slots=None, trust_pia=False, log=lambda *a: None, owned=()):
         """mpid must be 1 (the Follower, right seat). Each round replays exchange -> select ->
         confirm -> anim -> commit; after the last, cancel-to-leave."""
         assert mpid == 1, f"sim must be the RIGHT-seat Follower (mpId==1), got mpId={mpid}"
         self.party = list(party)
+        self.owned = set(owned)     # made the host's save's own once its LinkPlayer names it
         self.on_party = None    # called with the host's 600-byte party once it has all arrived
         self.trade_slot = trade_slot
         self.mpid = mpid
@@ -568,6 +569,12 @@ class TradeEngine:
         self.log(f"REQ type={reqtype} size={size} -> send {len(buf)}B")
         self._begin_send(buf)
 
+    def _own_party(self, lp):
+        """The party with its marked entries made the host's save's own (trade_runtime.console_party)."""
+        self.party, self.owned = trade_runtime.console_party(self.party, lp, self.owned, self.info), set()
+        self._party600 = monmod.build_player_party(self.party)
+        self._party_blocks = monmod.party_blocks(self._party600)
+
     def _block_for_size(self, reqtype, size):
         if reqtype == BLOCK_REQ_SIZE_100:
             self.entry.on_card_req()
@@ -584,6 +591,8 @@ class TradeEngine:
             if self.round == 0 and not self._lp_sent:
                 self._lp_sent = True
                 return linkplayer.build_block(self.lp).ljust(200, b"\x00")
+            if self.owned:      # the party goes now: as given when the host's LinkPlayer came too late
+                self._own_party(self.host_link_player)
             i = self._party_sent
             self._party_sent += 1
             return self._party_blocks[i] if i < len(self._party_blocks) else b"\x00" * 200
@@ -615,6 +624,8 @@ class TradeEngine:
                 if self.host_link_player is None:
                     self.host_link_player = lp
                     console_trainer.from_link_player("frlg", lp)
+                    if self.owned:
+                        self._own_party(lp)
                     self.log(f"host LinkPlayer: {lp.name} v0x{lp.version:04x}")
                     self.info("Exchanged player info with the host.")
             elif self._host_party_blocks < 3:

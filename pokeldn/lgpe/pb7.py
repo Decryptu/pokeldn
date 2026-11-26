@@ -124,7 +124,7 @@ def trainer_name(body):
 
 
 def first_trainer(body):
-    """-> the trainer a first message's body names, as pokeldn.receiver_gift takes it: the save's MyStatus
+    """-> the trainer a first message's body names, as pokeldn.for_receiver takes it: the save's MyStatus
     block gives its id pair, version, gender, language and name (docs/lgpe_session.md, Kind 1)."""
     if len(body) < TRAINER_NAME + NAME_SIZE:
         raise ValueError(f"a first message is at least {TRAINER_NAME + NAME_SIZE} bytes, not {len(body)}")

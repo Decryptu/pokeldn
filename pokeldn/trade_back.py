@@ -6,7 +6,7 @@ what the console sent for that, and so on; the last queued offer serves every la
 launcher's last offer does. A returned record is the console's bytes, unchanged: never under a new PID.
 
 `TradeBack` takes an online partner's place (pokeldn.online.link.Partner) in a native trade host, as
-`pokeldn.receiver_gift.ReceiverGift` does, with each round's record up from the round's start, as a host's
+`pokeldn.for_receiver.ReceiverGift` does, with each round's record up from the round's start, as a host's
 own offer is, and our confirm waiting for the console's alone.
 """
 

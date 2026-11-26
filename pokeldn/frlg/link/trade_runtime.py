@@ -3,8 +3,18 @@
 import os
 import time
 
+from pokeldn import console_trainer, for_receiver
 from pokeldn.app import screen
 from pokeldn.frlg.save import mon as monmod
+
+
+def console_party(party, lp, owned, log=print):
+    """-> `party` with each entry `owned` marks (1-based, file order) made the save's own that the console's
+    LinkPlayer `lp` names; None for a LinkPlayer not yet seen (pokeldn.for_receiver.remake)."""
+    heard = console_trainer.link_player_fields(lp) if lp is not None else None
+    records = [mon.party_bytes() for mon in party]
+    made = for_receiver.remake("frlg", records, set(owned), heard, bytes, log=log)
+    return [mon if new == old else monmod.Mon.from_pk3(new) for mon, old, new in zip(party, records, made)]
 
 
 class ConsoleLog:

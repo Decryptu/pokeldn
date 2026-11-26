@@ -144,17 +144,50 @@ player's own only when gender, IDs and name match
 ([the received record](za.md#what-the-trade-writes-into-a-received-record)); Legends Arceus's record
 carries the gender ([the record](pla.md#the-games-reader-and-the-pre-handler-phase)).
 
-A Pokemon file keeps its own original trainer unless the offer card's "Make me its original trainer"
-switch is on: PKHeX's `check` with the `trainer` field writes this trainer's name, IDs and gender
-(`Retrain`). Shininess is the PID against those IDs. From Gen 7 the PID's high half moves to keep a
-square, star or plain shine; a PID the encounter fixes (Gen 3's nature, ability and gender, a Sword
-overworld or raid seed) stays, and the card says the shine changed. A Pokemon legal only with its own
-trainer, an event with a fixed one, is refused with PKHeX's reason.
-
 A Pokemon file of another game (`.pk4` to `.pk7`, `.pb7`, any title's format PKHeX reads,
 `pokeldn.pokemon.FOREIGN`) goes to the offer's game as [the bank](#importing) moves one: PKHeX's
 `convert` drops its held item and Gen 3/4 HM moves, then takes it through HOME's conversion
 (`Converted`). A species or form the game lacks is refused with the reason.
+
+### Original trainer
+
+An offer card's Original trainer choice decides whose Pokemon it is.
+
+| choice | original trainer | written |
+|---|---|---|
+| Its own (a file only) | the file's | never |
+| You | this trainer | when the card takes the file |
+| The receiver (trade tools) | the save of the console it is traded to | during the trade, before the offer goes out |
+
+PKHeX's `check` with the `trainer` field writes name, IDs and gender (`Retrain`). Shininess is the PID
+against those IDs. From Gen 7 the PID's high half moves to keep a square, star or plain shine; a PID
+the encounter fixes (Gen 3's nature, ability and gender, a Sword overworld or raid seed) stays, and
+the card says the shine changed. A Pokemon legal only with its own trainer, an event with a fixed
+one, is refused with PKHeX's reason: for The receiver the card checks the file under the probe
+trainer `for_receiver.PROBE` before taking the choice.
+
+The app passes each offer whose choice is The receiver as `--receiver-owns N`, its place in the
+queue from 1 (`command._args`); every trade launcher takes it (`tests/test_gui_catalog.py`). The
+console's own link data names its save before our offer goes out:
+
+| launcher | what names the save |
+|---|---|
+| FireRed/LeafGreen, both roles | the console's LinkPlayer, before the party blocks |
+| Sword/Shield, both roles | MyStatus (0x814) in the console's live snapshot, before ours goes out |
+| Let's Go joiner | the host's first message |
+| BDSP joiner | `TradeTranerData`; the gender, which it lacks, from the Pokemon the console shows |
+| Legends Arceus joiner | the host's data exchange record, before the trade box opens |
+| Scarlet/Violet joiner | identity record 1, before the first offer |
+| Legends Z-A joiner | the host's identity |
+| Let's Go, BDSP, Legends Arceus, Scarlet/Violet, Legends Z-A hosts | a Pokemon the console offers that its save caught, else the session, as for a [gift made for the receiving player](gift_simulated.md#whose-save-it-is) |
+
+A gender the link data lacks comes from the Pokemon the console showed, then from the offer's own
+record (`for_receiver.trainer_from`); a retrain writes no language, so an unreadable language byte
+stops nothing. A record PKHeX refuses during the trade goes as given,
+with a log line and a pop-up (`for_receiver.remake`, `ReceiverGift`). Send it back returns our offer to
+us, so `--trade-back` leaves the marks unused. A retrain takes under 3 ms per record once the PKHeX
+service is up, which every launcher's offer check at launch does, so the launchers run it inside
+their loop.
 
 ### Find your trainer
 
@@ -164,7 +197,8 @@ trainer a run read off a console. The Switch games never display the secret ID; 
 | row | what names the trainer |
 |---|---|
 | FireRed, LeafGreen | the console's LinkPlayer, `trainerId` = `SID << 16 \| TID`, in every trade, Mystery Gift and Union Room session, both roles |
-| Switch | the console's session data in a Let's Go, BDSP, Legends Arceus, Scarlet/Violet or Legends Z-A trade, both roles ([Whose save it is](gift_simulated.md#whose-save-it-is)); in Sword/Shield, and in any title, a Pokemon the console traded that its save caught (handler 0, the game's own version, not an egg) |
+| Ruby, Sapphire, Emerald | the same LinkPlayer, from a console whose LinkPlayer version is 1 to 3 |
+| Switch | the console's session data in a Let's Go, BDSP, Legends Arceus, Scarlet/Violet or Legends Z-A trade, both roles ([Whose save it is](gift_simulated.md#whose-save-it-is)); MyStatus in the console's live snapshot in a Sword/Shield trade, both roles; in any title, a Pokemon the console traded that its save caught (handler 0, the game's own version, not an egg) |
 
 A launcher prints `[trainer] {json}` once per trainer (`pokeldn.console_trainer`); the app keeps the
 newest per row, and per game, in `settings.json` `found_trainers` and logs it under the private-log

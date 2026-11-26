@@ -39,15 +39,28 @@ def _loopback(tmp_path, monkeypatch):
     return keys_file
 
 
-def test_the_joiner_trades_with_an_ldn_mitm_host_on_loopback(tmp_path, monkeypatch):
+@pytest.mark.parametrize("owns", ["", "receiver", "fixed"])
+def test_the_joiner_trades_with_an_ldn_mitm_host_on_loopback(tmp_path, monkeypatch, capsys, owns):
     """Two trades on one seat. The joiner is keyed only from the advertise data the scan and the
-    SyncNetwork carried, and seats with the MAC ldn_mitm derives from its address."""
+    SyncNetwork carried, and seats with the MAC ldn_mitm derives from its address. With --receiver-owns
+    its offers go under the trainer the host's live snapshot names (pokeldn.for_receiver); a record PKHeX
+    refuses another trainer, `fixed`, goes as given."""
     keys_file = _loopback(tmp_path, monkeypatch)
     import swsh_connect
     import swsh_host
     from test_swsh_trade_payload import a_payload
-    from pokeldn import gen8
+    from pokeldn import gen8, pokemon as pokemon_service
     from pokeldn.swsh import pokemon
+
+    def prepare(game, raw, *, fresh=False, fields=None):
+        if not fields:
+            return gen8.decrypt(raw)
+        if owns == "fixed" and gen8.read(gen8.load(raw))["species"] == 97:
+            raise pokemon_service.BuilderError("it is legal only with its own trainer")
+        trainer = fields["trainer"]
+        return gen8.encrypt(gen8.write(gen8.load(raw), ot_name=trainer["ot"], trainer_id=trainer["tid"],
+                                       secret_id=trainer["sid"], ot_gender=trainer["gender"]))
+    monkeypatch.setattr(pokemon_service, "prepare", prepare)
 
     party = a_payload(count=4)
     (tmp_path / "snapshot.bin").write_bytes(party)
@@ -60,6 +73,7 @@ def test_the_joiner_trades_with_an_ldn_mitm_host_on_loopback(tmp_path, monkeypat
         ["--ip-host", "--our-ip", HOST_IP, "--keys", str(keys_file), "--seconds", "50",
          "--accept-first", "--lead", "3", "--snapshot", str(tmp_path / "snapshot.bin"),
          "--received", str(tmp_path / "host.pk8"),
+         "--trainer-name", "LiveSword", "--trainer-tid", "48765", "--trainer-sid", "56789",
          "--offer-file", str(tmp_path / "offer0.pk8"),
          "--offer-file", str(tmp_path / "offer1.pk8")])), daemon=True)
     join = threading.Thread(target=lambda: result.setdefault("join", swsh_connect.main(
@@ -67,7 +81,8 @@ def test_the_joiner_trades_with_an_ldn_mitm_host_on_loopback(tmp_path, monkeypat
          "--dwell", "0.5", "--scans", "20", "--listen-first", "2", "--hold", "20",
          "--save-offered", str(tmp_path / "join.pk8"), "--capture", str(tmp_path / "join.jsonl"),
          "--offer-file", str(tmp_path / "offer2.pk8"),
-         "--offer-file", str(tmp_path / "offer3.pk8")])), daemon=True)
+         "--offer-file", str(tmp_path / "offer3.pk8"),
+         *(["--receiver-owns", "1", "--receiver-owns", "2"] if owns else [])])), daemon=True)
     join.start()                         # before the host: the joiner rescans until it answers
     host.start()
     join.join(120)
@@ -78,6 +93,14 @@ def test_the_joiner_trades_with_an_ldn_mitm_host_on_loopback(tmp_path, monkeypat
         return pokemon.read(pokemon.encrypt(gen8.load((tmp_path / name).read_bytes())))["species"]
     assert [species(n) for n in ("join.pk8", "join-2.pk8")] == [94, 95]
     assert [species(n) for n in ("host.pk8", "host-2.pk8")] == [96, 97]
+    received = [gen8.read(gen8.load((tmp_path / n).read_bytes())) for n in ("host.pk8", "host-2.pk8")]
+    given = gen8.read(gen8.load((tmp_path / "offer3.pk8").read_bytes()))
+    owners = [(f["ot_name"], f["trainer_id"], f["secret_id"]) for f in received]
+    live, kept = ("LiveSword", 48765, 56789), (given["ot_name"], given["trainer_id"], given["secret_id"])
+    assert owners == {"": [owners[0], kept], "receiver": [live, live], "fixed": [live, kept]}[owns]
+    assert owns == "" or owners[0] == live
+    out = capsys.readouterr().out
+    assert ("Offer 2 could not be made the receiving player's own" in out) == (owns == "fixed")
 
 
 @pytest.mark.parametrize("scene", [50000, 50480])   # 50480: a player's retail lobby, docs/swsh_raid.md

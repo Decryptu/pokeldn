@@ -84,7 +84,7 @@ def player_name(identity, prefix=0):
 
 
 def identity_trainer(identity, prefix=0):
-    """-> the trainer a 1400 identity names, as pokeldn.receiver_gift takes it: the save's trainer id and
+    """-> the trainer a 1400 identity names, as pokeldn.for_receiver takes it: the save's trainer id and
     secret id, its gender, its language, then the name, as the game reads them from the save's trainer
     block (`0xc90b04`, docs/za.md, The game's own exchange)."""
     (id32, gender, language), at = _value(identity, prefix)

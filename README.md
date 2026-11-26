@@ -151,7 +151,7 @@ Contributors to this repository (GitHub does not list contributors on a fork):
   of Scarlet/Violet raid event deliveries the app downloads, with pkNX's text of each
 - [Matcore962](https://github.com/Matcore962): importing Pokemon files and game saves into the Bank
 - [gfaraujosousa](https://github.com/gfaraujosousa): installing firmware on a board whose flasher stub
-  never starts, through its ROM loader
+  never starts, through its ROM loader, and a traded Pokemon made the receiving player's own
 
 ## Code signing policy
 

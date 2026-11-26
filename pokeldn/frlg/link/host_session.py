@@ -61,7 +61,7 @@ class HostSession:
                 union_room_chat=union_room_chat, chat_messages=chat_messages,
                 union_room_battle=union_room_battle, battle_forfeit=battle_forfeit,
                 battle_move_slot=battle_move_slot, colosseum=colosseum,
-                log=log, partner=partner)
+                log=log, partner=partner, owned=plan.owned if plan is not None else ())
             if plan is not None and plan.shown_path:
                 from pokeldn.frlg.link.trade_runtime import shown_party
                 self.activity.on_party = shown_party(plan.shown_path)

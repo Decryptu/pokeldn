@@ -32,7 +32,7 @@ import trio
 
 from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
-from pokeldn import gen8, pla, trade_back
+from pokeldn import gen8, pla, for_receiver, trade_back
 from pokeldn.host_support import resolve_keys, needs_root
 from pokeldn import launcher
 from pokeldn.ldn import hold_after_trade_over, ldn_mitm, pia6
@@ -113,7 +113,7 @@ def make_session(args, keys, our_ip, our_mac, offer, exchange, **kw):
                    player_id=bytes.fromhex(args.join_player_id),
                    drive=args.drive, net_answer=not args.no_net_answer,
                    join_delay=args.join_delay, log=print,
-                   next_offers=getattr(args, "next_offers", ()), **kw)
+                   next_offers=getattr(args, "next_offers", ()), owned=for_receiver.owns(args), **kw)
     if getattr(args, "save_shown", None):
         session.on_record = lambda record: pokemon_service.save_shown("pla", args.save_shown, record)
     return session
@@ -397,6 +397,7 @@ def build_parser():
                          "default is the reference Azelf under our player name. Repeatable: one per "
                          "trade in order, on this seat or in the host role once taken")
     trade_back.add_arguments(ap)
+    for_receiver.add_owns_argument(ap)
     ap.add_argument("--offer-out", default=None,
                     help="write the record the console traded to this file")
     launcher.add_save_shown_argument(ap)
@@ -431,6 +432,8 @@ def host_argv(args, channel, seconds):
         argv += ["--fresh-pid"]
     if args.trade_back:
         argv += ["--trade-back"]
+    for n in args.receiver_owns:
+        argv += ["--receiver-owns", str(n)]
     if args.offer_out:
         argv += ["--offer-out", args.offer_out]
     if args.hold_after_trade is not None:

@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
-from pokeldn import config, console_trainer, receiver_gift, trade_back
+from pokeldn import config, console_trainer, for_receiver, trade_back
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
 from pokeldn.sv import (pokemon, port2, raid, raid_encounter, raid_event, raid_partners, reference,
@@ -322,7 +322,7 @@ def build_parser():
                          "console through the commit and the four exchange steps the way a pair's "
                          "host does (pokeldn.sv.trade). Repeatable: the second and later records "
                          "are offered in the same seat, one per trade, as each trade closes")
-    receiver_gift.add_arguments(ap, "--trade-offer")
+    for_receiver.add_arguments(ap, "--trade-offer")
     trade_back.add_arguments(ap)
     ap.add_argument("--offer-set", action="append", metavar="FIELD=VALUE", default=[],
                     help="a field written into the offered record before it is sealed, by its "
@@ -491,7 +491,7 @@ def main(argv=None):
     trade_back.check(ap, args, "--trade-offer", "--online", "--for-receiver", "--raid-seed")
     raiding = args.raid_seed is not None
     raid_group = prepare_raid(ap, args) if raiding else None
-    offer_check = {}            # a gift made for the receiving player takes it too (pokeldn.receiver_gift)
+    offer_check = {}            # a gift made for the receiving player takes it too (pokeldn.for_receiver)
     if args.trade_offer:
         settings = args.offer_set
         offer_check = dict(fresh=args.fresh_pid, transform=lambda raw: trade.load_offer(raw, settings))
@@ -559,7 +559,7 @@ def main(argv=None):
     elif args.offer_set or args.offer_dump:
         ap.error("--offer-set and --offer-dump need --trade-offer")
     trading = bool(trade_offers) or partner is not None
-    receiving = (receiver_gift.setup("sv", args, trade_offers, trade.load_offer, **offer_check)
+    receiving = (for_receiver.setup("sv", args, trade_offers, trade.load_offer, **offer_check)
                  if partner is None else None)
 
     identities = {}             # ip -> the trainer its console's identity names, for a gift made for it
@@ -571,16 +571,16 @@ def main(argv=None):
         if args.trade_back:
             helper = trade_back.TradeBack("sv", trade_offers)
         elif receiving is not None:
-            helper = receiver_gift.ReceiverGift("sv", *receiving, log=print,
+            helper = for_receiver.ReceiverGift("sv", *receiving, log=print,
                                                 shown=lambda body: screen.offer("sv", body),
-                                                notify=receiver_gift.pop_up(f"gift-{ip}"))
+                                                notify=for_receiver.pop_up(f"gift-{ip}"))
             if ip in identities:
                 helper.hear(identities[ip])
         return trade.TradeStage(trade_offers, confirm_delay=args.confirm_delay, partner=helper)
 
     def hear_identity(ip, payload):
         """Record 1 of a console's identity block names its save (docs/sv.md, The records), for the gift made
-        for it (pokeldn.receiver_gift)."""
+        for it (pokeldn.for_receiver)."""
         try:
             fields = reference.identity_trainer(streams.decompress(payload))
         except zlib.error:          # another record's chunk

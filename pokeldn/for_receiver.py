@@ -1,16 +1,19 @@
-"""A Mystery Gift Pokemon made for the player who receives it (docs/gift_simulated.md, Made for the receiving
-player). A card that gives the receiver's own trainer is made again during the trade, under the trainer of
-the console's save: the Pokemon the console offers names it, when that save caught it; otherwise the trainer
-the console's own session data names (`hear`). When neither does, or the card cannot be made for that save,
-the copy the app made under the trainer from Settings goes instead.
+"""A Pokemon made for the player who receives it, during the trade (docs/gift_simulated.md, Made for the
+receiving player). Two kinds of offer are made again under the trainer of the console's save: a Mystery Gift
+card that gives the receiver's own trainer, and a trade offer the player marked as the receiver's own
+(`--receiver-owns`, docs/gui.md, Original trainer). The Pokemon the console offers names the save when that
+save caught it; otherwise the trainer the console's own session data names (`hear`). When neither does, or the
+Pokemon cannot be made for that save, the offer goes as given.
 
-`ReceiverGift` takes an online partner's place (pokeldn.online.link.Partner) in a trade host, which then waits
-for the console's offer before putting ours up and confirms once the console has. It logs `[gift]` lines, and
-asks the app for a pop-up (`pop_up`) when the gift goes with the trainer from Settings.
+`ReceiverGift` takes an online partner's place (pokeldn.online.link.Partner) in a native trade host, which then
+waits for the console's offer before putting ours up and confirms once the console has. `remake` serves a
+launcher with no partner (a joiner, FireRed/LeafGreen, a Sword/Shield host), which remakes its queue once the
+session names the save. Both ask the app for a pop-up (`pop_up`) when an offer goes as given.
 """
 
 import base64
 import threading
+from pathlib import Path
 
 from pokeldn import console_trainer
 
@@ -26,6 +29,16 @@ READY = ("[gift] waiting for the console's offer: a Pokemon caught in this save 
          "Settings")
 LANGUAGES = {1, 2, 3, 4, 5, 7, 8, 9, 10}    # PKHeX's LanguageID a save can be
 FALLBACK_TITLE = "The gift carries the trainer from Settings"
+OWN = "receiver"            # a round's key: the offer itself, made the receiving save's own
+OWN_READY = ("[receiver] waiting for the console's trainer: the offers marked as the receiver's own are made for "
+             "its save before they go up")
+OWN_TITLE = "The Pokemon keeps its original trainer"
+
+
+def own_text(name, why):
+    """What the app's pop-up and the log say when an offer marked as the receiver's own goes as given."""
+    return (f"{name} could not be made the receiving player's own: {why.rstrip('.')}. It goes with the original "
+            "trainer it has.")
 
 
 def sv_owner(body):
@@ -84,6 +97,27 @@ def from_session(game, heard, f, given):
     the trainer the session names (docs/bdsp_trade.md, What the console does to a received Pokemon). Failing
     both, they come from the trainer from Settings: `given`, the owner fields of the round's record made under
     it."""
+    found = trainer_from(game, heard, f, given)
+    if found is None:
+        return None
+    trainer, notes = found
+    given = given or {}
+    versions = VERSIONS[game]
+    if heard.get("version") in versions:
+        version = versions[heard["version"]]
+    elif len(versions) == 1:
+        version = next(iter(versions.values()))
+    elif given.get("version") in versions:
+        version = versions[given["version"]]
+        notes.append("version from Settings")
+    else:
+        return None
+    return (trainer, version), notes
+
+
+def trainer_from(game, heard, f, given, needs=("gender", "language")):
+    """-> (trainer, [what came from where]): `from_session`'s trainer, its version left out; None when the session
+    names none or a field of `needs` comes from nowhere. A retrain needs the gender alone (`remake`)."""
     if not heard or not heard.get("ot"):
         return None
     given = given or {}
@@ -92,6 +126,8 @@ def from_session(game, heard, f, given):
     trainer, notes = {"ot": heard["ot"], "tid": heard["tid"], "sid": heard["sid"]}, []
     languages = LANGUAGES | {11} if game == "za" else LANGUAGES     # Z-A adds Latin American Spanish
     for field, valid in (("gender", {0, 1}), ("language", languages)):
+        if field not in needs:
+            continue
         if heard.get(field) in valid:
             trainer[field] = heard[field]
         elif own_ot and f.get(field) in valid:
@@ -105,17 +141,7 @@ def from_session(game, heard, f, given):
             notes.append(f"{field} from Settings")
         else:
             return None
-    versions = VERSIONS[game]
-    if heard.get("version") in versions:
-        version = versions[heard["version"]]
-    elif len(versions) == 1:
-        version = next(iter(versions.values()))
-    elif given.get("version") in versions:
-        version = versions[given["version"]]
-        notes.append("version from Settings")
-    else:
-        return None
-    return (trainer, version), notes
+    return trainer, notes
 
 
 def species_tag(f):
@@ -151,33 +177,56 @@ def add_arguments(ap, offer_flag):
                          "console's save, during the trade: the console offers first, a Pokemon its save "
                          "caught names the trainer, and ours goes up made for it; for any other, the "
                          "trainer the console's session data names. Failing both, the offer goes as given, "
-                         "under the trainer from Settings (pokeldn.receiver_gift, docs/gift_simulated.md)")
+                         "under the trainer from Settings (pokeldn.for_receiver, docs/gift_simulated.md)")
+    add_owns_argument(ap)
+
+
+def add_owns_argument(ap):
+    """Every trade launcher's flag for an offer made the receiving save's own (docs/gui.md, Original trainer)."""
+    ap.add_argument("--receiver-owns", action="append", type=int, default=[], metavar="N",
+                    help="make offer N of the queue, counted from 1, the receiving save's own during the trade: "
+                         "its original trainer becomes the console's, as PKHeX allows. Repeatable. An offer that "
+                         "cannot take another trainer goes as given (pokeldn.for_receiver)")
+
+
+def owns(args, log=print):
+    """-> the 1-based offers --receiver-owns marks. None under --trade-back, whose offer comes back to us."""
+    marked = set(getattr(args, "receiver_owns", None) or ())
+    if marked and getattr(args, "trade_back", False):
+        log("[receiver] --trade-back returns our offer, so it keeps its original trainer")
+        return set()
+    return marked
 
 
 def setup(game, args, offers, load, log=print, **check):
     """-> (rounds, make) for a ReceiverGift, when a host runs with --for-receiver and one of its `offers` was
-    made from a card that gives the receiver's own trainer; None otherwise. `check` is what the host gave
-    `pokeldn.pokemon.prepare_file` for its `offers`, and `load` what it runs on each of them after, its own
-    checks and the form it sends: a copy made during the trade takes both (`maker`)."""
-    if not getattr(args, "for_receiver", False) or not offers:
+    made from a card that gives the receiver's own trainer, or with --receiver-owns; None otherwise. `check` is
+    what the host gave `pokeldn.pokemon.prepare_file` for its `offers`, and `load` what it runs on each of them
+    after, its own checks and the form it sends: a copy made during the trade takes both (`maker`)."""
+    marked = owns(args, log)
+    keys = args.gift_event if getattr(args, "for_receiver", False) else []
+    if not offers or not (keys or marked):
         return None
-    found = rounds(game, args.gift_event, offers, log)
+    found = rounds(game, keys, offers, log, marked)
     if not any(key for key, _ in found):
         return None
-    log(READY)
+    log(OWN_READY if marked else READY)
     return found, maker(game, load, **check)
 
 
-def rounds(game, keys, offers, log=print):
-    """-> a ReceiverGift's rounds for a host's `offers`, each made from the card `keys` names in the same order.
-    A card that gives the receiver's own trainer keeps its key, to be made for the console's save; the others
-    go as made. Each keeps its offer, made under the trainer from Settings, to go when the save names no one.
-    Asking now also starts the service before the console arrives."""
+def rounds(game, keys, offers, log=print, marked=()):
+    """-> a ReceiverGift's rounds for a host's `offers`, each made from the card `keys` names in the same order,
+    or marked (1-based) as the receiver's own (OWN). A card that gives the receiver's own trainer keeps its key,
+    to be made for the console's save; the others go as made. Each keeps its offer, made under the trainer from
+    Settings, to go when the save names no one. Asking now also starts the service before the console arrives."""
     from pokeldn import pokemon
     out = []
     for n, body in enumerate(offers):
         key = keys[n] if n < len(keys) else ""
-        if key:
+        if n + 1 in marked:
+            log(f"[receiver] offer {n + 1} is made the console's save's own once the session names it")
+            key = OWN
+        elif key:
             try:
                 info = pokemon.SERVICE.gift_event(game, key, PROBE, keep=False)
             except pokemon.BuilderError as exc:
@@ -199,16 +248,19 @@ def rounds(game, keys, offers, log=print):
 
 
 def maker(game, load, **check):
-    """-> make(key, trainer, version) -> (the record the host offers, what it is): the card made for the save on
+    """-> make(key, trainer, version, body) -> (the record the host offers, what it is): the card made for the save on
     that version alone, with the HOME tracker the setting gives it (docs/gui.md, The HOME tracker setting). A
     card no save like it received, on its version or in its language, is refused
     (`pokeldn.pokemon.Service.gift_event`). The copy then takes the checks the host's own offers took at launch:
     the offer check with the host's `check` (`pokeldn.pokemon.prepare_offer`: its --fresh-pid and edits, PKHeX's
     legality check), and the host's `load`. A copy refused or failing any of them raises, saying which and why,
-    and the host offers the one made under the trainer from Settings."""
+    and the host offers the one made under the trainer from Settings. An OWN round's `body`, the offer as the
+    host sends it, is retrained instead (`retrained`)."""
     from pokeldn import pokemon
 
-    def make(key, trainer, version):
+    def make(key, trainer, version, body=b""):
+        if key == OWN:
+            return retrained(game, body, trainer, load, fresh=check.get("fresh", False)), f"{trainer['ot']}'s own"
         info = pokemon.SERVICE.gift_event(game, key, trainer, version=version, keep=False)
         if info["refused"]:
             raise ValueError(f"the save cannot have received the card: {info['refused']}")
@@ -223,24 +275,88 @@ def maker(game, load, **check):
     return make
 
 
+def retrained(game, body, trainer, load, fresh=False):
+    """-> `body`, an offer in the form a launcher sends, with `trainer` ({ot, tid, sid, gender}) as its original
+    trainer through PKHeX's check (services/pkhex Retrain: the shine kept where the encounter allows), in the
+    same form through `load`. ValueError with PKHeX's reason for a Pokemon legal only with its own trainer.
+    The offer already took its transform and plugin edits at launch; they are not applied twice."""
+    from pokeldn import pokemon
+    owner = {key: trainer[key] for key in ("ot", "tid", "sid", "gender")}
+    try:
+        data = pokemon.prepare(game, pokemon.entity_bytes(game, body), fresh=fresh, fields={"trainer": owner})
+        return load(pokemon.offer_bytes(game, data))
+    except pokemon.BuilderError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def remake(game, records, marked, heard, load, *, shown=None, log=print, notify=None, fresh=False):
+    """-> `records` (a launcher's queue, in the form it sends) with each one `marked` (1-based) made the save's
+    own that the console's session data `heard` names, for a launcher with no ReceiverGift. `shown`, a Pokemon
+    the console offered, fills a gender or language the session lacks, as `trainer_from` does; the record's own
+    trainer fills the rest. A record that cannot be made, or a session that names no one, leaves it as given,
+    with a log line and the app's pop-up (`notify`)."""
+    out = [bytes(r) for r in records]
+    if not marked:
+        return out
+    read = owner_reader(game)
+    try:
+        f = read(shown) if shown is not None else None
+    except ValueError:
+        f = None
+    notify = notify or pop_up("receiver")
+    for n, body in enumerate(out, start=1):
+        if n not in marked:
+            continue
+        try:
+            given = read(body)
+        except ValueError:
+            given = {}
+        found = trainer_from(game, heard, f, given, needs=("gender",))
+        try:
+            if found is None:
+                raise ValueError("the console's session did not name its trainer")
+            trainer, notes = found
+            out[n - 1] = retrained(game, body, trainer, load, fresh=fresh)
+            shown = console_trainer.shown(game, trainer["tid"], trainer["sid"])[0]
+            log(f"[receiver] offer {n} made {trainer['ot']}'s own, ID {shown}"
+                + (f" ({', '.join(notes)})" if notes else ""))
+        except ValueError as exc:
+            text = own_text(f"Offer {n}", str(exc))
+            log(f"[receiver] {text}")
+            try:
+                notify(OWN_TITLE, text)
+            except RuntimeError as error:     # pokeldn.popup's LIMIT: the log line says it already
+                log(f"[receiver] no pop-up: {error}")
+    return out
+
+
+def remake_files(game, paths, marked, heard, **kw):
+    """`remake` for a launcher whose queue is files: -> the paths, each record made again in a new session file
+    (pokeldn.pokemon.offer_file), the player's own files untouched."""
+    from pokeldn import pokemon
+    records = [Path(path).read_bytes() for path in paths]
+    made = remake(game, records, marked, heard, bytes, **kw)
+    return [path if new == old else pokemon.offer_file(game, new) for path, old, new in zip(paths, records, made)]
+
+
 def hear(partner, parse, *data, log=print, game=None):
     """A host passes what the console's session data says of its trainer, `parse(*data)`, to `partner` when
     it is a ReceiverGift; an online partner takes none. With `game`, the app is told of it too
-    (pokeldn.console_trainer)."""
+    (pokeldn.console_trainer). -> the fields, None unread, for a launcher that remakes its own queue (`remake`)."""
     take = getattr(partner, "hear", None)
     if take is None and game is None:
-        return
+        return None
     try:
         fields = parse(*data)
     except Exception as exc:    # the console's bytes, in a shape not measured
-        if take is not None:
-            log(f"[gift] the session's trainer does not read: {exc}")
-        return
+        log(f"{'[gift]' if take is not None else '[receiver]'} the session's trainer does not read: {exc}")
+        return None
     if fields:
         if game is not None:
             console_trainer.show(game, fields, "session")
         if take is not None:
             take(fields)
+    return fields or None
 
 
 class Offer:
@@ -260,7 +376,7 @@ def pop_up(key="gift"):
 
 class ReceiverGift:
     """The records one console trades for, in rounds. `rounds` is [(key, body)]: a round with a card key is
-    made by `make(key, trainer, version) -> (body, what)` for the console's save, on a worker thread so the
+    made by `make(key, trainer, version, body) -> (body, what)` for the console's save, on a worker thread so the
     host's loop never waits; one without goes up as `body` is, and so does one whose save names no one or
     whose card cannot be made for it. A record goes up only after the console has offered in that round, and
     once up it stays: a host's cancel is unmeasured (docs/online.md).
@@ -270,6 +386,8 @@ class ReceiverGift:
     def __init__(self, game, rounds, make, read=None, log=print, shown=None, notify=None):
         self.game = game
         self.rounds = [(key or "", bytes(body)) for key, body in rounds]
+        self.trade = any(key == OWN for key, _ in self.rounds)    # a trade queue: its own lines and pop-ups
+        self.tag = "[receiver]" if self.trade else "[gift]"
         self.make, self.log = make, log
         self.read = read or owner_reader(game)
         self.shown = shown or (lambda body: None)
@@ -334,7 +452,7 @@ class ReceiverGift:
         with self.lock:
             if fields != self.heard:
                 self.heard = dict(fields)
-                self.log(f"[gift] the session names the console's trainer {fields['ot']}, ID {shown_id(fields)}")
+                self.log(f"{self.tag} the session names the console's trainer {fields['ot']}, ID {shown_id(fields)}")
 
     def _learn(self, f, why, given):
         """Whether the console's save is named, kept for the next rounds: by the offered Pokemon's owner fields
@@ -348,11 +466,17 @@ class ReceiverGift:
             return True
         found = from_session(self.game, self.heard, f, given) if self.heard else None
         if found is None:
-            self.log(unnamed(f, why))
-            self._tell(unnamed_text(why))
+            if self.trade:
+                text = own_text("The Pokemon", "neither the Pokemon the console offered nor the session names its "
+                                f"save: {why}")
+                self.log(f"[receiver] {text}")
+                self._tell(text)
+            else:
+                self.log(unnamed(f, why))
+                self._tell(unnamed_text(why))
             return False
         save, notes = found
-        self.log(f"[gift] the console's Pokemon{species_tag(f)} cannot name the save: {why}; the session does"
+        self.log(f"{self.tag} the console's Pokemon{species_tag(f)} cannot name the save: {why}; the session does"
                  + (f" ({', '.join(notes)})" if notes else ""))
         self._named(save, "session")
         return True
@@ -372,16 +496,17 @@ class ReceiverGift:
         self.save = save
         self.made = {n: body for n, body in self.made.items() if n < self.round}
         trainer, version = save
-        self.log(f"[gift] making the gift for {trainer['ot']}, ID {shown_id(trainer)}, {NAMES[version]}")
+        self.log(f"{self.tag} making the {'offers' if self.trade else 'gift'} for {trainer['ot']}, "
+                 f"ID {shown_id(trainer)}, {NAMES[version]}")
 
     def _tell(self, text):
         """The app's pop-up saying the gift carries the trainer from Settings, once for each reason."""
         if text != self.told:
             self.told = text
             try:
-                self.notify(FALLBACK_TITLE, text)
+                self.notify(OWN_TITLE if self.trade else FALLBACK_TITLE, text)
             except RuntimeError as exc:     # pokeldn.popup's LIMIT: the log line says it already
-                self.log(f"[gift] no pop-up: {exc}")
+                self.log(f"{self.tag} no pop-up: {exc}")
 
     def withdraw(self):
         """The console backed out of the wait."""
@@ -418,7 +543,7 @@ class ReceiverGift:
     def _run(self, n, save):
         trainer, version = save
         try:
-            (body, what), why = self.make(self.rounds[n][0], trainer, version), ""
+            (body, what), why = self.make(self.rounds[n][0], trainer, version, self.rounds[n][1]), ""
         except Exception as exc:    # the service refused the card for this save, or is missing
             body, what, why = None, "", str(exc) or type(exc).__name__
         with self.lock:
@@ -427,14 +552,19 @@ class ReceiverGift:
                 if n == self.round and self.asked and self.current.offer is None:
                     self._build(n)
                 return
-            if body is None:
+            if body is None and self.rounds[n][0] == OWN:
+                body = self.rounds[n][1]
+                text = own_text(f"Offer {n + 1}", f"for {trainer['ot']}, {why}")
+                self.log(f"[receiver] {text}")
+                self._tell(text)
+            elif body is None:
                 body = self.rounds[n][1]
                 self.log(f"[gift] could not be made for {trainer['ot']}, so it goes with your trainer from "
                          f"Settings: {why}")
                 self._tell(f"The gift could not be made for {trainer['ot']}, ID {shown_id(trainer)}, on "
                            f"{NAMES[version]}: {why.rstrip('.')}. It goes with the trainer from Settings instead.")
             else:
-                self.log(f"[gift] made for {trainer['ot']}: {what}")
+                self.log(f"{self.tag} made for {trainer['ot']}: {what}")
             self.made[n] = body
             if n == self.round and self.asked and self.current.offer is None:
                 self._release(body)

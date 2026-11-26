@@ -26,7 +26,7 @@ from pokeldn.ldn import clone, pia3, pia4, reliable3, station4, station9, sync_c
 from pokeldn.lgpe import pb7
 from pokeldn.lgpe.trade import (keep_received, keep_shown, TRADE_IN_PROGRESS, _answer_offer, _send_step,
                                 _warn_if_mid_trade, show_offer)
-from pokeldn import receiver_gift, trade_back
+from pokeldn import for_receiver, trade_back
 from pokeldn.app import screen
 from pokeldn.online import session as online
 from pokeldn.ldn import local_protocol as lp
@@ -155,7 +155,7 @@ def build_parser():
                          "before it answered state 2 (docs/lgpe_session.md). Locks a console's save")
     launcher.add_ip_host_arguments(ap)
     online.add_arguments(ap)
-    receiver_gift.add_arguments(ap, "--offer and --next-offer")
+    for_receiver.add_arguments(ap, "--offer and --next-offer")
     trade_back.add_arguments(ap)
     return ap
 
@@ -207,11 +207,11 @@ def main(argv=None):
             if not pb7.valid(fh.read()):
                 print(f"[lgh] next offer {path} is not a valid {pb7.BOX_SIZE}-byte box structure")
                 return 2
-    # A gift made for the receiving player stands in for an online partner (pokeldn.receiver_gift).
+    # A gift made for the receiving player stands in for an online partner (pokeldn.for_receiver).
     receiving = offers = None
     if not args.online and args.offer and args.offer != "echo":
         offers = [boxed(Path(path).read_bytes()) for path in (args.offer, *args.next_offer)]
-        receiving = receiver_gift.setup("lgpe", args, offers, boxed, fresh=fresh)
+        receiving = for_receiver.setup("lgpe", args, offers, boxed, fresh=fresh)
     show_offer(args.offer)
     if not args.ip_host and needs_root():
         print("[lgh] hosting over the radio needs root, a board (POKELDN_RADIO), or --ip-host")
@@ -273,8 +273,8 @@ def main(argv=None):
     if args.trade_back:
         partner = trade_back.TradeBack("lgpe", offers)
     elif receiving is not None:
-        partner = receiver_gift.ReceiverGift("lgpe", *receiving, shown=lambda body: screen.offer("lgpe", body),
-                                             notify=receiver_gift.pop_up())
+        partner = for_receiver.ReceiverGift("lgpe", *receiving, shown=lambda body: screen.offer("lgpe", body),
+                                             notify=for_receiver.pop_up())
     session = Session(host, adv, args, record, partner=partner)
     t0 = time.monotonic()
     closing = None
@@ -718,7 +718,7 @@ class Session:
         """No queued trade is left (--hold-after-trade): --trade-back's rounds return each offer."""
         if isinstance(self.partner, trade_back.TradeBack):
             return self.partner.rounds.finished
-        if isinstance(self.partner, receiver_gift.ReceiverGift):
+        if isinstance(self.partner, for_receiver.ReceiverGift):
             return self.trades >= len(self.partner.rounds)
         return self.trades >= (1 if self.partner is not None else 1 + len(self.args.next_offer))
 
@@ -907,8 +907,8 @@ class Session:
             return
         print(f"[lgh] game: kind {msg['kind']} step {msg['step']} body {msg['size']} B")
         if msg["kind"] == pb7.FIRST_MESSAGE:
-            # The console's save, for a gift made for it (pokeldn.receiver_gift).
-            receiver_gift.hear(self.partner, pb7.first_trainer, msg["body"], game="lgpe")
+            # The console's save, for a gift made for it (pokeldn.for_receiver).
+            for_receiver.hear(self.partner, pb7.first_trainer, msg["body"], game="lgpe")
         if msg["kind"] == pb7.FIRST_MESSAGE and self.args.first and not self.trade.get("first"):
             self.trade["first"] = True
             body = (pb7.build_message(msg["kind"], msg["body"]) if self.args.first == "echo"
