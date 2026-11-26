@@ -23,7 +23,7 @@ from pokeldn import config
 from pokeldn import gen8, pla
 from pokeldn.ldn import hold_after_trade_over, left_after_trade, pia6, pia_connect, reliable5, show_done
 from pokeldn.ldn import channel_table
-from pokeldn import receiver_gift, trade_back
+from pokeldn import for_receiver, trade_back
 from pokeldn.app import screen
 from pokeldn.online import session as online
 from pokeldn.pla import data_exchange, game_channel, trade_box
@@ -148,7 +148,7 @@ def build_parser():
     ap.add_argument("--code", default="00000000", help="the eight digits the player types")
     ap.add_argument("--seconds", type=float, default=240.0, help="how long to hold the network up")
     online.add_arguments(ap)
-    receiver_gift.add_arguments(ap, "--trade-box-record")
+    for_receiver.add_arguments(ap, "--trade-box-record")
     trade_back.add_arguments(ap)
     launcher.add_radio_arguments(ap)
     ap.add_argument("--channel", type=int, default=None)
@@ -277,7 +277,7 @@ def main():
     ap = build_parser()
     args = ap.parse_args()
     trade_back.check(ap, args, "--trade-box-record", "--online", "--for-receiver")
-    offer_check = {}            # a gift made for the receiving player takes it too (pokeldn.receiver_gift)
+    offer_check = {}            # a gift made for the receiving player takes it too (pokeldn.for_receiver)
     if args.trade_box_record:
         edits = {k: v for k, v in (("level", args.trade_box_level),
                  ("experience", args.trade_box_experience), ("nickname", args.trade_box_nickname),
@@ -352,7 +352,7 @@ def main():
 
     def box_offer(template, ours=False):
         """-> `template`, an encrypted record, as the trade box offers it, after the checks every offer takes; a
-        gift made for the receiving player takes them too (pokeldn.receiver_gift)."""
+        gift made for the receiving player takes them too (pokeldn.for_receiver)."""
         if args.trade_box_ours or ours:
             template = trade_box.build_our_record(
                 template=template, **data_exchange.read_record(exchange_record))
@@ -385,10 +385,10 @@ def main():
     partner = online.partner("pla", args, code=args.code, name=args.player_name)
     online_boxes = {}       # station -> trade_box.OnlineBox
     # A gift made for the receiving player stands in for an online partner, one per console
-    # (pokeldn.receiver_gift).
+    # (pokeldn.for_receiver).
     receiving = None
     if partner is None and args.trade_box and box_files[0]:
-        receiving = receiver_gift.setup("pla", args, [state["record"] for state in box_states],
+        receiving = for_receiver.setup("pla", args, [state["record"] for state in box_states],
                                         lambda raw: box_offer(pla_pokemon.encrypt(pla_pokemon.load(raw))),
                                         **offer_check)
     helped = partner is not None or receiving is not None or args.trade_back
@@ -400,8 +400,8 @@ def main():
             if args.trade_back:
                 helper = trade_back.TradeBack("pla", [state["record"] for state in box_states])
             elif receiving is not None:
-                helper = receiver_gift.ReceiverGift("pla", *receiving,
-                                                    notify=receiver_gift.pop_up(f"gift-{ip}"),
+                helper = for_receiver.ReceiverGift("pla", *receiving,
+                                                    notify=for_receiver.pop_up(f"gift-{ip}"),
                                                     shown=lambda body: screen.offer("pla", body))
             online_boxes[ip] = trade_box.OnlineBox(helper)
         return online_boxes[ip]
@@ -932,9 +932,9 @@ def main():
                                 reliable_high[src_ip] = high
                                 if rm["flags"] & reliable5.FLAG_ZLIB:
                                     # The console's record names its save, for a gift made for it
-                                    # (pokeldn.receiver_gift) and for the app (pokeldn.console_trainer).
+                                    # (pokeldn.for_receiver) and for the app (pokeldn.console_trainer).
                                     # Trap: it is sequence 1 on port 1, after sequence 1 on port 0.
-                                    receiver_gift.hear(
+                                    for_receiver.hear(
                                         online_box(src_ip).partner if receiving is not None else None,
                                         lambda payload: data_exchange.read_trainer(data_exchange.decompress(payload)),
                                         rm["payload"], game="pla")

@@ -7,9 +7,9 @@ import time
 
 from pokeldn.ldn import pia6, pia_connect, reliable5
 from pokeldn.ldn import channel_table
-from pokeldn.pla import data_exchange, game_channel, trade_box
+from pokeldn.pla import data_exchange, game_channel, pokemon as pla_pokemon, trade_box
 from pokeldn.ldn import show_done
-from pokeldn import console_trainer
+from pokeldn import for_receiver
 from pokeldn.app import screen
 
 PROTO_NET = 0x2C
@@ -58,7 +58,7 @@ class JoinerSession:
     def __init__(self, keys, our_ip, our_mac, offer, exchange, *, name=" ",
                  player_id=pia6.DEFAULT_PLAYER_ID, our_var=None, phase_waits=PHASE_WAITS,
                  drive=False, net_answer=True, join_delay=0.0, log=print, clock=time.monotonic,
-                 next_offers=()):
+                 next_offers=(), owned=()):
         self.net_answer = net_answer   # False: no Net 0x12 (docs/pla.md, Unresolved)
         self.join_delay = join_delay   # after the first Net 0x11 (docs/pla.md, Joining)
         self.keys, self.our_ip, self.offer, self.exchange = keys, our_ip, bytes(offer), exchange
@@ -76,6 +76,7 @@ class JoinerSession:
         self.clock_seq = 0
         self.stream_high = {}          # 0x81 port -> the host's highest sequence
         self.host_record = None        # the host's data exchange record
+        self.owned = set(owned)        # offers made the host's save's own once its record names it (pokeldn.for_receiver)
         self.content_sent = False
         self.seq = {}                  # (protocol, port) -> our next sequence
         self.stream_tx = reliable5.SendWindow(RETRANSMIT_INTERVAL)   # ours on 0x81, by port
@@ -296,10 +297,14 @@ class JoinerSession:
             who = data_exchange.read_record(self.host_record)
             self.log(f"[pla] <- the host's data exchange record: player {who['name']!r}, "
                      f"id {who['player_id'].hex()}")
-            try:                        # the console's record names its save, for the app
-                console_trainer.show("pla", data_exchange.read_trainer(self.host_record), "session")
-            except Exception:
-                pass
+            # The console's record names its save, for the app and the offers made its own.
+            heard = for_receiver.hear(None, data_exchange.read_trainer, self.host_record, game="pla", log=self.log)
+            if self.owned:
+                self.offer, *self.next_offers = for_receiver.remake(
+                    "pla", [self.offer, *self.next_offers], self.owned, heard,
+                    lambda data: pla_pokemon.encrypt(pla_pokemon.load(data)), log=self.log)
+                self.owned = set()
+                screen.offer("pla", self.offer)
         if self.host_record is not None and not self.content_sent:
             self.content_sent = True
             seq = self._next_seq(PROTO_STREAM, data_exchange.JOINER_PORT)

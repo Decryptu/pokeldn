@@ -34,12 +34,14 @@ class PokemonPicker:
     """Pick a species and PKHeX builds a legal one for the game; or check a file someone brings."""
 
     def __init__(self, app, game: str, value: dict | None, on_change, version: str = "", on_team=None,
-                 on_more=None, glow=None, trainer: dict | None = None, on_duplicate=None):
+                 on_more=None, glow=None, trainer: dict | None = None, on_duplicate=None, receiver: bool = False):
         """`on_team(sets)` places the sets after the first of a pasted team and says where they went;
         `on_more(paths)` places the files dropped with the first. `glow()` is what lights under a drag.
-        `trainer` replaces the app's own as the Pokemon's original trainer."""
+        `trainer` replaces the app's own as the Pokemon's original trainer. `receiver` offers the receiving
+        player as original trainer, in a trade (pokeldn.for_receiver)."""
         self.app, self.game, self.on_change, self.version = app, game, on_change, version
         self.trainer = trainer
+        self.receiver = receiver
         self.on_team, self.on_more, self.on_duplicate = on_team, on_more, on_duplicate
         self.value = dict(value or {})
         self.species = t.dropdown([], None, on_select=self._pick, enable_filter=True, editable=True,
@@ -66,11 +68,13 @@ class PokemonPicker:
         self.result = ft.Container()
         self.ribbons = RibbonPanel(self)
         self.options.extra.content = self.ribbons.control    # the last section of the options
-        # A file someone else made carries their trainer; this switch makes the player its original trainer.
-        self.retrain = t.switch(bool(self.value.get("retrain")), self._retrain)
-        self.retrain_row = ft.Row([self.retrain, t.text(tr('pokemon.use_my_trainer', 'Make me its original trainer'), 13, t.SOFT)],
-                                  spacing=6, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                                  visible=bool(self.value.get("source")))
+        # A file someone else made carries their trainer: the player, or in a trade the receiving player, can
+        # become its original trainer instead (docs/gui.md, Original trainer).
+        self.ot_slot = ft.Container()
+        self.ot_help = t.text("", 12, t.MUTED)
+        self.retrain_row = t.labeled_control(tr('pokemon.original_trainer', 'Original trainer'),
+                                             ft.Column([self.ot_slot, self.ot_help], spacing=4, tight=True))
+        self._ot_render()
         species = t.labeled_control(tr('pokemon.species_56205e', 'Species'), self.species, expand=True)
         level_shiny = [t.labeled_control(tr('pokemon.level_170930', 'Level'), self.level,
                                          trailing=t.pill_button(tr('pokemon.max_pill', 'Max'), self._max_level)),
@@ -219,7 +223,7 @@ class PokemonPicker:
         self.value["options"] = self.options.chosen
         self.species.value = None
         self.level.value = self.nickname.value = ""
-        self.shiny.value = self.retrain.value = False
+        self.shiny.value = False
         self.variants.visible = False
         self.options._label()
         self.options.species_changed()
@@ -340,7 +344,8 @@ class PokemonPicker:
             self._message(tr('pokemon.not_legal_with_my_trainer', 'Not legal with you as its original trainer: {value0}', value0=exc)
                           if retrain else
                           tr('pokemon.not_a_pokemon_this_game_can_take_cbe79a', 'Not a Pokemon this game can take: {value0}', value0=exc), t.RED)
-            self.value["retrain"] = self.retrain.value = False
+            self.value["retrain"], self.value["owner"] = False, "own"
+            self._ot_render()
             self.control.update()
             return
         self.value["source"] = path
@@ -367,12 +372,50 @@ class PokemonPicker:
         self._show_result()
         self.control.update()
 
-    def _retrain(self, e) -> None:
-        self.value["retrain"] = e.control.value
-        if self.value.get("source"):
-            self.load(self.value["source"])
+    def ot(self) -> str:
+        """Whose the Pokemon is: "own" (a file's own trainer), "me" or "receiver" (command.RECEIVER)."""
+        chosen = self.value.get("owner") or ("me" if self.value.get("retrain") else "")
+        if chosen == "receiver" and not self.receiver:
+            chosen = ""
+        return chosen or ("own" if self.value.get("source") else "me")
+
+    def _ot_render(self) -> None:
+        options = [("own", tr('pokemon.ot_own', 'Its own'))] if self.value.get("source") else []
+        options.append(("me", tr('pokemon.ot_me', 'You')))
+        if self.receiver:
+            options.append(("receiver", tr('pokemon.ot_receiver', 'The receiver')))
+        self.ot_slot.content = t.choice_field(options, self.ot(), self._ot_pick)
+        self.ot_help.value = tr('pokemon.ot_receiver_help', "The console's player becomes its original trainer "
+                                "during the trade, where PKHeX allows it.") if self.ot() == "receiver" else ""
+        self.ot_help.visible = bool(self.ot_help.value)
+        self.retrain_row.visible = bool(self.value.get("source")) or self.receiver
+
+    def _ot_pick(self, key: str) -> None:
+        was = self.ot()
+        self.value["owner"], self.value["retrain"] = key, key == "me"
+        if key == "receiver" and self.value.get("file") and not self._takes_another_trainer():
+            self.value["owner"], self.value["retrain"] = was, was == "me"
+        elif self.value.get("source") and "me" in (key, was):
+            self.load(self.value["source"])     # the file again, under the trainer just chosen
+            return
         else:
             self.on_change(dict(self.value))
+        self._ot_render()
+        self.control.update()
+
+    def _takes_another_trainer(self) -> bool:
+        """Whether PKHeX keeps the file legal under a trainer no Pokemon names (for_receiver.PROBE): an event with a
+        fixed trainer refuses, and stays with its own."""
+        from pokeldn.for_receiver import PROBE
+        try:
+            reply = SERVICE.check(self.game, self.value["file"], {"trainer": PROBE})
+        except Exception as exc:
+            reply = {"legal": False, "report": str(exc)}
+        if reply["legal"]:
+            return True
+        self._message(tr('pokemon.ot_receiver_refused', 'It cannot take the receiver as original trainer: {value0}',
+                         value0=reply.get("report", "")), t.RED)
+        return False
 
     def _paste(self, e, text: str = "") -> None:
         """A Showdown or Smogon set fills the form; Build then makes it. In a queue a team fills the trades
@@ -492,7 +535,9 @@ class PokemonPicker:
                                if busy else message)
 
     def _show_result(self) -> None:
-        self.retrain_row.visible = bool(self.value.get("file") and self.value.get("source"))
+        self._ot_render()
+        self.retrain_row.visible = bool(self.value.get("file") and self.value.get("source")) or (
+            self.receiver and bool(self.value.get("species") or self.value.get("file")))
         self.clear_button.visible = bool(self.value.get("species") or self.value.get("file"))
         self.export_button.visible = bool(self.value.get("file"))
         self.duplicate_button.visible = bool(self.on_duplicate and self.value.get("species"))
@@ -535,8 +580,9 @@ class PokemonPicker:
 class OfferQueue:
     """The Pokemon one session trades, in order: one picker per trade, up to `limit`."""
 
-    def __init__(self, app, game: str, value, limit: int, on_change, version: str = ""):
+    def __init__(self, app, game: str, value, limit: int, on_change, version: str = "", receiver: bool = False):
         self.app, self.game, self.limit, self.on_change, self.version = app, game, limit, on_change, version
+        self.receiver = receiver    # each trade's Pokemon can go as the receiving player's own
         self.slots: list[dict] = []
         self.rows = ft.Column(spacing=10)
         self.count = t.text("", 12, t.MUTED)
@@ -560,7 +606,8 @@ class OfferQueue:
                                        version=self.version, on_team=lambda sets, s=slot: self._team(s, sets),
                                        on_more=lambda paths, s=slot: self._more(s, paths),
                                        on_duplicate=lambda v, s=slot: self._duplicate(s, v),
-                                       glow=lambda s=slot: s["box"] if len(self.slots) > 1 else self.card)
+                                       glow=lambda s=slot: s["box"] if len(self.slots) > 1 else self.card,
+                                       receiver=self.receiver)
         slot["remove"] = t.icon_button("close", lambda e, s=slot: self._remove(s), tr('pokemon.remove_this_trade_311a79', 'Remove this trade'))
         slot["header"] = ft.Row([slot["title"], slot["remove"]], spacing=8,
                                 vertical_alignment=ft.CrossAxisAlignment.CENTER)

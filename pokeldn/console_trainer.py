@@ -43,11 +43,19 @@ def show(game: str, fields: dict, source: str) -> None:
     print(PREFIX + json.dumps(message, ensure_ascii=False), flush=True)
 
 
+def link_player_fields(lp):
+    """The save named by a GBA LinkPlayer."""
+    return {"ot": lp.name, "tid": lp.trainer_id & 0xFFFF, "sid": lp.trainer_id >> 16 & 0xFFFF,
+            "gender": lp.gender if lp.gender in (0, 1) else None, "language": lp.language,
+            "version": lp.version & 0xFF if lp.version >> 8 == 0x40 else None}
+
+
 def from_link_player(game: str, lp) -> None:
     """A GBA console's LinkPlayer (pokeldn.frlg.link.linkplayer) names its save, secret ID included."""
-    show(game, {"ot": lp.name, "tid": lp.trainer_id & 0xFFFF, "sid": lp.trainer_id >> 16 & 0xFFFF,
-                "gender": lp.gender if lp.gender in (0, 1) else None, "language": lp.language,
-                "version": lp.version & 0xFF if lp.version >> 8 == 0x40 else None}, "session")
+    fields = link_player_fields(lp)
+    if fields["version"] in (1, 2, 3):
+        game = "rse"
+    show(game, fields, "session")
 
 
 def own(game: str, f: dict) -> dict | None:

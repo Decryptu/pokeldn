@@ -85,7 +85,9 @@ def offers(value) -> list[dict]:
     return [value] if isinstance(value, dict) else []
 
 
-GIFT_EVENT = "--gift-event"     # pokeldn.receiver_gift
+GIFT_EVENT = "--gift-event"     # pokeldn.for_receiver
+RECEIVER_OWNS = "--receiver-owns"
+RECEIVER = "receiver"           # an offer card's owner: its original trainer becomes the receiving player
 
 
 def locked(field: Field, tool: Tool, values: dict) -> str:
@@ -124,7 +126,10 @@ def _args(field: Field, value, tool: Tool) -> list[str]:
         # Each Mystery Gift Pokemon's card, in the same order, for a copy made for the receiving player.
         gifts = ([a for v in chosen for a in (GIFT_EVENT, v.get("event", ""))]
                  if field.events and GIFT_EVENT in accepted(tool.script) else [])
-        return out + gifts + ([field.count, str(len(files))] if field.count else [])
+        # Each offer whose original trainer is the receiving player, by its place in the queue (pokeldn.for_receiver).
+        owns = ([a for n, v in enumerate(chosen, 1) if v.get("owner") == RECEIVER for a in (RECEIVER_OWNS, str(n))]
+                if RECEIVER_OWNS in accepted(tool.script) else [])
+        return out + gifts + owns + ([field.count, str(len(files))] if field.count else [])
     if field.kind == "rewards":
         return [part for row in (value or ())
                 for part in (flags[0], f"{row.get('item_id', '')}:{row.get('quantity', '')}")]

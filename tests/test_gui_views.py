@@ -78,7 +78,8 @@ def test_a_friendship_past_255_or_empty_is_not_sent(typed, sent):
 
 
 class StubPicker:
-    def __init__(self, app, game, value, on_change, version="", on_team=None, on_more=None, glow=None, on_duplicate=None):
+    def __init__(self, app, game, value, on_change, version="", on_team=None, on_more=None, glow=None, on_duplicate=None,
+                 receiver=False):
         self.on_change, self.on_team, self.on_more, self.on_duplicate = on_change, on_team, on_more, on_duplicate
         self.control, self.applied, self.value, self.built = SimpleNamespace(), None, value, False
 

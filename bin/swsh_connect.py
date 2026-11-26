@@ -38,7 +38,7 @@ from pokeldn.swsh import raid as swsh_raid
 from pokeldn.swsh import raid_battle
 from pokeldn.swsh import lair as swsh_lair
 from pokeldn.ldn import sync_clock
-from pokeldn import gen8, trade_back
+from pokeldn import gen8, for_receiver, trade_back
 from pokeldn.swsh import pokemon as swsh_pokemon
 from pokeldn.swsh import trade_payload
 from pokeldn.ldn import hold_after_trade_over, show_done
@@ -1517,6 +1517,13 @@ async def main_async(args):
                 payload = trade_payload.inflate_short(payload)
             original_party = payload
             was = trade_payload.read(payload)["trainer_name"]
+            # The console's own snapshot names its save, for the app and the offers made its own.
+            heard = (for_receiver.hear(None, trade_payload.trainer, payload, game="swsh")
+                     if args.send_snapshot == "live" else None)
+            owned = for_receiver.owns(args) if args.offer_file else set()
+            if owned:
+                args.offer_file = for_receiver.remake_files("swsh", args.offer_file, owned, heard)
+                args.receiver_owns = []
             # The tail's three ids are not drawn on the trade screen (docs/swsh_protocol.md).
             profile = trade_payload.read_tail(payload)
             theirs = profile["device_id"] + profile["account_uid"] + profile["nsa_id"]
@@ -2636,15 +2643,14 @@ def build_parser():
                          "nothing and only records what the console offers us")
     ap.add_argument("--offer-file", action="append", default=[], metavar="FILE",
                     help="a .pk8 to put in --offer-slot in place of the snapshot's record: stored "
-                         "or party form, encrypted or PKHeX's decrypted export. Its OT name and "
-                         "ids become the snapshot's unless --offer-file-as-is. Repeatable, one per "
-                         "trade on the session: the console's player picks again from the box; the "
-                         "last serves every later trade")
+                         "or party form, encrypted or PKHeX's decrypted export, with its own OT "
+                         "unless --receiver-owns marks it. Repeatable, one per trade on the session: "
+                         "the console's player picks again from the box; the last serves every later "
+                         "trade")
     trade_back.add_arguments(ap)
+    for_receiver.add_owns_argument(ap)
     ap.add_argument("--fresh-pid", action="store_true",
                     help="draw a new encryption constant and PID for every offered Pokemon")
-    ap.add_argument("--offer-file-as-is", action="store_true",
-                    help="keep the file's own OT name and trainer ids")
     ap.add_argument("--offer-species", type=lambda s: int(s, 0), default=None,
                     help="build the record in --offer-slot instead of sending it as it came: this "
                          "national dex number, in the party record the snapshot advertises AND in "
@@ -2765,7 +2771,6 @@ def main(argv=None):
         args.offer_file = [pokemon_service.prepare_file(
             "swsh", path, fresh=args.fresh_pid,
             transform=lambda raw: swsh_pokemon.build_from(raw, **edits)) for path in args.offer_file]
-        args.offer_file_as_is = True
         for key in ("species", "ability", "level", "experience", "nickname", "ot", "ivs", "moves"):
             setattr(args, "offer_" + key, None)
     args.validate_offer = True

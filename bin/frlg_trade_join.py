@@ -30,7 +30,7 @@ from pokeldn.ldn import pia_connect  # noqa: E402
 from pokeldn.frlg.link import trade_runtime as runtime  # noqa: E402
 from pokeldn.ldn import hold_after_trade_over, show_done  # noqa: E402
 from pokeldn.app import screen  # noqa: E402
-from pokeldn import trade_back  # noqa: E402
+from pokeldn import for_receiver, trade_back  # noqa: E402
 
 
 def make_engine(run_config, lg, *, default_anim_delay=None):
@@ -46,7 +46,7 @@ def make_engine(run_config, lg, *, default_anim_delay=None):
         anim_delay=anim_delay, decline=options.decline, trades=plan.trades,
         offered_slots=plan.offered_slots,
         refuse_partner_deoxys_mew=options.refuse_illegit,
-        trust_pia=plan.trust_pia, log=elog)
+        trust_pia=plan.trust_pia, log=elog, owned=plan.owned)
     if plan.shown_path:
         eng.on_party = runtime.shown_party(plan.shown_path)
     lg(f"  seat=RIGHT (Follower / mpId={eng.mpid}); trades={eng.trades}, "
@@ -422,6 +422,7 @@ def build_parser():
                     help="number of sequential trades to perform, 1..6 (default 1; 6 = swap both "
                          "entire parties). After the Nth trade the sim cancels-to-leave.")
     trade_back.add_arguments(ap)
+    for_receiver.add_owns_argument(ap)
     launcher.add_hold_after_trade_argument(ap)
     ap.add_argument("--self-id", type=int, default=1, choices=(1,),
                     help="wire mpId / gLocalLinkPlayerId (joiner = 1 = right seat; the only valid "
@@ -484,7 +485,8 @@ def _build_run_config(ap, args):
             trade_slot=args.slot,
             offered_slots=None if offered_slots is None else tuple(offered_slots),
             trades=trades, anim_delay=args.anim_delay,
-            trust_pia=args.trust_pia, shown_path=args.save_shown)
+            trust_pia=args.trust_pia, shown_path=args.save_shown,
+            owned=tuple(sorted(for_receiver.owns(args))))
         ldn = configmod.LdnConfig(
             password=host_cli.parse_hex_bytes(ap, "--password", args.password),
             phy=args.phy,

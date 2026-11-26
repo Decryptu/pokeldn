@@ -28,7 +28,7 @@ from pokeldn.ldn import api as ldn
 from pokeldn.host_support import open_output
 from pokeldn import launcher
 from pokeldn import pokemon as pokemon_service
-from pokeldn import receiver_gift, trade_back
+from pokeldn import for_receiver, trade_back
 from pokeldn.ldn import pia3, pia4, station9, station4
 from pokeldn.ldn import mesh_protocol as mp
 from pokeldn.ldn import clone, hold_after_trade_over, sync_clock, ldn_mitm
@@ -332,6 +332,7 @@ def build_parser():
     ap.add_argument("--clone-requests", type=int, default=10,
                     help="answered clock requests of our own before the participate (measured 10)")
     trade_back.add_arguments(ap)
+    for_receiver.add_owns_argument(ap)
     return ap
 
 
@@ -357,8 +358,12 @@ def answer(args, state, msg, send):
     console's last offer is its trade's record, returned byte for byte, never under a fresh PID
     (pokeldn.trade_back)."""
     if msg["kind"] == pb7.FIRST_MESSAGE:
-        # The console host's save, for the app (pokeldn.console_trainer).
-        receiver_gift.hear(None, pb7.first_trainer, msg["body"], game="lgpe")
+        # The console host's save, for the app (pokeldn.console_trainer) and the offers made its own.
+        heard = for_receiver.hear(None, pb7.first_trainer, msg["body"], game="lgpe")
+        if getattr(args, "owned", None):
+            args.offers = for_receiver.remake_files("lgpe", args.offers, args.owned, heard)
+            args.offer, args.owned = args.offers[0], set()
+            show_offer(args.offer)
     rounds = getattr(args, "rounds", None)
     r = state.get("round", 0)
     if rounds is not None and msg["kind"] == pb7.RESULT_MESSAGE + 2 * r and state.get("committed"):
@@ -386,6 +391,7 @@ def main(argv=None):
                    pokemon_service.prepare_file("lgpe", path, fresh=args.fresh_pid)
                    for path in args.offer or ()]
     args.offer = args.offers[0] if args.offers else None
+    args.owned = for_receiver.owns(args) if args.offer and "echo" not in args.offers else set()
     show_offer(args.offer)
     args.fresh_pid = False
     setup_trade_back(args)

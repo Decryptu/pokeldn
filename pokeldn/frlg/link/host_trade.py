@@ -6,7 +6,7 @@ from collections import Counter, deque
 from dataclasses import dataclass
 
 from pokeldn import console_trainer
-from pokeldn.frlg.link import battle_link as bl, cable_club, linkplayer, trade, uroom_battle, uroom_chat
+from pokeldn.frlg.link import battle_link as bl, cable_club, linkplayer, trade, trade_runtime, uroom_battle, uroom_chat
 from pokeldn.frlg.save import mon as monmod
 from pokeldn.gba import block, rfu, rfu_leader
 
@@ -139,8 +139,9 @@ class HostTradeEngine:
                  link_player=None, profile=None, anim_delay=1935, trust_pia=True, timing=None,
                  union_room=False, union_room_chat=False, chat_messages=None,
                  union_room_battle=False, battle_forfeit=True, battle_move_slot=0,
-                 colosseum=False, card_flag_id=0, log=lambda *a: None, partner=None):
+                 colosseum=False, card_flag_id=0, log=lambda *a: None, partner=None, owned=()):
         self.party = list(party)
+        self.owned = set(owned)     # made the console's save's own once its LinkPlayer names it
         self.on_party = None    # called with the console's 600-byte party once it has all arrived
         # Online (pokeldn.online): the partner's console's blocks answer this console's, pair by
         # pair; its pick is our SET_MONS and START_TRADE waits for both consoles' YES
@@ -534,6 +535,8 @@ class HostTradeEngine:
                 return
             self.child_link_player = lp
             console_trainer.from_link_player("frlg", lp)
+            if self.owned:
+                self.party, self.owned = trade_runtime.console_party(self.party, lp, self.owned, self.info), set()
             self._expected = "warp0"
             self._queue_block(self._link_player_block, "host:link_player")
             self.info(f"Console identified as {lp.name!r}; sending the host LinkPlayer block now.")

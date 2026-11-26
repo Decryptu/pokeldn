@@ -12,7 +12,7 @@ formats and timing, and shared components live outside any game directory.
 | `pokeldn/popup.py` | [Pop-ups](gui.md#pop-ups) a program shows in the app; `pokeldn/app/popups.py` decides which show |
 | `pokeldn/pokemon.py` | PKHeX service, imports, final offer validation and received files |
 | `pokeldn/gifts.py` | Shared [Mystery Gift file](gifts.md) envelope, reader, writer and native conversion |
-| `pokeldn/receiver_gift.py` | A trade host's Mystery Gift Pokemon made for the console's save ([Made for the receiving player](gift_simulated.md#made-for-the-receiving-player)) |
+| `pokeldn/for_receiver.py` | A Pokemon made for the console's save during the trade: a Mystery Gift ([Made for the receiving player](gift_simulated.md#made-for-the-receiving-player)) or an offer given the receiver as original trainer ([Original trainer](gui.md#original-trainer)) |
 | `services/pkhex/` | Pinned PKHeX.Core; legal encounter generation and compatibility checks |
 | `pokeldn/ldn/` | Radio transport, IP, Pia, reliability and channel tables |
 | `pokeldn/online/` | [Online trade](online.md): relays, matching and the encrypted partner channel |

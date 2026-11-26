@@ -95,7 +95,7 @@ def read_record(record):
 
 
 def read_trainer(record):
-    """-> the trainer a decompressed record names, as pokeldn.receiver_gift takes it: id pair, version,
+    """-> the trainer a decompressed record names, as pokeldn.for_receiver takes it: id pair, version,
     gender, language and name."""
     record = bytes(record)
     if len(record) != RECORD_SIZE:

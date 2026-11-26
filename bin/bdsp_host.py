@@ -24,7 +24,7 @@ from pokeldn.host_support import open_output, write_file
 from pokeldn import pokemon as pokemon_service
 from pokeldn.ldn import hold_after_trade_over, left_after_trade
 from pokeldn.online import session as online
-from pokeldn import receiver_gift, trade_back
+from pokeldn import for_receiver, trade_back
 from pokeldn.bdsp import pokemon, room
 from pokeldn.bdsp.host import (APP_VERSION, MAX_PARTICIPANTS, SCENE_UNION_ROOM,
                                SCENE_UNION_ROOM_PASSWORD, Advertisement,
@@ -93,7 +93,7 @@ def build_parser():
                     help="seconds after the player's trade emote before our character approaches (no walk)")
     launcher.add_linux_arguments(ap, host=True)
     online.add_arguments(ap)
-    receiver_gift.add_arguments(ap, "--offer")
+    for_receiver.add_arguments(ap, "--offer")
     trade_back.add_arguments(ap)
     return ap
 
@@ -155,13 +155,13 @@ def main(argv=None):
             write_file(f'{prefix}_{n}.pb8', raw)
 
     remote = online.partner("bdsp", args, code=args.password or "", name=tname)
-    # A gift made for the receiving player stands in for an online partner (pokeldn.receiver_gift).
-    receiving = None if remote is not None else receiver_gift.setup("bdsp", args, offers, pokemon.build_from,
+    # A gift made for the receiving player stands in for an online partner (pokeldn.for_receiver).
+    receiving = None if remote is not None else for_receiver.setup("bdsp", args, offers, pokemon.build_from,
                                                                     fresh=args.fresh_pid)
     if args.trade_back:
         remote = trade_back.TradeBack("bdsp", offers)
     elif receiving is not None:
-        remote = receiver_gift.ReceiverGift("bdsp", *receiving, notify=receiver_gift.pop_up())
+        remote = for_receiver.ReceiverGift("bdsp", *receiving, notify=for_receiver.pop_up())
     partner = TradePartner(offers or bytes(0), tname, int(tid), int(sid), complete=args.complete_trade,
                            approach_delay=args.approach_delay, state=args.state,
                            recruiting=args.recruiting, save_theirs=save_theirs,
@@ -200,7 +200,7 @@ def main(argv=None):
         """No queued offer is left for this seat; an online partner's queue is theirs."""
         if isinstance(remote, trade_back.TradeBack):
             return remote.rounds.finished
-        if remote is not None and not isinstance(remote, receiver_gift.ReceiverGift):
+        if remote is not None and not isinstance(remote, for_receiver.ReceiverGift):
             return False
         return partner.trades >= len(offers)
 

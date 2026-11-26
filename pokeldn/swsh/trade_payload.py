@@ -81,22 +81,31 @@ def _text(data, offset):
     return data[offset:offset + NAME_LENGTH].decode("utf-16-le", "replace").split("\x00")[0]
 
 
-def read(payload):
-    """-> the party and the trainer behind it. `party` is `swsh.pokemon.party`'s six slots."""
+def trainer(payload):
+    """The save's OT and raw 16-bit IDs from MyStatus, independent of the party's owners."""
     if len(payload) != PAYLOAD_LENGTH:
         raise ValueError(f"{len(payload)} bytes, expected {PAYLOAD_LENGTH}")
     status = payload[MY_STATUS_OFFSET:MY_STATUS_OFFSET + MY_STATUS_LENGTH]
+    tid, sid = struct.unpack_from("<HH", status, MY_STATUS_TID)
+    return {"ot": _text(status, MY_STATUS_NAME), "tid": tid, "sid": sid,
+            "version": status[MY_STATUS_GAME], "gender": status[MY_STATUS_GENDER],
+            "language": status[MY_STATUS_LANGUAGE]}
+
+
+def read(payload):
+    """-> the party and the trainer behind it. `party` is `swsh.pokemon.party`'s six slots."""
+    owner = trainer(payload)
     card = payload[TRAINER_CARD_OFFSET:TRAINER_CARD_OFFSET + TRAINER_CARD_LENGTH]
     year, month, day = struct.unpack_from("<HBB", card, TRAINER_CARD_STARTED)
     return {
         "party": pokemon.party(payload[PARTY_OFFSET:PARTY_OFFSET + pokemon.PARTY_BLOCK]),
         "party_count": payload[PARTY_COUNT_OFFSET],
         "party_slot": payload[PARTY_SLOT_OFFSET],
-        "trainer_name": _text(status, MY_STATUS_NAME),
-        "trainer_id": struct.unpack_from("<H", status, MY_STATUS_TID)[0],
-        "secret_id": struct.unpack_from("<H", status, MY_STATUS_SID)[0],
-        "game": status[MY_STATUS_GAME],
-        "gender": status[MY_STATUS_GENDER],
+        "trainer_name": owner["ot"],
+        "trainer_id": owner["tid"],
+        "secret_id": owner["sid"],
+        "game": owner["version"],
+        "gender": owner["gender"],
         "card_name": _text(card, TRAINER_CARD_NAME),
         "card_language": card[TRAINER_CARD_LANGUAGE],
         "started": (year, month, day),
