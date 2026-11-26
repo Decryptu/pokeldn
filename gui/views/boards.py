@@ -181,7 +181,7 @@ class BoardView:
         if f.state in ("busy", "denied", "wrong-port"):
             return tr('boards.needs_attention_c1ebc7', 'Needs attention')
         if f.firmware is None:
-            return tr('boards.firmware_did_not_respond', 'Firmware did not respond')
+            return tr('boards.no_pokeldn_firmware_091f1a', 'No pokeldn firmware')
         return tr('boards._54ef3b', '{value0} {value1}', value0=f.firmware.name, value1=f.version).strip()
 
     # The page
@@ -226,10 +226,10 @@ class BoardView:
                     self._unconfirmed()
                 elif f.kind != kind:
                     self.progress_text.color = t.AMBER
-                    self.progress_text.value = tr('boards.flash_wrong_firmware', 'Firmware verified, but the board reported a different firmware.')
+                    self.progress_text.value = tr('boards.flash_wrong_firmware', 'Installed, but the board runs a different firmware. Install it again.')
                 elif f.state == "old":
                     self.progress_text.color = t.AMBER
-                    self.progress_text.value = tr('boards.flash_incompatible', 'Firmware verified. The board requires a compatible update.')
+                    self.progress_text.value = tr('boards.flash_incompatible', 'Installed, but this firmware is too old for the app. Update it below.')
                 else:
                     self.progress_text.color = t.GREEN
                     self.progress_text.value = tr('boards.installed_ready_to_use', 'Installed. Ready to use.')
@@ -289,7 +289,7 @@ class BoardView:
                                              disabled=busy or self.pad_checking))
         elif f.state == "none":
             radio = board.FIRMWARE_BY_KIND["radio"]
-            icon, color, title, detail = "warning-diamond", t.AMBER, tr('boards.firmware_did_not_respond', 'Firmware did not respond'), (
+            icon, color, title, detail = "warning-diamond", t.AMBER, tr('boards.no_pokeldn_firmware_091f1a', 'No pokeldn firmware'), (
                 tr('boards.install_a_firmware_below_the_wireless_firmware_is_the_o_7af2bf', 'Install a firmware below. The Wireless firmware is the one every Games tool needs.'))
             action.append(t.secondary_button(tr('boards.check_again_fb7099', 'Check again'), self._identify, "refresh", disabled=busy))
             action.append(t.button(tr('boards.install_fa4031', 'Install {value0}', value0=radio.name), lambda e: self.confirm(radio), "download",
@@ -690,19 +690,21 @@ class BoardView:
                 self.progress_text.color = t.GREEN
                 self.progress_text.value = tr('boards.installed_plug_the_board_into_the_switch_s_usb_c_port_a_7dda2a', "Installed. Plug the board into the Switch's USB-C port and open Control.")
             else:
-                self.progress_text.value = tr('boards.flash_verified_checking', 'Firmware verified. Checking the board...')
+                self.progress_text.value = tr('boards.installed_checking_the_board_72e948', 'Installed. Checking the board...')
             self.render()
             self.control.update()
+            # A native-USB board comes back under a new port name, or as a controller with none.
             threading.Timer(3.0, lambda: self.app.ui(
                 lambda: self._after_install(device, kind, serial))).start()
         self.app.ui(done)
 
     def _unconfirmed(self) -> None:
         self.progress_text.color = t.AMBER
-        self.progress_text.value = tr('boards.flash_unconfirmed', 'Firmware verified, but the board did not confirm it over USB.')
+        self.progress_text.value = tr('boards.flash_unconfirmed', 'Installed, but the board did not answer.')
 
     def _after_install(self, device: str, kind: str, serial: str, waited: int = 0) -> None:
-        """A native-USB board can come back under a different port name after reset."""
+        """Linux and macOS may give a native-USB board a new node after its reset; its USB serial
+        number (the MAC) follows it. A first HELLO before the firmware has booted gets no reply."""
         present = board.ports()
         same = next((p.device for p in present if serial and p.serial_number == serial), "")
         if not same and any(p.device == device for p in present):

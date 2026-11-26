@@ -644,9 +644,11 @@ The second line restores it. A board with no backup takes Blackmagic back throug
 Some classic ESP32 boards answer the ROM loader but never start esptool's stub (`Failed to start stub
 flasher`); one such board read eFuse block 0 as zeros (`MAC: 00:00:00:00:00:00`, revision v0.0). Its
 ROM also drops the baud change to 460800 and stops some writes partway. On that error `gui.board.flash`
-reconnects and writes with `--no-stub` at the connect baud. The classic ESP32 ROM path compresses
-the image in transit and retries a dropped write or serial-open error on a fresh connection, up to
-`ROM_ATTEMPTS` (4) attempts.
+reconnects and writes with `--no-stub --compress` at the connect baud, up to `ROM_ATTEMPTS` (4)
+connections, one second apart. A dropped write and a refused port open (Windows: `Access is denied`
+right after a drop) both take the next connection. A classic ESP32 (CP210x) wrote the 962,288-byte
+Bluetooth image as 615,996 compressed bytes this way; uncompressed, the same board stopped at 33.7%.
+Any other failure ends the install.
 
 ### Bluetooth
 

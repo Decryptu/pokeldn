@@ -2188,9 +2188,9 @@ def test_a_failed_trade_run_retries_on_the_offers_it_has_not_traded(tmp_path, mo
 
 @pytest.mark.parametrize("kind, current, shown", [
     ("radio_ble", True, "Installed. Ready to use."),
-    ("radio_ble", False, "Firmware verified. The board requires a compatible update."),
-    ("radio", True, "Firmware verified, but the board reported a different firmware."),
-    (None, False, "Firmware verified, but the board did not confirm it over USB."),
+    ("radio_ble", False, "Installed, but this firmware is too old for the app. Update it below."),
+    ("radio", True, "Installed, but the board runs a different firmware. Install it again."),
+    (None, False, "Installed, but the board did not answer."),
 ])
 def test_the_line_after_an_install_ends_when_the_board_answers(monkeypatch, kind, current, shown):
     from gui.views import boards

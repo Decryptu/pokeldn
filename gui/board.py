@@ -475,28 +475,25 @@ def flash(port: str, firmware: str = "", kind: str = "radio", from_loader: bool 
             if not str(error).startswith(STUB_FAILED):
                 raise
     # A board whose stub never starts: a fresh connection writes through the ROM loader at the
-    # connect baud; the ROM drops the switch to 460800 and some writes on a fresh connection.
-    # docs/hardware_esp32.md, A board whose stub flasher never starts.
+    # connect baud, compressed; the ROM drops the switch to 460800 and some writes on a fresh
+    # connection. docs/hardware_esp32.md, A board whose stub flasher never starts.
     print("[app] The board's flasher stub did not start; writing through its ROM loader instead "
           "(slower).", flush=True)
     for attempt in range(1, ROM_ATTEMPTS + 1):
         try:
             with _connect(port, kind, from_loader) as chip:
-                if chip.CHIP_NAME != name:
-                    break
-                options = ["--compress"] if name == "ESP32" else []
-                esptool.main(["--no-stub", "--after", after, "write-flash", *options,
-                              "0x0", os.path.abspath(path)], esp=chip)
-                return
-        except (esptool.FatalError, OSError) as error:
+                found = chip.CHIP_NAME
+                if found == name:
+                    esptool.main(["--no-stub", "--after", after, "write-flash", "--compress",
+                                  "0x0", os.path.abspath(path)], esp=chip)
+                    return
+        except (esptool.FatalError, OSError) as error:   # OSError: Windows refuses a port just dropped
             if attempt == ROM_ATTEMPTS:
                 raise
             print(f"[app] The write stopped ({str(error).splitlines()[0]}); trying again.", flush=True)
             time.sleep(1.0)
-    raise esptool.FatalError(tr('board.merged_firmware_does_not_match_941ee6',
-                                'Merged firmware does not match {value0}: {value1}',
-                                value0=chip.CHIP_NAME, value1=path))
-
+            continue
+        raise esptool.FatalError(tr('board.merged_firmware_does_not_match_941ee6', 'Merged firmware does not match {value0}: {value1}', value0=found, value1=path))
 
 def main() -> int:
     import argparse
