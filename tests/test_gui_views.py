@@ -1,6 +1,7 @@
 import os
 import dataclasses
 import sys
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -1504,8 +1505,9 @@ def test_the_raid_card_lists_its_scripted_actions_after_its_rewards(monkeypatch)
     app = SimpleNamespace(settings=SimpleNamespace(sprites=False), page=None, ui=lambda fn: fn())
     monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
     naming = []
-    monkeypatch.setattr(raid_seed.threading, "Thread",
-                        lambda target, args, daemon: SimpleNamespace(start=lambda: naming.append((target, args))))
+    # The view's own reference: patching threading.Thread itself breaks the sprite thread pool.
+    monkeypatch.setattr(raid_seed, "threading", SimpleNamespace(Event=threading.Event, Thread=lambda target, args, daemon:
+                        SimpleNamespace(start=lambda: naming.append((target, args)))))
     monkeypatch.setattr(DISPLAY_SERVICE, "names", lambda game, kind: {
         "bag": [{"id": 1127, "name": "Exp. Candy XL"}], "moves": [{"id": 315, "name": "Overheat"}]}[kind])
     desc = [2500, 65, 55, 9999, 40, 0, 0, 20, 70, 30, 3, 1, 99, 315, 2, 2, 70, 0] + [0] * 19
@@ -1926,7 +1928,8 @@ def test_the_finder_s_bar_shows_how_far_a_search_is(monkeypatch):
                           ui=lambda f: f())
     monkeypatch.setattr(raid_search, "FAST", False)
     monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
-    monkeypatch.setattr(raid_seed.threading, "Thread", lambda target, daemon: SimpleNamespace(start=target))
+    monkeypatch.setattr(raid_seed, "threading", SimpleNamespace(
+        Event=threading.Event, Thread=lambda target, daemon: SimpleNamespace(start=target)))
     picker = raid_seed.RaidSeedPicker(app, "", lambda _v: None,
                                       lambda: {"version": "violet", "map_name": "paldea", "progress": "6star",
                                                "content": "standard"}, lambda _c: None)
