@@ -153,6 +153,8 @@ class SettingsView:
                    tr('settings.prod_keys_dumped_from_your_own_console_needed_to_talk_t_26673c', 'prod.keys dumped from your own console. Needed to talk to the games; it never leaves this computer.')),
             entry(tr('settings.your_trainer_d70afb', 'Your trainer'), trainer,
                    tr('settings.your_trainer_detail', 'The original trainer of every Pokemon the app builds for you. Put your own name, gender and IDs to make them yours, so a traded Pokemon keeps its friendship: FireRed and LeafGreen show a five-digit ID, the Switch games a six-digit one. The IDs were drawn at random on first launch; Find mine takes the ones of the last game you traded with. Play several games with different saves? Give each game its own trainer; a game you leave unchanged keeps the shared one.')),
+            switch("receiver_owns", tr('settings.receiver_owns', "Give traded Pokemon to the receiver's trainer"),
+                   tr('settings.receiver_owns_detail', "A Pokemon the app builds for a trade takes the name and IDs of the console that receives it, as if that player caught it. Off, it keeps Your trainer. Pokemon files and banked Pokemon always keep their own trainer.")),
             switch("retry_trades", tr('settings.retry_trades', 'Retry failed trades'),
                    tr('settings.retry_trades_detail', 'When a trade run fails because the console never joined, the board dropped or the join failed, start it again after 15 seconds with the Pokemon not yet traded, up to 3 times in a row.')),
             switch("larger_text", tr('settings.larger_text', 'Larger text'),

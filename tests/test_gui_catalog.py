@@ -33,13 +33,13 @@ TRADES = [tool for tool in TOOLS if any(f.kind == "pokemon" and f.queue > 1 and 
 
 
 @pytest.mark.parametrize("tool", TRADES, ids=[t.key for t in TRADES])
-def test_a_trade_marks_each_offer_the_receiver_owns_by_its_place_in_the_queue(tool):
-    """Every trade tool's launcher takes the card's Original trainer choice (pokeldn.for_receiver): trade 2 of three,
-    the receiver's own, reaches its parser as offer 2."""
+def test_settings_give_each_built_offer_to_the_receiver_and_files_keep_their_own(tool):
+    """Settings, Give traded Pokemon to the receiver's trainer (pokeldn.for_receiver): with it on, the built trades
+    1 and 3 reach the launcher's parser as the receiver's own, the file and the banked Pokemon do not; off, none."""
     offer = next(f for f in tool.fields if f.kind == "pokemon")
-    queue = [{"file": "a.bin"}, {"file": "b.bin", "owner": "receiver"}, {"file": "c.bin", "owner": "me"}]
-    args = parser_of(tool.script).parse_args(build(tool, {offer.key: queue}, {}, Settings()))
-    assert args.receiver_owns == [2]
+    queue = [{"file": "a.bin"}, {"file": "b.bin", "source": "b.pk8"}, {"file": "c.bin"}, {"file": "d.bin", "bank": "x"}]
+    parse = lambda on: parser_of(tool.script).parse_args(build(tool, {offer.key: queue}, {}, Settings(receiver_owns=on)))
+    assert (parse(True).receiver_owns, parse(False).receiver_owns) == ([1, 3], [])
 
 
 LINKED = [tool for tool in TOOLS if tool.key != "swsh-gift"]   # the gift host advertises a card, no player

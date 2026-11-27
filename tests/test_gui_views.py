@@ -79,8 +79,7 @@ def test_a_friendship_past_255_or_empty_is_not_sent(typed, sent):
 
 
 class StubPicker:
-    def __init__(self, app, game, value, on_change, version="", on_team=None, on_more=None, glow=None, on_duplicate=None,
-                 receiver=False, choice=None):
+    def __init__(self, app, game, value, on_change, version="", on_team=None, on_more=None, glow=None, on_duplicate=None):
         self.on_change, self.on_team, self.on_more, self.on_duplicate = on_change, on_team, on_more, on_duplicate
         self.control, self.applied, self.value, self.built = SimpleNamespace(), None, value, False
 
@@ -2427,53 +2426,3 @@ def test_a_new_species_replaces_the_shown_options_with_their_skeleton(monkeypatc
     options.species_changed()
     assert options.body.controls[0].data == WAITING
 
-
-def test_one_original_trainer_choice_reaches_every_trade_but_a_file_that_keeps_its_own(monkeypatch):
-    """docs/gui.md, Original trainer: the queue's one choice sets every built offer's owner, a file keeps its
-    trainer until its switch is off, and an event PKHeX refuses under another trainer keeps its own. The
-    launcher's parser reads the result as --receiver-owns."""
-    from pokeldn.app.catalog import GAMES
-    from pokeldn.app.command import build
-    from pokeldn.app.introspect import parser_of
-    from pokeldn.app.settings import Settings
-    tool = next(tool for game in GAMES for tool in game.tools if tool.key == "swsh-host")
-    field = next(f for f in tool.fields if f.kind == "pokemon")
-    legal = {"event.pk8": False, "wild.pk8": True}
-    loaded = []
-
-    def import_file(game, path, trainer=None, receiver=None):
-        loaded.append((path, trainer))
-        return {"file": path, "species": "Pikachu", "species_id": 25, "level": 5, "shiny": False, "legal": True,
-                "encounter": "", "moves": [], "report": ""}
-
-    monkeypatch.setattr(pokemon.SERVICE, "species", lambda game: [])
-    monkeypatch.setattr(pokemon.SERVICE, "import_file", import_file)
-    monkeypatch.setattr(pokemon.SERVICE, "check", lambda game, path, fields: {"legal": legal[path], "report": "fixed OT"})
-    monkeypatch.setattr(pokemon, "worn_names", lambda game, path: [])
-    monkeypatch.setattr(ft.Control, "update", lambda self: None, raising=False)
-    me = {"ot": "ASH", "tid": 1, "sid": 2, "language": 2, "gender": 0}
-    settings = SimpleNamespace(sprites=False, name=lambda game: "ASH", own=lambda game: {"tid": 123456},
-                               trainer=lambda game: me)
-    app = SimpleNamespace(settings=settings, ui=lambda fn: None, page=SimpleNamespace(run_task=lambda fn: None))
-    saved = []
-    queue = OfferQueue(app, "swsh", [{"file": "a.pk8", "species": 25}, {"file": "b.pk8", "species": 25, "owner": "me"},
-                                     {"file": "event.pk8", "source": "event.pk8", "species": 25},
-                                     {"file": "wild.pk8", "source": "wild.pk8", "species": 25}],
-                       6, saved.append, receiver=True)
-    for slot in queue.slots:
-        slot["picker"].control = SimpleNamespace(update=lambda: None)
-
-    def owns():
-        return parser_of(tool.script).parse_args(build(tool, {field.key: saved[-1]}, {}, Settings())).receiver_owns
-
-    queue.choice._pick("receiver")
-    assert owns() == [1, 2]                       # the two files keep their own trainers
-    for slot in queue.slots[2:]:
-        slot["picker"]._keep(SimpleNamespace(control=SimpleNamespace(value=False)))
-    assert owns() == [1, 2, 4]                    # the event keeps its own: PKHeX refuses it another trainer
-    assert queue.slots[2]["picker"].keeps_own() and loaded == [("wild.pk8", me)]
-    queue.choice._pick("me")
-    assert owns() == [] and saved[-1][3]["owner"] == "me"
-    again = OfferQueue(app, "swsh", [dict(v) for v in saved[-1][:2]] + [{**saved[-1][2], "owner": "receiver"}], 6,
-                       saved.append, receiver=True)
-    assert again.choice.value == "receiver"       # a queue saved with a choice per card shows the one choice

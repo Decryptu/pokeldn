@@ -61,6 +61,9 @@ class Settings:
     # With per_game_trainer, game -> the fields of the trainer above it replaces for that game: ot, gender, language,
     # and tid and sid as that game shows them (docs/gui.md, A trainer per game).
     per_game_trainer: bool = False
+    # A Pokemon the app builds for a trade gets the receiving console's trainer (pokeldn.for_receiver,
+    # docs/gui.md, Original trainer).
+    receiver_owns: bool = False
     game_trainers: dict = field(default_factory=dict)
     # "gba" or "switch" -> the newest console trainer a run reported (pokeldn.console_trainer), for Find mine.
     found_trainers: dict = field(default_factory=dict)

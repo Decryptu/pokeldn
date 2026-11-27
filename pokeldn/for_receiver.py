@@ -1,7 +1,7 @@
 """A Pokemon made for the player who receives it, during the trade (docs/gift_simulated.md, Made for the
 receiving player). Two kinds of offer are made again under the trainer of the console's save: a Mystery Gift
-card that gives the receiver's own trainer, and a trade offer the player marked as the receiver's own
-(`--receiver-owns`, docs/gui.md, Original trainer). The Pokemon the console offers names the save when that
+card that gives the receiver's own trainer, and a trade offer the app built with Settings giving traded
+Pokemon to the receiver (`--receiver-owns`, docs/gui.md, Original trainer). The Pokemon the console offers names the save when that
 save caught it; otherwise the trainer the console's own session data names (`hear`). When neither does, or the
 Pokemon cannot be made for that save, the offer goes as given.
 

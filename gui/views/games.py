@@ -554,8 +554,7 @@ class GamesView:
 
     def offer_queue(self, field: Field) -> OfferQueue:
         return OfferQueue(self.app, self.game.key, command.value_of(field, self.values), field.queue,
-                          lambda v: self.set_value(field, v), version=str(self.values.get("--version", "")),
-                          receiver=command.RECEIVER_OWNS in command.accepted(self.tool.script))
+                          lambda v: self.set_value(field, v), version=str(self.values.get("--version", "")))
 
     def input(self, field: Field, grouped: bool = False) -> ft.Control:
         value = command.value_of(field, self.values)
@@ -618,8 +617,7 @@ class GamesView:
             first = command.offers(value)
             return PokemonPicker(self.app, self.game.key, first[0] if first else {},
                                  lambda v: self.set_value(field, v),
-                                 version=str(self.values.get("--version", "")),
-                                 receiver=command.RECEIVER_OWNS in command.accepted(self.tool.script)).control
+                                 version=str(self.values.get("--version", ""))).control
         if field.kind == "rewards":
             den = (lambda: command.reward_den(self.tool, self.values)) if self.tool.key in command.SWSH_RAID_HOSTS else None
             self.reward_picker = RewardPicker(self.app, self.game.key, value, lambda v: self.set_value(field, v), den=den)
