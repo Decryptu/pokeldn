@@ -230,9 +230,10 @@ def test_the_apps_lan_trade_trades_twice_with_our_lan_host_on_loopback(tmp_path,
                                                    {"file": str(tmp_path / "offer1.pk8")}]},
                       {}, Settings())
     host_args[host_args.index("--received") + 1] = str(tmp_path / "host.pk8")
+    monkeypatch.setattr(swsh_host, "LAIR_HANDOVER", 0.5)
     host = threading.Thread(target=lambda: result.setdefault("host", swsh_host.main(
-        host_args + ["--our-ip", HOST_IP, *lan, "--seconds", "60", "--accept-first", "--lead", "3",
-                     "--snapshot", str(tmp_path / "snapshot.bin")])), daemon=True)
+        host_args + ["--our-ip", HOST_IP, *lan, "--seconds", "60", "--accept-first", "--lead", "0.1",
+                     "--hold-after-trade", "0.1", "--snapshot", str(tmp_path / "snapshot.bin")])), daemon=True)
     tool = tools["swsh-lan"]
     assert not tool.radio
     offers = [] if empty_offer else [{"file": str(tmp_path / "offer2.pk8")},
@@ -241,11 +242,14 @@ def test_the_apps_lan_trade_trades_twice_with_our_lan_host_on_loopback(tmp_path,
     args[args.index("--save-offered") + 1] = str(tmp_path / "join.pk8")
     # Our host is on an alias, not on a local /24: the address replaces the tool's `auto`.
     join = threading.Thread(target=lambda: result.setdefault("join", swsh_connect.main(
-        args + ["--lan", HOST_IP, "--our-ip", JOIN_IP, *lan, "--dwell", "0.5", "--scans", "20",
-                "--listen-first", "2", "--hold", "40"])), daemon=True)
+        args + ["--lan", HOST_IP, "--our-ip", JOIN_IP, *lan, "--dwell", "0.1", "--scans", "30",
+                "--listen-first", "0.1", "--send-after", "0.1", "--period", "0.03",
+                "--request-gap", "0.05", "--join-gap", "0.05", "--send-period", "0.03",
+                "--box-period", "0.03", "--rpc-period", "0.03", "--lan-quiet", "0.5",
+                "--hold", "40"])), daemon=True)
     host.start()
     # Bound first: an emulated console on this machine answers on *:30000 until the alias is taken.
-    time.sleep(1.0)
+    time.sleep(0.1)
     join.start()
     join.join(150)
     host.join(150)
@@ -297,15 +301,30 @@ def test_our_lan_den_and_adventure_lobbies_seat_our_lan_guest(tmp_path, monkeypa
     join_args = build(join_tool, {}, {}, Settings())
     # Our host is on an alias, not on a local /24: the address replaces the tool's `auto`.
     join_args[join_args.index("auto")] = HOST_IP
+    monkeypatch.setattr(swsh_host, "LAIR_HANDOVER", 0.5)
+    if activity == "raid":
+        real_raid_host = swsh_host.raid_host.RaidHost
+
+        class _FinishOnBattle(real_raid_host):
+            def __init__(self, *a, on_battle=None, **kw):
+                def done(lobby):
+                    if on_battle:
+                        on_battle(lobby)
+                    lobby.finished = True
+                super().__init__(*a, on_battle=done, **kw)
+        monkeypatch.setattr(swsh_host.raid_host, "RaidHost", _FinishOnBattle)
     result = {}
     host = threading.Thread(target=lambda: result.setdefault("host", swsh_host.main(
-        host_args + ["--our-ip", HOST_IP, *lan, "--seconds", "45"])), daemon=True)
+        host_args + ["--our-ip", HOST_IP, *lan, "--seconds", "45", "--raid-ready", "0.1",
+                     "--lair-leave", "0.1"])), daemon=True)
     join = threading.Thread(target=lambda: result.setdefault("join", swsh_connect.main(
         join_args + ["--our-ip", JOIN_IP, *lan, "--capture", str(tmp_path / "join.jsonl"),
-                     "--dwell", "0.5", "--scans", "20", "--listen-first", "2", "--hold", "35",
+                     "--dwell", "0.1", "--scans", "30", "--listen-first", "0.1", "--period", "0.03",
+                     "--request-gap", "0.05", "--join-gap", "0.05", "--raid-ready", "0.1",
+                     "--lan-quiet", "0.5", "--hold", "35",
                      "--send-snapshot", str(tmp_path / "snapshot.bin")])), daemon=True)
     host.start()
-    time.sleep(1.0)
+    time.sleep(0.1)
     join.start()
     join.join(150)
     host.join(150)

@@ -71,14 +71,17 @@ def test_the_joiner_trades_with_an_ldn_mitm_host_on_loopback(tmp_path, monkeypat
     result = {}
     host = threading.Thread(target=lambda: result.setdefault("host", swsh_host.main(
         ["--ip-host", "--our-ip", HOST_IP, "--keys", str(keys_file), "--seconds", "50",
-         "--accept-first", "--lead", "3", "--snapshot", str(tmp_path / "snapshot.bin"),
+         "--accept-first", "--lead", "0.1", "--snapshot", str(tmp_path / "snapshot.bin"),
          "--received", str(tmp_path / "host.pk8"),
          "--trainer-name", "LiveSword", "--trainer-tid", "48765", "--trainer-sid", "56789",
          "--offer-file", str(tmp_path / "offer0.pk8"),
          "--offer-file", str(tmp_path / "offer1.pk8")])), daemon=True)
     join = threading.Thread(target=lambda: result.setdefault("join", swsh_connect.main(
         ["--ip-join", "--host-ip", HOST_IP, "--our-ip", JOIN_IP, "--preset", "trade",
-         "--dwell", "0.5", "--scans", "20", "--listen-first", "2", "--hold", "20",
+         "--dwell", "0.1", "--scans", "30", "--listen-first", "0.4", "--quiet-for", "0.2",
+         "--ack-seconds", "1", "--period", "0.03", "--request-gap", "0.05", "--join-gap", "0.05",
+         "--send-after", "0.1", "--send-period", "0.03", "--box-period", "0.03",
+         "--rpc-period", "0.03", "--hold-after-trade", "0.1", "--hold", "30",
          "--save-offered", str(tmp_path / "join.pk8"), "--capture", str(tmp_path / "join.jsonl"),
          "--offer-file", str(tmp_path / "offer2.pk8"),
          "--offer-file", str(tmp_path / "offer3.pk8"),
@@ -121,11 +124,14 @@ def test_the_apps_dynamax_adventure_guest_seats_in_our_max_lair_host(tmp_path, m
     result = {}
     host = threading.Thread(target=lambda: result.setdefault("host", swsh_host.main(
         ["--ip-host", "--our-ip", HOST_IP, "--keys", str(keys_file), "--seconds", "60",
+         "--raid-ready", "0.1", "--lair-leave", "0.1",
          "--lair-legendary", "144", "--lair-seed", "173502832", "--lair-scene", str(scene)])), daemon=True)
     join = threading.Thread(target=lambda: result.setdefault("join", swsh_connect.main(
         build(tool, {}, {}, Settings())
         + ["--keys", str(keys_file), "--ip-join", "--host-ip", HOST_IP, "--our-ip", JOIN_IP,
-           "--dwell", "0.5", "--scans", "40", "--listen-first", "2", "--hold", "40",
+           "--dwell", "0.1", "--scans", "40", "--listen-first", "0.4", "--quiet-for", "0.2",
+           "--ack-seconds", "1", "--period", "0.03", "--request-gap", "0.05", "--join-gap", "0.05",
+           "--hold", "40",
            "--send-snapshot", str(tmp_path / "snapshot.bin")])), daemon=True)
     join.start()
     host.start()
@@ -157,14 +163,27 @@ def test_the_apps_max_raid_guest_brings_its_pokemon_into_our_den_raid(tmp_path, 
     adverts = json.loads((Path(__file__).parent / "data" / "swsh_raid_adverts.json").read_text())
     (tmp_path / "boss.pk8").write_bytes(bytes.fromhex(adverts["boss_hoothoot"]))
     tool = next(t for game in GAMES for t in game.tools if t.key == "swsh-raid-join")
+    real_raid_host = swsh_host.raid_host.RaidHost
+
+    class _FinishOnBattle(real_raid_host):
+        def __init__(self, *a, on_battle=None, **kw):
+            def done(lobby):
+                if on_battle:
+                    on_battle(lobby)
+                lobby.finished = True
+            super().__init__(*a, on_battle=done, **kw)
+    monkeypatch.setattr(swsh_host.raid_host, "RaidHost", _FinishOnBattle)
     result = {}
     host = threading.Thread(target=lambda: result.setdefault("host", swsh_host.main(
         ["--ip-host", "--our-ip", HOST_IP, "--keys", str(keys_file), "--seconds", "40",
+         "--raid-ready", "0.1",
          "--raid-boss", str(tmp_path / "boss.pk8"), "--offer-file", str(tmp_path / "m1.pk8")])), daemon=True)
     join = threading.Thread(target=lambda: result.setdefault("join", swsh_connect.main(
         build(tool, {"--offer-file": {"file": str(tmp_path / "m2.pk8")}, "--raid-move": "2"}, {}, Settings())
         + ["--keys", str(keys_file), "--ip-join", "--host-ip", HOST_IP, "--our-ip", JOIN_IP,
-           "--dwell", "0.5", "--scans", "40", "--listen-first", "2", "--hold", "30",
+           "--dwell", "0.1", "--scans", "40", "--listen-first", "0.4", "--quiet-for", "0.2",
+           "--ack-seconds", "1", "--period", "0.03", "--request-gap", "0.05", "--join-gap", "0.05",
+           "--raid-ready", "0.1", "--hold", "30",
            "--send-snapshot", str(tmp_path / "snapshot.bin")])), daemon=True)
     join.start()
     host.start()

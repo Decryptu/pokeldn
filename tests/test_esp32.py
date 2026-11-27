@@ -1831,14 +1831,17 @@ def test_sword_host_and_joiner_trade_on_simulated_boards(tmp_path, monkeypatch):
     result = {}
     threads["host"] = threading.Thread(target=lambda: result.setdefault("host", swsh_host.main(
         ["--keys", str(keys_file), "--channel", "6", "--seconds", "120", "--accept-first",
-         "--lead", "3",
+         "--lead", "0.1",
          "--snapshot", str(tmp_path / "snapshot.bin"), "--received", str(tmp_path / "host.pk8"),
          "--save-shown", str(tmp_path / "host_shown"),
          "--offer-file", str(tmp_path / "offer0.pk8"), "--offer-file", str(tmp_path / "offer1.pk8")])),
         daemon=True)
     threads["join"] = threading.Thread(target=lambda: result.setdefault("join", swsh_connect.main(
-        ["--keys", str(keys_file), "--preset", "trade", "--channels", "6", "--dwell", "0.5",
-         "--hold", "90", "--hold-after-trade", "1", "--save-offered", str(tmp_path / "join.pk8"),
+        ["--keys", str(keys_file), "--preset", "trade", "--channels", "6", "--dwell", "0.1",
+         "--listen-first", "0.4", "--quiet-for", "0.2", "--ack-seconds", "1", "--period", "0.03",
+         "--request-gap", "0.05", "--join-gap", "0.05", "--send-after", "0.1",
+         "--send-period", "0.03", "--box-period", "0.03", "--rpc-period", "0.03",
+         "--hold", "90", "--hold-after-trade", "0.1", "--save-offered", str(tmp_path / "join.pk8"),
          "--save-shown", str(tmp_path / "join_shown"),
          "--offer-file", str(tmp_path / "offer2.pk8"), "--offer-file", str(tmp_path / "offer3.pk8")])),
         daemon=True)
