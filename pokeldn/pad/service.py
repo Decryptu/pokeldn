@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import socket
+import sys
 import threading
 
 from pokeldn.pad import macro
@@ -27,6 +28,9 @@ REPLY_SECONDS = 150    # the app's wait, longer than any request above
 
 def _code() -> str:
     """The link code this process runs; an app finding a service with other code replaces it."""
+    if getattr(sys, "frozen", False):
+        from pokeldn import __version__
+        return hashlib.sha256(__version__.encode()).hexdigest()[:16]
     from pokeldn.pad import link, serial_link
     digest = hashlib.sha256()
     for module in (link, serial_link, macro):

@@ -49,23 +49,35 @@ def compile_mac_icon(folder: Path) -> Path:
 
 def runtime_files() -> list[str]:
     tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
-    folders = ("bin/", "pokeldn/", "vendor/LDN/ldn/", "docs/", "gui/assets/")
-    return [name for name in tracked if (name.startswith(folders) or name in
-            ("config/host.toml", "gui/guide.md", "LICENSE", "vendor/LDN/LICENSE")) and (ROOT / name).is_file()]
+    # pokeldn and vendor/LDN/ldn Python modules are compiled into the PYZ archive; only their data files
+    # stay loose on disk. icon.ico and icon.png are build-time icon inputs, never read at runtime.
+    folders = ("bin/", "docs/", "gui/assets/")
+    data_only = ("pokeldn/", "vendor/LDN/ldn/")
+    skip = {"gui/assets/icon.ico", "gui/assets/icon.png"}
+    return [name for name in tracked if name not in skip and (
+            name.startswith(folders)
+            or (name.startswith(data_only) and not name.endswith(".py"))
+            or name in ("config/host.toml", "gui/guide.md", "LICENSE", "vendor/LDN/LICENSE")
+            ) and (ROOT / name).is_file()]
 
 
 def platform_excludes():
     excluded = ["pytest", "_pytest", "PyInstaller", "flet_cli", "pip", "setuptools",
                 "pycparser.lextab", "pycparser.yacctab",
                 # Flet's web server, auth and raw-image extras; the desktop view uses none of them.
-                "flet_web", "fastapi", "starlette", "uvicorn", "uvloop", "httptools", "watchfiles",
-                "pydantic", "pydantic_core", "httpx", "httpcore", "oauthlib", "yaml", "PIL",
+                "flet_web", "flet.security", "fastapi", "starlette", "uvicorn", "uvloop", "httptools",
+                "watchfiles", "pydantic", "pydantic_core", "httpx", "httpcore", "oauthlib", "yaml", "PIL",
+                # Test suites, optional/unused native backends, and cryptography (only pulled in by
+                # trio._tests / flet.security; esptool's flasher does not import it).
+                "cryptography", "Crypto.SelfTest", "trio._tests",
+                "zstandard._cffi", "zstandard.backend_cffi", "hid",
                 # rich's syntax highlighting, Markdown and tracebacks (Pygments, markdown-it, pydoc): esptool
                 # prints through rich and rich-click and reaches none of them. No code starts processes.
                 "pygments", "rich.syntax", "rich.markdown", "rich.traceback", "rich.__main__",
                 "multiprocessing", "_pydecimal"]
     if sys.platform != "win32":
-        excluded += ["serial.tools.list_ports_windows", "serial.serialwin32", "serial.win32",
+        excluded += ["cffi", "_cffi_backend", "pycparser",
+                     "serial.tools.list_ports_windows", "serial.serialwin32", "serial.win32",
                      "flet_desktop.win_taskbar", "click._winconsole"]
     if sys.platform != "darwin":
         excluded.append("serial.tools.list_ports_osx")
@@ -168,7 +180,8 @@ def main() -> int:
                     "-o", str(service / "dist"), "-warnaserror"], check=True)
     executable = service / "dist" / ("pokeldn-pkhex.exe" if sys.platform == "win32" else "pokeldn-pkhex")
     with tempfile.TemporaryDirectory(prefix="pokeldn-pack-") as folder:
-        stage = Path(folder)
+        stage = Path(folder) / "files"
+        stage.mkdir()
         mac_icon = compile_mac_icon(Path(tempfile.mkdtemp(dir=folder))) if sys.platform == "darwin" else None
         icon = mac_icon / "AppIcon.icns" if mac_icon else ROOT / "gui" / "assets" / (
             "icon.ico" if sys.platform == "win32" else "icon.png")
@@ -188,7 +201,8 @@ def main() -> int:
                                         f"ctypes.util.find_library('{framework}')")
             ports.write_text(source)
         data = [(stage / name, name) for name in
-                ("bin", "pokeldn", "vendor/LDN/ldn", "docs", "config", "gui/assets")]
+                ("bin", "pokeldn", "vendor/LDN/ldn", "docs", "config", "gui/assets")
+                if (stage / name).exists()]
         data += [(stage / "gui/guide.md", "gui"), (executable, "services/pkhex/dist")]
         data += [(stage / "LICENSE", "."), (stage / "vendor/LDN/LICENSE", "vendor/LDN")]
         data += [(path, "gui/firmware") for path in firmware]
@@ -212,15 +226,19 @@ def main() -> int:
                        *console, *onedir,
                        *[f"--hidden-import={s}" for s in scripts],
                        *[f"--collect-submodules={m}" for m in plugin_stdlib()],
-                       *[f"--collect-all={m}" for m in PLUGIN_PACKAGES],
-                       *[f"--exclude-module={m}" for m in platform_excludes()], "--collect-all=esptool", "--collect-submodules=unicorn",
-                       "--collect-all=esp_pylib", "--collect-submodules=pokeldn", "--collect-submodules=bleak",
+                       *[f"--collect-submodules={m}" for m in PLUGIN_PACKAGES],
+                       "--collect-binaries=Crypto", "--collect-data=certifi", "--copy-metadata=websockets",
+                       *[f"--exclude-module={m}" for m in platform_excludes()],
+                       "--collect-submodules=esptool", "--collect-data=esptool",
+                       "--collect-submodules=esp_pylib", "--collect-submodules=unicorn",
+                       "--collect-submodules=pokeldn", "--collect-submodules=bleak",
                        "--collect-submodules=ldn"):
             args.append(f"--pyinstaller-build-args={option}")
-        env = dict(os.environ, FLET_VIEW_PATH=str(client))
+        pythonpath = [str(ROOT)] + ([os.environ["PYTHONPATH"]] if os.environ.get("PYTHONPATH") else [])
+        env = dict(os.environ, FLET_VIEW_PATH=str(client), PYTHONPATH=os.pathsep.join(pythonpath))
         if mac_icon:
             env["POKELDN_ICON_CAR"] = str(mac_icon / "Assets.car")
-        result = subprocess.run(args, cwd=stage, env=env).returncode
+        result = subprocess.run(args, cwd=folder, env=env).returncode
         expected = ROOT / "dist" / (("pokeldn.app" if sys.platform == "darwin" else "pokeldn"))
         if result == 0 and not expected.exists():
             raise SystemExit("The packer produced no desktop application.")
