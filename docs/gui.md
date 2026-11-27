@@ -151,22 +151,27 @@ A Pokemon file of another game (`.pk4` to `.pk7`, `.pb7`, any title's format PKH
 
 ### Original trainer
 
-An offer card's Original trainer choice decides whose Pokemon it is.
+A trade tool's Original trainer choice sits once above its queue of offers and decides whose Pokemon
+every trade is. It names the trainer from Settings, whose Edit in Settings button opens that page. A
+card holding a Pokemon file adds one switch, Keep the file's original trainer, on by default.
 
-| choice | original trainer | written |
-|---|---|---|
-| Its own (a file only) | the file's | never |
-| You | this trainer | when the card takes the file |
-| The receiver (trade tools) | the save of the console it is traded to | during the trade, before the offer goes out |
+| queue choice | file switch | original trainer | written |
+|---|---|---|---|
+| any | on (a file only) | the file's | never |
+| You | off, or a built Pokemon | the trainer in Settings | when the card builds or takes the file |
+| The receiving player | off, or a built Pokemon | the save of the console it is traded to; the trainer in Settings when the console names none | during the trade, before the offer goes out |
+
+A tool that is not a trade shows no queue choice: a file's switch turned off gives it the trainer in
+Settings.
 
 PKHeX's `check` with the `trainer` field writes name, IDs and gender (`Retrain`). Shininess is the PID
 against those IDs. From Gen 7 the PID's high half moves to keep a square, star or plain shine; a PID
 the encounter fixes (Gen 3's nature, ability and gender, a Sword overworld or raid seed) stays, and
 the card says the shine changed. A Pokemon legal only with its own trainer, an event with a fixed
-one, is refused with PKHeX's reason: for The receiver the card checks the file under the probe
-trainer `for_receiver.PROBE` before taking the choice.
+one, is refused with PKHeX's reason: for The receiving player the card checks the file under the
+probe trainer `for_receiver.PROBE`, and a file it refuses keeps its own trainer.
 
-The app passes each offer whose choice is The receiver as `--receiver-owns N`, its place in the
+The app passes each offer that goes as the receiving player's as `--receiver-owns N`, its place in the
 queue from 1 (`command._args`); every trade launcher takes it (`tests/test_gui_catalog.py`). The
 console's own link data names its save before our offer goes out:
 
