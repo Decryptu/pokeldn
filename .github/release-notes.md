@@ -1,12 +1,11 @@
-# pokeldn 0.68.0
+# pokeldn 0.69.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- FireRed/LeafGreen Mystery Gift has a GameCube & Bonus Disc group: the Colosseum and XD gifts (XD Lugia, the XD Johto starters and Eevee, DUKING Plusle, MATTLE Ho-Oh, AGETO Celebi, Colosseum Pikachu) and the bonus disc Jirachis, made fresh by PKHeX for each send, and the Pokemon Box Swablu, Zigzagoon, Skitty and Surfing Pichu eggs with their official moves. Event Pokemon adds the RUBY and SAPHIRE Zigzagoon, and the Wonder Cards add Rare Candy x5. Thanks to gfaraujosousa.
-- Installing firmware on a board whose flasher never starts writes compressed and retries a dropped connection, so the Bluetooth firmware installs on such a classic ESP32. After an install the Board page says whether the board answered with the firmware just written. Thanks to gfaraujosousa.
+- Trade screens no longer ask whose a Pokemon is. Settings, under Your trainer, has one switch, Give traded Pokemon to the receiver's trainer: on, every Pokemon the app builds for a trade takes the name and IDs of the console that receives it; off, it keeps your trainer. Pokemon files and banked Pokemon always keep their own trainer.
 
 The radio firmware stays at 1.12.0; the controller firmware stays at 1.3.0.
 
