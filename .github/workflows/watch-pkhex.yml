@@ -1,0 +1,98 @@
+name: Watch PKHeX.Core
+
+# One-shot watcher for #46: comments once when PKHeX.Core on NuGet passes the pinned version,
+# then disables itself. Delete this file when #46 is closed.
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+concurrency:
+  group: watch-pkhex
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: services/pkhex
+      - name: Check NuGet for a newer PKHeX.Core release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: "46"
+          WORKFLOW_FILE: watch-pkhex.yml
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import urllib.request
+          from pathlib import Path
+
+          repo = os.environ["REPO"]
+          issue = os.environ["ISSUE"]
+          workflow = os.environ["WORKFLOW_FILE"]
+          marker = "<!-- watch-pkhex -->"
+
+          def gh(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+              return subprocess.run(["gh", *args], text=True, capture_output=True, check=check)
+
+          def disable_self() -> None:
+              res = gh("api", "-X", "PUT", f"repos/{repo}/actions/workflows/{workflow}/disable", check=False)
+              if res.returncode == 0:
+                  print(f"Disabled {workflow}.")
+              else:
+                  print(f"Could not disable {workflow}: {res.stderr.strip()}")
+
+          def version_key(ver: str) -> tuple[int, ...]:
+              return tuple(int(part) for part in ver.split("."))
+
+          csproj = Path("services/pkhex/pkhex.csproj").read_text(encoding="utf-8")
+          match = re.search(r'Include="PKHeX\.Core"\s+Version="([^"]+)"', csproj)
+          if not match:
+              raise SystemExit("PKHeX.Core Version not found in services/pkhex/pkhex.csproj")
+          pinned = match.group(1)
+
+          issue_data = json.loads(gh("api", f"repos/{repo}/issues/{issue}").stdout)
+          if issue_data.get("state") != "open":
+              print(f"Issue #{issue} is {issue_data.get('state')}; stopping.")
+              disable_self()
+              raise SystemExit(0)
+
+          url = "https://api.nuget.org/v3-flatcontainer/pkhex.core/index.json"
+          with urllib.request.urlopen(url, timeout=30) as resp:
+              versions = json.load(resp)["versions"]
+          stable = [v for v in versions if "-" not in v and re.fullmatch(r"\d+(?:\.\d+)+", v)]
+          latest = max(stable, key=version_key)
+
+          if version_key(latest) <= version_key(pinned):
+              print(f"PKHeX.Core latest on NuGet is {latest} (pinned {pinned}); still waiting.")
+              raise SystemExit(0)
+
+          comments = gh("api", "--paginate", "--jq", ".[].body", f"repos/{repo}/issues/{issue}/comments").stdout
+          if marker in comments:
+              print(f"Already notified on #{issue}.")
+              disable_self()
+              raise SystemExit(0)
+
+          body = (
+              f"{marker}\n"
+              f"`PKHeX.Core` **{latest}** is now available on NuGet.\n\n"
+              f"- NuGet: https://www.nuget.org/packages/PKHeX.Core/{latest}\n"
+              f"- PKHeX releases: https://github.com/kwsch/PKHeX/releases\n\n"
+              f"`services/pkhex/pkhex.csproj` is currently pinned to `{pinned}`."
+          )
+          gh("issue", "comment", issue, "--repo", repo, "--body", body)
+          print(f"Commented on #{issue} for PKHeX.Core {latest}.")
+          disable_self()
+          PY
