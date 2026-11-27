@@ -1,11 +1,11 @@
-# pokeldn 0.69.0
+# pokeldn 0.69.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Trade screens no longer ask whose a Pokemon is. Settings, under Your trainer, has one switch, Give traded Pokemon to the receiver's trainer: on, every Pokemon the app builds for a trade takes the name and IDs of the console that receives it; off, it keeps your trainer. Pokemon files and banked Pokemon always keep their own trainer.
+- Smaller desktop app bundles: unused dependencies (`cryptography`, bundled test suites and redundant native backends) and duplicate loose Python source files are no longer packed into desktop releases.
 
 The radio firmware stays at 1.12.0; the controller firmware stays at 1.3.0.
 
