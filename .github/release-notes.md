@@ -1,11 +1,11 @@
-# pokeldn 0.69.1
+# pokeldn 0.69.2
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Smaller desktop app bundles: unused dependencies (`cryptography`, bundled test suites and redundant native backends) and duplicate loose Python source files are no longer packed into desktop releases.
+- Cleaner desktop app copy: removed redundant helper subtexts from tool cards, board status lines, Settings, Bank, GTS and Showdown import dialogs.
 
 The radio firmware stays at 1.12.0; the controller firmware stays at 1.3.0.
 
