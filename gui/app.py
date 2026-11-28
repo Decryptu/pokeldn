@@ -137,8 +137,7 @@ class App:
             if self.controllers:
                 return BoardStatus("controller", tr('app.your_board_runs_the_controller_firmware_fec986', 'Your board runs the Controller firmware'),
                                    tr('app.trades_need_the_wireless_firmware_install_it_from_the_b_c0721b', 'Trades need the Wireless firmware: install it from the Board page.'))
-            return BoardStatus("missing", tr('app.no_board_plugged_in_0ea8e5', 'No board plugged in'),
-                               tr('app.plug_the_esp32_in_with_a_usb_data_cable_charge_only_cab_baeb1f', 'Plug the ESP32 in with a USB data cable. Charge-only cables show nothing.'))
+            return BoardStatus("missing", tr('app.no_board_plugged_in_0ea8e5', 'No board plugged in'), "")
         port = device or self.radio_port(present)
         if not port:
             return BoardStatus("choose", tr('app.several_boards_plugged_in_997786', 'Several boards plugged in'),
@@ -149,8 +148,8 @@ class App:
         ident = self.identities.get(port)
         if isinstance(ident, board.Identity):
             if ident.current:
-                version = f" v{ident.firmware_version}" if ident.firmware_version else ""
-                return BoardStatus("ready", tr('app.board_ready_222cfc', 'Board ready'), tr('app.pokeldn_firmware_answered_9123fd', 'pokeldn firmware{value0} answered.', value0=version), port)
+                version = f"v{ident.firmware_version}" if ident.firmware_version else ""
+                return BoardStatus("ready", tr('app.board_ready_222cfc', 'Board ready'), version, port)
             return BoardStatus("flash", tr('app.firmware_out_of_date_bcafad', 'Firmware out of date'),
                                tr('app.update_it_on_the_board_page_2ca281', 'Update it on the Board page.'), port)
         if isinstance(ident, board.PadIdentity):
@@ -176,7 +175,7 @@ class App:
             return BoardStatus("flash", tr('app.no_pokeldn_firmware_on_the_board_bf42d9', 'No pokeldn firmware on the board'),
                                tr('app.install_the_wireless_firmware_on_the_board_page_if_you__f58486', "Install the Wireless firmware on the Board page. If you just installed it, press the board's RESET (RST) button."),
                                port)
-        return BoardStatus("checking", tr('app.checking_the_board_f7ce4a', 'Checking the board'), tr('app.asking_the_board_for_its_firmware_21d622', 'Asking the board for its firmware.'), port)
+        return BoardStatus("checking", tr('app.checking_the_board_f7ce4a', 'Checking the board'), "", port)
 
     def android_status(self) -> BoardStatus:
         """The phone's USB state before any firmware answers (docs/gui.md, Android setup requirements)."""

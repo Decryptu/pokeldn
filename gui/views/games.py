@@ -47,7 +47,7 @@ SETTLE_S = 0.25   # a pause in typing that saves the settings and redraws the se
 REWARD_DEN_KEYS = ("--raid-boss", "--raid-gigantamax")   # a Max Raid's den follows its boss
 RAID_CONTEXT = {"--raid-version": ("version", "violet"), "--raid-map": ("map_name", "paldea"),
                 "--raid-progress": ("progress", "4star"), "--raid-content": ("content", "standard")}
-ADVANCED_NOTE = (tr('games.the_tested_defaults_work_for_most_players_change_these__1815f2', 'The tested defaults work for most players. Change these only when a guide or a bug report asks you to. A value set here overrides the Basic tab.'))
+ADVANCED_NOTE = tr('games.the_tested_defaults_work_for_most_players_change_these__1815f2', 'Overrides the Basic tab.')
 
 
 def tool_role(tool: Tool) -> str:

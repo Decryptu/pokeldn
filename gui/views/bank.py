@@ -273,8 +273,8 @@ class BankView:
         where = tr('bank.in_the_bank_f69744', 'in the bank') if self.shown == ALL else tr('bank.from_7f2df4', 'from {value0}', value0=NAMES[self.shown])
         self.heading.value = (tr('bank.pokemon_3a4d02', '{value0} Pokemon {value1}', value0=len(shown), value1=where) if shown else
                               tr('bank.nothing_matches', 'No Pokemon matches this search.') if (self.query or self.only != "any") and self.items else
-                              tr('bank.the_bank_is_empty_every_pokemon_a_trade_brings_in_lands_e05ff4', 'The bank is empty. Every Pokemon a trade brings in lands here, from any game.')
-                              + (tr('bank.drop_a_file_here', ' Drop a Pokemon file, a game save or a PKSM bank here to import what it holds.')
+                              tr('bank.the_bank_is_empty_every_pokemon_a_trade_brings_in_lands_e05ff4', 'The bank is empty.')
+                              + (tr('bank.drop_a_file_here', ' Drop a Pokemon file, save, or PKSM bank to import.')
                                  if drop.AVAILABLE else ""))
         tiles = [self._tile(e, e.id in self.queued) for e in sorted(self.items, key=SORTS[self.sort])]
         # On arrival a row or two a frame, the rest standing as skeleton cells; after that, at once.
@@ -975,7 +975,7 @@ class EditDialog:
                 t.labeled_control(tr('bank.moves_26c84a', 'Moves'), ft.Column([ft.Row(self.moves[:2], spacing=6),
                                                       ft.Row(self.moves[2:], spacing=6)], spacing=6)),
                 t.labeled_control(tr('bank.held_item_6af4a4', 'Held item'), self.item),
-                t.text(tr('bank.only_what_the_game_itself_lets_a_player_change_pkhex_ch_363411', 'Only what the game itself lets a player change. PKHeX checks every edit; one that would make it not legal is refused.'), 12, t.FAINT),
+                t.text(tr('bank.only_what_the_game_itself_lets_a_player_change_pkhex_ch_363411', 'Edits are legality-checked by PKHeX.'), 12, t.FAINT),
                 self.message,
             ], spacing=14, tight=True, width=420),
             actions=[t.button(tr('bank.cancel_19766e', 'Cancel'), lambda e: view.app.page.pop_dialog(), filled=False), self.save])

@@ -509,7 +509,8 @@ def board_step(app: App) -> None:
             "warning-diamond", t.AMBER)
         line.content = ft.Row([
             ft.Container(t.pixel_icon(icon, color=color), padding=ft.Padding(0, 1, 0, 0)),
-            ft.Column([t.text(status.title, 14, weight=ft.FontWeight.W_600), t.text(status.detail, 13, t.MUTED)],
+            ft.Column([t.text(status.title, 14, weight=ft.FontWeight.W_600),
+                       *([t.text(status.detail, 13, t.MUTED)] if status.detail else [])],
                       spacing=2, expand=True)], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START)
         needs_page = status.state in ("flash", "controller", "wrong-port", "choose")
         buttons.controls = [t.secondary_button(tr('main.later_73b6e4', 'Later'), close)] if not ok else []
@@ -533,7 +534,7 @@ def board_step(app: App) -> None:
         semantics_label=tr('main.connect_your_board', 'Connect your board'),
         content=ft.Container(ft.Column([
             t.text(tr('main.connect_your_board', 'Connect your board'), 22, weight=ft.FontWeight.W_600),
-            t.text(tr('main.connect_your_board_detail', 'Plug the ESP32 in with a USB data cable. Charge-only cables show nothing.'), 13, t.MUTED),
+            t.text(tr('main.connect_your_board_detail', 'Plug your ESP32 in over USB.'), 13, t.MUTED),
             ft.Container(height=4), line, ft.Container(height=4), buttons,
         ], spacing=8, tight=True), width=500, padding=ft.Padding(28, 22, 24, 24), border_radius=20),
         on_dismiss=lambda e: shown.update(open=False))

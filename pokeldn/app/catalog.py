@@ -193,13 +193,13 @@ FOR_RECEIVER = Field("--for-receiver", tr('catalog.made_for_the_receiving_player
                      your_ot=True,
                      help=tr('catalog.a_gift_that_gave_its_receiver_s_own_trainer_is_made_aga_3ec345', "A gift that gave its receiver's own trainer is made again during the trade for the console's save, read from the Pokemon the console offers or from its session data. Off, or when neither names the save, it goes with your trainer from Settings."))
 TRADE_BACK = Field("--trade-back", tr('catalog.send_it_back_f9966f', 'Send it back'), "switch",
-                   help=tr('catalog.for_a_pokemon_that_evolves_by_trade_after_each_trade_tra_6895dc', "For a Pokemon that evolves by trade: after each trade, trade again and get back the Pokemon the console just sent, so it evolves there. Offer the first trade's Pokemon back in return. Needs a Pokemon to offer."))
+                   help=tr('catalog.for_a_pokemon_that_evolves_by_trade_after_each_trade_tra_6895dc', 'Trade back after each trade for trade evolutions.'))
 SAVE_SHOWN = Field("--save-shown", tr('catalog.save_shown', 'Save the Pokemon the console shows'), "switch",
                    template="{shown}", hidden=True,
                    help=tr('catalog.save_shown_help', "Save every Pokemon the console shows on the trade screen to the Shown folder next to Received, whether or not the trade goes through: back out to keep it. For a seed or legality check in PKHeX."))
 GIFT_OFFER_BACK = (tr('catalog.offer_a_pokemon_you_caught_in_this_save_and_confirm_the_abaf36', 'Offer a Pokemon you caught in this save and confirm. The event Pokemon comes over; yours goes to Received. Trade again for each queued gift, then back out after the last trade.'))
-CHANNEL_HELP = tr('catalog.the_wireless_channel_of_the_network_pokeldn_hosts_101d44', 'The wireless channel of the network pokeldn hosts.')
-CODE_HELP = tr('catalog.the_same_code_the_player_enters_on_the_console_c91cb8', 'The same code the player enters on the console.')
+CHANNEL_HELP = ""
+CODE_HELP = ""
 
 
 def host_seconds(default: str, extra: str = "") -> Field:
@@ -218,21 +218,16 @@ QUEUE = 6   # a party's worth
 def offer(flag: str = "", help: str = "", queue: int = 1, more: str = "", count: str = "") -> Field:
     """Every title's trade offer: left empty, the session trades a random legal Pokemon."""
     return Field(flag, tr('catalog.pokemon_to_offer_585ae1', 'Pokemon to offer'), "pokemon", random=True,
-                 help=help or OFFER_HELP, queue=queue, more=more, count=count,
+                 help=help, queue=queue, more=more, count=count,
                  identity="#Pokemon to offer")
-
-
-OFFER_HELP = tr('catalog.pick_a_species_pkhex_builds_a_legal_one_empty_trades_a_r_5c1e0a', 'Pick a species; PKHeX builds a legal one for this game. Empty trades a random legal Pokemon.')
 
 
 def queued(flag: str = "", help: str = "", **kw) -> Field:
     """An offer field whose session trades each entry in turn, on one seat."""
-    help = help or OFFER_HELP
-    return offer(flag, help=tr('catalog.add_a_trade_to_queue_more_one_session_trades_them_in_or_4b4782', '{value0} Add a trade to queue more: one session trades them in order.', value0=help),
-                 queue=QUEUE, **kw)
+    return offer(flag, help=help, queue=QUEUE, **kw)
 
 
-ONLINE_CODE_HELP = (tr('catalog.eight_digits_you_and_your_partner_agree_on_you_also_ent_363a9f', 'Eight digits you and your partner agree on; you also enter them on the console. Empty meets anyone trading this game online without a code.'))
+ONLINE_CODE_HELP = tr('catalog.eight_digits_you_and_your_partner_agree_on_you_also_ent_363a9f', 'Leave empty to match anyone.')
 
 
 def without(fixed: tuple[str, ...], flag: str) -> tuple[str, ...]:
@@ -276,10 +271,8 @@ FRLG = Game("frlg", tr('catalog.firered_leafgreen_2b757f', 'FireRed & LeafGreen'
           tr('catalog.with_several_queued_trade_again_after_each_save_the_hos_f49450', 'With several queued, trade again after each save; the host offers the next one.'),
           tr('catalog.back_on_the_trade_menu_after_the_last_save_wait_for_the_5e2aa1', "Back on the trade menu after the last save, wait for the host's prompt, then Cancel and Yes.")),
          (queued(count="--trades"), TRADE_BACK, SAVE_SHOWN,
-          Field("--version", tr('catalog.version_dd1679', 'Version'), "choice", default="firered", choices=VERSIONS, group=tr('catalog.console_29a408', 'Console'),
-                help=tr('catalog.the_game_pokeldn_s_own_trainer_reports_on_the_link_and__ced820', "The game pokeldn's own trainer reports on the link, and the one the Pokemon is built for.")),
-          Field("--language", tr('catalog.trainer_language_bca3f4', 'Trainer language'), "choice", default=SETTINGS_LANGUAGE[0], choices=GBA_LANGUAGES, hidden=True,
-                help=tr('catalog.the_language_pokeldn_s_own_trainer_reports_on_the_link_5ac75b', "The language pokeldn's own trainer reports on the link.")),
+          Field("--version", tr('catalog.version_dd1679', 'Version'), "choice", default="firered", choices=VERSIONS, group=tr('catalog.console_29a408', 'Console')),
+          Field("--language", tr('catalog.trainer_language_bca3f4', 'Trainer language'), "choice", default=SETTINGS_LANGUAGE[0], choices=GBA_LANGUAGES, hidden=True),
           Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="11", choices=CHANNELS, help=CHANNEL_HELP, hidden=True)),
          fixed=("--live", "--phy", "auto", "--slot", "0", "--ot", "{ot}", "--id", "{tid}:{sid}",
                 "--out", "{received}/frlg-{stamp}.pk3"),
@@ -292,8 +285,7 @@ FRLG = Game("frlg", tr('catalog.firered_leafgreen_2b757f', 'FireRed & LeafGreen'
           tr('catalog.accept_pokeldn_when_it_appears_then_choose_and_confirm_785998', 'Accept POKELDN when it appears, then choose and confirm.'),
           tr('catalog.with_several_queued_trade_again_after_each_save_the_joi_54215e', 'With several queued, trade again after each save; the joiner offers the next one.')),
          (queued(count="--trades"), TRADE_BACK, SAVE_SHOWN,
-          Field("--language", tr('catalog.trainer_language_bca3f4', 'Trainer language'), "choice", default=SETTINGS_LANGUAGE[0], choices=GBA_LANGUAGES, hidden=True,
-                help=tr('catalog.the_language_pokeldn_s_own_trainer_reports_on_the_link_5ac75b', "The language pokeldn's own trainer reports on the link."))),
+          Field("--language", tr('catalog.trainer_language_bca3f4', 'Trainer language'), "choice", default=SETTINGS_LANGUAGE[0], choices=GBA_LANGUAGES, hidden=True)),
          fixed=("--live", "--phy", "auto", "--slot", "0", "--ot", "{ot}", "--id", "{tid}:{sid}",
                 "--out", "{received}/frlg-{stamp}.pk3"),
          doc="frlg_link.md",
@@ -306,15 +298,14 @@ FRLG = Game("frlg", tr('catalog.firered_leafgreen_2b757f', 'FireRed & LeafGreen'
           tr('catalog.for_boosts_save_backups_and_restores_readouts_or_your_o_8646b9', 'For boosts, save backups and restores, readouts or your own console code, keep the app running until the Session log shows the result.'),
           tr('catalog.back_out_of_the_search_screen_between_two_runs_f0a1d7', 'Back out of the search screen between two runs.')),
          (Field(("--version", "--expect-console"), tr('catalog.version_dd1679', 'Version'), "choice", default="firered",
-                choices=VERSIONS, group=tr('catalog.console_29a408', 'Console'),
-                help=tr('catalog.the_console_s_cartridge_another_one_is_refused_before_a_7a71c8', "The console's cartridge: another one is refused before anything is sent.")),
+                choices=VERSIONS, group=tr('catalog.console_29a408', 'Console')),
           Field("--gift-file", tr('catalog.gift_1a596a', 'Gift'), "builder"),
           Field("--language", tr('catalog.cartridge_language', 'Language'), "choice", default=SETTINGS_LANGUAGE[0], choices=GBA_LANGUAGES,
                 group=tr('catalog.console_29a408', 'Console'),
-                help=tr('catalog.cartridge_language_help', "The cartridge's language: a Japanese cartridge lists POKELDN only when Japanese is chosen. The game's own addresses are read from the cartridge once it joins.")),
+                help=tr('catalog.cartridge_language_help', 'Must be set to Japanese for Japanese cartridges.')),
           Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="11", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
           Field("--save-to-board", tr('catalog.keep_it_on_the_board_a36969', 'Keep it on the board'), "switch",
-                help=tr('catalog.start_saves_the_gift_on_the_board_and_stops_unplugged_a_1d7482', 'Start saves the gift on the board and stops. Unplugged and powered from any USB charger, the board then hosts it for every FireRed and LeafGreen that joins, with no computer. It stops when the app opens it again.'))),
+                help=tr('catalog.start_saves_the_gift_on_the_board_and_stops_unplugged_a_1d7482', 'Save to the board to host without a computer.'))),
          fixed=("--live", "--ot", "{ot}", "--id", "{tid}:{sid}", "--dump-file",
                 "{received}/frlg-dump-{stamp}.bin"), doc="frlg_gift.md",
          activity="gift"),
@@ -354,8 +345,7 @@ LGPE = Game("lgpe", tr('catalog.let_s_go_pikachu_eevee_188f2e', "Let's Go Pikach
          tr('catalog.host_a_trade_under_a_link_code_the_console_joins_bf0e81', 'Host a trade under a link code; the console joins.'),
          (tr('catalog.start_the_host_first_40ac31', 'Start the host first.'), LGPE_STEPS, tr('catalog.choose_a_pokemon_and_confirm_8215d8', 'Choose a Pokemon and confirm.')),
          (queued("--offer", more="--next-offer"),
-          Field("--code", tr('catalog.link_code_0b8f86', 'Link code'), "linkcode", required=True,
-                help=tr('catalog.the_three_pokemon_the_player_picks_on_the_console_in_th_174ead', 'The three Pokemon the player picks on the console, in the same order.')),
+          Field("--code", tr('catalog.link_code_0b8f86', 'Link code'), "linkcode", required=True),
           FRESH_PID, TRADE_BACK, SAVE_SHOWN,
           host_seconds("1200", tr('catalog.a_trade_under_way_when_it_runs_out_is_finished_first_5f61a0', 'A trade under way when it runs out is finished first.'))),
          fixed=("--first", "echo", "--trainer-name", "{ot}", "--our-trainer", "{tid}:{sid}",
@@ -435,7 +425,7 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           Field("--seconds", tr('catalog.time_limit_seconds_cf9965', 'Time limit (seconds)'), "number", default="300", hidden=True,
                 help=tr('catalog.how_long_the_card_is_advertised_after_start_0dba41', 'How long the card is advertised after Start.')),
           Field("--save-to-board", tr('catalog.keep_it_on_the_board_a36969', 'Keep it on the board'), "switch",
-                help=tr('catalog.start_saves_the_gift_on_the_board_and_stops_unplugged_a_a436f2', 'Start saves the gift on the board and stops. Unplugged and powered from any USB charger, the board then hands the gift to every Sword and Shield nearby, with no computer. It stops when the app opens it again.'))),
+                help=tr('catalog.start_saves_the_gift_on_the_board_and_stops_unplugged_a_a436f2', 'Save to the board to host without a computer.'))),
          doc="swsh_gift.md",
          activity="gift", joins=False),
     Tool("swsh-raid-host", tr('catalog.max_raid_host_5d0e1a', 'Max Raid (Host)'), "bin/swsh_host.py",
@@ -445,19 +435,15 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           tr('catalog.y_comm_in_local_wireless_mode_join_pokeldn_s_raid_from__a91d47', "Y-Comm in local wireless mode: join POKELDN's raid from the list."),
           tr('catalog.press_ready_the_console_runs_the_battle_and_our_pokemon_6f02b3', 'Press Ready: the console runs the battle and our Pokemon fights at your side.'),
           tr('catalog.win_the_raid_to_receive_the_rewards_dcd72e', 'Win the raid to receive the rewards.')),
-         (Field("--raid-event", tr('catalog.raid_event_d4b4e5', 'Raid event'), "raidevent",
-                help=tr('catalog.a_boss_from_a_past_wild_area_event_from_project_pokemon_3e1f70', "A boss from a past Wild Area Event, from Project Pokemon's EventsGallery. Leave it empty, or fold this card, to host the boss you build.")),
+         (Field("--raid-event", tr('catalog.raid_event_d4b4e5', 'Raid event'), "raidevent"),
           Field(("--raid-version", "--raid-stars", "--raid-event-boss", "--raid-area"), tr('catalog.event_boss_6b2a9d', 'Event boss'),
-                "raideventboss", requires="--raid-event",
-                help=tr('catalog.the_event_s_bosses_a_den_can_show_with_their_stars_leve_0c58e2', "The event's bosses a den can show, with their stars, level and game; the event's rewards that fit the den go with it.")),
+                "raideventboss", requires="--raid-event"),
           Field("--raid-boss", tr('catalog.boss_8f6c1d', 'Boss'), "pokemon", required=True, unless="--raid-event",
-                help=tr('catalog.the_raid_s_boss_a_pokemon_a_max_raid_den_holds_4b9d10', "The raid's boss: a Pokemon a Max Raid den holds, in that form and Gigantamax state. Its level sets the stars.")),
-          Field("--raid-gigantamax", tr('catalog.gigantamax_boss_0a7e52', 'Gigantamax boss'), "switch", unless="--raid-event",
-                help=tr('catalog.for_a_pokemon_a_den_holds_as_gigantamax_charizard_snorl_6b1d40', 'For a Pokemon a den holds as Gigantamax: Charizard, Snorlax, Toxtricity and the other Gigantamax Pokemon.')),
-          Field("--offer-file", tr('catalog.our_pokemon_14a66b', 'Our Pokemon'), "pokemon", required=True,
-                help=tr('catalog.the_pokemon_our_player_brings_pkhex_checks_it_is_legal_abc1cf', 'The Pokemon our player brings. PKHeX checks it is legal.')),
+                help=tr('catalog.the_raid_s_boss_a_pokemon_a_max_raid_den_holds_4b9d10', 'Level sets the star rating.')),
+          Field("--raid-gigantamax", tr('catalog.gigantamax_boss_0a7e52', 'Gigantamax boss'), "switch", unless="--raid-event"),
+          Field("--offer-file", tr('catalog.our_pokemon_14a66b', 'Our Pokemon'), "pokemon", required=True),
           Field("--raid-reward", tr('catalog.rewards_59afe4', 'Rewards'), "rewards",
-                help=tr('catalog.leave_empty_for_the_den_s_own_rewards_or_choose_up_to_va_91e2d4', "Leave empty for the den's own rewards, or choose up to {value0} of the rewards the boss's den gives.", value0=SWSH_REWARD_ROWS)),
+                help=tr('catalog.leave_empty_for_the_den_s_own_rewards_or_choose_up_to_va_91e2d4', 'Leave empty for default rewards (up to {value0}).', value0=SWSH_REWARD_ROWS)),
           Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="6", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
           host_seconds("900")),
          fixed=("--raid-console-serves", "--player-name", "{ot}", "--trainer-name", "{ot}",
@@ -470,7 +456,7 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           tr('catalog.pokeldn_joins_the_lobby_and_readies_choose_ready_for_ba_eb2a1f', 'POKELDN joins the lobby and readies: choose Ready for battle! on the console.'),
           tr('catalog.our_pokemon_uses_the_chosen_move_every_turn_of_the_batt_9e5434', 'Our Pokemon uses the chosen move every turn of the battle.')),
          (Field("--offer-file", tr('catalog.our_pokemon_14a66b', 'Our Pokemon'), "pokemon",
-                help=tr('catalog.the_pokemon_our_player_brings_pkhex_checks_it_is_legal_87455a', "The Pokemon our player brings. PKHeX checks it is legal. Empty brings the console's own first party Pokemon.")),
+                help=tr('catalog.the_pokemon_our_player_brings_pkhex_checks_it_is_legal_87455a', 'Leave empty to use your first party Pokemon.')),
           Field("--raid-move", tr('catalog.move_6ecc3d', 'Move'), "choice", default="1",
                 choices=(("1", tr('catalog.first_move_dcc57f', 'First move')), ("2", tr('catalog.second_move_4ecb66', 'Second move')), ("3", tr('catalog.third_move_c2d088', 'Third move')), ("4", tr('catalog.fourth_move_f7966e', 'Fourth move'))),
                 help=tr('catalog.the_move_our_pokemon_uses_every_turn_33ca6d', 'The move our Pokemon uses every turn.')),
@@ -485,12 +471,11 @@ SWSH = Game("swsh", tr('catalog.sword_shield_71b23d', 'Sword & Shield'), tr('cat
           tr('catalog.press_ready_once_pokeldn_is_in_the_lobby_80d6b3', 'Press Ready once POKELDN is in the lobby.'),
           tr('catalog.pokeldn_leaves_once_the_adventure_starts_a_computer_par_2c7f05', 'POKELDN leaves once the adventure starts: a computer partner takes its seat and the adventure goes on.')),
          (Field("--lair-legendary", tr('catalog.legendary_6e94a1', 'Legendary'), "choice", default="150",
-                choices=SWSH_LAIR_LEGENDARIES,
-                help=tr('catalog.the_legendary_pokemon_waiting_at_the_end_of_the_max_lai_b0d3e8', 'The legendary Pokemon waiting at the end of the Max Lair.')),
+                choices=SWSH_LAIR_LEGENDARIES),
           Field("--code", tr('catalog.link_code_cc04a1', 'Link Code'), "code",
-                help=tr('catalog.eight_digits_the_console_sets_with_at_the_receptionist__5a8e30', 'Eight digits, set on the console with + at the receptionist. Empty for none.')),
+                help=tr('catalog.eight_digits_the_console_sets_with_at_the_receptionist__5a8e30', 'Optional. Set with + at the receptionist.')),
           Field("--lair-seed", tr('catalog.adventure_seed_1f7c55', 'Adventure seed'), "lairseed", template="0x{}",
-                help=tr('catalog.sets_the_rental_pokemon_and_the_pokemon_met_on_the_way_e4b8d2', 'Sets the rental Pokemon and the Pokemon met on the way. Leave empty for a random one.')),
+                help=tr('catalog.sets_the_rental_pokemon_and_the_pokemon_met_on_the_way_e4b8d2', 'Leave empty for a random seed.')),
           Field("--channel", tr('catalog.channel_ce4683', 'Channel'), "choice", default="6", choices=CHANNELS, help=CHANNEL_HELP, hidden=True),
           host_seconds("600")),
          fixed=("--player-name", "{ot}", "--trainer-name", "{ot}",
@@ -660,33 +645,27 @@ SV = Game("sv", tr('catalog.scarlet_violet_504657', 'Scarlet & Violet'), tr('cat
           tr('catalog.our_player_leaves_when_the_battle_starts_its_pokemon_st_284730', 'Our player leaves when the battle starts; its Pokemon stays and fights at your side.'),
           tr('catalog.a_communication_error_may_show_as_the_battle_starts_dis_fd7b88', 'A communication error may show as the battle starts: dismiss it and fight on.'),
           tr('catalog.win_the_raid_to_receive_the_rewards_dcd72e', 'Win the raid to receive the rewards.')),
-         (Field("--raid-pokemon", tr('catalog.our_pokemon_14a66b', 'Our Pokemon'), "pokemon", required=True,
-                help=tr('catalog.the_pokemon_our_player_brings_pkhex_checks_it_is_legal_abc1cf', 'The Pokemon our player brings. PKHeX checks it is legal.')),
-          Field("--raid-event", tr('catalog.raid_event_d4b4e5', 'Raid event'), "raidevent",
-                help=tr('catalog.a_raid_from_a_past_poke_portal_news_event_from_project__17be6a', "A raid from a past Poke Portal News event, from Project Pokemon's EventsGallery. Leave it empty, or fold this card, for a standard raid.")),
+         (Field("--raid-pokemon", tr('catalog.our_pokemon_14a66b', 'Our Pokemon'), "pokemon", required=True),
+          Field("--raid-event", tr('catalog.raid_event_d4b4e5', 'Raid event'), "raidevent"),
           Field("--raid-version", tr('catalog.game_5c412a', 'Game'), "choice", default="violet", group=tr('catalog.the_raid_a6f6bf', 'The raid'),
-                choices=(("scarlet", tr('catalog.scarlet_f11da0', 'Scarlet')), ("violet", tr('catalog.violet_2a3642', 'Violet'))),
-                help=tr('catalog.a_seed_can_give_another_raid_in_the_other_version_bf545f', 'A seed can give another raid in the other version.')),
+                choices=(("scarlet", tr('catalog.scarlet_f11da0', 'Scarlet')), ("violet", tr('catalog.violet_2a3642', 'Violet')))),
           Field("--raid-map", tr('catalog.region_d3a008', 'Region'), "choice", default="paldea", group=tr('catalog.the_raid_a6f6bf', 'The raid'),
                 choices=(("paldea", tr('catalog.paldea_14c1fa', 'Paldea')), ("kitakami", tr('catalog.kitakami_44ab29', 'Kitakami')), ("blueberry", tr('catalog.blueberry_d20244', 'Blueberry')))),
           Field("--raid-progress", tr('catalog.story_progress_d527c5', 'Story progress'), "choice", default="4star", group=tr('catalog.the_raid_a6f6bf', 'The raid'),
                 choices=(("beginning", tr('catalog.beginning_9e6b41', 'Beginning')), ("tera", tr('catalog.tera_raids_unlocked_07d442', 'Tera Raids unlocked')),
                          ("3star", tr('catalog.3_star_raids_e72615', '3-star raids')), ("4star", tr('catalog.4_star_raids_d82c77', '4-star raids')),
-                         ("5star", tr('catalog.5_star_raids_d693f5', '5-star raids')), ("6star", tr('catalog.6_star_raids_e7e30a', '6-star raids'))),
-                help=tr('catalog.sets_how_many_stars_a_standard_crystal_can_have_fb17ea', 'Sets how many stars a standard crystal can have.')),
+                         ("5star", tr('catalog.5_star_raids_d693f5', '5-star raids')), ("6star", tr('catalog.6_star_raids_e7e30a', '6-star raids')))),
           Field("--raid-content", tr('catalog.crystal_b8c18c', 'Crystal'), "choice", default="standard", group=tr('catalog.the_raid_a6f6bf', 'The raid'),
                 choices=(("standard", tr('catalog.standard_ef6691', 'Standard')), ("black", tr('catalog.black_6_stars_3ee5de', 'Black (6 stars)'))), unless="--raid-event"),
-          Field("--raid-event-group", tr('catalog.crystal_b8c18c', 'Crystal'), "raidden", group=tr('catalog.the_raid_a6f6bf', 'The raid'), requires="--raid-event",
-                help=tr('catalog.each_of_the_event_s_crystals_has_its_own_bosses_628ee4', "Each of the event's crystals has its own bosses.")),
+          Field("--raid-event-group", tr('catalog.crystal_b8c18c', 'Crystal'), "raidden", group=tr('catalog.the_raid_a6f6bf', 'The raid'), requires="--raid-event"),
           Field("--raid-seed", tr('catalog.raid_seed_e70045', 'Raid seed'), "raidseed", default="000F34C3", required=True,
-                group=tr('catalog.the_raid_a6f6bf', 'The raid'), help=tr('catalog.eight_hexadecimal_digits_find_a_raid_searches_seeds_for_b8aa2b', 'Eight hexadecimal digits. Find a raid searches seeds for you.')),
+                group=tr('catalog.the_raid_a6f6bf', 'The raid')),
           Field("--raid-reward", tr('catalog.rewards_59afe4', 'Rewards'), "rewards",
-                help=tr('catalog.leave_empty_for_the_raid_s_own_rewards_or_list_up_to_it_6e5d73', "Leave empty for the raid's own rewards, or list up to {value0} items.", value0=REWARD_ROWS)),
+                help=tr('catalog.leave_empty_for_the_raid_s_own_rewards_or_list_up_to_it_6e5d73', 'Leave empty for default rewards (up to {value0}).', value0=REWARD_ROWS)),
           Field("--raid-players", tr('catalog.consoles_joining_7a43ed', 'Consoles joining'), "choice", default="1",
                 choices=(("1", tr('catalog.1_console_90b18a', '1 console')), ("2", tr('catalog.2_consoles_5e36d3', '2 consoles')), ("3", tr('catalog.3_consoles_af51df', '3 consoles'))),
-                help=tr('catalog.the_raid_waits_for_this_many_consoles_each_one_ready_be_60226a', 'The raid waits for this many consoles, each one Ready, before it starts. Each console then fights its own copy of the battle.')),
-          Field(("--raid-partner", "--raid-partner-progress"), tr('catalog.raid_npc_partners_c62ef4', 'Raid NPC partners'), "raidpartners",
-                help=tr('catalog.the_trainers_who_fill_the_slots_no_console_holds_two_wi_906d17', 'The trainers who fill the slots no console holds: two with one console joining, one with two, none with three. A slot you leave unpicked gets a trainer the game draws.')),
+                help=tr('catalog.the_raid_waits_for_this_many_consoles_each_one_ready_be_60226a', 'Waits for this many consoles to ready up.')),
+          Field(("--raid-partner", "--raid-partner-progress"), tr('catalog.raid_npc_partners_c62ef4', 'Raid NPC partners'), "raidpartners"),
           Field("--raid-catch-normal", tr('catalog.catch_an_event_boss_again_f24ceb', 'Catch an event boss again'), "switch", hidden=True,
                 requires="--raid-event",
                 help=tr('catalog.offer_a_boss_the_event_lets_a_save_catch_once_as_a_norm_0ebdc3', 'Offer a boss the event lets a save catch once as a normal catch, under a record number no save has caught. The Raid event card sets it.')),
@@ -705,8 +684,7 @@ SV = Game("sv", tr('catalog.scarlet_violet_504657', 'Scarlet & Violet'), tr('cat
           tr('catalog.choose_the_pokemon_our_player_brings_then_start_the_joi_571094', 'Choose the Pokemon our player brings, then start the joiner.'),
           tr('catalog.our_player_joins_and_readies_start_the_battle_on_the_co_edacf9', 'Our player joins and readies; start the battle on the console.'),
           tr('catalog.our_player_leaves_as_the_battle_starts_its_pokemon_figh_421b73', 'Our player leaves as the battle starts; its Pokemon fights on as a partner.')),
-         (Field("--raid-pokemon", tr('catalog.our_pokemon_14a66b', 'Our Pokemon'), "pokemon", required=True,
-                help=tr('catalog.the_pokemon_our_player_brings_pkhex_checks_it_is_legal_abc1cf', 'The Pokemon our player brings. PKHeX checks it is legal.')),
+         (Field("--raid-pokemon", tr('catalog.our_pokemon_14a66b', 'Our Pokemon'), "pokemon", required=True),
           join_seconds("240")),
          fixed=("--seconds", "900", "--name", 'POKELDN', "--trainer-name", "{ot}"),
          doc="sv_raid.md",
@@ -723,16 +701,15 @@ SV = Game("sv", tr('catalog.scarlet_violet_504657', 'Scarlet & Violet'), tr('cat
           (tr('catalog.for_snacksworth_talk_to_him_once_for_each_legendary_eac_87f6c8', 'For Snacksworth, talk to him once for each legendary; each talk releases one.'),
            ("--circle-task", "snacksworth"))),
          (Field("--code", tr('catalog.link_code_cc04a1', 'Link Code'), "code", required=True, length=4,
-                remembered=False,
-                help=tr('catalog.the_union_circle_s_four_digit_link_code_2e76dc', "The Union Circle's four-digit Link Code.")),
+                remembered=False),
           Field("--circle-task", tr('catalog.task_4bc74b', 'Task'), "choice", default="snacksworth",
                 choices=(("snacksworth", tr('catalog.unlock_all_remaining_snacksworth_legendaries_cd6e98', 'Unlock all remaining Snacksworth legendaries')),
                          ("bp", tr('catalog.give_bp_b0e117', 'Give BP'))),
-                choice_help=(("snacksworth", tr('catalog.reads_how_many_solo_and_team_quests_the_host_still_lack_55eb31', "Reads how many solo and Team quests the host still lacks of the 130 and 12 that release all 25 legendaries, then gives them, one a second: Team quests drawn as the game draws them, then the host's own solo quests as they come up.")),
-                             ("bp", tr('catalog.clears_one_quest_for_the_host_that_pays_this_bp_2c54b4', 'Clears one quest for the host that pays this BP.')))),
+                choice_help=(("snacksworth", tr('catalog.reads_how_many_solo_and_team_quests_the_host_still_lack_55eb31', 'Completes the remaining solo and Team quests needed for all 25 legendaries.')),
+                             ("bp", tr('catalog.clears_one_quest_for_the_host_that_pays_this_bp_2c54b4', 'Clears one quest paying this BP.')))),
           Field("--bbq-clear", tr('catalog.bp_36b717', 'BP'), "number", default="1000", required=True,
                 when=("--circle-task", "bp"), bounds=(1, BP_MAX),
-                help=tr('catalog.from_1_to_9_999_999_the_most_bp_a_player_holds_99d199', 'From 1 to 9,999,999, the most BP a player holds.')),
+                help=tr('catalog.from_1_to_9_999_999_the_most_bp_a_player_holds_99d199', '1 to 9,999,999.')),
           join_seconds("900")),
          fixed=("--union-circle", "--seconds", "900", "--name", 'POKELDN', "--trainer-name", "{ot}"),
          doc="sv_union_circle.md",
@@ -746,10 +723,8 @@ SV = Game("sv", tr('catalog.scarlet_violet_504657', 'Scarlet & Violet'), tr('cat
           tr('catalog.with_legal_encounters_only_they_wait_until_the_wild_pok_aca8b5', 'With Legal encounters only they wait until the wild Pokemon your game shares show you stand where PKHeX accepts them caught, and go when you walk 50 m from where that was found.'),
           tr('catalog.close_the_circle_on_the_console_to_stop_fa751d', 'Close the circle on the console to stop.')),
          (Field("--code", tr('catalog.link_code_cc04a1', 'Link Code'), "code", required=True, length=4,
-                remembered=False,
-                help=tr('catalog.the_union_circle_s_four_digit_link_code_2e76dc', "The Union Circle's four-digit Link Code.")),
-          Field("--spawn", tr('catalog.pokemon_to_spawn_c7ecd1', 'Pokemon to spawn'), "encounter", required=True,
-                help=tr('catalog.the_wild_pokemon_that_appears_around_you_in_the_game_to_c2e57e', 'The wild Pokemon that appears around you in the game, to battle and catch.')),
+                remembered=False),
+          Field("--spawn", tr('catalog.pokemon_to_spawn_c7ecd1', 'Pokemon to spawn'), "encounter", required=True),
           join_seconds("3600")),
          fixed=("--union-circle", "--seconds", "3600", "--follow-host", "--name", 'POKELDN',
                 "--trainer-name", "{ot}"),
@@ -795,7 +770,7 @@ def simulated_gift(game: Game, host: Tool, steps: tuple[str, ...]) -> Tool:
         if f.kind != "pokemon":
             return f,
         return (replace(f, identity="#Mystery Gift Pokemon" if not f.flag else f.identity, label=tr('catalog.mystery_gift_pokemon_e3340b', 'Mystery Gift Pokemon'), required=True, events=True, random=False, queue=QUEUE,
-                        help=tr('catalog.every_pokemon_gift_gave_from_pkhex_s_event_database_add_cbef41', "Every Pokemon gift {value0} gave, from PKHeX's event database. Add up to {value1}; one session trades them in order, each as a fresh legal copy.", value0=game.name, value1=QUEUE)),
+                        help=""),
                 FOR_RECEIVER)
     return Tool(host.key.replace("-host", "-gift-host"), tr('catalog.mystery_gift_simulated_d9d548', 'Mystery Gift - Simulated'), host.script,
                 tr('catalog.trade_an_official_mystery_gift_pokemon_to_the_console_a_a079f5', 'Trade an official Mystery Gift Pokemon to the console: a fresh legal copy, as your trainer received it.'), steps, tuple(g for f in host.fields for g in gift(f)), fixed=host.fixed,
@@ -822,8 +797,7 @@ def with_online(game: Game, steps: tuple[str, ...], code: Field | None = None) -
     host = next(t for t in game.tools if t.key == trade_keys(game)[0])
     if code is None:
         code = next(f for f in host.fields if f.kind in ("code", "linkcode"))
-        code = replace(code, help=ONLINE_CODE_HELP if code.kind == "code" else
-                       tr('catalog.the_three_pokemon_you_and_your_partner_pick_in_the_same_a31f1a', 'The three Pokemon you and your partner pick, in the same order, here and on the console.'))
+        code = replace(code, help=ONLINE_CODE_HELP if code.kind == "code" else "")
     at = max(n for n, t in enumerate(game.tools) if t.key in trade_keys(game)) + 1   # after Join
     return replace(game, tools=game.tools[:at] + (online(host, steps, code),) + game.tools[at:])
 
@@ -840,7 +814,7 @@ GAMES = (
                                  tr('catalog.y_communicate_trade_pokemon_accept_the_greeting_bc6aa6', 'Y, Communicate, Trade Pokemon; accept the greeting.'), GIFT_OFFER_BACK)),
                 (tr('catalog.our_character_appears_4daa86', '{value0} Our character appears.', value0=BDSP_ROOM),
                  tr('catalog.y_communicate_trade_pokemon_accept_the_greeting_then_ch_2c7215', 'Y, Communicate, Trade Pokemon; accept the greeting, then choose.')),
-                Field("--password", tr('catalog.code_340f46', 'Code'), "code", help=tr('catalog.eight_digits_you_and_your_partner_agree_on_you_also_ent_a2a06f', "Eight digits you and your partner agree on; you also enter them at the Union Room's password prompt. Empty: the plain room, and anyone trading online without a code."))),
+                Field("--password", tr('catalog.code_340f46', 'Code'), "code", help=tr('catalog.eight_digits_you_and_your_partner_agree_on_you_also_ent_a2a06f', 'Leave empty for the plain room and to match anyone.'))),
     with_online(with_gift(PLA, (tr('catalog.choose_the_event_pokemon_then_start_the_host_51919d', 'Choose the event Pokemon, then start the host.'), *PLA_STEPS, GIFT_OFFER_BACK,
                                 tr('catalog.leave_the_host_running_until_the_trade_ends_an_interrup_adc091', 'Leave the host running until the trade ends: an interrupted trade locks trading for a while.'))),
                 (*PLA_STEPS, tr('catalog.offer_a_pokemon_and_confirm_ae970b', 'Offer a Pokemon and confirm.'))),

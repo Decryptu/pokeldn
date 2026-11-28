@@ -412,7 +412,7 @@ class PokemonPicker:
         self.app.page.show_dialog(t.dialog(
             title=t.text(tr('pokemon.import_a_showdown_set_a60d57', 'Import a Showdown set'), 17, weight=ft.FontWeight.W_600),
             content=ft.Container(ft.Column([
-                t.text(tr('pokemon.paste_a_set_exported_from_pokemon_showdown_smogon_or_pk_49d726', 'Paste a set exported from Pokemon Showdown, Smogon or PKHeX. Its values fill the form; press Build to make a legal Pokemon from them.'), 13, t.MUTED),
+                t.text(tr('pokemon.paste_a_set_exported_from_pokemon_showdown_smogon_or_pk_49d726', 'Paste a Showdown or PKHeX set.'), 13, t.MUTED),
                 editor, status], spacing=10, tight=True,
                 horizontal_alignment=ft.CrossAxisAlignment.STRETCH), width=520),
             actions=[t.secondary_button(tr('pokemon.cancel_19766e', 'Cancel'), close), apply],

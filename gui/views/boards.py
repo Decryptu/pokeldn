@@ -212,8 +212,8 @@ class BoardView:
             rows.append(ft.Container(ft.Column([
                 t.pixel_icon("usb", color=t.FAINT),
                 t.text(tr('boards.no_board_found_6df721', 'No board found'), 13, t.MUTED, weight=ft.FontWeight.W_600),
-                t.text(tr('boards.ios_list_hint', 'Power the board near the phone. It shows up here over Bluetooth on its own.') if ios.active() else
-                       tr('boards.plug_it_into_this_computer_with_a_data_cable_it_shows_u_ca5481', 'Plug it into this computer with a data cable. It shows up here on its own.'), 12,
+                t.text(tr('boards.ios_list_hint', 'Power the board near the phone.') if ios.active() else
+                       tr('boards.plug_it_into_this_computer_with_a_data_cable_it_shows_u_ca5481', 'Plug in your board over USB.'), 12,
                        t.FAINT, text_align=ft.TextAlign.CENTER),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6), padding=24))
         self.list.controls = rows
@@ -257,8 +257,8 @@ class BoardView:
         rows = [ft.Row([
             t.pixel_icon("usb", size=48, color=t.FAINT),
             ft.Column([t.text(status.title, 17, weight=ft.FontWeight.W_600),
-                       t.text(status.detail, 13, t.MUTED)], spacing=2, expand=True),
-        ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)]
+                       *([t.text(status.detail, 13, t.MUTED)] if status.detail else [])], spacing=2, expand=True),
+        ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START if status.detail else ft.CrossAxisAlignment.CENTER)]
         if android.active():   # the two things a phone's player can fix from here
             actions = ([t.button(tr('boards.android_allow_usb', 'Allow USB access'), lambda e: android.ask_permission(), "usb")]
                        if status.state == "denied" else
@@ -280,9 +280,7 @@ class BoardView:
             icon, color, title, detail = None, t.BLUE, tr('boards.installing_firmware_298596', 'Installing {value0} firmware', value0=board.FIRMWARE_BY_KIND[self.installing].name), \
                 tr('boards.keep_the_board_plugged_in_about_a_minute_e30db9', 'Keep the board plugged in. About a minute.')
         elif f.state == "checking":
-            icon, color, title, detail = None, t.BLUE, tr('boards.checking_the_board_f7ce4a', 'Checking the board'), (
-                tr('boards.asking_the_board_over_bluetooth_for_its_firmware_versio_f7a040', 'Asking the board over Bluetooth for its firmware version.') if f.key == CONTROLLER
-                else tr('boards.asking_the_board_for_its_firmware_21d622', 'Asking the board for its firmware.'))
+            icon, color, title, detail = None, t.BLUE, tr('boards.checking_the_board_f7ce4a', 'Checking the board'), ""
         elif f.state == "unknown":
             icon, color, title, detail = "circle-info", t.AMBER, tr('boards.version_unknown_e83ee0', 'Version unknown'), f.detail
             action.append(t.secondary_button(tr('boards.check_again_fb7099', 'Check again'), lambda e: self._check_pad(), "refresh",
@@ -304,12 +302,10 @@ class BoardView:
             action.append(t.secondary_button(tr('boards.check_again_fb7099', 'Check again'), self._identify, "refresh", disabled=busy))
         elif f.update:
             icon, color, title, detail = "download", t.BLUE, tr('boards.update_available_54d35d', 'Update available: {value0}', value0=f.update), (
-                tr('boards.firmware_is_included_with_this_app_this_board_runs_1e3819', '{value0} firmware {value1} is included with this app. This board runs {value2}.', value0=f.firmware.name, value1=f.update, value2=f.version))
+                tr('boards.firmware_is_included_with_this_app_this_board_runs_1e3819', 'Installed: {value0}', value0=f.version))
             action.append(t.button(tr('boards.update_c1c100', 'Update'), lambda e: self.install(f.kind), "download", disabled=busy))
         else:
-            icon, color, title, detail = "checkbox-on", t.GREEN, tr('boards.up_to_date_ce29b7', 'Up to date'), (
-                tr('boards.firmware_is_the_newest_this_app_includes_ae0469', '{value0} firmware {value1} is the newest this app includes.', value0=f.firmware.name, value1=f.version) if f.version else
-                tr('boards.firmware_8d2ff6', '{value0} firmware.', value0=f.firmware.name))
+            icon, color, title, detail = "checkbox-on", t.GREEN, tr('boards.up_to_date_ce29b7', 'Up to date'), ""
         if not self.installing and f.state == "ready":
             if f.kind.startswith("radio"):
                 several = len(self.ports) > 1
@@ -365,8 +361,7 @@ class BoardView:
                                                 self._download, "download", disabled=self.downloading))
             rows.append(t.text(tr('boards.this_copy_of_the_app_has_no_firmware_images_a_copy_run__b11ee6', 'This copy of the app has no firmware images (a copy run from source). Download the released ones; no ESP-IDF needed.'), 12, t.AMBER))
         rows.append(ft.Row(footer, spacing=8))
-        return drop.target(t.card(tr('boards.firmware_c2a314', 'Firmware'), ft.Column(rows, spacing=4),
-                                  tr('boards.a_board_runs_one_firmware_at_a_time_switching_takes_abo_537d4a', 'A board runs one firmware at a time. Switching takes about a minute, and you can switch back whenever you like.')), self._dropped)
+        return drop.target(t.card(tr('boards.firmware_c2a314', 'Firmware'), ft.Column(rows, spacing=4)), self._dropped)
 
     def about_card(self, f: Facts) -> ft.Control:
         def info(label, value):

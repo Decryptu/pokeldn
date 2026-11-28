@@ -337,7 +337,7 @@ class GtsView:
         listing = next((x for x in listings if (x.key, x.d) == self.selected), None)
         if listing is None:
             self.detail.controls = [t.text(
-                tr('gts.pick_a_listing_to_see_the_pokemon_and_what_its_trainer__d09e48', "Pick a listing to see the Pokemon and what its trainer asks for. A trade happens the next time the lister's app is open; until then your offer waits outside your bank."), 13, t.MUTED)]
+                tr('gts.pick_a_listing_to_see_the_pokemon_and_what_its_trainer__d09e48', 'Pick a listing to view details.'), 13, t.MUTED)]
             return
         self.detail.controls = [self._about(listing.pokemon, listing.game),
                                 t.section(tr('gts.asks_for_f07bf1', 'Asks for') if not listing.also else
@@ -355,7 +355,7 @@ class GtsView:
             ft.Row([self.sprites.get('yours', int(info.get("species_id") or 0), bool(info.get("shiny")), size=MINI),
                     ft.Column([t.text(tr('gts.level_dcff87', '{value0} · level {value1}', value0=translate(info.get('species', '')), value1=info.get('level')), 13),
                                t.badge(*STATUS["waiting"])], spacing=4, expand=True)], spacing=10),
-            t.text(tr('gts.other_players_can_still_offer_on_it_the_lister_s_app_tr_9c4d2a', "Other players can still offer on it. The lister's app trades the first offer that answers it, the next time it is open; if that is not yours, yours comes back to the bank."), 12, t.FAINT),
+            t.text(tr('gts.other_players_can_still_offer_on_it_the_lister_s_app_tr_9c4d2a', "First matching offer wins when the lister's app is next open; otherwise yours returns to the bank."), 12, t.FAINT),
         ], spacing=10))
 
     def _about(self, shown: dict, game: str) -> ft.Control:
@@ -412,7 +412,7 @@ class GtsView:
             if listing:
                 controls.append(t.text(tr('gts.offered_for_level_from_6f5c29', 'Offered for {value0} level {value1} from {value2}.', value0=translate(listing.pokemon.get('species', '')), value1=listing.pokemon.get('level'), value2=listing.trainer or tr('gts.a_trainer_bda66d', 'a trainer')), 12, t.MUTED))
             if state["status"] == "waiting":
-                controls.append(t.text(tr('gts.the_trade_happens_the_next_time_the_lister_s_app_is_ope_23acca', "The trade happens the next time the lister's app is open. If it ends unanswered, your Pokemon comes back to the bank."), 12, t.FAINT))
+                controls.append(t.text(tr('gts.the_trade_happens_the_next_time_the_lister_s_app_is_ope_23acca', "Trades when the lister's app is next open, or returns to your bank."), 12, t.FAINT))
             if state["why"]:
                 controls.append(t.text(state["why"][0].upper() + state["why"][1:] + ".", 12,
                                        t.AMBER if state["status"] == "returned" else t.SOFT))
@@ -449,7 +449,7 @@ class GtsView:
 
         self.app.page.show_dialog(t.dialog(
             title=t.text(tr('gts.offer_e4293e', 'Offer {value0}?', value0=summary_text(entry.summary).split(' · ')[0]), 18),
-            content=t.text(tr('gts.it_leaves_your_bank_and_waits_for_the_lister_s_app_you__ff4ccc', "It leaves your bank and waits for the lister's app. You get {value0} if your offer is the first that answers the listing; otherwise it comes back. Nothing on the relays can make the lister send theirs: a trade depends on the other app being the real one.", value0=translate(listing.pokemon.get('species', ''))), 13, t.MUTED, width=400),
+            content=t.text(tr('gts.it_leaves_your_bank_and_waits_for_the_lister_s_app_you__ff4ccc', "Leaves your bank until the lister's app is next open. You get {value0} if your offer is accepted first; otherwise it returns.", value0=translate(listing.pokemon.get('species', ''))), 13, t.MUTED, width=400),
             actions=[t.button(tr('gts.cancel_19766e', 'Cancel'), lambda e: self.app.page.pop_dialog(), filled=False),
                      t.button(tr('gts.offer_0cf57c', 'Offer'), go, "arrows-horizontal")]))
 
